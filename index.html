@@ -170,11 +170,28 @@ const SUPABASE_URL = "https://enknfffiyexuvodqlfmh.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVua25mZmZpeWV4dXZvZHFsZm1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MTE4NTUsImV4cCI6MjA5MjI4Nzg1NX0.9VvbzXpPiKBJAnbwHIbIivixfnhENoL4LR_s2KtX7yY";
 const TRAINER_PHONE = "34617248982";
 const ADMIN_PASS = "admin123";
+
+// ── REMEMBER ME ────────────────────────────────────────────────────────────
+function saveSession(type, data) {
+  try { localStorage.setItem("kg_session", JSON.stringify({type, data, ts: Date.now()})); } catch(e){}
+}
+function loadSession() {
+  try {
+    const s = JSON.parse(localStorage.getItem("kg_session")||"null");
+    if(!s) return null;
+    // Expire after 30 days
+    if(Date.now() - s.ts > 30*24*60*60*1000) { localStorage.removeItem("kg_session"); return null; }
+    return s;
+  } catch(e){ return null; }
+}
+function clearSession() {
+  try { localStorage.removeItem("kg_session"); } catch(e){}
+}
 const GYM_NAME = "Kikote Gym";
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const TODAY = new Date().toISOString().split("T")[0];
-const TIME_SLOTS = ["06:00","07:00","08:00","09:00","10:00","11:00","16:00","17:00","18:00","19:00","20:00"];
+const TIME_SLOTS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00"];
 const SESSION_TYPES = ["Fuerza","Cardio","Funcional","HIIT","Movilidad","Evaluación"];
 const COLORS = ["#22d3ee","#f472b6","#a78bfa","#4ade80","#fb923c","#f59e0b","#38bdf8","#e879f9"];
 
@@ -221,8 +238,10 @@ function App() {
   const [history, setHistory] = React.useState([]);
   const [payments, setPayments] = React.useState([]);
   const [blocked, setBlocked] = React.useState([]);
+  const [forum, setForum] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [loggedClient, setLoggedClient] = React.useState(null);
+  const [pendingSession, setPendingSession] = React.useState(null);
   const [toast, setToast] = React.useState(null);
   const [loginTab, setLoginTab] = React.useState("client");
   const [loginName, setLoginName] = React.useState("");
@@ -236,31 +255,58 @@ function App() {
 
   const loadAll = React.useCallback(async () => {
     try {
-      const [c,s,h,p,b] = await Promise.all([
+      const [c,s,h,p,b,f] = await Promise.all([
         sb.from("clients").select("*").order("created_at"),
         sb.from("sessions").select("*").order("date").order("time"),
         sb.from("history").select("*").order("date",{ascending:false}),
         sb.from("payments").select("*").order("paid_at",{ascending:false}),
         sb.from("blocked_slots").select("*"),
+        sb.from("forum_posts").select("*").order("created_at",{ascending:false}),
       ]);
       setClients(c.data||[]); setSessions(s.data||[]); setHistory(h.data||[]);
-      setPayments(p.data||[]); setBlocked(b.data||[]);
+      setPayments(p.data||[]); setBlocked(b.data||[]); setForum(f.data||[]);
     } catch(e) { notify("Error de conexión","err"); }
     setLoading(false);
   },[]);
 
-  React.useEffect(()=>{ loadAll(); },[]);
+  React.useEffect(()=>{
+    loadAll().then(()=>{
+      // Restore saved session
+      const s = loadSession();
+      if(s) setPendingSession(s);
+    });
+  },[]);
+
+  // Apply pending session once clients are loaded
+  React.useEffect(()=>{
+    if(pendingSession && clients.length > 0) {
+      if(pendingSession.type === "admin") {
+        setMode("admin");
+      } else if(pendingSession.type === "client") {
+        const c = clients.find(x=>x.id===pendingSession.data.id);
+        if(c) { setLoggedClient(c); setMode("client"); }
+      }
+      setPendingSession(null);
+    }
+  },[pendingSession, clients]);
+
   React.useEffect(()=>{
     if(loggedClient) { const u=clients.find(c=>c.id===loggedClient.id); if(u) setLoggedClient(u); }
   },[clients]);
 
-  const handleClientLogin = () => {
+  const handleClientLogin = (remember) => {
     const c = clients.find(x=>x.name.toLowerCase().trim()===loginName.toLowerCase().trim()&&x.code===loginCode.trim());
-    if(c){setLoggedClient(c);setMode("client");setLoginErr("");}
+    if(c){
+      setLoggedClient(c);setMode("client");setLoginErr("");
+      if(remember) saveSession("client", {id:c.id});
+    }
     else setLoginErr("Nombre o código incorrecto");
   };
-  const handleAdminLogin = () => {
-    if(adminPass===ADMIN_PASS){setMode("admin");setAdminPass("");setLoginErr("");}
+  const handleAdminLogin = (remember) => {
+    if(adminPass===ADMIN_PASS){
+      setMode("admin");setAdminPass("");setLoginErr("");
+      if(remember) saveSession("admin", {});
+    }
     else setLoginErr("Contraseña incorrecta");
   };
 
@@ -276,14 +322,21 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#160404":toast.type==="wa"?"#052e16":"#060f1e",color:toast.type==="err"?"#f87171":toast.type==="wa"?"#4ade80":"#38bdf8",border:`1px solid ${toast.type==="err"?"#450a0a":toast.type==="wa"?"#14532d":"#0e3a5c"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,loadAll,notify}} onLogout={()=>setMode("login")}/>}
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} loadAll={loadAll} notify={notify} onLogout={()=>{setLoggedClient(null);setMode("login");}}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,forum,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} forum={forum} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
     </div>
   );
 }
 
 // ── LOGIN ──────────────────────────────────────────────────────────────────
 function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}) {
+  const [remember, setRemember] = React.useState(true);
+  const RememberBox = ({id}) => (
+    <div style={{display:"flex",alignItems:"center",gap:10,padding:"2px 0"}}>
+      <input type="checkbox" id={id} checked={remember} onChange={e=>setRemember(e.target.checked)} style={{accentColor:"#0ea5e9",width:18,height:18,cursor:"pointer"}}/>
+      <label htmlFor={id} style={{fontSize:13,color:"#64748b",cursor:"pointer"}}>Recordarme en este dispositivo</label>
+    </div>
+  );
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(ellipse at 50% 0%,#0c1d35,#05080f 60%)"}}>
       <div style={{width:"100%",maxWidth:380}} className="fade">
@@ -301,22 +354,24 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <p style={{fontSize:13,color:"#475569",marginBottom:4}}>Ingresa tu nombre y el código de acceso.</p>
               <div><span className="lbl">NOMBRE COMPLETO</span>
-                <input className="inp" placeholder="Ej. Carlos Mendoza" value={loginName} onChange={e=>setLoginName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin()}/>
+                <input className="inp" placeholder="Ej. Carlos Mendoza" value={loginName} onChange={e=>setLoginName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)}/>
               </div>
               <div><span className="lbl">CÓDIGO</span>
-                <input className="inp mono" placeholder="••••" maxLength={4} value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin()} style={{letterSpacing:8,fontSize:20,textAlign:"center"}}/>
+                <input className="inp mono" placeholder="••••" maxLength={4} value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)} style={{letterSpacing:8,fontSize:20,textAlign:"center"}}/>
               </div>
               {loginErr&&<p style={{fontSize:12,color:"#f87171"}}>{loginErr}</p>}
-              <button className="btn sky" style={{width:"100%",padding:12}} onClick={handleClientLogin}>Entrar a mi portal</button>
+              <RememberBox id="remC"/>
+              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleClientLogin(remember)}>Entrar a mi portal</button>
               <p style={{fontSize:11,color:"#1e3a5a",textAlign:"center"}}>¿Sin código? Escribe a tu trainer 📱</p>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div><span className="lbl">CONTRASEÑA</span>
-                <input className="inp" type="password" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminLogin()}/>
+                <input className="inp" type="password" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminLogin(remember)}/>
               </div>
               {loginErr&&<p style={{fontSize:12,color:"#f87171"}}>{loginErr}</p>}
-              <button className="btn sky" style={{width:"100%",padding:12}} onClick={handleAdminLogin}>Entrar al panel</button>
+              <RememberBox id="remA"/>
+              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleAdminLogin(remember)}>Entrar al panel</button>
             </div>
           )}
         </div>
@@ -326,8 +381,10 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,loadAll,notify,onLogout}) {
+function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
+  const [schedView,setSchedView] = React.useState("week");
+  const [showVacation,setShowVacation] = React.useState(false);
   const [expanded,setExpanded] = React.useState(null);
   const [waClient,setWaClient] = React.useState(null);
   const [showBulkWA,setShowBulkWA] = React.useState(false);
@@ -404,6 +461,27 @@ function AdminPanel({clients,sessions,history,payments,blocked,loadAll,notify,on
   const renewSessions = (client) => w(async()=>{ await sb.from("clients").update({sessions_left:client.total_sessions}).eq("id",client.id); notify("Sesiones renovadas ✓"); });
   const deleteClient = (id) => w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); });
 
+  const toggleBlockDay = (date) => w(async()=>{
+    const ex=blocked.find(b=>b.date===date&&b.time==="ALL");
+    if(ex) await sb.from("blocked_slots").delete().eq("id",ex.id);
+    else await sb.from("blocked_slots").insert({date,time:"ALL",reason:"Día bloqueado"});
+    notify(ex?"Día desbloqueado":"Día bloqueado 🚫");
+  });
+
+  const blockVacation = (startDate, endDate) => w(async()=>{
+    const start=new Date(startDate+"T12:00:00");
+    const end=new Date(endDate+"T12:00:00");
+    const inserts=[];
+    for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
+      const ds=d.toISOString().split("T")[0];
+      const dow=d.getDay();
+      if(dow>=1&&dow<=5) inserts.push({date:ds,time:"ALL",reason:"Vacaciones"});
+    }
+    if(inserts.length>0) await sb.from("blocked_slots").insert(inserts);
+    setShowVacation(false);
+    notify(`${inserts.length} días bloqueados 🏖`);
+  });
+
   const toggleBlock = (date, time) => w(async()=>{
     const ex=blocked.find(b=>b.date===date&&b.time===time);
     if(ex) await sb.from("blocked_slots").delete().eq("id",ex.id);
@@ -441,7 +519,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,loadAll,notify,on
           {id:"dashboard",icon:"🏠",label:"Inicio"},
           {id:"clients",icon:"👥",label:"Clientes"},
           {id:"schedule",icon:"📅",label:"Agenda"},
-          {id:"income",icon:"💶",label:"Ingresos"},
+          {id:"forum",icon:"💬",label:"Foro"},
           {id:"reminders",icon:"🔔",label:"Alertas",count:alertCount},
         ].map(item=>(
           <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")} onClick={()=>setView(item.id)}>
@@ -577,6 +655,39 @@ function AdminPanel({clients,sessions,history,payments,blocked,loadAll,notify,on
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
                         </div>
+                        {/* Avatar upload */}
+                        <div style={{marginBottom:14}}>
+                          <span className="lbl">FOTO DE PERFIL</span>
+                          <div style={{display:"flex",alignItems:"center",gap:12,marginTop:4}}>
+                            {c.avatar_url
+                              ? <img src={c.avatar_url} style={{width:52,height:52,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color}`}}/>
+                              : <div className="ring" style={{width:52,height:52,background:c.color+"20",color:c.color,fontSize:16,border:`2px solid ${c.color}40`}}>{ini(c.name)}</div>
+                            }
+                            <div style={{flex:1}}>
+                              <input type="file" accept="image/*" id={"av"+c.id} style={{display:"none"}}
+                                onChange={async(e)=>{
+                                  const file=e.target.files[0]; if(!file) return;
+                                  const ext=file.name.split(".").pop();
+                                  const path=`${c.id}.${ext}`;
+                                  const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
+                                  if(upErr){notify("Error subiendo foto","err");return;}
+                                  const {data}=sb.storage.from("avatars").getPublicUrl(path);
+                                  await sb.from("clients").update({avatar_url:data.publicUrl+"?t="+Date.now()}).eq("id",c.id);
+                                  await loadAll();
+                                  notify("Foto actualizada ✓");
+                                }}
+                              />
+                              <label htmlFor={"av"+c.id} className="btn sky" style={{fontSize:11,padding:"7px 12px",cursor:"pointer",display:"inline-block"}}>
+                                📷 {c.avatar_url?"Cambiar foto":"Subir foto"}
+                              </label>
+                              {c.avatar_url&&<button className="btn danger" style={{fontSize:11,padding:"7px 10px",marginLeft:6}} onClick={async()=>{
+                                await sb.from("clients").update({avatar_url:null}).eq("id",c.id);
+                                await loadAll(); notify("Foto eliminada");
+                              }}>✕</button>}
+                            </div>
+                          </div>
+                        </div>
+
                         {/* Private notes */}
                         <div style={{marginBottom:14}}>
                           <span className="lbl">NOTAS PRIVADAS (solo tú las ves)</span>
@@ -613,47 +724,179 @@ function AdminPanel({clients,sessions,history,payments,blocked,loadAll,notify,on
         {/* SCHEDULE */}
         {view==="schedule"&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <div><h1 className="mono" style={{fontSize:20,fontWeight:700}}>Agenda</h1><p style={{color:"#334155",fontSize:12,marginTop:3}}>Semana del {fmtDate(getWeekDays()[0])}</p></div>
-              <button className="btn sky" onClick={()=>setShowNS(true)}>+ Agendar</button>
+            {/* Header */}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+              <h1 className="mono" style={{fontSize:18,fontWeight:700}}>Agenda</h1>
+              <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
             </div>
-            <div style={{display:"flex",gap:4,marginBottom:18,overflowX:"auto",paddingBottom:4}}>
-              {getWeekDays().map(day=>{
-                const cnt=sessions.filter(s=>s.date===day).length;
-                return <button key={day} className={`tab ${activeDay===day?"on":""}`} onClick={()=>setActiveDay(day)}>
-                  <div>{fmtDate(day)}</div>
-                  {cnt>0&&<div style={{fontSize:10,color:"#38bdf8",marginTop:1}}>{cnt}</div>}
-                </button>;
-              })}
+
+            {/* View switcher */}
+            <div className="seg" style={{marginBottom:14}}>
+              {[["day","Día"],["week","Semana"],["month","Mes"]].map(([id,label])=>(
+                <button key={id} className={"sb"+(schedView===id?" on":"")} onClick={()=>setSchedView(id)}>{label}</button>
+              ))}
             </div>
-            <div className="card" style={{padding:0,overflow:"hidden"}}>
-              {TIME_SLOTS.map((time,i)=>{
-                const slotBlocked=isBlocked(activeDay,time);
-                const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
-                return(
-                  <div key={time} style={{display:"flex",borderBottom:i<TIME_SLOTS.length-1?"1px solid #0d1520":"none",minHeight:50,background:slotBlocked?"#0d0505":"transparent"}}>
-                    <div className="mono" style={{width:60,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
-                    <div style={{flex:1,padding:"7px 12px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
-                      {slotBlocked
-                        ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado — clic para desbloquear</span>
-                        :<>
-                          {slots.length===0&&<span style={{fontSize:11,color:"#0d1520",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Libre · 🔒</span>}
-                          {slots.map(s=>(
-                            <div key={s.id} style={{background:s.client.color+"14",border:`1px solid ${s.client.color}30`,borderRadius:7,padding:"4px 9px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
-                              <span style={{color:s.client.color,fontWeight:700}}>{s.client.name}</span>
-                              <span style={{color:"#475569"}}>{s.type}</span>
-                              {s.requested&&<span style={{color:"#fb923c",fontSize:10}}>·req</span>}
-                              <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:11}} onClick={()=>completeSession(s)}>✓</button>
-                            </div>
-                          ))}
-                        </>
-                      }
+
+            {/* Day nav */}
+            {(schedView==="day"||schedView==="week")&&(
+              <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,overflowX:"auto",paddingBottom:4}}>
+                <button className="btn ghost" style={{padding:"6px 10px",fontSize:13,flexShrink:0}} onClick={()=>{
+                  const d=new Date(activeDay+"T12:00:00");
+                  d.setDate(d.getDate()-(schedView==="week"?7:1));
+                  setActiveDay(d.toISOString().split("T")[0]);
+                }}>‹</button>
+                {schedView==="week"
+                  ? getWeekDays(activeDay).map(day=>{
+                      const cnt=sessions.filter(s=>s.date===day).length;
+                      const isBlk=blocked.some(b=>b.date===day&&b.time==="ALL");
+                      return(
+                        <button key={day} className={"tab"+(activeDay===day?" on":"")} onClick={()=>setActiveDay(day)}
+                          style={{flexShrink:0,opacity:isBlk?0.4:1}}>
+                          <div>{fmtDate(day)}</div>
+                          {cnt>0&&<div style={{fontSize:9,color:"#38bdf8"}}>{cnt}</div>}
+                          {isBlk&&<div style={{fontSize:9,color:"#f87171"}}>🚫</div>}
+                        </button>
+                      );
+                    })
+                  : <span style={{fontSize:14,fontWeight:600,color:"#94a3b8",flex:1,textAlign:"center"}}>{fmtLong(activeDay)}</span>
+                }
+                <button className="btn ghost" style={{padding:"6px 10px",fontSize:13,flexShrink:0}} onClick={()=>{
+                  const d=new Date(activeDay+"T12:00:00");
+                  d.setDate(d.getDate()+(schedView==="week"?7:1));
+                  setActiveDay(d.toISOString().split("T")[0]);
+                }}>›</button>
+              </div>
+            )}
+
+            {/* Block day / vacation buttons */}
+            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+              <button className="btn ghost" style={{fontSize:11,padding:"7px 12px"}}
+                onClick={()=>toggleBlockDay(activeDay)}>
+                {blocked.some(b=>b.date===activeDay&&b.time==="ALL")?"✓ Día desbloqueado":"🚫 Bloquear día"}
+              </button>
+              <button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#facc15"}}
+                onClick={()=>setShowVacation(true)}>🏖 Vacaciones</button>
+            </div>
+
+            {/* Day / Week view */}
+            {(schedView==="day"||schedView==="week")&&(
+              <div className="card" style={{padding:0,overflow:"hidden"}}>
+                {TIME_SLOTS.map((time,i)=>{
+                  const dayToShow = schedView==="day"?activeDay:activeDay;
+                  const slotBlocked=isBlocked(dayToShow,time)||blocked.some(b=>b.date===dayToShow&&b.time==="ALL");
+                  const slots=!slotBlocked?sessions.filter(s=>s.date===dayToShow&&s.time===time)
+                    .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
+                  return(
+                    <div key={time} style={{display:"flex",borderBottom:i<TIME_SLOTS.length-1?"1px solid #0d1520":"none",minHeight:50,background:slotBlocked?"#0d0505":"transparent"}}>
+                      <div className="mono" style={{width:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
+                      <div style={{flex:1,padding:"7px 10px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
+                        {slotBlocked
+                          ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(dayToShow,time)}>🚫 Bloqueado</span>
+                          :<>
+                            {slots.length===0&&<span style={{fontSize:11,color:"#0d1520",cursor:"pointer"}} onClick={()=>toggleBlock(dayToShow,time)}>Libre · 🔒</span>}
+                            {slots.map(s=>(
+                              <div key={s.id} style={{background:s.client.color+"14",border:`1px solid ${s.client.color}30`,borderRadius:7,padding:"4px 8px",fontSize:12,display:"flex",alignItems:"center",gap:5}}>
+                                <span style={{color:s.client.color,fontWeight:700}}>{s.client.name}</span>
+                                <span style={{color:"#475569",fontSize:11}}>{s.type}</span>
+                                {s.requested&&<span style={{color:"#fb923c",fontSize:10}}>·req</span>}
+                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:11,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                              </div>
+                            ))}
+                          </>
+                        }
+                      </div>
                     </div>
+                  );
+                })}
+              </div>
+            )}
+
+            {/* Month view */}
+            {schedView==="month"&&(
+              <div>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+                  <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()-1);setCalDate(d);}}>‹</button>
+                  <span style={{fontSize:14,fontWeight:600,textTransform:"capitalize"}}>{fmtMonth(calDate.toISOString().split("T")[0])}</span>
+                  <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()+1);setCalDate(d);}}>›</button>
+                </div>
+                <div className="card">
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:6}}>
+                    {["L","M","X","J","V","S","D"].map(d=>(
+                      <div key={d} style={{textAlign:"center",fontSize:10,color:"#334155",fontWeight:700,padding:"3px 0"}}>{d}</div>
+                    ))}
                   </div>
-                );
-              })}
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+                    {getMonthDays(calDate.getFullYear(),calDate.getMonth()).map((cell,i)=>{
+                      const dateStr=cell.cur?getDayStr(cell.day):"";
+                      const hasSess=dateStr&&sessions.some(s=>s.date===dateStr);
+                      const isToday=dateStr===TODAY;
+                      const isBlk=dateStr&&blocked.some(b=>b.date===dateStr&&b.time==="ALL");
+                      return(
+                        <div key={i} style={{
+                          aspectRatio:"1",borderRadius:8,display:"flex",flexDirection:"column",
+                          alignItems:"center",justifyContent:"center",cursor:cell.cur?"pointer":"default",
+                          fontSize:12,fontWeight:600,transition:"all .15s",
+                          background:isBlk?"#1a0808":hasSess&&cell.cur?"#0c2040":"transparent",
+                          border:isToday?"1px solid #0ea5e9":"1px solid transparent",
+                          color:!cell.cur?"#1e293b":isBlk?"#4a1515":isToday?"#0ea5e9":hasSess?"#38bdf8":"#94a3b8",
+                          opacity:!cell.cur?0.3:1,
+                        }}
+                        onClick={()=>{if(cell.cur){setActiveDay(dateStr);setSchedView("day");}}}>
+                          <span>{cell.day}</span>
+                          {hasSess&&cell.cur&&!isBlk&&<span style={{width:4,height:4,borderRadius:"50%",background:"#38bdf8",marginTop:1}}/>}
+                          {isBlk&&<span style={{fontSize:8}}>🚫</span>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+                <div style={{marginTop:10,display:"flex",gap:12,fontSize:11,color:"#334155",flexWrap:"wrap"}}>
+                  <span>🔵 Con sesiones</span><span>🚫 Bloqueado</span>
+                  <span style={{color:"#0ea5e9"}}>Hoy</span>
+                </div>
+              </div>
+            )}
+            <p style={{fontSize:11,color:"#334155",marginTop:10}}>💡 Toca "Libre · 🔒" para bloquear una hora</p>
+          </div>
+        )}
+
+        {/* FORUM ADMIN */}
+        {view==="forum"&&(
+          <div>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+              <h1 className="mono" style={{fontSize:18,fontWeight:700}}>💬 Comunidad</h1>
+              <span style={{fontSize:12,color:"#334155"}}>{forum.length} publicaciones</span>
             </div>
-            <p style={{fontSize:11,color:"#334155",marginTop:10}}>💡 Haz clic en "Libre · 🔒" para bloquear un horario (vacaciones, descanso, etc.)</p>
+            {forum.length===0
+              ? <div className="card" style={{textAlign:"center",padding:40}}>
+                  <div style={{fontSize:28,marginBottom:8}}>💬</div>
+                  <div style={{color:"#475569",fontSize:13}}>Sin publicaciones aún</div>
+                </div>
+              : forum.map(post=>{
+                  const c=clients.find(x=>x.id===post.client_id);
+                  return(
+                    <div key={post.id} className="card" style={{marginBottom:10}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                        {c?.avatar_url
+                          ? <img src={c.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c?.color||"#38bdf8"}`}}/>
+                          : <div className="ring" style={{width:36,height:36,background:(c?.color||"#38bdf8")+"20",color:c?.color||"#38bdf8",fontSize:12,border:`1.5px solid ${c?.color||"#38bdf8"}35`}}>{ini(post.client_name)}</div>
+                        }
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:700,fontSize:13}}>{post.client_name}</div>
+                          <div style={{fontSize:11,color:"#334155"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                        </div>
+                        <button className="btn danger" style={{fontSize:10,padding:"4px 8px"}} onClick={async()=>{
+                          await sb.from("forum_posts").delete().eq("id",post.id);
+                          await loadAll();
+                        }}>🗑</button>
+                      </div>
+                      <p style={{fontSize:13,color:"#94a3b8",lineHeight:1.5,marginBottom:post.image_url?10:0}}>{post.content}</p>
+                      {post.image_url&&<img src={post.image_url} style={{width:"100%",borderRadius:10,maxHeight:240,objectFit:"cover",marginTop:8}}/>}
+                      <div style={{marginTop:8,fontSize:11,color:"#334155"}}>❤️ {post.likes} likes</div>
+                    </div>
+                  );
+                })
+            }
           </div>
         )}
 
@@ -791,6 +1034,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,loadAll,notify,on
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
+      {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify} clientsPayPending={clientsPayingPending} clientsLow={clientsLowSessions}/>}
     </div>
   );
@@ -993,7 +1237,7 @@ function BulkWAModal({clients,clientsPayPending,clientsLow,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,loadAll,notify,onLogout}) {
+function ClientPortal({client,allSessions,allHistory,allClients,forum,loadAll,notify,onLogout}) {
   const [tab,setTab]=React.useState("home");
   const [reqDate,setReqDate]=React.useState(TODAY);
   const [reqTime,setReqTime]=React.useState("07:00");
@@ -1041,7 +1285,10 @@ function ClientPortal({client,allSessions,allHistory,loadAll,notify,onLogout}) {
       <div className="hero-card" style={{marginBottom:18}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:18}}>
           <div style={{display:"flex",gap:13,alignItems:"center"}}>
-            <div className="ring" style={{width:50,height:50,background:client.color+"25",color:client.color,fontSize:17,border:`2px solid ${client.color}50`}}>{ini(client.name)}</div>
+            {client.avatar_url
+              ? <img src={client.avatar_url} style={{width:50,height:50,borderRadius:"50%",objectFit:"cover",border:`2px solid ${client.color}`,flexShrink:0}}/>
+              : <div className="ring" style={{width:50,height:50,background:client.color+"25",color:client.color,fontSize:17,border:`2px solid ${client.color}50`}}>{ini(client.name)}</div>
+            }
             <div>
               <div style={{fontWeight:800,fontSize:16}}>{client.name}</div>
               <div style={{display:"flex",gap:8,marginTop:3,alignItems:"center"}}>
@@ -1098,9 +1345,9 @@ function ClientPortal({client,allSessions,allHistory,loadAll,notify,onLogout}) {
         </div>
       </div>
 
-      <div className="seg" style={{marginBottom:18}}>
-        {[["home","Mis sesiones"],["request","Solicitar"],["history","Historial"]].map(([id,label])=>(
-          <button key={id} className={`sb ${tab===id?"on":""}`} onClick={()=>setTab(id)}>{label}</button>
+      <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
+        {[["home","📅 Sesiones"],["calendar","🗓 Clases"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
+          <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0}}>{label}</button>
         ))}
       </div>
 
@@ -1203,6 +1450,196 @@ function ClientPortal({client,allSessions,allHistory,loadAll,notify,onLogout}) {
           </div>
         </div>
       )}
+
+      {/* CALENDAR TAB - client sees all classes */}
+      {tab==="calendar"&&(
+        <div>
+          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:12}}>CLASES DE ESTA SEMANA</div>
+          {getWeekDays(TODAY).map(day=>{
+            const daySessions=allSessions.filter(s=>s.date===day&&!s.requested);
+            if(daySessions.length===0) return null;
+            return(
+              <div key={day} style={{marginBottom:14}}>
+                <div style={{fontSize:12,fontWeight:700,color:"#38bdf8",marginBottom:8,textTransform:"capitalize"}}>{fmtLong(day)}</div>
+                {daySessions.sort((a,b)=>a.time.localeCompare(b.time)).map(s=>{
+                  const c=allClients.find(x=>x.id===s.client_id);
+                  if(!c) return null;
+                  const isMe=c.id===client.id;
+                  return(
+                    <div key={s.id} className="card" style={{marginBottom:6,border:`1px solid ${isMe?"#0e3a5c":"var(--border)"}`}}>
+                      <div style={{display:"flex",alignItems:"center",gap:10}}>
+                        <div className="mono" style={{fontSize:14,fontWeight:700,color:"#38bdf8",minWidth:44}}>{s.time}</div>
+                        {c.avatar_url
+                          ? <img src={c.avatar_url} style={{width:32,height:32,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${c.color}`}}/>
+                          : <div className="ring" style={{width:32,height:32,background:c.color+"20",color:c.color,fontSize:10,border:`1.5px solid ${c.color}35`}}>{ini(c.name)}</div>
+                        }
+                        <div style={{flex:1}}>
+                          <div style={{fontSize:13,fontWeight:600}}>{isMe?"Yo":c.name} {isMe&&<span style={{fontSize:10,color:"#38bdf8"}}>← tú</span>}</div>
+                          <div style={{fontSize:11,color:"#475569"}}>{s.type}</div>
+                        </div>
+                        {isMe&&<span style={{fontSize:10,color:"#4ade80",fontWeight:700}}>✓ Apuntado</span>}
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            );
+          })}
+          {getWeekDays(TODAY).every(day=>allSessions.filter(s=>s.date===day&&!s.requested).length===0)&&(
+            <div className="card" style={{textAlign:"center",padding:34}}>
+              <div style={{fontSize:26,marginBottom:8}}>📅</div>
+              <div style={{color:"#475569",fontSize:13}}>Sin clases esta semana</div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* FORUM TAB */}
+      {tab==="forum"&&(
+        <ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>
+      )}
+    </div>
+  );
+}
+
+// ── FORUM TAB ──────────────────────────────────────────────────────────────
+function ForumTab({client, forum, allClients, loadAll, notify}) {
+  const [text, setText] = React.useState("");
+  const [imgFile, setImgFile] = React.useState(null);
+  const [imgPreview, setImgPreview] = React.useState(null);
+  const [posting, setPosting] = React.useState(false);
+
+  const handleImg = (e) => {
+    const file = e.target.files[0];
+    if(!file) return;
+    setImgFile(file);
+    const reader = new FileReader();
+    reader.onload = ev => setImgPreview(ev.target.result);
+    reader.readAsDataURL(file);
+  };
+
+  const submitPost = async() => {
+    if(!text.trim() && !imgFile) return notify("Escribe algo primero","err");
+    setPosting(true);
+    let image_url = null;
+    if(imgFile) {
+      const ext = imgFile.name.split(".").pop();
+      const path = `${client.id}_${Date.now()}.${ext}`;
+      const {error:upErr} = await sb.storage.from("forum").upload(path, imgFile, {upsert:true});
+      if(!upErr) {
+        const {data} = sb.storage.from("forum").getPublicUrl(path);
+        image_url = data.publicUrl;
+      }
+    }
+    await sb.from("forum_posts").insert({
+      client_id: client.id,
+      client_name: client.name,
+      content: text.trim(),
+      image_url,
+    });
+    setText(""); setImgFile(null); setImgPreview(null);
+    await loadAll();
+    setPosting(false);
+    notify("Publicado ✓");
+  };
+
+  const toggleLike = async(post) => {
+    const liked = (post.liked_by||[]).includes(client.id);
+    const newLikedBy = liked
+      ? post.liked_by.filter(id=>id!==client.id)
+      : [...(post.liked_by||[]), client.id];
+    await sb.from("forum_posts").update({
+      likes: newLikedBy.length,
+      liked_by: newLikedBy,
+    }).eq("id", post.id);
+    await loadAll();
+  };
+
+  return(
+    <div>
+      {/* Post composer */}
+      <div className="card" style={{marginBottom:14}}>
+        <div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:10}}>
+          {client.avatar_url
+            ? <img src={client.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${client.color}`,flexShrink:0}}/>
+            : <div className="ring" style={{width:36,height:36,background:client.color+"20",color:client.color,fontSize:12,border:`1.5px solid ${client.color}40`,flexShrink:0}}>{ini(client.name)}</div>
+          }
+          <textarea className="inp" rows={3} style={{resize:"none",fontSize:13}} 
+            placeholder="Comparte tu progreso, pregunta algo, motiva al equipo... 💪"
+            value={text} onChange={e=>setText(e.target.value)}/>
+        </div>
+        {imgPreview&&(
+          <div style={{position:"relative",marginBottom:10}}>
+            <img src={imgPreview} style={{width:"100%",borderRadius:10,maxHeight:200,objectFit:"cover"}}/>
+            <button onClick={()=>{setImgFile(null);setImgPreview(null);}} style={{position:"absolute",top:6,right:6,background:"rgba(0,0,0,.7)",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",color:"#fff",fontSize:12}}>✕</button>
+          </div>
+        )}
+        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+          <input type="file" accept="image/*" id="forumImg" style={{display:"none"}} onChange={handleImg}/>
+          <label htmlFor="forumImg" className="btn ghost" style={{fontSize:12,padding:"7px 12px",cursor:"pointer"}}>📷 Foto</label>
+          <button className="btn sky" style={{flex:1,padding:"9px"}} onClick={submitPost} disabled={posting}>
+            {posting?"Publicando...":"Publicar 🚀"}
+          </button>
+        </div>
+      </div>
+
+      {/* Posts */}
+      {forum.length===0
+        ? <div className="card" style={{textAlign:"center",padding:34}}>
+            <div style={{fontSize:28,marginBottom:8}}>💬</div>
+            <div style={{color:"#475569",fontSize:13}}>Sé el primero en publicar algo 💪</div>
+          </div>
+        : forum.map(post=>{
+            const c=allClients.find(x=>x.id===post.client_id);
+            const liked=(post.liked_by||[]).includes(client.id);
+            const isMe=post.client_id===client.id;
+            return(
+              <div key={post.id} className="card" style={{marginBottom:10}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                  {c?.avatar_url
+                    ? <img src={c.avatar_url} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color||"#38bdf8"}`}}/>
+                    : <div className="ring" style={{width:38,height:38,background:(c?.color||"#38bdf8")+"20",color:c?.color||"#38bdf8",fontSize:12,border:`1.5px solid ${c?.color||"#38bdf8"}35`}}>{ini(post.client_name)}</div>
+                  }
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:13}}>{post.client_name} {isMe&&<span style={{fontSize:10,color:"#38bdf8"}}>· tú</span>}</div>
+                    <div style={{fontSize:11,color:"#334155"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                  </div>
+                </div>
+                {post.content&&<p style={{fontSize:13,color:"#94a3b8",lineHeight:1.55,marginBottom:post.image_url?10:8}}>{post.content}</p>}
+                {post.image_url&&<img src={post.image_url} style={{width:"100%",borderRadius:10,maxHeight:260,objectFit:"cover",marginBottom:8}}/>}
+                <div style={{display:"flex",alignItems:"center",gap:10}}>
+                  <button onClick={()=>toggleLike(post)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:liked?"#f87171":"#475569",display:"flex",alignItems:"center",gap:4,padding:"4px 8px",borderRadius:8,transition:"all .15s"}}>
+                    {liked?"❤️":"🤍"} <span style={{fontWeight:600}}>{post.likes||0}</span>
+                  </button>
+                </div>
+              </div>
+            );
+          })
+      }
+    </div>
+  );
+}
+
+function VacationModal({onSave, onClose}) {
+  const [start, setStart] = React.useState(TODAY);
+  const [end, setEnd] = React.useState(TODAY);
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:6}}>🏖 Modo vacaciones</h2>
+        <p style={{fontSize:13,color:"#475569",marginBottom:18}}>Bloquea todos los días laborables (L-V) del período seleccionado.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:14}}>
+          <div><span className="lbl">DESDE</span><input type="date" className="inp" value={start} min={TODAY} onChange={e=>setStart(e.target.value)}/></div>
+          <div><span className="lbl">HASTA</span><input type="date" className="inp" value={end} min={start} onChange={e=>setEnd(e.target.value)}/></div>
+          <div style={{background:"#080f1e",borderRadius:10,padding:"10px 13px",border:"1px solid #1e3a5a",fontSize:12,color:"#475569"}}>
+            Solo se bloquearán lunes a viernes. Los fines de semana se omiten.
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>onSave(start,end)}>Bloquear período</button>
+            <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+          </div>
+        </div>
+      </div>
     </div>
   );
 }
