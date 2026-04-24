@@ -239,6 +239,12 @@ function App() {
   const [payments, setPayments] = React.useState([]);
   const [blocked, setBlocked] = React.useState([]);
   const [forum, setForum] = React.useState([]);
+  const [exercises, setExercises] = React.useState([]);
+  const [plans, setPlans] = React.useState([]);
+  const [clientPlans, setClientPlans] = React.useState([]);
+  const [progress, setProgress] = React.useState([]);
+  const [records, setRecords] = React.useState([]);
+  const [achievements, setAchievements] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [loggedClient, setLoggedClient] = React.useState(null);
   const [pendingSession, setPendingSession] = React.useState(null);
@@ -255,16 +261,24 @@ function App() {
 
   const loadAll = React.useCallback(async () => {
     try {
-      const [c,s,h,p,b,f] = await Promise.all([
+      const [c,s,h,p,b,f,ex,pl,cp,pr,rec,ach] = await Promise.all([
         sb.from("clients").select("*").order("created_at"),
         sb.from("sessions").select("*").order("date").order("time"),
         sb.from("history").select("*").order("date",{ascending:false}),
         sb.from("payments").select("*").order("paid_at",{ascending:false}),
         sb.from("blocked_slots").select("*"),
         sb.from("forum_posts").select("*").order("created_at",{ascending:false}),
+        sb.from("exercises").select("*").order("category").order("name"),
+        sb.from("training_plans").select("*, plan_days(*, plan_exercises(*))").order("created_at",{ascending:false}),
+        sb.from("client_plans").select("*"),
+        sb.from("progress").select("*").order("date",{ascending:false}),
+        sb.from("personal_records").select("*").order("date",{ascending:false}),
+        sb.from("achievements").select("*").order("earned_at",{ascending:false}),
       ]);
       setClients(c.data||[]); setSessions(s.data||[]); setHistory(h.data||[]);
       setPayments(p.data||[]); setBlocked(b.data||[]); setForum(f.data||[]);
+      setExercises(ex.data||[]); setPlans(pl.data||[]); setClientPlans(cp.data||[]);
+      setProgress(pr.data||[]); setRecords(rec.data||[]); setAchievements(ach.data||[]);
     } catch(e) { notify("Error de conexión","err"); }
     setLoading(false);
   },[]);
@@ -322,8 +336,8 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#160404":toast.type==="wa"?"#052e16":"#060f1e",color:toast.type==="err"?"#f87171":toast.type==="wa"?"#4ade80":"#38bdf8",border:`1px solid ${toast.type==="err"?"#450a0a":toast.type==="wa"?"#14532d":"#0e3a5c"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,forum,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} forum={forum} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
     </div>
   );
 }
@@ -381,7 +395,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,notify,onLogout}) {
+function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("week");
   const [showVacation,setShowVacation] = React.useState(false);
@@ -468,7 +482,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,not
     notify(ex?"Día desbloqueado":"Día bloqueado 🚫");
   });
 
-  const blockVacation = (startDate, endDate) => w(async()=>{
+  const blockVacation = (startDate, endDate, reason="Vacaciones") => w(async()=>{
     const start=new Date(startDate+"T12:00:00");
     const end=new Date(endDate+"T12:00:00");
     const inserts=[];
@@ -479,7 +493,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,not
     }
     if(inserts.length>0) await sb.from("blocked_slots").insert(inserts);
     setShowVacation(false);
-    notify(`${inserts.length} días bloqueados 🏖`);
+    const emoji = reason==="Festivo"?"🎉":"🏖";
+    notify(`${inserts.length} días marcados como ${reason} ${emoji}`);
   });
 
   const toggleBlock = (date, time) => w(async()=>{
@@ -513,14 +528,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,not
         </div>
       </div>
 
+      {/* Secondary nav tabs */}
+      {["forum","reminders","income"].includes(view)&&(
+        <div style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
+          {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Ingresos"]].map(([id,label])=>(
+            <button key={id} className={"tab"+(view===id?" on":"")} onClick={()=>setView(id)} style={{flexShrink:0,fontSize:12}}>{label}</button>
+          ))}
+          <button className={"tab"} onClick={()=>setView("dashboard")} style={{flexShrink:0,fontSize:12,color:"#475569"}}>← Volver</button>
+        </div>
+      )}
+
       {/* Bottom navigation - mobile only */}
       <nav className="bottom-nav">
         {[
           {id:"dashboard",icon:"🏠",label:"Inicio"},
           {id:"clients",icon:"👥",label:"Clientes"},
           {id:"schedule",icon:"📅",label:"Agenda"},
-          {id:"forum",icon:"💬",label:"Foro"},
-          {id:"reminders",icon:"🔔",label:"Alertas",count:alertCount},
+          {id:"exercises",icon:"🏋️",label:"Ejercicios"},
+          {id:"plans",icon:"📋",label:"Planes"},
         ].map(item=>(
           <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")} onClick={()=>setView(item.id)}>
             <span className="bnav-icon">
@@ -778,28 +803,31 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,not
                 onClick={()=>setShowVacation(true)}>🏖 Vacaciones</button>
             </div>
 
-            {/* Day / Week view */}
-            {(schedView==="day"||schedView==="week")&&(
+            {/* DAY VIEW */}
+            {schedView==="day"&&(
               <div className="card" style={{padding:0,overflow:"hidden"}}>
                 {TIME_SLOTS.map((time,i)=>{
-                  const dayToShow = schedView==="day"?activeDay:activeDay;
-                  const slotBlocked=isBlocked(dayToShow,time)||blocked.some(b=>b.date===dayToShow&&b.time==="ALL");
-                  const slots=!slotBlocked?sessions.filter(s=>s.date===dayToShow&&s.time===time)
+                  const slotBlocked=isBlocked(activeDay,time)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
+                  const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                     .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                   return(
-                    <div key={time} style={{display:"flex",borderBottom:i<TIME_SLOTS.length-1?"1px solid #0d1520":"none",minHeight:50,background:slotBlocked?"#0d0505":"transparent"}}>
+                    <div key={time} style={{display:"flex",borderBottom:i<TIME_SLOTS.length-1?"1px solid #0d1520":"none",minHeight:52,background:slotBlocked?"#0d0505":"transparent"}}>
                       <div className="mono" style={{width:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
                       <div style={{flex:1,padding:"7px 10px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
                         {slotBlocked
-                          ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(dayToShow,time)}>🚫 Bloqueado</span>
+                          ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
                           :<>
-                            {slots.length===0&&<span style={{fontSize:11,color:"#0d1520",cursor:"pointer"}} onClick={()=>toggleBlock(dayToShow,time)}>Libre · 🔒</span>}
+                            {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Libre · 🔒</span>}
                             {slots.map(s=>(
-                              <div key={s.id} style={{background:s.client.color+"14",border:`1px solid ${s.client.color}30`,borderRadius:7,padding:"4px 8px",fontSize:12,display:"flex",alignItems:"center",gap:5}}>
+                              <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:8,padding:"5px 9px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
+                                {s.client.avatar_url
+                                  ?<img src={s.client.avatar_url} style={{width:20,height:20,borderRadius:"50%",objectFit:"cover"}}/>
+                                  :<div className="ring" style={{width:20,height:20,background:s.client.color+"30",color:s.client.color,fontSize:8}}>{ini(s.client.name)}</div>
+                                }
                                 <span style={{color:s.client.color,fontWeight:700}}>{s.client.name}</span>
                                 <span style={{color:"#475569",fontSize:11}}>{s.type}</span>
                                 {s.requested&&<span style={{color:"#fb923c",fontSize:10}}>·req</span>}
-                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:11,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:12,padding:0}} onClick={()=>completeSession(s)}>✓</button>
                               </div>
                             ))}
                           </>
@@ -808,6 +836,69 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,not
                     </div>
                   );
                 })}
+              </div>
+            )}
+
+            {/* WEEK VIEW - horizontal grid */}
+            {schedView==="week"&&(
+              <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
+                <div style={{minWidth:560}}>
+                  {/* Header row - days */}
+                  <div style={{display:"grid",gridTemplateColumns:"52px repeat(5,1fr)",gap:2,marginBottom:4}}>
+                    <div/>
+                    {getWeekDays(activeDay).slice(0,5).map(day=>{
+                      const isToday=day===TODAY;
+                      const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
+                      const cnt=sessions.filter(s=>s.date===day).length;
+                      return(
+                        <div key={day} style={{textAlign:"center",padding:"6px 2px",borderRadius:8,
+                          background:isToday?"#0c2040":isBlkDay?"#1a0808":"#080d14",
+                          border:isToday?"1px solid #1e3a5a":isBlkDay?"1px solid #3f0f0f":"1px solid #0d1520"}}>
+                          <div style={{fontSize:10,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#475569",fontWeight:700,textTransform:"capitalize"}}>
+                            {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"})}
+                          </div>
+                          <div className="mono" style={{fontSize:14,fontWeight:700,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#e2e8f0"}}>
+                            {new Date(day+"T12:00:00").getDate()}
+                          </div>
+                          {cnt>0&&!isBlkDay&&<div style={{fontSize:9,color:"#38bdf8"}}>{cnt} sesiones</div>}
+                          {isBlkDay&&<div style={{fontSize:9,color:"#f87171"}}>🚫</div>}
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {/* Time rows */}
+                  {TIME_SLOTS.map((time,i)=>(
+                    <div key={time} style={{display:"grid",gridTemplateColumns:"52px repeat(5,1fr)",gap:2,marginBottom:2}}>
+                      <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#1e3a5a",fontWeight:700,paddingRight:4}}>{time}</div>
+                      {getWeekDays(activeDay).slice(0,5).map(day=>{
+                        const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
+                        const slotBlocked=isBlkDay||isBlocked(day,time);
+                        const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
+                          .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                        return(
+                          <div key={day} style={{minHeight:40,borderRadius:6,padding:"3px",
+                            background:slotBlocked?"#0d0505":daySessions.length>0?"#080d14":"#060a10",
+                            border:slotBlocked?"1px solid #3f0f0f":daySessions.length>0?"1px solid #1e293b":"1px solid #0d1520",
+                            cursor:"pointer"}}
+                            onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
+                            {slotBlocked&&<div style={{fontSize:9,color:"#4a1515",textAlign:"center",paddingTop:4}}>🚫</div>}
+                            {daySessions.map(s=>(
+                              <div key={s.id} style={{background:s.client.color+"25",borderRadius:4,padding:"2px 4px",marginBottom:2,cursor:"default"}}
+                                onClick={e=>e.stopPropagation()}>
+                                <div style={{fontSize:9,color:s.client.color,fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                                  {s.client.name.split(" ")[0]}
+                                </div>
+                                <div style={{fontSize:8,color:"#475569"}}>{s.type}</div>
+                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:10,padding:0,display:"block"}} onClick={()=>completeSession(s)}>✓</button>
+                              </div>
+                            ))}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  ))}
+                  <p style={{fontSize:10,color:"#334155",marginTop:8,paddingLeft:56}}>💡 Toca celda vacía para bloquear/desbloquear ese slot</p>
+                </div>
               </div>
             )}
 
@@ -830,28 +921,40 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,not
                       const dateStr=cell.cur?getDayStr(cell.day):"";
                       const hasSess=dateStr&&sessions.some(s=>s.date===dateStr);
                       const isToday=dateStr===TODAY;
-                      const isBlk=dateStr&&blocked.some(b=>b.date===dateStr&&b.time==="ALL");
+                      const blkEntry=dateStr&&blocked.find(b=>b.date===dateStr&&b.time==="ALL");
+                      const isBlk=!!blkEntry&&blkEntry.reason==="Día bloqueado";
+                      const isVac=!!blkEntry&&blkEntry.reason==="Vacaciones";
+                      const isFest=!!blkEntry&&blkEntry.reason==="Festivo";
                       return(
                         <div key={i} style={{
                           aspectRatio:"1",borderRadius:8,display:"flex",flexDirection:"column",
                           alignItems:"center",justifyContent:"center",cursor:cell.cur?"pointer":"default",
                           fontSize:12,fontWeight:600,transition:"all .15s",
-                          background:isBlk?"#1a0808":hasSess&&cell.cur?"#0c2040":"transparent",
-                          border:isToday?"1px solid #0ea5e9":"1px solid transparent",
-                          color:!cell.cur?"#1e293b":isBlk?"#4a1515":isToday?"#0ea5e9":hasSess?"#38bdf8":"#94a3b8",
+                          background:isVac?"#0a0f05":isFest?"#1a1000":isBlk?"#1a0808":hasSess&&cell.cur?"#0c2040":"transparent",
+                          border:isToday?"1px solid #0ea5e9":isVac?"1px solid #14532d":isFest?"1px solid #78350f":isBlk?"1px solid #3f0f0f":"1px solid transparent",
+                          color:!cell.cur?"#1e293b":isBlk?"#4a1515":isVac?"#4ade80":isFest?"#fb923c":isToday?"#0ea5e9":hasSess?"#38bdf8":"#94a3b8",
                           opacity:!cell.cur?0.3:1,
                         }}
-                        onClick={()=>{if(cell.cur){setActiveDay(dateStr);setSchedView("day");}}}>
+                        onClick={()=>{
+                          if(!cell.cur) return;
+                          if(isBlk){toggleBlockDay(dateStr);}
+                          else{setActiveDay(dateStr);setSchedView("day");}
+                        }}>
                           <span>{cell.day}</span>
-                          {hasSess&&cell.cur&&!isBlk&&<span style={{width:4,height:4,borderRadius:"50%",background:"#38bdf8",marginTop:1}}/>}
+                          {hasSess&&cell.cur&&!isBlk&&!isVac&&!isFest&&<span style={{width:4,height:4,borderRadius:"50%",background:"#38bdf8",marginTop:1}}/>}
                           {isBlk&&<span style={{fontSize:8}}>🚫</span>}
+                          {isVac&&<span style={{fontSize:8}}>🏖</span>}
+                          {isFest&&<span style={{fontSize:8}}>🎉</span>}
                         </div>
                       );
                     })}
                   </div>
                 </div>
-                <div style={{marginTop:10,display:"flex",gap:12,fontSize:11,color:"#334155",flexWrap:"wrap"}}>
-                  <span>🔵 Con sesiones</span><span>🚫 Bloqueado</span>
+                <div style={{marginTop:10,display:"flex",gap:10,fontSize:11,color:"#334155",flexWrap:"wrap",lineHeight:1.8}}>
+                  <span>🔵 Sesiones</span>
+                  <span>🚫 Bloqueado</span>
+                  <span>🏖 Vacaciones</span>
+                  <span>🎉 Festivo</span>
                   <span style={{color:"#0ea5e9"}}>Hoy</span>
                 </div>
               </div>
@@ -1028,6 +1131,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,loadAll,not
           </div>
         )}
       </div>
+
+        {/* EXERCISES VIEW */}
+        {view==="exercises"&&(
+          <ExercisesAdmin exercises={exercises} loadAll={loadAll} notify={notify}/>
+        )}
+
+        {/* PLANS VIEW */}
+        {view==="plans"&&(
+          <PlansAdmin plans={plans} exercises={exercises} clients={clients} clientPlans={clientPlans} loadAll={loadAll} notify={notify}/>
+        )}
 
       {/* Modals */}
       {showNS&&<SessionModal clients={clients} ns={ns} setNs={setNs} onSave={addSession} onClose={()=>setShowNS(false)}/>}
@@ -1237,7 +1350,7 @@ function BulkWAModal({clients,clientsPayPending,clientsLow,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,allClients,forum,loadAll,notify,onLogout}) {
+function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,loadAll,notify,onLogout}) {
   const [tab,setTab]=React.useState("home");
   const [reqDate,setReqDate]=React.useState(TODAY);
   const [reqTime,setReqTime]=React.useState("07:00");
@@ -1346,8 +1459,8 @@ function ClientPortal({client,allSessions,allHistory,allClients,forum,loadAll,no
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
-        {[["home","📅 Sesiones"],["calendar","🗓 Clases"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
-          <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0}}>{label}</button>
+        {[["home","📅 Sesiones"],["calendar","🗓 Clases"],["progress","📊 Progreso"],["plan","🏋️ Mi Plan"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
+          <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
 
@@ -1388,7 +1501,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,forum,loadAll,no
 
       {tab==="request"&&(
         <div>
-          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:12}}>SOLICITAR SESIÓN</div>
+          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:12}}>SOLICITAR SESIONES</div>
           {client.sessions_left===0
             ?<div className="card" style={{textAlign:"center",padding:34,border:"1px solid #3f1a1a"}}>
               <div style={{fontSize:26,marginBottom:8}}>🚫</div>
@@ -1397,29 +1510,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,forum,loadAll,no
                 <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
               </a>
             </div>
-            :<div className="card">
-              <div style={{display:"flex",flexDirection:"column",gap:14}}>
-                <div style={{background:"#080f1e",borderRadius:10,padding:"11px 13px",border:"1px solid #1e3a5a",fontSize:13,color:"#475569"}}>
-                  💡 Tu trainer recibirá la solicitud y la confirmará en breve.
-                </div>
-                <div><span className="lbl">FECHA</span><input type="date" className="inp" value={reqDate} min={TODAY} onChange={e=>setReqDate(e.target.value)}/></div>
-                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-                  <div><span className="lbl">HORA</span>
-                    <select className="inp" style={{appearance:"none"}} value={reqTime} onChange={e=>setReqTime(e.target.value)}>
-                      {TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                  <div><span className="lbl">TIPO</span>
-                    <select className="inp" style={{appearance:"none"}} value={reqType} onChange={e=>setReqType(e.target.value)}>
-                      {SESSION_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                    </select>
-                  </div>
-                </div>
-                <button className="btn sky" style={{width:"100%",padding:12}} onClick={submitRequest} disabled={saving}>
-                  {saving?"Enviando...":"Enviar solicitud"}
-                </button>
-              </div>
-            </div>
+            :<MultiSessionRequest client={client} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
           }
         </div>
       )}
@@ -1451,53 +1542,198 @@ function ClientPortal({client,allSessions,allHistory,allClients,forum,loadAll,no
         </div>
       )}
 
-      {/* CALENDAR TAB - client sees all classes */}
+      {/* CALENDAR TAB - client sees full week schedule */}
       {tab==="calendar"&&(
-        <div>
-          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:12}}>CLASES DE ESTA SEMANA</div>
-          {getWeekDays(TODAY).map(day=>{
-            const daySessions=allSessions.filter(s=>s.date===day&&!s.requested);
-            if(daySessions.length===0) return null;
+        <ClientCalendar client={client} allSessions={allSessions} allClients={allClients} blocked={blocked}/>
+      )}
+
+      {/* FORUM TAB */}
+      {tab==="progress"&&(
+        <ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify}/>
+      )}
+
+      {tab==="plan"&&(
+        <PlanTab client={client} plans={plans} clientPlans={clientPlans} exercises={exercises}/>
+      )}
+
+      {tab==="forum"&&(
+        <ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>
+      )}
+    </div>
+  );
+}
+
+// ── MULTI SESSION REQUEST ─────────────────────────────────────────────────
+function MultiSessionRequest({client, loadAll, notify, saving, setSaving}) {
+  const emptySlot = () => ({date: TODAY, time: "08:00", type: "Fuerza"});
+  const [slots, setSlots] = React.useState([emptySlot()]);
+
+  const addSlot = () => {
+    if(slots.length >= client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones disponibles`,"err");
+    if(slots.length >= 10) return notify("Máximo 10 sesiones a la vez","err");
+    setSlots(s=>[...s, emptySlot()]);
+  };
+
+  const removeSlot = (i) => setSlots(s=>s.filter((_,idx)=>idx!==i));
+
+  const updateSlot = (i, field, val) => setSlots(s=>s.map((slot,idx)=>idx===i?{...slot,[field]:val}:slot));
+
+  const submitAll = async() => {
+    const invalid = slots.find(s=>!s.date||!s.time||!s.type);
+    if(invalid) return notify("Completa todos los campos","err");
+    setSaving(true);
+    const inserts = slots.map(s=>({
+      client_id: client.id,
+      date: s.date,
+      time: s.time,
+      type: s.type,
+      status: "pending",
+      requested: true,
+    }));
+    const {error} = await sb.from("sessions").insert(inserts);
+    if(error){ notify("Error al enviar","err"); setSaving(false); return; }
+    await loadAll();
+    setSaving(false);
+    setSlots([emptySlot()]);
+    notify(`✓ ${inserts.length} sesión${inserts.length>1?"es":""} solicitada${inserts.length>1?"s":""}! Tu trainer las confirmará pronto 🎯`);
+  };
+
+  return(
+    <div className="card">
+      <div style={{background:"#080f1e",borderRadius:10,padding:"11px 13px",border:"1px solid #1e3a5a",fontSize:13,color:"#475569",marginBottom:16}}>
+        💡 Puedes solicitar varias sesiones a la vez. Tu trainer las confirmará en breve.
+        <div style={{marginTop:4,fontSize:12,color:"#334155"}}>Sesiones disponibles: <span style={{color:"#38bdf8",fontWeight:700}}>{client.sessions_left}</span></div>
+      </div>
+
+      {slots.map((slot,i)=>(
+        <div key={i} style={{background:"#080d14",borderRadius:12,padding:"12px",marginBottom:10,border:"1px solid #1e293b"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+            <span style={{fontSize:12,fontWeight:700,color:"#38bdf8"}}>Sesión {i+1}</span>
+            {slots.length>1&&<button onClick={()=>removeSlot(i)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:16,padding:"0 4px"}}>✕</button>}
+          </div>
+          <div style={{display:"flex",flexDirection:"column",gap:10}}>
+            <div><span className="lbl">FECHA</span>
+              <input type="date" className="inp" value={slot.date} min={TODAY} onChange={e=>updateSlot(i,"date",e.target.value)}/>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              <div><span className="lbl">HORA</span>
+                <select className="inp" style={{appearance:"none"}} value={slot.time} onChange={e=>updateSlot(i,"time",e.target.value)}>
+                  {TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+              <div><span className="lbl">TIPO</span>
+                <select className="inp" style={{appearance:"none"}} value={slot.type} onChange={e=>updateSlot(i,"type",e.target.value)}>
+                  {SESSION_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+                </select>
+              </div>
+            </div>
+          </div>
+        </div>
+      ))}
+
+      <div style={{display:"flex",gap:8,marginTop:4}}>
+        {slots.length < Math.min(client.sessions_left, 10) &&(
+          <button className="btn ghost" style={{flex:1,padding:11,fontSize:13}} onClick={addSlot}>+ Añadir sesión</button>
+        )}
+        <button className="btn sky" style={{flex:2,padding:11,fontSize:13}} onClick={submitAll} disabled={saving}>
+          {saving?"Enviando...":`Solicitar ${slots.length} sesión${slots.length>1?"es":""} 🚀`}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+// ── CLIENT CALENDAR ───────────────────────────────────────────────────────
+function ClientCalendar({client, allSessions, allClients, blocked}) {
+  const [calWeek, setCalWeek] = React.useState(TODAY);
+  const weekDays = getWeekDays(calWeek);
+  const workDays = weekDays.slice(0,5); // Mon-Fri
+
+  // Group sessions by day
+  const sessionsByDay = {};
+  workDays.forEach(day => {
+    sessionsByDay[day] = allSessions
+      .filter(s=>s.date===day&&!s.requested)
+      .sort((a,b)=>a.time.localeCompare(b.time));
+  });
+
+  const hasAnySessions = workDays.some(d=>sessionsByDay[d].length>0);
+
+  return(
+    <div>
+      {/* Week nav */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
+        <button className="btn ghost" style={{padding:"7px 12px",fontSize:13}} onClick={()=>{
+          const d=new Date(calWeek+"T12:00:00"); d.setDate(d.getDate()-7);
+          setCalWeek(d.toISOString().split("T")[0]);
+        }}>‹ Ant.</button>
+        <span style={{fontSize:13,fontWeight:600,color:"#94a3b8"}}>
+          {new Date(workDays[0]+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})} – {new Date(workDays[4]+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}
+        </span>
+        <button className="btn ghost" style={{padding:"7px 12px",fontSize:13}} onClick={()=>{
+          const d=new Date(calWeek+"T12:00:00"); d.setDate(d.getDate()+7);
+          setCalWeek(d.toISOString().split("T")[0]);
+        }}>Sig. ›</button>
+      </div>
+
+      {!hasAnySessions
+        ? <div className="card" style={{textAlign:"center",padding:34}}>
+            <div style={{fontSize:26,marginBottom:8}}>📅</div>
+            <div style={{color:"#475569",fontSize:13}}>Sin clases esta semana</div>
+          </div>
+        : workDays.map(day=>{
+            const daySess = sessionsByDay[day];
+            const isToday = day===TODAY;
+            if(daySess.length===0) return(
+              <div key={day} style={{marginBottom:10,opacity:0.4}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:4,textTransform:"capitalize",paddingLeft:4}}>
+                  {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"})}
+                </div>
+                <div style={{fontSize:11,color:"#1e293b",padding:"8px 12px",background:"#080d14",borderRadius:8}}>Sin clases</div>
+              </div>
+            );
             return(
               <div key={day} style={{marginBottom:14}}>
-                <div style={{fontSize:12,fontWeight:700,color:"#38bdf8",marginBottom:8,textTransform:"capitalize"}}>{fmtLong(day)}</div>
-                {daySessions.sort((a,b)=>a.time.localeCompare(b.time)).map(s=>{
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <div style={{fontSize:11,fontWeight:700,color:isToday?"#38bdf8":"#475569",textTransform:"capitalize"}}>
+                    {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"})}
+                  </div>
+                  {isToday&&<span style={{fontSize:10,background:"#0c2040",color:"#38bdf8",padding:"2px 7px",borderRadius:10,fontWeight:700}}>Hoy</span>}
+                  <span style={{fontSize:10,color:"#334155"}}>{daySess.length} clase{daySess.length>1?"s":""}</span>
+                </div>
+                {daySess.map(s=>{
                   const c=allClients.find(x=>x.id===s.client_id);
                   if(!c) return null;
                   const isMe=c.id===client.id;
                   return(
-                    <div key={s.id} className="card" style={{marginBottom:6,border:`1px solid ${isMe?"#0e3a5c":"var(--border)"}`}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10}}>
-                        <div className="mono" style={{fontSize:14,fontWeight:700,color:"#38bdf8",minWidth:44}}>{s.time}</div>
-                        {c.avatar_url
-                          ? <img src={c.avatar_url} style={{width:32,height:32,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${c.color}`}}/>
-                          : <div className="ring" style={{width:32,height:32,background:c.color+"20",color:c.color,fontSize:10,border:`1.5px solid ${c.color}35`}}>{ini(c.name)}</div>
-                        }
-                        <div style={{flex:1}}>
-                          <div style={{fontSize:13,fontWeight:600}}>{isMe?"Yo":c.name} {isMe&&<span style={{fontSize:10,color:"#38bdf8"}}>← tú</span>}</div>
-                          <div style={{fontSize:11,color:"#475569"}}>{s.type}</div>
+                    <div key={s.id} style={{
+                      display:"flex",alignItems:"center",gap:10,
+                      padding:"10px 12px",borderRadius:12,marginBottom:6,
+                      background:isMe?"#0a1628":"#0a0d14",
+                      border:`1px solid ${isMe?"#1e3a5a":"#1a2235"}`,
+                    }}>
+                      <div className="mono" style={{fontSize:13,fontWeight:700,color:isMe?"#38bdf8":"#475569",minWidth:46,flexShrink:0}}>{s.time}</div>
+                      {c.avatar_url
+                        ?<img src={c.avatar_url} style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:`2px solid ${isMe?c.color+"80":c.color+"40"}`,flexShrink:0}}/>
+                        :<div className="ring" style={{width:34,height:34,background:c.color+(isMe?"30":"18"),color:c.color,fontSize:11,border:`1.5px solid ${c.color}${isMe?"60":"30"}`,flexShrink:0}}>{ini(c.name)}</div>
+                      }
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:isMe?700:500,color:isMe?"#e2e8f0":"#94a3b8",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                          {isMe?"Yo (tú)":c.name}
                         </div>
-                        {isMe&&<span style={{fontSize:10,color:"#4ade80",fontWeight:700}}>✓ Apuntado</span>}
+                        <div style={{fontSize:11,color:"#475569"}}>{s.type}</div>
                       </div>
+                      {isMe&&<div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
+                        <span style={{fontSize:14}}>✅</span>
+                        <span style={{fontSize:9,color:"#4ade80",fontWeight:700}}>Apuntado</span>
+                      </div>}
                     </div>
                   );
                 })}
               </div>
             );
-          })}
-          {getWeekDays(TODAY).every(day=>allSessions.filter(s=>s.date===day&&!s.requested).length===0)&&(
-            <div className="card" style={{textAlign:"center",padding:34}}>
-              <div style={{fontSize:26,marginBottom:8}}>📅</div>
-              <div style={{color:"#475569",fontSize:13}}>Sin clases esta semana</div>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* FORUM TAB */}
-      {tab==="forum"&&(
-        <ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>
-      )}
+          })
+      }
     </div>
   );
 }
@@ -1635,11 +1871,608 @@ function VacationModal({onSave, onClose}) {
             Solo se bloquearán lunes a viernes. Los fines de semana se omiten.
           </div>
           <div style={{display:"flex",gap:8}}>
-            <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>onSave(start,end)}>Bloquear período</button>
-            <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+            <button className="btn ghost" style={{flex:1,padding:9,fontSize:12}} onClick={()=>onSave(start,end,"Vacaciones")}>🏖 Vacaciones</button>
+            <button className="btn ghost" style={{flex:1,padding:9,fontSize:12,color:"#fb923c"}} onClick={()=>onSave(start,end,"Festivo")}>🎉 Festivo</button>
           </div>
+          <button className="btn ghost" style={{width:"100%",padding:11,marginTop:4}} onClick={onClose}>Cancelar</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+
+// ── EXERCISES ADMIN ────────────────────────────────────────────────────────
+function ExercisesAdmin({exercises, loadAll, notify}) {
+  const [filter, setFilter] = React.useState("Todos");
+  const [showAdd, setShowAdd] = React.useState(false);
+  const [ex, setEx] = React.useState({name:"",category:"Fuerza",muscle_group:"",description:"",difficulty:"Intermedio"});
+  const CATS = ["Todos","Fuerza","Cardio","HIIT","Funcional","Movilidad"];
+  const DIFFS = ["Principiante","Intermedio","Avanzado"];
+  const diffColor = d => d==="Principiante"?"#4ade80":d==="Avanzado"?"#f87171":"#facc15";
+
+  const filtered = filter==="Todos"?exercises:exercises.filter(e=>e.category===filter);
+
+  const addExercise = async() => {
+    if(!ex.name) return notify("Escribe el nombre del ejercicio","err");
+    const {error} = await sb.from("exercises").insert(ex);
+    if(error) return notify("Error: "+error.message,"err");
+    setShowAdd(false);
+    setEx({name:"",category:"Fuerza",muscle_group:"",description:"",difficulty:"Intermedio"});
+    await loadAll();
+    notify("Ejercicio añadido ✓");
+  };
+
+  const deleteEx = async(id) => {
+    await sb.from("exercises").delete().eq("id",id);
+    await loadAll();
+    notify("Ejercicio eliminado");
+  };
+
+  return(
+    <div>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h1 className="mono" style={{fontSize:18,fontWeight:700}}>🏋️ Ejercicios</h1>
+        <button className="btn sky" style={{fontSize:12,padding:"8px 13px"}} onClick={()=>setShowAdd(true)}>+ Nuevo</button>
+      </div>
+      <div style={{display:"flex",gap:6,overflowX:"auto",marginBottom:14,paddingBottom:4}}>
+        {CATS.map(c=>(
+          <button key={c} className={"tab"+(filter===c?" on":"")} onClick={()=>setFilter(c)} style={{flexShrink:0,fontSize:11}}>{c}</button>
+        ))}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {filtered.map(e=>(
+          <div key={e.id} className="card" style={{padding:"12px 14px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+              <div style={{flex:1}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:3}}>
+                  <span style={{fontWeight:700,fontSize:14}}>{e.name}</span>
+                  <span className="pill" style={{background:diffColor(e.difficulty)+"18",color:diffColor(e.difficulty),border:`1px solid ${diffColor(e.difficulty)}30`,fontSize:9}}>{e.difficulty}</span>
+                </div>
+                <div style={{fontSize:11,color:"#38bdf8",marginBottom:3}}>{e.category} · {e.muscle_group}</div>
+                {e.description&&<div style={{fontSize:11,color:"#475569",lineHeight:1.4}}>{e.description}</div>}
+              </div>
+              <button className="btn danger" style={{fontSize:10,padding:"4px 8px",marginLeft:8,flexShrink:0}} onClick={()=>deleteEx(e.id)}>🗑</button>
+            </div>
+          </div>
+        ))}
+        {filtered.length===0&&<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>Sin ejercicios en esta categoría</div>}
+      </div>
+
+      {showAdd&&(
+        <div className="ovl" onClick={()=>setShowAdd(false)}>
+          <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+            <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Nuevo ejercicio</h2>
+            <div style={{display:"flex",flexDirection:"column",gap:13}}>
+              <div><span className="lbl">NOMBRE *</span><input className="inp" placeholder="Ej. Sentadilla Búlgara" value={ex.name} onChange={e=>setEx(v=>({...v,name:e.target.value}))}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div><span className="lbl">CATEGORÍA</span>
+                  <select className="inp" style={{appearance:"none"}} value={ex.category} onChange={e=>setEx(v=>({...v,category:e.target.value}))}>
+                    {["Fuerza","Cardio","HIIT","Funcional","Movilidad"].map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div><span className="lbl">DIFICULTAD</span>
+                  <select className="inp" style={{appearance:"none"}} value={ex.difficulty} onChange={e=>setEx(v=>({...v,difficulty:e.target.value}))}>
+                    {DIFFS.map(d=><option key={d}>{d}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div><span className="lbl">MÚSCULO PRINCIPAL</span><input className="inp" placeholder="Ej. Cuádriceps, Glúteos" value={ex.muscle_group} onChange={e=>setEx(v=>({...v,muscle_group:e.target.value}))}/></div>
+              <div><span className="lbl">DESCRIPCIÓN</span><textarea className="inp" rows={3} style={{resize:"none"}} placeholder="Descripción del ejercicio..." value={ex.description} onChange={e=>setEx(v=>({...v,description:e.target.value}))}/></div>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn sky" style={{flex:1,padding:11}} onClick={addExercise}>Añadir</button>
+                <button className="btn ghost" style={{flex:1,padding:11}} onClick={()=>setShowAdd(false)}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── PLANS ADMIN ────────────────────────────────────────────────────────────
+function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
+  const [tab, setTab] = React.useState("plans");
+  const [showNewPlan, setShowNewPlan] = React.useState(false);
+  const [editPlan, setEditPlan] = React.useState(null);
+  const [np, setNp] = React.useState({name:"",description:"",category:"Fuerza",duration_weeks:4});
+  const [showAssign, setShowAssign] = React.useState(null);
+  const [assignClient, setAssignClient] = React.useState("");
+
+  const createPlan = async() => {
+    if(!np.name) return notify("Escribe el nombre del plan","err");
+    const {data,error} = await sb.from("training_plans").insert(np).select().single();
+    if(error) return notify("Error: "+error.message,"err");
+    setShowNewPlan(false);
+    setNp({name:"",description:"",category:"Fuerza",duration_weeks:4});
+    await loadAll();
+    notify("Plan creado ✓");
+    setEditPlan(data);
+  };
+
+  const deletePlan = async(id) => {
+    await sb.from("training_plans").delete().eq("id",id);
+    await loadAll();
+    notify("Plan eliminado");
+  };
+
+  const assignPlan = async(planId) => {
+    if(!assignClient) return notify("Selecciona un cliente","err");
+    await sb.from("client_plans").insert({client_id:assignClient,plan_id:planId,start_date:TODAY,active:true});
+    setShowAssign(null); setAssignClient("");
+    await loadAll();
+    notify("Plan asignado ✓");
+  };
+
+  const addDay = async(planId) => {
+    const dayNum = (editPlan?.plan_days?.length||0)+1;
+    await sb.from("plan_days").insert({plan_id:planId,day_number:dayNum,day_name:`Día ${dayNum}`});
+    await loadAll();
+  };
+
+  const addExToDay = async(dayId, exId, exName) => {
+    const day = editPlan?.plan_days?.find(d=>d.id===dayId);
+    const order = (day?.plan_exercises?.length||0);
+    await sb.from("plan_exercises").insert({plan_day_id:dayId,exercise_id:exId,exercise_name:exName,sets:3,reps:"10",rest_seconds:60,order_index:order});
+    await loadAll();
+  };
+
+  const removeEx = async(exId) => {
+    await sb.from("plan_exercises").delete().eq("id",exId);
+    await loadAll();
+  };
+
+  // Refresh editPlan from updated plans
+  React.useEffect(()=>{
+    if(editPlan) {
+      const updated = plans.find(p=>p.id===editPlan.id);
+      if(updated) setEditPlan(updated);
+    }
+  },[plans]);
+
+  return(
+    <div>
+      <div className="seg" style={{marginBottom:14}}>
+        {[["plans","📋 Planes"],["assign","👥 Asignaciones"]].map(([id,label])=>(
+          <button key={id} className={"sb"+(tab===id?" on":"")} onClick={()=>setTab(id)}>{label}</button>
+        ))}
+      </div>
+
+      {tab==="plans"&&(
+        <div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+            <h2 style={{fontSize:15,fontWeight:700}}>Planes de entrenamiento</h2>
+            <button className="btn sky" style={{fontSize:12,padding:"8px 13px"}} onClick={()=>setShowNewPlan(true)}>+ Nuevo plan</button>
+          </div>
+
+          {editPlan?(
+            <div>
+              <button className="btn ghost" style={{fontSize:12,padding:"7px 12px",marginBottom:14}} onClick={()=>setEditPlan(null)}>← Volver a planes</button>
+              <div className="card" style={{marginBottom:14}}>
+                <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{editPlan.name}</div>
+                <div style={{fontSize:12,color:"#475569"}}>{editPlan.category} · {editPlan.duration_weeks} semanas</div>
+              </div>
+              {(editPlan.plan_days||[]).sort((a,b)=>a.day_number-b.day_number).map(day=>(
+                <div key={day.id} className="card" style={{marginBottom:10}}>
+                  <div style={{fontWeight:700,fontSize:13,color:"#38bdf8",marginBottom:10}}>{day.day_name||`Día ${day.day_number}`}</div>
+                  {(day.plan_exercises||[]).sort((a,b)=>a.order_index-b.order_index).map(pe=>(
+                    <div key={pe.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #0d1520"}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600}}>{pe.exercise_name}</div>
+                        <div style={{fontSize:11,color:"#475569"}}>{pe.sets} series × {pe.reps} · {pe.rest_seconds}s descanso</div>
+                      </div>
+                      <button className="btn danger" style={{fontSize:10,padding:"3px 7px"}} onClick={()=>removeEx(pe.id)}>✕</button>
+                    </div>
+                  ))}
+                  <div style={{marginTop:10}}>
+                    <select className="inp" style={{appearance:"none",fontSize:12}} onChange={e=>{
+                      const ex = exercises.find(x=>x.id===e.target.value);
+                      if(ex) addExToDay(day.id,ex.id,ex.name);
+                      e.target.value="";
+                    }}>
+                      <option value="">+ Añadir ejercicio...</option>
+                      {exercises.map(e=><option key={e.id} value={e.id}>{e.name} ({e.category})</option>)}
+                    </select>
+                  </div>
+                </div>
+              ))}
+              <button className="btn ghost" style={{width:"100%",padding:10,fontSize:12,marginTop:4}} onClick={()=>addDay(editPlan.id)}>+ Añadir día</button>
+            </div>
+          ):(
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {plans.map(plan=>(
+                <div key={plan.id} className="card">
+                  <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
+                    <div>
+                      <div style={{fontWeight:700,fontSize:14}}>{plan.name}</div>
+                      <div style={{fontSize:11,color:"#475569",marginTop:2}}>{plan.category} · {plan.duration_weeks} sem · {(plan.plan_days||[]).length} días</div>
+                    </div>
+                    <div style={{display:"flex",gap:6}}>
+                      <button className="btn sky" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>setEditPlan(plan)}>✏️</button>
+                      <button className="btn grn" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>setShowAssign(plan.id)}>👥</button>
+                      <button className="btn danger" style={{fontSize:10,padding:"5px 8px"}} onClick={()=>deletePlan(plan.id)}>🗑</button>
+                    </div>
+                  </div>
+                  {plan.description&&<div style={{fontSize:12,color:"#334155"}}>{plan.description}</div>}
+                </div>
+              ))}
+              {plans.length===0&&<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>Sin planes creados aún</div>}
+            </div>
+          )}
+        </div>
+      )}
+
+      {tab==="assign"&&(
+        <div>
+          <h2 style={{fontSize:15,fontWeight:700,marginBottom:14}}>Planes asignados</h2>
+          {clients.map(c=>{
+            const cp = clientPlans.filter(x=>x.client_id===c.id&&x.active);
+            return(
+              <div key={c.id} className="card" style={{marginBottom:8}}>
+                <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:cp.length>0?10:0}}>
+                  <div className="ring" style={{width:34,height:34,background:c.color+"20",color:c.color,fontSize:11}}>{ini(c.name)}</div>
+                  <div style={{flex:1,fontWeight:600,fontSize:13}}>{c.name}</div>
+                  <button className="btn sky" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>{setShowAssign("new");setAssignClient(c.id);}}>+ Plan</button>
+                </div>
+                {cp.map(a=>{
+                  const plan=plans.find(p=>p.id===a.plan_id);
+                  return plan?(
+                    <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderTop:"1px solid #0d1520"}}>
+                      <div>
+                        <div style={{fontSize:12,fontWeight:600}}>{plan.name}</div>
+                        <div style={{fontSize:10,color:"#475569"}}>Desde {a.start_date}</div>
+                      </div>
+                      <button className="btn danger" style={{fontSize:10,padding:"3px 7px"}} onClick={async()=>{
+                        await sb.from("client_plans").delete().eq("id",a.id);
+                        await loadAll();
+                        notify("Plan desasignado");
+                      }}>✕</button>
+                    </div>
+                  ):null;
+                })}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {showNewPlan&&(
+        <div className="ovl" onClick={()=>setShowNewPlan(false)}>
+          <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+            <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Nuevo plan</h2>
+            <div style={{display:"flex",flexDirection:"column",gap:13}}>
+              <div><span className="lbl">NOMBRE *</span><input className="inp" placeholder="Ej. Plan Fuerza 4 semanas" value={np.name} onChange={e=>setNp(v=>({...v,name:e.target.value}))}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div><span className="lbl">CATEGORÍA</span>
+                  <select className="inp" style={{appearance:"none"}} value={np.category} onChange={e=>setNp(v=>({...v,category:e.target.value}))}>
+                    {["Fuerza","Cardio","HIIT","Funcional","Movilidad","Mixto"].map(c=><option key={c}>{c}</option>)}
+                  </select>
+                </div>
+                <div><span className="lbl">SEMANAS</span><input type="number" className="inp" value={np.duration_weeks} onChange={e=>setNp(v=>({...v,duration_weeks:parseInt(e.target.value)}))}/></div>
+              </div>
+              <div><span className="lbl">DESCRIPCIÓN</span><textarea className="inp" rows={2} style={{resize:"none"}} value={np.description} onChange={e=>setNp(v=>({...v,description:e.target.value}))}/></div>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn sky" style={{flex:1,padding:11}} onClick={createPlan}>Crear plan</button>
+                <button className="btn ghost" style={{flex:1,padding:11}} onClick={()=>setShowNewPlan(false)}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showAssign&&showAssign!=="new"&&(
+        <div className="ovl" onClick={()=>setShowAssign(null)}>
+          <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:360}}>
+            <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Asignar plan</h2>
+            <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><span className="lbl">CLIENTE</span>
+                <select className="inp" style={{appearance:"none"}} value={assignClient} onChange={e=>setAssignClient(e.target.value)}>
+                  <option value="">Seleccionar...</option>
+                  {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                </select>
+              </div>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>assignPlan(showAssign)}>Asignar</button>
+                <button className="btn ghost" style={{flex:1,padding:11}} onClick={()=>setShowAssign(null)}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+      {showAssign==="new"&&assignClient&&(
+        <div className="ovl" onClick={()=>{setShowAssign(null);setAssignClient("");}}>
+          <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:360}}>
+            <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Asignar plan a {clients.find(c=>c.id===assignClient)?.name}</h2>
+            <div style={{display:"flex",flexDirection:"column",gap:10}}>
+              {plans.map(plan=>(
+                <button key={plan.id} className="btn ghost" style={{textAlign:"left",padding:12}} onClick={()=>assignPlan(plan.id)}>
+                  <div style={{fontWeight:700}}>{plan.name}</div>
+                  <div style={{fontSize:11,color:"#475569"}}>{plan.category} · {plan.duration_weeks} semanas</div>
+                </button>
+              ))}
+              {plans.length===0&&<p style={{fontSize:13,color:"#334155"}}>Crea un plan primero</p>}
+              <button className="btn ghost" style={{padding:10}} onClick={()=>{setShowAssign(null);setAssignClient("");}}>Cancelar</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── PROGRESS TAB ──────────────────────────────────────────────────────────
+function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, loadAll, notify}) {
+  const [view, setView] = React.useState("stats");
+  const [showLog, setShowLog] = React.useState(false);
+  const [showPR, setShowPR] = React.useState(false);
+  const [log, setLog] = React.useState({date:TODAY,weight:"",body_fat:"",waist:"",notes:""});
+  const [pr, setPr] = React.useState({exercise_id:"",exercise_name:"",value:"",unit:"kg",date:TODAY,notes:""});
+  const [saving, setSaving] = React.useState(false);
+
+  const latest = myProgress[0];
+  const prev = myProgress[1];
+
+  const saveLog = async() => {
+    if(!log.weight&&!log.waist) return notify("Introduce al menos un dato","err");
+    setSaving(true);
+    await sb.from("progress").insert({...log,client_id:client.id,weight:log.weight||null,body_fat:log.body_fat||null,waist:log.waist||null});
+    // Check achievements
+    if(myProgress.length===0) {
+      await sb.from("achievements").insert({client_id:client.id,type:"first_log",title:"Primera medición",description:"Registraste tu primer dato de progreso",emoji:"📊"});
+    }
+    setLog({date:TODAY,weight:"",body_fat:"",waist:"",notes:""});
+    setShowLog(false);
+    await loadAll();
+    setSaving(false);
+    notify("Progreso registrado ✓");
+  };
+
+  const savePR = async() => {
+    if(!pr.exercise_name||!pr.value) return notify("Completa los campos","err");
+    setSaving(true);
+    await sb.from("personal_records").insert({...pr,client_id:client.id,value:parseFloat(pr.value)});
+    // Check PR achievement
+    if(myRecords.length===0) {
+      await sb.from("achievements").insert({client_id:client.id,type:"first_pr",title:"Primera marca personal",description:"Registraste tu primer récord personal",emoji:"🏆"});
+    }
+    setPr({exercise_id:"",exercise_name:"",value:"",unit:"kg",date:TODAY,notes:""});
+    setShowPR(false);
+    await loadAll();
+    setSaving(false);
+    notify("¡Nueva marca personal! 🏆");
+  };
+
+  const diff = (field) => {
+    if(!latest||!prev||!latest[field]||!prev[field]) return null;
+    const d = parseFloat(latest[field]) - parseFloat(prev[field]);
+    return d;
+  };
+
+  const StatCard = ({label,value,unit,diffVal}) => (
+    <div className="stat-box">
+      <div className="mono" style={{fontSize:18,fontWeight:700,color:"#e2e8f0"}}>{value||"—"}<span style={{fontSize:11,color:"#475569",marginLeft:2}}>{value?unit:""}</span></div>
+      {diffVal!==null&&diffVal!==undefined&&<div style={{fontSize:10,color:diffVal>0?"#f87171":"#4ade80",marginTop:2}}>{diffVal>0?"+":""}{diffVal?.toFixed(1)}</div>}
+      <div style={{fontSize:9,color:"#334155",fontWeight:700,marginTop:3}}>{label.toUpperCase()}</div>
+    </div>
+  );
+
+  const ACHIEVEMENT_LIST = [
+    {type:"first_log",emoji:"📊",title:"Primera medición"},
+    {type:"first_pr",emoji:"🏆",title:"Primera marca"},
+    {type:"sessions_10",emoji:"💪",title:"10 sesiones"},
+    {type:"sessions_25",emoji:"🔥",title:"25 sesiones"},
+    {type:"streak_4",emoji:"⚡",title:"Racha 4 semanas"},
+  ];
+
+  return(
+    <div>
+      <div className="seg" style={{marginBottom:14}}>
+        {[["stats","📊 Medidas"],["records","🏆 Marcas"],["badges","🎖 Logros"]].map(([id,label])=>(
+          <button key={id} className={"sb"+(view===id?" on":"")} onClick={()=>setView(id)} style={{fontSize:12}}>{label}</button>
+        ))}
+      </div>
+
+      {view==="stats"&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <button className="btn sky" style={{flex:1,padding:10,fontSize:12}} onClick={()=>setShowLog(true)}>+ Registrar medidas</button>
+          </div>
+          {latest?(
+            <div>
+              <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:10}}>ÚLTIMA MEDICIÓN — {latest.date}</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+                <StatCard label="Peso" value={latest.weight} unit="kg" diffVal={diff("weight")}/>
+                <StatCard label="% Grasa" value={latest.body_fat} unit="%" diffVal={diff("body_fat")}/>
+                <StatCard label="Cintura" value={latest.waist} unit="cm" diffVal={diff("waist")}/>
+              </div>
+              {latest.notes&&<div style={{fontSize:12,color:"#475569",padding:"10px 12px",background:"#080d14",borderRadius:10,marginBottom:14}}>{latest.notes}</div>}
+              <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:10}}>HISTORIAL</div>
+              {myProgress.map(p=>(
+                <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #0d1520",fontSize:12}}>
+                  <span style={{color:"#64748b"}}>{p.date}</span>
+                  <span>{p.weight?`${p.weight}kg`:""} {p.body_fat?`${p.body_fat}%`:""} {p.waist?`${p.waist}cm`:""}</span>
+                </div>
+              ))}
+            </div>
+          ):(
+            <div className="card" style={{textAlign:"center",padding:36}}>
+              <div style={{fontSize:28,marginBottom:8}}>📊</div>
+              <div style={{color:"#475569",fontSize:13,marginBottom:14}}>Sin mediciones aún. ¡Empieza hoy!</div>
+              <button className="btn sky" style={{padding:"10px 20px"}} onClick={()=>setShowLog(true)}>Registrar primera medición</button>
+            </div>
+          )}
+        </div>
+      )}
+
+      {view==="records"&&(
+        <div>
+          <div style={{display:"flex",gap:8,marginBottom:14}}>
+            <button className="btn sky" style={{flex:1,padding:10,fontSize:12}} onClick={()=>setShowPR(true)}>+ Nueva marca personal</button>
+          </div>
+          {myRecords.length===0
+            ?<div className="card" style={{textAlign:"center",padding:36}}>
+              <div style={{fontSize:28,marginBottom:8}}>🏆</div>
+              <div style={{color:"#475569",fontSize:13}}>Aún no tienes marcas registradas</div>
+            </div>
+            :<div>
+              {Object.entries(myRecords.reduce((acc,r)=>{
+                if(!acc[r.exercise_name]) acc[r.exercise_name]=[];
+                acc[r.exercise_name].push(r);
+                return acc;
+              },{})).map(([name,recs])=>{
+                const best = recs.sort((a,b)=>b.value-a.value)[0];
+                return(
+                  <div key={name} className="card" style={{marginBottom:8}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+                      <div>
+                        <div style={{fontWeight:700,fontSize:14}}>{name}</div>
+                        <div style={{fontSize:11,color:"#475569",marginTop:2}}>{recs.length} registros · Mejor: <span style={{color:"#facc15",fontWeight:700}}>{best.value}{best.unit}</span></div>
+                      </div>
+                      <div className="mono" style={{fontSize:20,fontWeight:700,color:"#facc15"}}>{best.value}<span style={{fontSize:11}}>{best.unit}</span></div>
+                    </div>
+                    <div style={{marginTop:8}}>
+                      {recs.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3).map(r=>(
+                        <div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderTop:"1px solid #0d1520",color:"#64748b"}}>
+                          <span>{r.date}</span><span style={{fontWeight:600,color:"#e2e8f0"}}>{r.value}{r.unit}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          }
+        </div>
+      )}
+
+      {view==="badges"&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            {ACHIEVEMENT_LIST.map(a=>{
+              const earned = myAchievements.find(x=>x.type===a.type);
+              return(
+                <div key={a.type} className="card" style={{textAlign:"center",padding:16,opacity:earned?1:0.35,border:earned?"1px solid #1e3a5a":"1px solid var(--border)"}}>
+                  <div style={{fontSize:30,marginBottom:6}}>{a.emoji}</div>
+                  <div style={{fontSize:12,fontWeight:700,color:earned?"#e2e8f0":"#334155"}}>{a.title}</div>
+                  {earned&&<div style={{fontSize:10,color:"#334155",marginTop:4}}>{new Date(earned.earned_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>}
+                  {!earned&&<div style={{fontSize:10,color:"#1e293b",marginTop:4}}>Por conseguir</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {showLog&&(
+        <div className="ovl" onClick={()=>setShowLog(false)}>
+          <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+            <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Registrar medidas</h2>
+            <div style={{display:"flex",flexDirection:"column",gap:13}}>
+              <div><span className="lbl">FECHA</span><input type="date" className="inp" value={log.date} onChange={e=>setLog(v=>({...v,date:e.target.value}))}/></div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+                <div><span className="lbl">PESO (kg)</span><input type="number" className="inp" placeholder="75.5" value={log.weight} onChange={e=>setLog(v=>({...v,weight:e.target.value}))}/></div>
+                <div><span className="lbl">% GRASA</span><input type="number" className="inp" placeholder="18.5" value={log.body_fat} onChange={e=>setLog(v=>({...v,body_fat:e.target.value}))}/></div>
+                <div><span className="lbl">CINTURA (cm)</span><input type="number" className="inp" placeholder="80" value={log.waist} onChange={e=>setLog(v=>({...v,waist:e.target.value}))}/></div>
+                <div><span className="lbl">MASA MUSCULAR (kg)</span><input type="number" className="inp" placeholder="35" value={log.muscle_mass||""} onChange={e=>setLog(v=>({...v,muscle_mass:e.target.value}))}/></div>
+              </div>
+              <div><span className="lbl">NOTAS</span><input className="inp" placeholder="Cómo me siento..." value={log.notes} onChange={e=>setLog(v=>({...v,notes:e.target.value}))}/></div>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn sky" style={{flex:1,padding:11}} onClick={saveLog} disabled={saving}>{saving?"Guardando...":"Guardar"}</button>
+                <button className="btn ghost" style={{flex:1,padding:11}} onClick={()=>setShowLog(false)}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {showPR&&(
+        <div className="ovl" onClick={()=>setShowPR(false)}>
+          <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+            <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>🏆 Nueva marca personal</h2>
+            <div style={{display:"flex",flexDirection:"column",gap:13}}>
+              <div><span className="lbl">EJERCICIO</span>
+                <select className="inp" style={{appearance:"none"}} value={pr.exercise_id} onChange={e=>{
+                  const ex=exercises.find(x=>x.id===e.target.value);
+                  setPr(v=>({...v,exercise_id:e.target.value,exercise_name:ex?.name||""}));
+                }}>
+                  <option value="">Seleccionar ejercicio...</option>
+                  {exercises.map(e=><option key={e.id} value={e.id}>{e.name}</option>)}
+                </select>
+                <input className="inp" placeholder="O escribe el nombre" style={{marginTop:6}} value={pr.exercise_name} onChange={e=>setPr(v=>({...v,exercise_name:e.target.value}))}/>
+              </div>
+              <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
+                <div><span className="lbl">MARCA</span><input type="number" className="inp" placeholder="100" value={pr.value} onChange={e=>setPr(v=>({...v,value:e.target.value}))}/></div>
+                <div><span className="lbl">UNIDAD</span>
+                  <select className="inp" style={{appearance:"none"}} value={pr.unit} onChange={e=>setPr(v=>({...v,unit:e.target.value}))}>
+                    {["kg","reps","seg","min","km","m"].map(u=><option key={u}>{u}</option>)}
+                  </select>
+                </div>
+              </div>
+              <div><span className="lbl">FECHA</span><input type="date" className="inp" value={pr.date} onChange={e=>setPr(v=>({...v,date:e.target.value}))}/></div>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn sky" style={{flex:1,padding:11}} onClick={savePR} disabled={saving}>{saving?"Guardando...":"Guardar marca 🏆"}</button>
+                <button className="btn ghost" style={{flex:1,padding:11}} onClick={()=>setShowPR(false)}>Cancelar</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ── PLAN TAB ───────────────────────────────────────────────────────────────
+function PlanTab({client, plans, clientPlans, exercises}) {
+  const myActivePlans = clientPlans.filter(cp=>cp.client_id===client.id&&cp.active);
+
+  if(myActivePlans.length===0) return(
+    <div className="card" style={{textAlign:"center",padding:40}}>
+      <div style={{fontSize:30,marginBottom:10}}>📋</div>
+      <div style={{color:"#475569",fontSize:13,marginBottom:6}}>No tienes ningún plan asignado</div>
+      <div style={{fontSize:12,color:"#334155"}}>Tu trainer te asignará un plan de entrenamiento pronto</div>
+    </div>
+  );
+
+  return(
+    <div>
+      {myActivePlans.map(cp=>{
+        const plan = plans.find(p=>p.id===cp.plan_id);
+        if(!plan) return null;
+        return(
+          <div key={cp.id}>
+            <div className="hero-card" style={{marginBottom:16}}>
+              <div style={{fontWeight:800,fontSize:16,marginBottom:4}}>{plan.name}</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:10}}>{plan.category} · {plan.duration_weeks} semanas · Inicio: {cp.start_date}</div>
+              {plan.description&&<div style={{fontSize:13,color:"#94a3b8"}}>{plan.description}</div>}
+            </div>
+            {(plan.plan_days||[]).sort((a,b)=>a.day_number-b.day_number).map(day=>(
+              <div key={day.id} className="card" style={{marginBottom:10}}>
+                <div style={{fontWeight:700,fontSize:14,color:"#38bdf8",marginBottom:12}}>{day.day_name||`Día ${day.day_number}`}</div>
+                {(day.plan_exercises||[]).sort((a,b)=>a.order_index-b.order_index).map((pe,i)=>{
+                  const ex = exercises.find(e=>e.id===pe.exercise_id);
+                  return(
+                    <div key={pe.id} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:i<day.plan_exercises.length-1?"1px solid #0d1520":"none",alignItems:"flex-start"}}>
+                      <div style={{minWidth:24,height:24,borderRadius:6,background:"#0c2040",color:"#38bdf8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{i+1}</div>
+                      <div style={{flex:1}}>
+                        <div style={{fontWeight:600,fontSize:14}}>{pe.exercise_name}</div>
+                        <div style={{display:"flex",gap:12,marginTop:4}}>
+                          <span style={{fontSize:12,color:"#38bdf8",fontWeight:700}}>{pe.sets} × {pe.reps}</span>
+                          {pe.rest_seconds&&<span style={{fontSize:11,color:"#475569"}}>⏱ {pe.rest_seconds}s</span>}
+                        </div>
+                        {ex?.muscle_group&&<div style={{fontSize:10,color:"#334155",marginTop:2}}>{ex.muscle_group}</div>}
+                        {pe.notes&&<div style={{fontSize:11,color:"#475569",marginTop:4,fontStyle:"italic"}}>{pe.notes}</div>}
+                        {ex?.description&&<div style={{fontSize:11,color:"#1e3a5a",marginTop:4,lineHeight:1.4}}>{ex.description}</div>}
+                      </div>
+                    </div>
+                  );
+                })}
+                {(day.plan_exercises||[]).length===0&&<div style={{fontSize:12,color:"#1e293b"}}>Sin ejercicios asignados</div>}
+              </div>
+            ))}
+          </div>
+        );
+      })}
     </div>
   );
 }
