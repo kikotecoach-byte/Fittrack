@@ -245,6 +245,13 @@ function App() {
   const [progress, setProgress] = React.useState([]);
   const [records, setRecords] = React.useState([]);
   const [achievements, setAchievements] = React.useState([]);
+  const [annualBlocks, setAnnualBlocks] = React.useState([]);
+  const [sessionTemplates, setSessionTemplates] = React.useState([]);
+  const [templateExercises, setTemplateExercises] = React.useState([]);
+  const [clientWeights, setClientWeights] = React.useState([]);
+  const [assignedSessions, setAssignedSessions] = React.useState([]);
+  const [assignedExercises, setAssignedExercises] = React.useState([]);
+  const [weightHistory, setWeightHistory] = React.useState([]);
   const [loading, setLoading] = React.useState(true);
   const [loggedClient, setLoggedClient] = React.useState(null);
   const [pendingSession, setPendingSession] = React.useState(null);
@@ -261,7 +268,7 @@ function App() {
 
   const loadAll = React.useCallback(async () => {
     try {
-      const [c,s,h,p,b,f,ex,pl,cp,pr,rec,ach] = await Promise.all([
+      const [c,s,h,p,b,f,ex,pl,cp,pr,rec,ach,ab,st,te,cw,as_,ae,wh] = await Promise.all([
         sb.from("clients").select("*").order("created_at"),
         sb.from("sessions").select("*").order("date").order("time"),
         sb.from("history").select("*").order("date",{ascending:false}),
@@ -274,11 +281,21 @@ function App() {
         sb.from("progress").select("*").order("date",{ascending:false}),
         sb.from("personal_records").select("*").order("date",{ascending:false}),
         sb.from("achievements").select("*").order("earned_at",{ascending:false}),
+        sb.from("annual_blocks").select("*").order("order_index"),
+        sb.from("session_templates").select("*").order("order_index"),
+        sb.from("template_exercises").select("*").order("order_index"),
+        sb.from("client_weights").select("*").order("exercise_name"),
+        sb.from("assigned_sessions").select("*").order("date"),
+        sb.from("assigned_exercises").select("*").order("order_index"),
+        sb.from("weight_history").select("*").order("changed_at",{ascending:false}),
       ]);
       setClients(c.data||[]); setSessions(s.data||[]); setHistory(h.data||[]);
       setPayments(p.data||[]); setBlocked(b.data||[]); setForum(f.data||[]);
       setExercises(ex.data||[]); setPlans(pl.data||[]); setClientPlans(cp.data||[]);
       setProgress(pr.data||[]); setRecords(rec.data||[]); setAchievements(ach.data||[]);
+      setAnnualBlocks(ab.data||[]); setSessionTemplates(st.data||[]); setTemplateExercises(te.data||[]);
+      setClientWeights(cw.data||[]); setAssignedSessions(as_.data||[]); setAssignedExercises(ae.data||[]);
+      setWeightHistory(wh.data||[]);
     } catch(e) { notify("Error de conexión","err"); }
     setLoading(false);
   },[]);
@@ -336,8 +353,8 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#160404":toast.type==="wa"?"#052e16":"#060f1e",color:toast.type==="err"?"#f87171":toast.type==="wa"?"#4ade80":"#38bdf8",border:`1px solid ${toast.type==="err"?"#450a0a":toast.type==="wa"?"#14532d":"#0e3a5c"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
     </div>
   );
 }
@@ -395,7 +412,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,loadAll,notify,onLogout}) {
+function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("week");
   const [showVacation,setShowVacation] = React.useState(false);
@@ -544,8 +561,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
           {id:"dashboard",icon:"🏠",label:"Inicio"},
           {id:"clients",icon:"👥",label:"Clientes"},
           {id:"schedule",icon:"📅",label:"Agenda"},
+          {id:"programming",icon:"📊",label:"Programa"},
           {id:"exercises",icon:"🏋️",label:"Ejercicios"},
-          {id:"plans",icon:"📋",label:"Planes"},
         ].map(item=>(
           <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")} onClick={()=>setView(item.id)}>
             <span className="bnav-icon">
@@ -1132,6 +1149,22 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
         )}
       </div>
 
+        {/* PROGRAMMING VIEW */}
+        {view==="programming"&&(
+          <ProgrammingAdmin
+            clients={clients}
+            annualBlocks={annualBlocks}
+            sessionTemplates={sessionTemplates}
+            templateExercises={templateExercises}
+            clientWeights={clientWeights}
+            assignedSessions={assignedSessions}
+            assignedExercises={assignedExercises}
+            weightHistory={weightHistory}
+            loadAll={loadAll}
+            notify={notify}
+          />
+        )}
+
         {/* EXERCISES VIEW */}
         {view==="exercises"&&(
           <ExercisesAdmin exercises={exercises} loadAll={loadAll} notify={notify}/>
@@ -1350,7 +1383,7 @@ function BulkWAModal({clients,clientsPayPending,clientsLow,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,loadAll,notify,onLogout}) {
+function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
   const [tab,setTab]=React.useState("home");
   const [reqDate,setReqDate]=React.useState(TODAY);
   const [reqTime,setReqTime]=React.useState("07:00");
@@ -1459,10 +1492,22 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
-        {[["home","📅 Sesiones"],["calendar","🗓 Clases"],["progress","📊 Progreso"],["plan","🏋️ Mi Plan"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
+        {[["today","⚡ Hoy"],["home","📅 Sesiones"],["calendar","🗓 Clases"],["progress","📊 Progreso"],["plan","🏋️ Mi Plan"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
+
+      {tab==="today"&&(
+        <TodaySession
+          client={client}
+          myAssignedSessions={myAssignedSessions}
+          myAssignedExercises={myAssignedExercises}
+          clientWeights={clientWeights}
+          annualBlocks={annualBlocks}
+          loadAll={loadAll}
+          notify={notify}
+        />
+      )}
 
       {tab==="home"&&(
         <div>
@@ -2473,6 +2518,865 @@ function PlanTab({client, plans, clientPlans, exercises}) {
           </div>
         );
       })}
+    </div>
+  );
+}
+
+
+// ── PROGRAMMING ADMIN ──────────────────────────────────────────────────────
+function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
+  const [tab,setTab] = React.useState("macrocycle");
+  const [selBlock,setSelBlock] = React.useState(null);
+  const [selTemplate,setSelTemplate] = React.useState(null);
+  const [selClient,setSelClient] = React.useState(clients[0]?.id||"");
+  const [showAssignModal,setShowAssignModal] = React.useState(null); // date
+  const [showWeightModal,setShowWeightModal] = React.useState(null); // client
+  const [showTemplateModal,setShowTemplateModal] = React.useState(null); // block
+  const [saving,setSaving] = React.useState(false);
+
+  // Week number helpers
+  const getWeekNumber = (date) => {
+    const d = new Date(date+"T12:00:00");
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+  };
+  const currentWeek = getWeekNumber(new Date().toISOString().split("T")[0]);
+  const currentBlock = annualBlocks.find(b => currentWeek >= b.start_week && currentWeek <= b.end_week);
+
+  const w = async(fn) => { setSaving(true); await fn(); await loadAll(); setSaving(false); };
+
+  // Get next 14 days for session assignment
+  const next14Days = Array.from({length:14},(_,i) => {
+    const d = new Date(); d.setDate(d.getDate()+i);
+    return d.toISOString().split("T")[0];
+  });
+
+  const BLOCK_COLORS = {
+    acondicionamiento:"#94a3b8",fuerza:"#4ade80",hipertrofia:"#f472b6",
+    hibrido:"#f59e0b",descarga:"#334155"
+  };
+
+  const PROTOCOL_LABELS = {
+    series_planas:"Series planas",top_set_backoff:"Top Set + Back Off",
+    ramp_up:"Ramp Up",amrap:"AMRAP",superset:"Superserie",
+    drop_set:"Drop Set",rest_pause:"Rest Pause",cluster:"Cluster",
+    emom:"EMOM",leader:"LEADER",tabata:"TABATA"
+  };
+
+  // Assign session to client
+  const assignSession = async(clientId, date, templateId, customExercises) => {
+    // Create assigned session
+    const {data:sess, error} = await sb.from("assigned_sessions").insert({
+      client_id: clientId,
+      template_id: templateId,
+      date: date,
+      status: "pending"
+    }).select().single();
+    if(error) { notify("Error al asignar sesión","err"); return; }
+
+    // Get template exercises and create assigned exercises with client weights
+    const tmplExercises = templateExercises.filter(te => te.template_id === templateId)
+      .sort((a,b) => a.order_index - b.order_index);
+
+    const clientWts = clientWeights.filter(cw => cw.client_id === clientId);
+
+    const assigns = (customExercises || tmplExercises).map(ex => {
+      const cw = clientWts.find(w => w.exercise_name.toLowerCase() === ex.exercise_name.toLowerCase());
+      return {
+        session_id: sess.id,
+        exercise_name: ex.exercise_name,
+        prescribed_weight: cw?.weight || null,
+        sets: ex.sets,
+        reps: ex.reps,
+        protocol: ex.protocol,
+        rest_seconds: ex.rest_seconds,
+        notes: ex.notes,
+        order_index: ex.order_index,
+      };
+    });
+
+    if(assigns.length > 0) {
+      await sb.from("assigned_exercises").insert(assigns);
+    }
+  };
+
+  // Update client weight
+  const updateWeight = async(clientId, exerciseName, newWeight, oldWeight) => {
+    await sb.from("client_weights").upsert({
+      client_id: clientId,
+      exercise_name: exerciseName,
+      weight: newWeight,
+      updated_at: new Date().toISOString()
+    }, {onConflict:"client_id,exercise_name"});
+
+    if(oldWeight && oldWeight !== newWeight) {
+      await sb.from("weight_history").insert({
+        client_id: clientId,
+        exercise_name: exerciseName,
+        old_weight: oldWeight,
+        new_weight: newWeight,
+        reason: "Actualización manual"
+      });
+    }
+  };
+
+  // Check progression suggestions (3 sessions completed well)
+  const progressionSuggestions = React.useMemo(() => {
+    const suggestions = [];
+    clients.forEach(c => {
+      const cSessions = assignedSessions.filter(s => s.client_id === c.id && s.status === "completed");
+      // Group completed exercises by name
+      const byExercise = {};
+      cSessions.forEach(sess => {
+        const exes = assignedExercises.filter(ae => ae.session_id === sess.id && ae.completed);
+        exes.forEach(ae => {
+          if(!byExercise[ae.exercise_name]) byExercise[ae.exercise_name] = [];
+          byExercise[ae.exercise_name].push(ae);
+        });
+      });
+      // Check if any exercise has 3+ consecutive completions
+      Object.entries(byExercise).forEach(([name, logs]) => {
+        if(logs.length >= 3) {
+          const cw = clientWeights.find(w => w.client_id === c.id && w.exercise_name === name);
+          suggestions.push({client: c, exercise: name, sessions: logs.length, currentWeight: cw?.weight});
+        }
+      });
+    });
+    return suggestions;
+  }, [clients, assignedSessions, assignedExercises, clientWeights]);
+
+  const selClientObj = clients.find(c=>c.id===selClient);
+
+  return (
+    <div>
+      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0ea5e9,#4ade80)",zIndex:500}}/>}
+
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
+        <h1 className="mono" style={{fontSize:18,fontWeight:700}}>📊 Programación</h1>
+        {currentBlock&&<span className="pill" style={{background:(BLOCK_COLORS[currentBlock.type]||"#334155")+"20",color:BLOCK_COLORS[currentBlock.type]||"#94a3b8",border:`1px solid ${(BLOCK_COLORS[currentBlock.type]||"#334155")}30`,fontSize:11}}>Semana {currentWeek} · {currentBlock.name}</span>}
+      </div>
+
+      <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
+        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"]].map(([id,label])=>(
+          <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
+        ))}
+      </div>
+
+      {/* ── MACROCICLO TAB ── */}
+      {tab==="macrocycle"&&(
+        <div>
+          <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:12}}>PROGRAMACIÓN ANUAL 2026 — {annualBlocks.reduce((a,b)=>a+b.week_count,0)} SEMANAS</div>
+
+          {/* Visual timeline */}
+          <div style={{background:"#0a0d14",borderRadius:12,padding:12,marginBottom:16,overflowX:"auto"}}>
+            <div style={{display:"flex",gap:2,minWidth:480,height:32,alignItems:"center"}}>
+              {annualBlocks.map(block=>{
+                const pct = (block.week_count / 46) * 100;
+                const isActive = currentBlock?.id === block.id;
+                return(
+                  <div key={block.id} style={{
+                    flex:block.week_count,height:isActive?32:24,borderRadius:6,
+                    background:(BLOCK_COLORS[block.type]||"#334155")+(isActive?"":"40"),
+                    border:isActive?`2px solid ${BLOCK_COLORS[block.type]||"#334155"}`:"none",
+                    display:"flex",alignItems:"center",justifyContent:"center",
+                    cursor:"pointer",transition:"all .2s",position:"relative",
+                    minWidth:20,
+                  }} onClick={()=>setSelBlock(selBlock?.id===block.id?null:block)}>
+                    <span style={{fontSize:8,fontWeight:700,color:"#fff",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",padding:"0 3px"}}>{block.week_count}s</span>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Block list */}
+          {annualBlocks.map(block=>{
+            const isActive = currentBlock?.id === block.id;
+            const blockTemplates = sessionTemplates.filter(t=>t.block_id===block.id);
+            const open = selBlock?.id === block.id;
+            return(
+              <div key={block.id} className="card" style={{marginBottom:8,border:`1px solid ${isActive?(BLOCK_COLORS[block.type]||"#334155")+"60":"var(--border)"}`}} onClick={()=>setSelBlock(open?null:block)}>
+                <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
+                  <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                    <div style={{width:12,height:12,borderRadius:3,background:BLOCK_COLORS[block.type]||"#334155",flexShrink:0}}/>
+                    <div>
+                      <div style={{display:"flex",alignItems:"center",gap:8}}>
+                        <span style={{fontWeight:700,fontSize:14}}>{block.name}</span>
+                        {isActive&&<span style={{fontSize:10,background:"#0c2040",color:"#38bdf8",padding:"2px 7px",borderRadius:8,fontWeight:700}}>← Ahora</span>}
+                      </div>
+                      <div style={{fontSize:11,color:"#475569",marginTop:2}}>{block.week_count} semanas · Sem {block.start_week}-{block.end_week} · {block.rep_range} reps · {blockTemplates.length} plantillas</div>
+                    </div>
+                  </div>
+                  <span style={{fontSize:18,color:"#334155"}}>{open?"▲":"▼"}</span>
+                </div>
+
+                {open&&(
+                  <div style={{marginTop:12,borderTop:"1px solid #0d1520",paddingTop:12}} onClick={e=>e.stopPropagation()}>
+                    <div style={{fontSize:11,color:"#334155",marginBottom:8,lineHeight:1.5}}>{block.intensity_note}</div>
+
+                    <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:8}}>PLANTILLAS DE SESIÓN</div>
+                    {blockTemplates.map(t=>{
+                      const texes = templateExercises.filter(te=>te.template_id===t.id);
+                      return(
+                        <div key={t.id} style={{background:"#0a0d14",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:texes.length>0?8:0}}>
+                            <div>
+                              <div style={{fontSize:13,fontWeight:600}}>{t.name}</div>
+                              <div style={{fontSize:11,color:"#475569"}}>{PROTOCOL_LABELS[t.protocol]||t.protocol} · {texes.length} ejercicios</div>
+                            </div>
+                            <button className="btn sky" style={{fontSize:10,padding:"4px 8px"}} onClick={()=>setShowTemplateModal(t)}>✏️ Editar</button>
+                          </div>
+                          {texes.map(ex=>(
+                            <div key={ex.id} style={{fontSize:11,color:"#64748b",padding:"3px 0",borderTop:"1px solid #111827",display:"flex",gap:8}}>
+                              <span style={{flex:1}}>{ex.exercise_name}</span>
+                              <span className="mono" style={{color:"#38bdf8"}}>{ex.sets}×{ex.reps}</span>
+                              {ex.is_main&&<span style={{color:"#facc15",fontSize:9,fontWeight:700}}>★</span>}
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                    <button className="btn ghost" style={{fontSize:11,padding:"7px 12px",marginTop:4}} onClick={()=>{
+                      sb.from("session_templates").insert({block_id:block.id,name:"Nueva plantilla",session_type:"fullbody",protocol:"series_planas",order_index:blockTemplates.length}).then(()=>loadAll());
+                    }}>+ Nueva plantilla</button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
+        </div>
+      )}
+
+      {/* ── ASSIGN TAB ── */}
+      {tab==="assign"&&(
+        <div>
+          <div style={{marginBottom:14}}>
+            <span className="lbl">CLIENTE</span>
+            <select className="inp" style={{appearance:"none"}} value={selClient} onChange={e=>setSelClient(e.target.value)}>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          {selClientObj&&(
+            <div>
+              <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:10}}>PRÓXIMOS 14 DÍAS — {selClientObj.name}</div>
+
+              {next14Days.map(date=>{
+                const dayName = new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
+                const isToday = date === new Date().toISOString().split("T")[0];
+                const existing = assignedSessions.filter(s=>s.client_id===selClient&&s.date===date);
+                const wk = getWeekNumber(date);
+                const blk = annualBlocks.find(b=>wk>=b.start_week&&wk<=b.end_week);
+                const isWeekend = [0,6].includes(new Date(date+"T12:00:00").getDay());
+
+                if(isWeekend) return null;
+
+                return(
+                  <div key={date} className="card" style={{marginBottom:8,border:`1px solid ${isToday?"#0e3a5c":"var(--border)"}`}}>
+                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:existing.length>0?10:0}}>
+                      <div>
+                        <div style={{fontSize:13,fontWeight:600,textTransform:"capitalize"}}>{dayName}{isToday&&<span style={{fontSize:10,color:"#38bdf8",marginLeft:6,fontWeight:700}}>HOY</span>}</div>
+                        {blk&&<div style={{fontSize:10,color:"#334155",marginTop:2}}>{blk.name}</div>}
+                      </div>
+                      <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowAssignModal({date,clientId:selClient,block:blk})}>+ Sesión</button>
+                    </div>
+
+                    {existing.map(sess=>{
+                      const tmpl = sessionTemplates.find(t=>t.id===sess.template_id);
+                      const sessExes = assignedExercises.filter(ae=>ae.session_id===sess.id);
+                      return(
+                        <div key={sess.id} style={{background:"#080d14",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+                            <div>
+                              <div style={{fontSize:12,fontWeight:700,color:"#38bdf8"}}>{tmpl?.name||"Sesión"}</div>
+                              <div style={{fontSize:10,color:"#475569"}}>{sessExes.length} ejercicios · {sess.status==="completed"?"✓ Completada":sess.status==="pending"?"Pendiente":"Omitida"}</div>
+                            </div>
+                            <div style={{display:"flex",gap:5}}>
+                              {sess.status==="completed"&&<span style={{fontSize:12}}>✅</span>}
+                              <button className="btn danger" style={{fontSize:10,padding:"3px 7px"}} onClick={()=>w(async()=>{
+                                await sb.from("assigned_sessions").delete().eq("id",sess.id);
+                                notify("Sesión eliminada");
+                              })}>✕</button>
+                            </div>
+                          </div>
+                          {sessExes.map(ae=>(
+                            <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #111827",color:"#64748b"}}>
+                              <span>{ae.exercise_name}</span>
+                              <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                                <span className="mono" style={{color:"#38bdf8"}}>{ae.sets}×{ae.reps}</span>
+                                {ae.prescribed_weight&&<span style={{color:"#facc15",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+                                {ae.completed&&<span style={{color:"#4ade80",fontSize:10}}>✓</span>}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      );
+                    })}
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── WEIGHTS TAB ── */}
+      {tab==="weights"&&(
+        <div>
+          <div style={{marginBottom:14}}>
+            <span className="lbl">CLIENTE</span>
+            <select className="inp" style={{appearance:"none"}} value={selClient} onChange={e=>setSelClient(e.target.value)}>
+              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+            </select>
+          </div>
+
+          {selClientObj&&(
+            <div>
+              <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+                <div style={{fontSize:11,color:"#334155",fontWeight:700}}>PESOS BASE — {selClientObj.name}</div>
+                <button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>setShowWeightModal(selClient)}>+ Añadir ejercicio</button>
+              </div>
+
+              {clientWeights.filter(cw=>cw.client_id===selClient).length===0
+                ?<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>
+                  Sin pesos registrados. Añade los ejercicios principales.
+                </div>
+                :clientWeights.filter(cw=>cw.client_id===selClient).map(cw=>{
+                  const hist = weightHistory.filter(h=>h.client_id===selClient&&h.exercise_name===cw.exercise_name).slice(0,3);
+                  return(
+                    <div key={cw.id} className="card" style={{marginBottom:8}}>
+                      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:hist.length>0?8:0}}>
+                        <div style={{flex:1}}>
+                          <div style={{fontWeight:600,fontSize:14}}>{cw.exercise_name}</div>
+                          <div style={{fontSize:11,color:"#475569",marginTop:2}}>Actualizado: {new Date(cw.updated_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>
+                        </div>
+                        <div style={{display:"flex",gap:8,alignItems:"center"}}>
+                          <div className="mono" style={{fontSize:22,fontWeight:700,color:"#facc15"}}>{cw.weight}<span style={{fontSize:12,color:"#475569"}}>kg</span></div>
+                          <WeightEditor cw={cw} onSave={(newW)=>w(async()=>{
+                            await updateWeight(selClient,cw.exercise_name,newW,cw.weight);
+                            notify(`${cw.exercise_name}: ${cw.weight}→${newW}kg ✓`);
+                          })}/>
+                        </div>
+                      </div>
+                      {hist.length>0&&(
+                        <div style={{display:"flex",gap:8,overflowX:"auto"}}>
+                          {hist.reverse().map((h,i)=>(
+                            <div key={i} style={{fontSize:10,color:"#334155",flexShrink:0}}>
+                              {h.old_weight}→<span style={{color:"#4ade80"}}>{h.new_weight}kg</span>
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  );
+                })
+              }
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* ── PROGRESSION TAB ── */}
+      {tab==="progress_view"&&(
+        <div>
+          <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:12}}>SUGERENCIAS DE PROGRESIÓN</div>
+
+          {progressionSuggestions.length===0
+            ?<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>
+              Sin sugerencias aún. Las verás cuando un cliente complete 3+ sesiones del mismo ejercicio.
+            </div>
+            :progressionSuggestions.map((s,i)=>(
+              <div key={i} className="card" style={{marginBottom:10,border:"1px solid #1a2d1a"}}>
+                <div style={{display:"flex",alignItems:"center",gap:12}}>
+                  <div className="ring" style={{width:38,height:38,background:s.client.color+"20",color:s.client.color,fontSize:12,border:`1.5px solid ${s.client.color}35`}}>{s.client.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+                  <div style={{flex:1}}>
+                    <div style={{fontWeight:700,fontSize:13}}>{s.client.name}</div>
+                    <div style={{fontSize:12,color:"#22c55e",marginTop:2}}>
+                      ✓ {s.exercise} — {s.sessions} sesiones completadas
+                    </div>
+                    {s.currentWeight&&<div style={{fontSize:11,color:"#475569"}}>Peso actual: <span className="mono" style={{color:"#facc15"}}>{s.currentWeight}kg</span></div>}
+                  </div>
+                  <button className="btn grn" style={{fontSize:11,padding:"7px 11px",flexShrink:0}} onClick={()=>setShowWeightModal(s.client.id)}>↑ Subir peso</button>
+                </div>
+              </div>
+            ))
+          }
+
+          <div style={{marginTop:20}}>
+            <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:10}}>RESUMEN DE PESOS POR CLIENTE</div>
+            {clients.map(c=>{
+              const cWts = clientWeights.filter(w=>w.client_id===c.id);
+              const cSessions = assignedSessions.filter(s=>s.client_id===c.id);
+              const completed = cSessions.filter(s=>s.status==="completed").length;
+              return(
+                <div key={c.id} className="card" style={{marginBottom:8}}>
+                  <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:cWts.length>0?10:0}}>
+                    <div className="ring" style={{width:34,height:34,background:c.color+"20",color:c.color,fontSize:11}}>{c.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
+                    <div style={{flex:1}}>
+                      <div style={{fontSize:13,fontWeight:600}}>{c.name}</div>
+                      <div style={{fontSize:11,color:"#475569"}}>{cWts.length} ejercicios · {completed} sesiones completadas</div>
+                    </div>
+                  </div>
+                  {cWts.slice(0,4).map(cw=>(
+                    <div key={cw.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #0d1520",color:"#64748b"}}>
+                      <span>{cw.exercise_name}</span>
+                      <span className="mono" style={{color:"#facc15",fontWeight:700}}>{cw.weight}kg</span>
+                    </div>
+                  ))}
+                  {cWts.length>4&&<div style={{fontSize:10,color:"#334155",marginTop:4}}>+{cWts.length-4} más...</div>}
+                </div>
+              );
+            })}
+          </div>
+        </div>
+      )}
+
+      {/* ── ASSIGN SESSION MODAL ── */}
+      {showAssignModal&&(
+        <AssignSessionModal
+          data={showAssignModal}
+          clients={clients}
+          sessionTemplates={sessionTemplates}
+          templateExercises={templateExercises}
+          clientWeights={clientWeights}
+          onAssign={async(clientId,date,templateId)=>{
+            setSaving(true);
+            await assignSession(clientId,date,templateId,null);
+            await loadAll();
+            setSaving(false);
+            setShowAssignModal(null);
+            notify("Sesión asignada ✓");
+          }}
+          onClose={()=>setShowAssignModal(null)}
+        />
+      )}
+
+      {/* ── WEIGHT MODAL ── */}
+      {showWeightModal&&(
+        <AddWeightModal
+          clientId={showWeightModal}
+          clientWeights={clientWeights.filter(cw=>cw.client_id===showWeightModal)}
+          onSave={async(exerciseName,weight)=>{
+            const existing = clientWeights.find(cw=>cw.client_id===showWeightModal&&cw.exercise_name===exerciseName);
+            setSaving(true);
+            await updateWeight(showWeightModal,exerciseName,weight,existing?.weight);
+            await loadAll();
+            setSaving(false);
+            setShowWeightModal(null);
+            notify(`${exerciseName}: ${weight}kg guardado ✓`);
+          }}
+          onClose={()=>setShowWeightModal(null)}
+        />
+      )}
+
+      {/* ── TEMPLATE EDITOR MODAL ── */}
+      {showTemplateModal&&(
+        <TemplateEditorModal
+          template={showTemplateModal}
+          exercises={templateExercises.filter(te=>te.template_id===showTemplateModal.id)}
+          onClose={()=>setShowTemplateModal(null)}
+          loadAll={loadAll}
+          notify={notify}
+        />
+      )}
+    </div>
+  );
+}
+
+// ── WEIGHT EDITOR (inline) ─────────────────────────────────────────────────
+function WeightEditor({cw, onSave}) {
+  const [editing,setEditing] = React.useState(false);
+  const [val,setVal] = React.useState(cw.weight);
+  if(!editing) return <button className="btn ghost" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>setEditing(true)}>✏️</button>;
+  return(
+    <div style={{display:"flex",gap:5,alignItems:"center"}}>
+      <input type="number" className="inp" step="0.5" style={{width:70,padding:"5px 7px",fontSize:13}} value={val} onChange={e=>setVal(e.target.value)}/>
+      <button className="btn grn" style={{fontSize:11,padding:"5px 8px"}} onClick={()=>{onSave(parseFloat(val));setEditing(false);}}>✓</button>
+      <button className="btn ghost" style={{fontSize:11,padding:"5px 8px"}} onClick={()=>setEditing(false)}>✕</button>
+    </div>
+  );
+}
+
+// ── ASSIGN SESSION MODAL ───────────────────────────────────────────────────
+function AssignSessionModal({data, clients, sessionTemplates, templateExercises, clientWeights, onAssign, onClose}) {
+  const [selTemplate,setSelTemplate] = React.useState("");
+  const {date, clientId, block} = data;
+  const blockTemplates = block ? sessionTemplates.filter(t=>t.block_id===block.id) : sessionTemplates;
+  const previewExes = selTemplate ? templateExercises.filter(te=>te.template_id===selTemplate) : [];
+  const cWeights = clientWeights.filter(cw=>cw.client_id===clientId);
+  const client = clients.find(c=>c.id===clientId);
+
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>Asignar sesión</h2>
+        <p style={{fontSize:12,color:"#475569",marginBottom:16}}>{client?.name} · {new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}</p>
+
+        {block&&<div style={{fontSize:11,color:"#334155",marginBottom:10}}>Bloque activo: <span style={{color:"#38bdf8",fontWeight:700}}>{block.name}</span></div>}
+
+        <div style={{marginBottom:14}}>
+          <span className="lbl">PLANTILLA DE SESIÓN</span>
+          <select className="inp" style={{appearance:"none"}} value={selTemplate} onChange={e=>setSelTemplate(e.target.value)}>
+            <option value="">Seleccionar plantilla...</option>
+            {blockTemplates.map(t=><option key={t.id} value={t.id}>{t.name}</option>)}
+          </select>
+        </div>
+
+        {selTemplate&&previewExes.length>0&&(
+          <div style={{marginBottom:14}}>
+            <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:8}}>PREVIEW — ejercicios con pesos del cliente</div>
+            {previewExes.map(ex=>{
+              const cw = cWeights.find(w=>w.exercise_name.toLowerCase()===ex.exercise_name.toLowerCase());
+              return(
+                <div key={ex.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #0d1520",fontSize:12}}>
+                  <div>
+                    <span style={{fontWeight:600}}>{ex.exercise_name}</span>
+                    {ex.is_main&&<span style={{fontSize:9,color:"#facc15",marginLeft:5}}>★ principal</span>}
+                  </div>
+                  <div style={{display:"flex",gap:10,alignItems:"center"}}>
+                    <span className="mono" style={{color:"#94a3b8"}}>{ex.sets}×{ex.reps}</span>
+                    {cw
+                      ?<span className="mono" style={{color:"#facc15",fontWeight:700}}>{cw.weight}kg</span>
+                      :<span style={{fontSize:10,color:"#f87171"}}>sin peso</span>
+                    }
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {selTemplate&&previewExes.length===0&&(
+          <div style={{background:"#0a0d14",borderRadius:10,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#475569"}}>
+            Esta plantilla no tiene ejercicios. Edítala primero desde el Macrociclo.
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>selTemplate&&onAssign(clientId,date,selTemplate)} disabled={!selTemplate}>
+            Asignar sesión
+          </button>
+          <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── ADD WEIGHT MODAL ───────────────────────────────────────────────────────
+function AddWeightModal({clientId, clientWeights, onSave, onClose}) {
+  const [exercise,setExercise] = React.useState("");
+  const [weight,setWeight] = React.useState("");
+  const [customExercise,setCustomExercise] = React.useState("");
+
+  const MAIN_EXERCISES = [
+    "Sentadilla","Press Banca","Peso Muerto","Press Militar","Sentadilla Búlgara",
+    "Hip Thrust","Remo con Barra","Dominadas","Fondos","Peso Muerto Rumano",
+    "Sentadilla Safety Bar","Belt Squat","Jammer Press","Press Inclinado",
+    "Curl Bíceps","Extensión Tríceps","Press Banca Agarre Cerrado",
+    "Remo Polea","Jalón Polea","Prensa de Piernas","Leg Extension",
+  ];
+
+  const existing = exercise ? clientWeights.find(cw=>cw.exercise_name===exercise) : null;
+
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:18}}>⚖️ Añadir / Actualizar peso</h2>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div>
+            <span className="lbl">EJERCICIO</span>
+            <select className="inp" style={{appearance:"none"}} value={exercise} onChange={e=>{ setExercise(e.target.value); const ex=clientWeights.find(cw=>cw.exercise_name===e.target.value); if(ex) setWeight(ex.weight); }}>
+              <option value="">Seleccionar...</option>
+              {MAIN_EXERCISES.map(e=><option key={e} value={e}>{e}{clientWeights.find(cw=>cw.exercise_name===e)?` (${clientWeights.find(cw=>cw.exercise_name===e).weight}kg)`:""}</option>)}
+              <option value="__custom">Otro ejercicio...</option>
+            </select>
+            {exercise==="__custom"&&<input className="inp" style={{marginTop:6}} placeholder="Nombre del ejercicio" value={customExercise} onChange={e=>setCustomExercise(e.target.value)}/>}
+          </div>
+          <div>
+            <span className="lbl">PESO BASE (kg)</span>
+            {existing&&<div style={{fontSize:11,color:"#475569",marginBottom:5}}>Actual: <span style={{color:"#facc15",fontWeight:700}}>{existing.weight}kg</span></div>}
+            <input type="number" className="inp" step="0.5" placeholder="80" value={weight} onChange={e=>setWeight(e.target.value)}/>
+          </div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>{
+              const name = exercise==="__custom"?customExercise:exercise;
+              if(!name||!weight) return;
+              onSave(name,parseFloat(weight));
+            }}>Guardar</button>
+            <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── TEMPLATE EDITOR MODAL ──────────────────────────────────────────────────
+function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
+  const [saving,setSaving] = React.useState(false);
+  const [newEx,setNewEx] = React.useState({exercise_name:"",sets:3,reps:"8-10",protocol:"",rest_seconds:90,notes:"",is_main:false});
+
+  const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
+
+  const addExercise = ()=>w(async()=>{
+    if(!newEx.exercise_name) return notify("Escribe el nombre","err");
+    await sb.from("template_exercises").insert({...newEx,template_id:template.id,order_index:exercises.length});
+    setNewEx({exercise_name:"",sets:3,reps:"8-10",protocol:"",rest_seconds:90,notes:"",is_main:false});
+    notify("Ejercicio añadido ✓");
+  });
+
+  const deleteEx = (id)=>w(async()=>{
+    await sb.from("template_exercises").delete().eq("id",id);
+    notify("Ejercicio eliminado");
+  });
+
+  const updateEx = (id,field,val)=>w(async()=>{
+    await sb.from("template_exercises").update({[field]:val}).eq("id",id);
+  });
+
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>✏️ {template.name}</h2>
+        <p style={{fontSize:11,color:"#475569",marginBottom:16}}>{template.protocol} · Edita los ejercicios base de esta plantilla</p>
+
+        {exercises.sort((a,b)=>a.order_index-b.order_index).map((ex,i)=>(
+          <div key={ex.id} style={{background:"#0a0d14",borderRadius:10,padding:10,marginBottom:6}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+              <div style={{flex:1}}>
+                <input className="inp" style={{fontSize:13,padding:"5px 8px"}} value={ex.exercise_name}
+                  onChange={e=>updateEx(ex.id,"exercise_name",e.target.value)}/>
+              </div>
+              <div style={{display:"flex",gap:5,marginLeft:8}}>
+                <button style={{background:ex.is_main?"#1a1500":"none",border:"1px solid #2a2000",borderRadius:6,color:ex.is_main?"#facc15":"#334155",fontSize:10,padding:"3px 6px",cursor:"pointer"}} onClick={()=>updateEx(ex.id,"is_main",!ex.is_main)}>★</button>
+                <button className="btn danger" style={{padding:"3px 7px"}} onClick={()=>deleteEx(ex.id)}>✕</button>
+              </div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+              <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"5px 7px",fontSize:12}} value={ex.sets} onChange={e=>updateEx(ex.id,"sets",parseInt(e.target.value))}/></div>
+              <div><span className="lbl" style={{fontSize:9}}>REPS</span><input className="inp" style={{padding:"5px 7px",fontSize:12}} value={ex.reps} onChange={e=>updateEx(ex.id,"reps",e.target.value)}/></div>
+              <div><span className="lbl" style={{fontSize:9}}>DESCANSO(s)</span><input type="number" className="inp" style={{padding:"5px 7px",fontSize:12}} value={ex.rest_seconds} onChange={e=>updateEx(ex.id,"rest_seconds",parseInt(e.target.value))}/></div>
+            </div>
+            {ex.is_main&&<div style={{fontSize:10,color:"#facc15",marginTop:5}}>★ Ejercicio principal — se usará el peso base del cliente</div>}
+          </div>
+        ))}
+
+        <div style={{background:"#0a0d14",borderRadius:10,padding:10,marginTop:10,border:"1px dashed #1e293b"}}>
+          <div style={{fontSize:11,color:"#38bdf8",fontWeight:700,marginBottom:8}}>+ Nuevo ejercicio</div>
+          <div style={{display:"flex",flexDirection:"column",gap:8}}>
+            <input className="inp" placeholder="Nombre del ejercicio" value={newEx.exercise_name} onChange={e=>setNewEx(v=>({...v,exercise_name:e.target.value}))}/>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
+              <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"5px 7px",fontSize:12}} value={newEx.sets} onChange={e=>setNewEx(v=>({...v,sets:parseInt(e.target.value)}))}/></div>
+              <div><span className="lbl" style={{fontSize:9}}>REPS</span><input className="inp" style={{padding:"5px 7px",fontSize:12}} value={newEx.reps} onChange={e=>setNewEx(v=>({...v,reps:e.target.value}))}/></div>
+              <div><span className="lbl" style={{fontSize:9}}>DESCANSO(s)</span><input type="number" className="inp" style={{padding:"5px 7px",fontSize:12}} value={newEx.rest_seconds} onChange={e=>setNewEx(v=>({...v,rest_seconds:parseInt(e.target.value)}))}/></div>
+            </div>
+            <input className="inp" placeholder="Notas técnicas..." value={newEx.notes} onChange={e=>setNewEx(v=>({...v,notes:e.target.value}))}/>
+            <div style={{display:"flex",alignItems:"center",gap:8}}>
+              <input type="checkbox" id="isMain" checked={newEx.is_main} onChange={e=>setNewEx(v=>({...v,is_main:e.target.checked}))} style={{accentColor:"#facc15"}}/>
+              <label htmlFor="isMain" style={{fontSize:12,color:"#64748b",cursor:"pointer"}}>Ejercicio principal (usa peso base del cliente ★)</label>
+            </div>
+            <button className="btn sky" style={{width:"100%",padding:9,fontSize:12}} onClick={addExercise} disabled={saving}>{saving?"Guardando...":"Añadir ejercicio"}</button>
+          </div>
+        </div>
+
+        <button className="btn ghost" style={{width:"100%",padding:10,marginTop:10,fontSize:13}} onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  );
+}
+
+
+// ── TODAY SESSION (client view) ────────────────────────────────────────────
+function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWeights, annualBlocks, loadAll, notify}) {
+  const TODAY_STR = new Date().toISOString().split("T")[0];
+  const [saving,setSaving] = React.useState(false);
+
+  // Get week number
+  const getWeekNumber = (date) => {
+    const d = new Date(date+"T12:00:00");
+    const startOfYear = new Date(d.getFullYear(), 0, 1);
+    return Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
+  };
+  const currentWeek = getWeekNumber(TODAY_STR);
+  const currentBlock = annualBlocks.find(b => currentWeek >= b.start_week && currentWeek <= b.end_week);
+
+  const todaySessions = myAssignedSessions.filter(s=>s.date===TODAY_STR);
+  const completedAll = todaySessions.length>0 && todaySessions.every(s=>s.status==="completed");
+
+  const markExerciseComplete = async(exerciseId, actualWeight, actualReps, rpeFelt) => {
+    setSaving(true);
+    await sb.from("assigned_exercises").update({
+      completed: true,
+      actual_weight: actualWeight||null,
+      actual_reps: actualReps||null,
+      rpe_felt: rpeFelt||null,
+    }).eq("id",exerciseId);
+
+    // Check if all exercises in session are completed
+    const sessId = myAssignedExercises.find(ae=>ae.id===exerciseId)?.session_id;
+    if(sessId) {
+      const sessExes = myAssignedExercises.filter(ae=>ae.session_id===sessId);
+      const allDone = sessExes.every(ae=>ae.id===exerciseId?true:ae.completed);
+      if(allDone) {
+        await sb.from("assigned_sessions").update({status:"completed"}).eq("id",sessId);
+      }
+    }
+    await loadAll();
+    setSaving(false);
+    notify("Serie registrada ✓");
+  };
+
+  if(todaySessions.length===0) return(
+    <div>
+      {currentBlock&&(
+        <div style={{background:"linear-gradient(135deg,#0a0d14,#0f1520)",borderRadius:14,border:`1px solid ${currentBlock.color||"#1e293b"}30`,padding:14,marginBottom:16}}>
+          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:4}}>BLOQUE ACTUAL — SEMANA {currentWeek}</div>
+          <div style={{fontWeight:700,fontSize:15,color:currentBlock.color||"#94a3b8"}}>{currentBlock.name}</div>
+          <div style={{fontSize:11,color:"#475569",marginTop:2}}>{currentBlock.rep_range} reps · {currentBlock.split_type}</div>
+        </div>
+      )}
+      <div className="card" style={{textAlign:"center",padding:40}}>
+        <div style={{fontSize:30,marginBottom:10}}>😴</div>
+        <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Sin sesión programada hoy</div>
+        <div style={{fontSize:12,color:"#475569"}}>Tu trainer asignará tu próxima sesión</div>
+      </div>
+
+      {/* Next session */}
+      {myAssignedSessions.filter(s=>s.date>TODAY_STR&&s.status==="pending").length>0&&(
+        <div style={{marginTop:16}}>
+          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:8}}>PRÓXIMA SESIÓN</div>
+          {myAssignedSessions.filter(s=>s.date>TODAY_STR&&s.status==="pending").sort((a,b)=>a.date.localeCompare(b.date)).slice(0,1).map(sess=>{
+            const sessExes = myAssignedExercises.filter(ae=>ae.session_id===sess.id);
+            return(
+              <div key={sess.id} className="card" style={{border:"1px solid #1e3a5a"}}>
+                <div style={{fontWeight:700,fontSize:14,color:"#38bdf8",marginBottom:4}}>
+                  {new Date(sess.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}
+                </div>
+                {sessExes.map(ae=>(
+                  <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderTop:"1px solid #0d1520",color:"#64748b"}}>
+                    <span>{ae.exercise_name}</span>
+                    <div style={{display:"flex",gap:8}}>
+                      <span className="mono">{ae.sets}×{ae.reps}</span>
+                      {ae.prescribed_weight&&<span style={{color:"#facc15",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+
+  return(
+    <div>
+      {currentBlock&&(
+        <div style={{background:"linear-gradient(135deg,#0a0d14,#0f1520)",borderRadius:14,border:`1px solid ${currentBlock.color||"#1e293b"}30`,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+          <div>
+            <div style={{fontSize:10,color:"#334155",fontWeight:700}}>SEMANA {currentWeek}</div>
+            <div style={{fontWeight:700,fontSize:14,color:currentBlock.color||"#94a3b8",marginTop:2}}>{currentBlock.name}</div>
+          </div>
+          {completedAll&&<div style={{fontSize:24}}>🏆</div>}
+        </div>
+      )}
+
+      {todaySessions.map(sess=>{
+        const sessExes = myAssignedExercises.filter(ae=>ae.session_id===sess.id).sort((a,b)=>a.order_index-b.order_index);
+        const completedCount = sessExes.filter(ae=>ae.completed).length;
+        const pct = sessExes.length>0 ? Math.round(completedCount/sessExes.length*100) : 0;
+
+        return(
+          <div key={sess.id}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
+              <div>
+                <div style={{fontWeight:800,fontSize:17}}>Sesión de hoy ⚡</div>
+                <div style={{fontSize:12,color:"#475569",marginTop:2}}>{completedCount}/{sessExes.length} ejercicios · {pct}%</div>
+              </div>
+              {sess.status==="completed"&&<span style={{fontSize:13,color:"#4ade80",fontWeight:700}}>✓ Completada</span>}
+            </div>
+
+            <div className="pbar" style={{marginBottom:16,height:8}}>
+              <div className="pfill" style={{width:`${pct}%`,background:`linear-gradient(90deg,#0ea5e9,#4ade80)`}}/>
+            </div>
+
+            {sessExes.map((ae,i)=>(
+              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving}/>
+            ))}
+
+            {sess.notes&&(
+              <div style={{background:"#080d14",borderRadius:10,padding:"10px 12px",marginTop:10,fontSize:12,color:"#64748b",border:"1px solid #1e293b"}}>
+                📝 {sess.notes}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── EXERCISE CARD (client registers completion) ────────────────────────────
+function ExerciseCard({ae, index, onComplete, saving}) {
+  const [expanded,setExpanded] = React.useState(false);
+  const [actualWeight,setActualWeight] = React.useState(ae.prescribed_weight||"");
+  const [actualReps,setActualReps] = React.useState(ae.reps||"");
+  const [rpe,setRpe] = React.useState("");
+
+  if(ae.completed) return(
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #0d1520",opacity:0.6}}>
+      <div style={{display:"flex",gap:10,alignItems:"center"}}>
+        <div style={{width:22,height:22,borderRadius:6,background:"#0a1e10",border:"1px solid #14532d",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✓</div>
+        <div>
+          <div style={{fontSize:13,fontWeight:600,color:"#4ade80"}}>{ae.exercise_name}</div>
+          <div style={{fontSize:11,color:"#334155"}}>{ae.actual_weight||ae.prescribed_weight}kg · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
+        </div>
+      </div>
+      <span style={{fontSize:16}}>✅</span>
+    </div>
+  );
+
+  return(
+    <div style={{borderBottom:"1px solid #0d1520",paddingBottom:10,marginBottom:10}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setExpanded(!expanded)}>
+        <div style={{display:"flex",gap:10,alignItems:"center"}}>
+          <div style={{width:22,height:22,borderRadius:6,background:"#0c1828",border:"1px solid #1e3a5a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#38bdf8",flexShrink:0}}>{index+1}</div>
+          <div>
+            <div style={{fontSize:13,fontWeight:600}}>{ae.exercise_name}</div>
+            <div style={{display:"flex",gap:8,marginTop:2}}>
+              <span className="mono" style={{fontSize:12,color:"#38bdf8",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
+              {ae.prescribed_weight&&<span style={{fontSize:12,color:"#facc15",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+              {ae.rest_seconds&&<span style={{fontSize:11,color:"#334155"}}>⏱{ae.rest_seconds}s</span>}
+            </div>
+          </div>
+        </div>
+        <span style={{color:"#334155",fontSize:16}}>{expanded?"▲":"▼"}</span>
+      </div>
+
+      {ae.notes&&<div style={{fontSize:11,color:"#334155",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
+
+      {expanded&&(
+        <div style={{marginTop:10,paddingLeft:32,display:"flex",flexDirection:"column",gap:10}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            <div>
+              <span className="lbl" style={{fontSize:9}}>PESO REAL (kg)</span>
+              <input type="number" className="inp" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={actualWeight} onChange={e=>setActualWeight(e.target.value)} placeholder={ae.prescribed_weight||"0"}/>
+            </div>
+            <div>
+              <span className="lbl" style={{fontSize:9}}>REPS REALES</span>
+              <input className="inp" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={actualReps} onChange={e=>setActualReps(e.target.value)} placeholder={ae.reps}/>
+            </div>
+            <div>
+              <span className="lbl" style={{fontSize:9}}>RPE</span>
+              <input type="number" className="inp" min="1" max="10" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={rpe} onChange={e=>setRpe(e.target.value)} placeholder="8"/>
+            </div>
+          </div>
+          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>onComplete(ae.id,parseFloat(actualWeight)||null,actualReps||null,parseFloat(rpe)||null)} disabled={saving}>
+            ✓ Marcar como completado
+          </button>
+        </div>
+      )}
     </div>
   );
 }
