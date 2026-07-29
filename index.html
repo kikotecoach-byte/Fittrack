@@ -535,8 +535,6 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
   const calDays=getMonthDays(calYear,calMonth);
   const getDayStr=(day)=>`${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
 
-  const clientsPayingPending = clients.filter(c=>daysUntil(c.next_payment)<=5);
-  const clientsLowSessions = clients.filter(c=>c.sessions_left<=2);
 
   return (
     <div style={{minHeight:"100vh"}}>
@@ -1191,7 +1189,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
-      {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify} clientsPayPending={clientsPayingPending} clientsLow={clientsLowSessions}/>}
+      {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
     </div>
   );
 }
@@ -1350,42 +1348,96 @@ function WAModal({client,onClose,notify}) {
 }
 
 // ── BULK WA MODAL ──────────────────────────────────────────────────────────
-function BulkWAModal({clients,clientsPayPending,clientsLow,onClose,notify}) {
-  const [custom,setCustom]=React.useState("");
-  const [selected,setSelected]=React.useState("all");
-  const targets = selected==="pay"?clientsPayPending:selected==="low"?clientsLow:clients;
+// Plantillas por grupo. Los comodines {nombre} {sesiones} {importe} {vence}
+// se rellenan solos con los datos de cada cliente.
+const WA_TEMPLATES = {
+  pay: "Hola {nombre}! 👋 Te recuerdo que tu cuota de {importe}€ vence {vence}. ¡Cualquier duda aquí estoy! 💪",
+  low: "Hola {nombre}! Te quedan {sesiones} sesión(es). ¿Renovamos el paquete para no interrumpir tu progreso? 🔥💪",
+  expired: "Hola {nombre}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪",
+  all: "Hola {nombre}! 👋 Te escribo desde Kikote Gym. ",
+};
+// Rellena una plantilla con los datos reales de un cliente.
+const fillWA = (tpl,c) => {
+  const pd = daysUntil(c.next_payment);
+  const abs = Math.abs(pd);
+  const vence = isNaN(pd) ? "pronto" : pd===0 ? "hoy" : pd<0 ? `hace ${abs} día${abs===1?"":"s"}` : `en ${pd} día${pd===1?"":"s"}`;
+  return tpl
+    .split("{nombre}").join(c.name.split(" ")[0])
+    .split("{sesiones}").join(c.sessions_left)
+    .split("{importe}").join(c.payment_amount??"")
+    .split("{vence}").join(vence);
+};
+
+function BulkWAModal({clients,onClose,notify}) {
+  const [selected,setSelected]=React.useState("pay");
+  const [msg,setMsg]=React.useState(WA_TEMPLATES.pay);
+
+  // "Ya avisados hoy" se guarda en el móvil (no repites a nadie ni al recargar).
+  const doneKey = `kikote_wa_${TODAY}`;
+  const [done,setDone]=React.useState(()=>{
+    try { return new Set(JSON.parse(localStorage.getItem(doneKey)||"[]")); } catch { return new Set(); }
+  });
+  const marcar = (id)=>setDone(prev=>{
+    const n=new Set(prev); n.add(id);
+    try { localStorage.setItem(doneKey,JSON.stringify([...n])); } catch {}
+    return n;
+  });
+  const reiniciar = ()=>{ try{localStorage.removeItem(doneKey);}catch{} setDone(new Set()); };
+
+  const grupos = {
+    pay: clients.filter(c=>daysUntil(c.next_payment)<=5),
+    low: clients.filter(c=>c.sessions_left<=2&&c.sessions_left>0),
+    expired: clients.filter(c=>c.sessions_left===0),
+    all: clients,
+  };
+  const targets = grupos[selected]||clients;
+  // Sin avisar primero, avisados abajo: así vas tocando en fila.
+  const ordenados = [...targets].sort((a,b)=>(done.has(a.id)?1:0)-(done.has(b.id)?1:0));
+  const hechos = targets.filter(c=>done.has(c.id)).length;
+
+  const cambiarGrupo = (g)=>{ setSelected(g); setMsg(WA_TEMPLATES[g]); };
 
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:500}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:6}}>📱 WhatsApp masivo</h2>
-        <p style={{fontSize:12,color:"#475569",marginBottom:18}}>Abre WhatsApp para cada cliente con un clic. Elige el grupo a contactar.</p>
-        <div className="seg" style={{marginBottom:18}}>
-          <button className={`sb ${selected==="all"?"on":""}`} onClick={()=>setSelected("all")}>Todos ({clients.length})</button>
-          <button className={`sb ${selected==="pay"?"on":""}`} onClick={()=>setSelected("pay")}>Pago ({clientsPayPending.length})</button>
-          <button className={`sb ${selected==="low"?"on":""}`} onClick={()=>setSelected("low")}>Pocas sesiones ({clientsLow.length})</button>
+        <p style={{fontSize:12,color:"#475569",marginBottom:16}}>Elige el grupo, el mensaje ya viene escrito. Toca cada cliente para abrir WhatsApp y enviar.</p>
+        <div className="seg" style={{marginBottom:14,flexWrap:"wrap"}}>
+          <button className={`sb ${selected==="pay"?"on":""}`} onClick={()=>cambiarGrupo("pay")}>💳 Pago ({grupos.pay.length})</button>
+          <button className={`sb ${selected==="low"?"on":""}`} onClick={()=>cambiarGrupo("low")}>⚡ Pocas ({grupos.low.length})</button>
+          <button className={`sb ${selected==="expired"?"on":""}`} onClick={()=>cambiarGrupo("expired")}>🚫 Sin sesiones ({grupos.expired.length})</button>
+          <button className={`sb ${selected==="all"?"on":""}`} onClick={()=>cambiarGrupo("all")}>Todos ({grupos.all.length})</button>
         </div>
         <div>
-          <span className="lbl">MENSAJE</span>
-          <textarea className="inp" rows={4} style={{resize:"vertical"}} placeholder="Escribe el mensaje para todos..." value={custom} onChange={e=>setCustom(e.target.value)}/>
+          <span className="lbl">MENSAJE (se personaliza por cliente)</span>
+          <textarea className="inp" rows={3} style={{resize:"vertical"}} value={msg} onChange={e=>setMsg(e.target.value)}/>
+          <p style={{fontSize:10,color:"#334155",marginTop:5}}>Comodines: {"{nombre} {sesiones} {importe} {vence}"} — se rellenan solos.</p>
         </div>
-        {custom&&targets.length>0&&(
+        {targets.length>0?(
           <div style={{marginTop:14}}>
-            <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:10}}>ENVIAR A {targets.length} CLIENTE(S):</div>
-            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:240,overflowY:"auto"}}>
-              {targets.map(c=>(
-                <a key={c.id} href={waLink(c.phone||TRAINER_PHONE,custom)} target="_blank" rel="noreferrer"
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#050e05",border:"1px solid #14532d",borderRadius:10,textDecoration:"none"}}
-                  onClick={()=>notify(`Abriendo WA de ${c.name}...`,"wa")}>
-                  <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
-                  <div style={{flex:1,fontSize:13,fontWeight:600,color:"#4ade80"}}>{c.name}</div>
-                  <span style={{fontSize:11,color:"#475569"}}>📱 Abrir</span>
-                </a>
-              ))}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontSize:11,color:"#334155",fontWeight:700}}>AVISADOS {hechos}/{targets.length}</div>
+              {hechos>0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 9px"}} onClick={reiniciar}>Reiniciar</button>}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+              {ordenados.map(c=>{
+                const ok=done.has(c.id);
+                return(
+                  <a key={c.id} href={msg?waLink(c.phone||TRAINER_PHONE,fillWA(msg,c)):"#"} target="_blank" rel="noreferrer"
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:ok?"#0a0f0a":"#050e05",
+                      border:`1px solid ${ok?"#1e3a24":"#14532d"}`,borderRadius:10,textDecoration:"none",opacity:ok?0.55:1}}
+                    onClick={()=>{marcar(c.id);notify(`Abriendo WA de ${c.name}...`,"wa");}}>
+                    <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
+                    <div style={{flex:1,fontSize:13,fontWeight:600,color:ok?"#475569":"#4ade80"}}>{c.name}</div>
+                    <span style={{fontSize:11,color:ok?"#4ade80":"#475569"}}>{ok?"✓ avisado":"📱 Abrir"}</span>
+                  </a>
+                );
+              })}
             </div>
           </div>
+        ):(
+          <p style={{fontSize:12,color:"#334155",marginTop:14}}>No hay clientes en este grupo ahora mismo. 🎉</p>
         )}
-        {!custom&&<p style={{fontSize:12,color:"#334155",marginTop:12}}>Escribe el mensaje para ver los botones de envío.</p>}
         <button className="btn ghost" style={{width:"100%",marginTop:14,padding:10}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
