@@ -672,20 +672,29 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
               {clients.map(c=>{
+                const nextSess=sessions.filter(s=>s.client_id===c.id&&!s.requested&&s.date>=TODAY)
+                  .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
+                return {c,nextSess,today:!!nextSess&&nextSess.date===TODAY};
+              }).sort((a,b)=>{
+                if(a.today!==b.today) return a.today?-1:1;                       // sesión hoy primero
+                if(a.today&&b.today) return a.nextSess.time.localeCompare(b.nextSess.time); // por hora
+                return 0;
+              }).map(({c,nextSess,today})=>{
                 const st=statusOf(c);
                 const pd=daysUntil(c.next_payment);
                 const cHist=history.filter(h=>h.client_id===c.id).sort((a,b)=>(b.date+(b.time||"")).localeCompare(a.date+(a.time||"")));
                 const last=cHist[0];
-                const nextSess=sessions.filter(s=>s.client_id===c.id&&!s.requested&&s.date>=TODAY)
-                  .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
                 return(
-                  <div key={c.id} className="card">
+                  <div key={c.id} className="card" style={{border:`1px solid ${today?"#0e3a5c":"var(--border)"}`}}>
                     <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12}}>
                       {c.avatar_url
                         ?<img src={c.avatar_url} alt={c.name} style={{width:46,height:46,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${c.color}45`}}/>
                         :<div className="ring" style={{width:46,height:46,background:c.color+"18",color:c.color,border:`1.5px solid ${c.color}35`,fontSize:14}}>{ini(c.name)}</div>}
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
+                        <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                          <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
+                          {today&&<span style={{fontSize:9,fontWeight:700,color:"#38bdf8",background:"#08131f",border:"1px solid #0e3a5c",borderRadius:20,padding:"2px 7px"}}>HOY {nextSess.time}</span>}
+                        </div>
                         <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {c.total_sessions} · {c.payment_amount}€</div>
                       </div>
                       <span className="pill" style={{background:statusColor(st)+"18",color:statusColor(st),border:`1px solid ${statusColor(st)}30`,whiteSpace:"nowrap"}}>{c.sessions_left}/{c.total_sessions}</span>
@@ -701,12 +710,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
                       </div>
                       <div style={{background:"#080d14",borderRadius:9,padding:"8px 10px",gridColumn:"1 / -1"}}>
                         <div style={{color:"#334155",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>SESIÓN AGENDADA</div>
-                        <div style={{fontSize:12,color:nextSess?"#38bdf8":"#475569"}}>{nextSess?`${fmtDate(nextSess.date)} · ${nextSess.time} · ${nextSess.type}`:"Sin agendar"}</div>
+                        <div style={{fontSize:12,color:nextSess?"#38bdf8":"#475569"}}>{nextSess?`${nextSess.date===TODAY?"Hoy":fmtDate(nextSess.date)} · ${nextSess.time} · ${nextSess.type}`:"Sin agendar"}</div>
                       </div>
                     </div>
                     <div style={{display:"flex",gap:8}}>
-                      <button className="btn grn" style={{flex:1,padding:"9px",justifyContent:"center"}} onClick={()=>nextSess?completeSession(nextSess):countWalkin(c)}>✓ Hizo la sesión</button>
+                      <button className="btn grn" style={{flex:1,padding:"9px",justifyContent:"center"}} onClick={()=>nextSess?completeSession(nextSess):countWalkin(c)}>✓ Vino</button>
                       <button className="btn danger" style={{padding:"9px 12px",opacity:nextSess?1:0.35}} disabled={!nextSess} onClick={()=>nextSess&&deleteSession(nextSess.id)}>✗ No vino</button>
+                      <button className="btn wa" style={{padding:"9px 12px"}} onClick={()=>setWaClient(c)}>📱</button>
                     </div>
                   </div>
                 );
