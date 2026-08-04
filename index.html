@@ -193,6 +193,21 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const TODAY = new Date().toISOString().split("T")[0];
 const TIME_SLOTS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00"];
 const SESSION_TYPES = ["Fuerza","Cardio","Funcional","HIIT","Movilidad","Evaluación"];
+const HOURS = Array.from({length:24},(_,h)=>String(h).padStart(2,"0")+":00");
+// Horario de trabajo por defecto: mañana 10-13, tarde 17-20, sesiones de 1h,
+// 1 atleta por hora. El coach lo edita y se guarda en la tabla app_settings.
+const DEFAULT_SCHEDULE = {
+  morningFrom:"10:00", morningTo:"13:00",
+  afternoonFrom:"17:00", afternoonTo:"20:00",
+  defaultCapacity:1, capacity:{},
+};
+// Genera las horas de una franja [from, to) en pasos de 1h. Ej: 10:00→13:00 = [10:00,11:00,12:00].
+const genSlots = (from,to) => {
+  const f=parseInt(from,10), t=parseInt(to,10), out=[];
+  if(isNaN(f)||isNaN(t)) return out;
+  for(let h=f;h<t;h++) out.push(String(h).padStart(2,"0")+":00");
+  return out;
+};
 const COLORS = ["#22d3ee","#f472b6","#a78bfa","#4ade80","#fb923c","#f59e0b","#38bdf8","#e879f9"];
 
 const uid = () => crypto.randomUUID();
@@ -434,6 +449,27 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
   const [activeDay,setActiveDay] = React.useState(TODAY);
   const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:""});
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
+  const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
+  const [showSched,setShowSched] = React.useState(false);
+
+  // Carga la configuración de horario (si la tabla existe; si no, usa los valores por defecto).
+  React.useEffect(()=>{
+    sb.from("app_settings").select("config").eq("id",1).then(({data})=>{
+      if(data&&data[0]&&data[0].config) setConfig({...DEFAULT_SCHEDULE,...data[0].config});
+    });
+  },[]);
+  const saveConfig = (cfg) => w(async()=>{
+    setConfig(cfg);
+    const {error}=await sb.from("app_settings").upsert({id:1,config:cfg});
+    if(error) return notify("Guarda la tabla app_settings (ver docs)","err");
+    notify("Horario guardado ✓");
+  });
+
+  // Franjas de trabajo derivadas de la config y capacidad (atletas) por hora.
+  const workSlots = [...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  const capOf = (t) => (config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
+  // Franjas visibles del día: las de trabajo + cualquier hora con sesión (para no ocultar nada).
+  const daySlots = Array.from(new Set([...workSlots,...sessions.filter(s=>s.date===activeDay).map(s=>s.time)])).sort();
 
   const reminders = [];
   clients.forEach(c=>{
@@ -846,7 +882,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <h1 className="mono" style={{fontSize:18,fontWeight:700}}>Agenda</h1>
-              <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn ghost" style={{fontSize:12,padding:"8px 12px"}} onClick={()=>setShowSched(true)}>⚙️ Horario</button>
+                <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
+              </div>
             </div>
 
             {/* View switcher */}
@@ -900,18 +939,18 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
             {/* DAY VIEW */}
             {schedView==="day"&&(
               <div className="card" style={{padding:0,overflow:"hidden"}}>
-                {TIME_SLOTS.map((time,i)=>{
+                {daySlots.map((time,i)=>{
                   const slotBlocked=isBlocked(activeDay,time)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
                   const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                     .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
+                  const cap=capOf(time), isWork=workSlots.includes(time), full=slots.length>=cap;
                   return(
-                    <div key={time} style={{display:"flex",borderBottom:i<TIME_SLOTS.length-1?"1px solid #0d1520":"none",minHeight:52,background:slotBlocked?"#0d0505":"transparent"}}>
+                    <div key={time} style={{display:"flex",borderBottom:i<daySlots.length-1?"1px solid #0d1520":"none",minHeight:52,background:slotBlocked?"#0d0505":isWork?"transparent":"#070a10"}}>
                       <div className="mono" style={{width:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
                       <div style={{flex:1,padding:"7px 10px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
                         {slotBlocked
                           ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
                           :<>
-                            {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Libre · 🔒</span>}
                             {slots.map(s=>(
                               <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:8,padding:"5px 9px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
                                 {s.client.avatar_url
@@ -924,6 +963,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
                                 <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:12,padding:0}} onClick={()=>completeSession(s)}>✓</button>
                               </div>
                             ))}
+                            {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>{isWork?"Libre · 🔒":"Fuera de horario · 🔒"}</span>}
+                            {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#facc15":"#4ade80",background:(full?"#facc15":"#4ade80")+"14",border:`1px solid ${(full?"#facc15":"#4ade80")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
                           </>
                         }
                       </div>
@@ -1262,6 +1303,66 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
+      {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
+    </div>
+  );
+}
+
+// ── SCHEDULE / HORARIO MODAL ───────────────────────────────────────────────
+// Configura las franjas de mañana y tarde (sesiones de 1h) y los atletas por hora.
+function ScheduleModal({config,onSave,onClose}) {
+  const [cfg,setCfg] = React.useState({...DEFAULT_SCHEDULE,...config,capacity:{...(config.capacity||{})}});
+  const slots = [...genSlots(cfg.morningFrom,cfg.morningTo),...genSlots(cfg.afternoonFrom,cfg.afternoonTo)];
+  const capOf = (t) => cfg.capacity[t]!=null?cfg.capacity[t]:cfg.defaultCapacity;
+  const setCap = (t,v) => setCfg(c=>({...c,capacity:{...c.capacity,[t]:Math.max(0,parseInt(v||0,10))}}));
+  const hourSel = (val,onCh) => (
+    <select className="inp" style={{appearance:"none"}} value={val} onChange={e=>onCh(e.target.value)}>
+      {HOURS.map(h=><option key={h} value={h}>{h}</option>)}
+    </select>
+  );
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>⚙️ Horario de trabajo</h2>
+        <p style={{fontSize:12,color:"#475569",marginBottom:18}}>Sesiones de 1 hora. Define tus franjas y cuántos atletas admites por hora.</p>
+
+        <div style={{marginBottom:16}}>
+          <span className="lbl">☀️ MAÑANA</span>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {hourSel(cfg.morningFrom,v=>setCfg(c=>({...c,morningFrom:v})))}
+            <span style={{color:"#475569",fontSize:13}}>a</span>
+            {hourSel(cfg.morningTo,v=>setCfg(c=>({...c,morningTo:v})))}
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <span className="lbl">🌙 TARDE</span>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {hourSel(cfg.afternoonFrom,v=>setCfg(c=>({...c,afternoonFrom:v})))}
+            <span style={{color:"#475569",fontSize:13}}>a</span>
+            {hourSel(cfg.afternoonTo,v=>setCfg(c=>({...c,afternoonTo:v})))}
+          </div>
+        </div>
+
+        <div style={{marginBottom:8}}>
+          <span className="lbl">👥 ATLETAS POR HORA</span>
+          {slots.length===0
+            ?<p style={{fontSize:12,color:"#334155"}}>Ajusta las franjas para ver las horas.</p>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))",gap:8}}>
+              {slots.map(t=>(
+                <div key={t} style={{background:"#080d14",borderRadius:9,padding:"8px 10px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                  <span className="mono" style={{fontSize:12,color:"#94a3b8"}}>{t}</span>
+                  <input type="number" min="0" className="inp" style={{width:46,padding:"5px 6px",textAlign:"center"}} value={capOf(t)} onChange={e=>setCap(t,e.target.value)}/>
+                </div>
+              ))}
+            </div>
+          }
+        </div>
+
+        <div style={{display:"flex",gap:8,marginTop:18}}>
+          <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>{onSave(cfg);onClose();}}>Guardar horario</button>
+          <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
     </div>
   );
 }
