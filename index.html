@@ -1313,8 +1313,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
 function ScheduleModal({config,onSave,onClose}) {
   const [cfg,setCfg] = React.useState({...DEFAULT_SCHEDULE,...config,capacity:{...(config.capacity||{})}});
   const slots = [...genSlots(cfg.morningFrom,cfg.morningTo),...genSlots(cfg.afternoonFrom,cfg.afternoonTo)];
+  // Capacidad entre 1 y 5 atletas por hora.
   const capOf = (t) => cfg.capacity[t]!=null?cfg.capacity[t]:cfg.defaultCapacity;
-  const setCap = (t,v) => setCfg(c=>({...c,capacity:{...c.capacity,[t]:Math.max(0,parseInt(v||0,10))}}));
+  const setCap = (t,v) => setCfg(c=>({...c,capacity:{...c.capacity,[t]:Math.min(5,Math.max(1,parseInt(v||1,10)))}}));
   const hourSel = (val,onCh) => (
     <select className="inp" style={{appearance:"none"}} value={val} onChange={e=>onCh(e.target.value)}>
       {HOURS.map(h=><option key={h} value={h}>{h}</option>)}
@@ -1324,7 +1325,7 @@ function ScheduleModal({config,onSave,onClose}) {
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>⚙️ Horario de trabajo</h2>
-        <p style={{fontSize:12,color:"#475569",marginBottom:18}}>Sesiones de 1 hora. Define tus franjas y cuántos atletas admites por hora.</p>
+        <p style={{fontSize:12,color:"#475569",marginBottom:18}}>Clases de 1 hora en punto. Define tus franjas y cuántos atletas admites por hora (de 1 a 5).</p>
 
         <div style={{marginBottom:16}}>
           <span className="lbl">☀️ MAÑANA</span>
@@ -1344,16 +1345,20 @@ function ScheduleModal({config,onSave,onClose}) {
         </div>
 
         <div style={{marginBottom:8}}>
-          <span className="lbl">👥 ATLETAS POR HORA</span>
+          <span className="lbl">👥 ATLETAS POR HORA (1–5)</span>
           {slots.length===0
             ?<p style={{fontSize:12,color:"#334155"}}>Ajusta las franjas para ver las horas.</p>
-            :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(90px,1fr))",gap:8}}>
-              {slots.map(t=>(
-                <div key={t} style={{background:"#080d14",borderRadius:9,padding:"8px 10px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8}}>
+              {slots.map(t=>{const cap=capOf(t);return(
+                <div key={t} style={{background:"#080d14",borderRadius:9,padding:"7px 10px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
                   <span className="mono" style={{fontSize:12,color:"#94a3b8"}}>{t}</span>
-                  <input type="number" min="0" className="inp" style={{width:46,padding:"5px 6px",textAlign:"center"}} value={capOf(t)} onChange={e=>setCap(t,e.target.value)}/>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <button className="btn ghost" style={{padding:"3px 8px",fontSize:15,lineHeight:1,opacity:cap<=1?0.35:1}} disabled={cap<=1} onClick={()=>setCap(t,cap-1)}>−</button>
+                    <span className="mono" style={{width:14,textAlign:"center",fontWeight:700,fontSize:13,color:"#38bdf8"}}>{cap}</span>
+                    <button className="btn ghost" style={{padding:"3px 8px",fontSize:15,lineHeight:1,opacity:cap>=5?0.35:1}} disabled={cap>=5} onClick={()=>setCap(t,cap+1)}>+</button>
+                  </div>
                 </div>
-              ))}
+              );})}
             </div>
           }
         </div>
