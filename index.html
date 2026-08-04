@@ -436,7 +436,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 // ── ADMIN ──────────────────────────────────────────────────────────────────
 function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
-  const [schedView,setSchedView] = React.useState("week");
+  const [schedView,setSchedView] = React.useState("day");
   const [showVacation,setShowVacation] = React.useState(false);
   const [expanded,setExpanded] = React.useState(null);
   const [waClient,setWaClient] = React.useState(null);
@@ -952,15 +952,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
                           ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
                           :<>
                             {slots.map(s=>(
-                              <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:8,padding:"5px 9px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
+                              <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:10,padding:"5px 10px 5px 5px",fontSize:12,display:"flex",alignItems:"center",gap:7}}>
                                 {s.client.avatar_url
-                                  ?<img src={s.client.avatar_url} style={{width:20,height:20,borderRadius:"50%",objectFit:"cover"}}/>
-                                  :<div className="ring" style={{width:20,height:20,background:s.client.color+"30",color:s.client.color,fontSize:8}}>{ini(s.client.name)}</div>
+                                  ?<img src={s.client.avatar_url} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
+                                  :<div className="ring" style={{width:26,height:26,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
                                 }
-                                <span style={{color:s.client.color,fontWeight:700}}>{s.client.name}</span>
-                                <span style={{color:"#475569",fontSize:11}}>{s.type}</span>
-                                {s.requested&&<span style={{color:"#fb923c",fontSize:10}}>·req</span>}
-                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:12,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                                <div style={{lineHeight:1.2}}>
+                                  <div style={{color:s.client.color,fontWeight:700}}>{s.client.name}</div>
+                                  <div style={{color:"#475569",fontSize:10}}>{s.type}{s.requested&&<span style={{color:"#fb923c"}}> · pendiente</span>}</div>
+                                </div>
+                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:14,padding:0,marginLeft:2}} onClick={()=>completeSession(s)}>✓</button>
                               </div>
                             ))}
                             {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>{isWork?"Libre · 🔒":"Fuera de horario · 🔒"}</span>}
@@ -1803,7 +1804,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
                 <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
               </a>
             </div>
-            :<MultiSessionRequest client={client} allSessions={allSessions} blocked={blocked} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
+            :<MultiSessionRequest client={client} allSessions={allSessions} allClients={allClients} blocked={blocked} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
           }
         </div>
       )}
@@ -1857,7 +1858,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
 }
 
 // ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
-function MultiSessionRequest({client, allSessions, blocked, config, loadAll, notify, saving, setSaving}) {
+function MultiSessionRequest({client, allSessions, allClients, blocked, config, loadAll, notify, saving, setSaving}) {
   const [date,setDate] = React.useState(TODAY);
   const [type,setType] = React.useState("Fuerza");
   const [picked,setPicked] = React.useState([]); // horas seleccionadas para esa fecha
@@ -1911,24 +1912,48 @@ function MultiSessionRequest({client, allSessions, blocked, config, loadAll, not
         </select>
       </div>
 
-      <span className="lbl">HUECOS DISPONIBLES</span>
+      <span className="lbl">HORAS DEL DÍA</span>
       {dayBlocked
         ?<div style={{background:"#0d0505",border:"1px solid #3f1a1a",borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:"#f87171"}}>🚫 Día no disponible</div>
         :workSlots.length===0
           ?<div style={{fontSize:12,color:"#334155"}}>No hay horario configurado.</div>
-          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:8}}>
+          :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {workSlots.map(t=>{
-              const sel=picked.includes(t), free=freeAt(t), ok=available(t);
-              const estado=isPast(t)?"—":slotBlocked(t)?"🚫":free<=0?"Completo":`${free} libre${free>1?"s":""}`;
+              const sel=picked.includes(t), free=freeAt(t), ok=available(t), cap=capOf(t);
+              const enrolled=allSessions.filter(s=>s.date===date&&s.time===t)
+                .map(s=>({...s,c:allClients.find(x=>x.id===s.client_id)})).filter(s=>s.c);
+              const estado=isPast(t)?"Pasada":slotBlocked(t)?"🚫 Bloqueada":free<=0?"Completa":`${free} libre${free>1?"s":""}`;
+              const estCol=sel?"#4ade80":(free<=0||slotBlocked(t)||isPast(t))?"#f87171":"#4ade80";
               return(
-                <button key={t} disabled={!ok&&!sel} onClick={()=>toggle(t)}
-                  style={{textAlign:"left",padding:"9px 11px",borderRadius:11,cursor:ok||sel?"pointer":"default",fontFamily:"inherit",
-                    background:sel?"#0c2a1a":ok?"#050e05":"#0a0d12",
-                    border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#161c28"}`,
-                    opacity:(!ok&&!sel)?0.5:1}}>
-                  <div className="mono" style={{fontSize:14,fontWeight:700,color:sel?"#4ade80":ok?"#e8edf5":"#475569"}}>{t}</div>
-                  <div style={{fontSize:10,fontWeight:700,marginTop:2,color:sel?"#4ade80":free<=0||slotBlocked(t)||isPast(t)?"#f87171":"#4ade80"}}>{sel?"✓ elegida":estado}</div>
-                </button>
+                <div key={t} onClick={()=>toggle(t)}
+                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,cursor:ok||sel?"pointer":"default",
+                    background:sel?"#0c2a1a":ok?"#050e05":"#0a0d12",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#161c28"}`,opacity:(!ok&&!sel)?0.55:1}}>
+                  {/* Hora */}
+                  <div style={{flexShrink:0,textAlign:"center",minWidth:44}}>
+                    <div className="mono" style={{fontSize:15,fontWeight:700,color:sel?"#4ade80":ok?"#e8edf5":"#64748b"}}>{t}</div>
+                    <div style={{fontSize:9,fontWeight:700,marginTop:1,color:estCol}}>{sel?"✓ elegida":estado}</div>
+                  </div>
+                  {/* Personas apuntadas + huecos libres */}
+                  <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
+                    {enrolled.map(s=>{
+                      const yo=s.c.id===client.id;
+                      return(
+                        <div key={s.id} style={{display:"flex",alignItems:"center",gap:6,background:s.c.color+"18",border:`1px solid ${s.c.color}40`,borderRadius:20,padding:"3px 9px 3px 3px"}}>
+                          {s.c.avatar_url
+                            ?<img src={s.c.avatar_url} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover"}}/>
+                            :<div className="ring" style={{width:24,height:24,background:s.c.color+"30",color:s.c.color,fontSize:9}}>{ini(s.c.name)}</div>}
+                          <span style={{fontSize:12,fontWeight:700,color:s.c.color}}>{yo?"Tú":s.c.name.split(" ")[0]}</span>
+                        </div>
+                      );
+                    })}
+                    {/* Huecos libres como plazas vacías */}
+                    {!slotBlocked(t)&&!isPast(t)&&Array.from({length:free}).map((_,k)=>(
+                      <div key={"f"+k} style={{width:26,height:26,borderRadius:"50%",border:"1.5px dashed #1e3a2a",display:"flex",alignItems:"center",justifyContent:"center",color:"#1e3a2a",fontSize:13}}>+</div>
+                    ))}
+                    {enrolled.length===0&&slotBlocked(t)&&<span style={{fontSize:11,color:"#4a1515"}}>No disponible</span>}
+                  </div>
+                  <div style={{flexShrink:0,fontSize:10,fontWeight:700,color:"#334155"}} className="mono">{enrolled.length}/{cap}</div>
+                </div>
               );
             })}
           </div>
