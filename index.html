@@ -1629,6 +1629,14 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
   const [reqTime,setReqTime]=React.useState("07:00");
   const [reqType,setReqType]=React.useState("Fuerza");
   const [saving,setSaving]=React.useState(false);
+  const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
+
+  // Carga el horario/capacidad definidos por el coach (para mostrar los huecos).
+  React.useEffect(()=>{
+    sb.from("app_settings").select("config").eq("id",1).then(({data})=>{
+      if(data&&data[0]&&data[0].config) setConfig({...DEFAULT_SCHEDULE,...data[0].config});
+    });
+  },[]);
 
   const mySessions=allSessions.filter(s=>s.client_id===client.id&&s.date>=TODAY).sort((a,b)=>a.date.localeCompare(b.date));
   const myHistory=allHistory.filter(s=>s.client_id===client.id).sort((a,b)=>b.date.localeCompare(a.date));
@@ -1795,7 +1803,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
                 <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
               </a>
             </div>
-            :<MultiSessionRequest client={client} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
+            :<MultiSessionRequest client={client} allSessions={allSessions} blocked={blocked} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
           }
         </div>
       )}
@@ -1848,82 +1856,87 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
   );
 }
 
-// ── MULTI SESSION REQUEST ─────────────────────────────────────────────────
-function MultiSessionRequest({client, loadAll, notify, saving, setSaving}) {
-  const emptySlot = () => ({date: TODAY, time: "08:00", type: "Fuerza"});
-  const [slots, setSlots] = React.useState([emptySlot()]);
+// ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
+function MultiSessionRequest({client, allSessions, blocked, config, loadAll, notify, saving, setSaving}) {
+  const [date,setDate] = React.useState(TODAY);
+  const [type,setType] = React.useState("Fuerza");
+  const [picked,setPicked] = React.useState([]); // horas seleccionadas para esa fecha
 
-  const addSlot = () => {
-    if(slots.length >= client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones disponibles`,"err");
-    if(slots.length >= 10) return notify("Máximo 10 sesiones a la vez","err");
-    setSlots(s=>[...s, emptySlot()]);
+  // Franjas y capacidad definidas por el coach.
+  const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  const capOf=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
+  const dayBlocked=blocked.some(b=>b.date===date&&b.time==="ALL");
+  const slotBlocked=(t)=>dayBlocked||blocked.some(b=>b.date===date&&b.time===t);
+  const takenAt=(t)=>allSessions.filter(s=>s.date===date&&s.time===t).length; // reservadas (pendientes + confirmadas)
+  const freeAt=(t)=>Math.max(0,capOf(t)-takenAt(t));
+  const nowHM=new Date().toTimeString().slice(0,5);
+  const isPast=(t)=>date<TODAY||(date===TODAY&&t<=nowHM);
+  const available=(t)=>!slotBlocked(t)&&freeAt(t)>0&&!isPast(t);
+
+  // Al cambiar de fecha, limpiamos la selección (los huecos cambian).
+  const changeDate=(d)=>{ setDate(d); setPicked([]); };
+  const toggle=(t)=>{
+    if(!picked.includes(t)&&!available(t)) return;
+    if(!picked.includes(t)&&picked.length>=client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones`,"err");
+    setPicked(p=>p.includes(t)?p.filter(x=>x!==t):[...p,t]);
   };
 
-  const removeSlot = (i) => setSlots(s=>s.filter((_,idx)=>idx!==i));
-
-  const updateSlot = (i, field, val) => setSlots(s=>s.map((slot,idx)=>idx===i?{...slot,[field]:val}:slot));
-
-  const submitAll = async() => {
-    const invalid = slots.find(s=>!s.date||!s.time||!s.type);
-    if(invalid) return notify("Completa todos los campos","err");
+  const submit=async()=>{
+    if(client.sessions_left===0) return notify("Sin sesiones. Contacta a tu trainer.","err");
+    if(picked.length===0) return notify("Elige al menos una hora libre","err");
+    // Revalida por si alguna se llenó justo antes de enviar.
+    const lleno=picked.find(t=>freeAt(t)<=0||slotBlocked(t)||isPast(t));
+    if(lleno) return notify(`La ${lleno} ya no está disponible`,"err");
     setSaving(true);
-    const inserts = slots.map(s=>({
-      client_id: client.id,
-      date: s.date,
-      time: s.time,
-      type: s.type,
-      status: "pending",
-      requested: true,
-    }));
-    const {error} = await sb.from("sessions").insert(inserts);
+    const inserts=picked.map(t=>({client_id:client.id,date,time:t,type,status:"pending",requested:true}));
+    const {error}=await sb.from("sessions").insert(inserts);
     if(error){ notify("Error al enviar","err"); setSaving(false); return; }
-    await loadAll();
-    setSaving(false);
-    setSlots([emptySlot()]);
-    notify(`✓ ${inserts.length} sesión${inserts.length>1?"es":""} solicitada${inserts.length>1?"s":""}! Tu trainer las confirmará pronto 🎯`);
+    await loadAll(); setSaving(false); setPicked([]);
+    notify(`✓ ${inserts.length} sesión${inserts.length>1?"es":""} solicitada${inserts.length>1?"s":""}! Tu trainer la${inserts.length>1?"s":""} confirmará 🎯`);
   };
 
   return(
     <div className="card">
       <div style={{background:"#080f1e",borderRadius:10,padding:"11px 13px",border:"1px solid #1e3a5a",fontSize:13,color:"#475569",marginBottom:16}}>
-        💡 Puedes solicitar varias sesiones a la vez. Tu trainer las confirmará en breve.
-        <div style={{marginTop:4,fontSize:12,color:"#334155"}}>Sesiones disponibles: <span style={{color:"#38bdf8",fontWeight:700}}>{client.sessions_left}</span></div>
+        💡 Elige un día y toca las horas libres que quieras reservar.
+        <div style={{marginTop:4,fontSize:12,color:"#334155"}}>Sesiones en tu bono: <span style={{color:"#38bdf8",fontWeight:700}}>{client.sessions_left}</span></div>
       </div>
 
-      {slots.map((slot,i)=>(
-        <div key={i} style={{background:"#080d14",borderRadius:12,padding:"12px",marginBottom:10,border:"1px solid #1e293b"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <span style={{fontSize:12,fontWeight:700,color:"#38bdf8"}}>Sesión {i+1}</span>
-            {slots.length>1&&<button onClick={()=>removeSlot(i)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:16,padding:"0 4px"}}>✕</button>}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div><span className="lbl">FECHA</span>
-              <input type="date" className="inp" value={slot.date} min={TODAY} onChange={e=>updateSlot(i,"date",e.target.value)}/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div><span className="lbl">HORA</span>
-                <select className="inp" style={{appearance:"none"}} value={slot.time} onChange={e=>updateSlot(i,"time",e.target.value)}>
-                  {TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div><span className="lbl">TIPO</span>
-                <select className="inp" style={{appearance:"none"}} value={slot.type} onChange={e=>updateSlot(i,"type",e.target.value)}>
-                  {SESSION_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-
-      <div style={{display:"flex",gap:8,marginTop:4}}>
-        {slots.length < Math.min(client.sessions_left, 10) &&(
-          <button className="btn ghost" style={{flex:1,padding:11,fontSize:13}} onClick={addSlot}>+ Añadir sesión</button>
-        )}
-        <button className="btn sky" style={{flex:2,padding:11,fontSize:13}} onClick={submitAll} disabled={saving}>
-          {saving?"Enviando...":`Solicitar ${slots.length} sesión${slots.length>1?"es":""} 🚀`}
-        </button>
+      <div style={{marginBottom:14}}><span className="lbl">DÍA</span>
+        <input type="date" className="inp" value={date} min={TODAY} onChange={e=>changeDate(e.target.value)}/>
       </div>
+      <div style={{marginBottom:16}}><span className="lbl">TIPO DE SESIÓN</span>
+        <select className="inp" style={{appearance:"none"}} value={type} onChange={e=>setType(e.target.value)}>
+          {SESSION_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      <span className="lbl">HUECOS DISPONIBLES</span>
+      {dayBlocked
+        ?<div style={{background:"#0d0505",border:"1px solid #3f1a1a",borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:"#f87171"}}>🚫 Día no disponible</div>
+        :workSlots.length===0
+          ?<div style={{fontSize:12,color:"#334155"}}>No hay horario configurado.</div>
+          :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:8}}>
+            {workSlots.map(t=>{
+              const sel=picked.includes(t), free=freeAt(t), ok=available(t);
+              const estado=isPast(t)?"—":slotBlocked(t)?"🚫":free<=0?"Completo":`${free} libre${free>1?"s":""}`;
+              return(
+                <button key={t} disabled={!ok&&!sel} onClick={()=>toggle(t)}
+                  style={{textAlign:"left",padding:"9px 11px",borderRadius:11,cursor:ok||sel?"pointer":"default",fontFamily:"inherit",
+                    background:sel?"#0c2a1a":ok?"#050e05":"#0a0d12",
+                    border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#161c28"}`,
+                    opacity:(!ok&&!sel)?0.5:1}}>
+                  <div className="mono" style={{fontSize:14,fontWeight:700,color:sel?"#4ade80":ok?"#e8edf5":"#475569"}}>{t}</div>
+                  <div style={{fontSize:10,fontWeight:700,marginTop:2,color:sel?"#4ade80":free<=0||slotBlocked(t)||isPast(t)?"#f87171":"#4ade80"}}>{sel?"✓ elegida":estado}</div>
+                </button>
+              );
+            })}
+          </div>
+      }
+
+      <button className="btn sky" style={{width:"100%",padding:12,fontSize:13,marginTop:16,opacity:picked.length?1:0.5}} onClick={submit} disabled={saving||picked.length===0}>
+        {saving?"Enviando...":picked.length?`Reservar ${picked.length} sesión${picked.length>1?"es":""} 🚀`:"Elige una hora libre"}
+      </button>
     </div>
   );
 }
