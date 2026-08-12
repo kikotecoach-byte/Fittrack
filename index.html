@@ -260,6 +260,7 @@ function App() {
   const [history, setHistory] = React.useState([]);
   const [payments, setPayments] = React.useState([]);
   const [blocked, setBlocked] = React.useState([]);
+  const [waitlist, setWaitlist] = React.useState([]);
   const [forum, setForum] = React.useState([]);
   const [exercises, setExercises] = React.useState([]);
   const [plans, setPlans] = React.useState([]);
@@ -290,7 +291,7 @@ function App() {
 
   const loadAll = React.useCallback(async () => {
     try {
-      const [c,s,h,p,b,f,ex,pl,cp,pr,rec,ach,ab,st,te,cw,as_,ae,wh] = await Promise.all([
+      const [c,s,h,p,b,f,ex,pl,cp,pr,rec,ach,ab,st,te,cw,as_,ae,wh,wl] = await Promise.all([
         sb.from("clients").select("*").order("created_at"),
         sb.from("sessions").select("*").order("date").order("time"),
         sb.from("history").select("*").order("date",{ascending:false}),
@@ -310,6 +311,7 @@ function App() {
         sb.from("assigned_sessions").select("*").order("date"),
         sb.from("assigned_exercises").select("*").order("order_index"),
         sb.from("weight_history").select("*").order("changed_at",{ascending:false}),
+        sb.from("waitlist").select("*").order("created_at"),
       ]);
       setClients(c.data||[]); setSessions(s.data||[]); setHistory(h.data||[]);
       setPayments(p.data||[]); setBlocked(b.data||[]); setForum(f.data||[]);
@@ -318,6 +320,7 @@ function App() {
       setAnnualBlocks(ab.data||[]); setSessionTemplates(st.data||[]); setTemplateExercises(te.data||[]);
       setClientWeights(cw.data||[]); setAssignedSessions(as_.data||[]); setAssignedExercises(ae.data||[]);
       setWeightHistory(wh.data||[]);
+      setWaitlist(wl.data||[]);
     } catch(e) { notify("Error de conexión","err"); }
     setLoading(false);
   },[]);
@@ -375,8 +378,8 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#160404":toast.type==="wa"?"#052e16":"#060f1e",color:toast.type==="err"?"#f87171":toast.type==="wa"?"#4ade80":"#38bdf8",border:`1px solid ${toast.type==="err"?"#450a0a":toast.type==="wa"?"#14532d":"#0e3a5c"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
     </div>
   );
 }
@@ -434,7 +437,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
+function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
   const [showVacation,setShowVacation] = React.useState(false);
@@ -1694,7 +1697,7 @@ function BulkWAModal({clients,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
+function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
   const [tab,setTab]=React.useState("home");
   const [reqDate,setReqDate]=React.useState(TODAY);
   const [reqTime,setReqTime]=React.useState("07:00");
@@ -1874,7 +1877,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
                 <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
               </a>
             </div>
-            :<MultiSessionRequest client={client} allSessions={allSessions} allClients={allClients} blocked={blocked} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
+            :<MultiSessionRequest client={client} allSessions={allSessions} allClients={allClients} blocked={blocked} waitlist={waitlist} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
           }
         </div>
       )}
