@@ -484,7 +484,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
   const requests = sessions.filter(s=>s.requested);
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
-  const alertCount = reminders.filter(r=>r.urgent).length+requests.length;
+  // Lista de espera con hueco libre (para avisar al cliente).
+  const freedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
+    const taken=sessions.filter(s=>s.date===x.date&&s.time===x.time).length;
+    const blk=blocked.some(b=>b.date===x.date&&(b.time===x.time||b.time==="ALL"));
+    const c=clients.find(cl=>cl.id===x.client_id);
+    return {wl:x,c,free:!blk&&taken<capOf(x.time)};
+  }).filter(o=>o.c&&o.free);
+  const alertCount = reminders.filter(r=>r.urgent).length+requests.length+freedWaitlist.length;
 
   // Income stats
   const thisMonth = new Date().toISOString().slice(0,7);
@@ -551,6 +558,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     await sb.from("sessions").update({date,time}).eq("id",sess.id);
     notify("Sesión movida ✓");
   });
+  const removeWaitlist = (id) => w(async()=>{ await sb.from("waitlist").delete().eq("id",id); notify("Quitado de la lista de espera"); });
 
   const markPayment = (client, amount) => w(async()=>{
     const next=new Date(client.next_payment+"T12:00:00"); next.setMonth(next.getMonth()+1);
@@ -1240,6 +1248,27 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Alertas</h1>
               <button className="btn wa" onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
             </div>
+            {freedWaitlist.length>0&&(
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:11,color:"#a3e635",fontWeight:700,letterSpacing:1,marginBottom:10}}>⏳ HUECO LIBRE — AVISAR EN ESPERA</div>
+                {freedWaitlist.map(({wl,c})=>(
+                  <div key={wl.id} className="card" style={{marginBottom:8,border:"1px solid #3f6212"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      {c.avatar_url
+                        ?<img src={c.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover"}}/>
+                        :<div className="ring" style={{width:40,height:40,background:c.color+"18",color:c.color,fontSize:12}}>{ini(c.name)}</div>}
+                      <div style={{flex:1}}><div style={{fontWeight:700}}>{c.name}</div><div style={{fontSize:12,color:"#a3e635"}}>🎉 Hueco libre · {fmtDate(wl.date)} a las {wl.time}</div></div>
+                      <div style={{display:"flex",gap:6}}>
+                        <a href={waLink(c.phone||TRAINER_PHONE,`Hola ${c.name.split(" ")[0]}! 🎉 Se ha liberado un hueco en la clase de las ${wl.time} del ${fmtDate(wl.date)} que esperabas. ¿La quieres? Entra a la app y resérvala. 💪`)} target="_blank" rel="noreferrer" onClick={()=>notify("Abriendo WhatsApp...","wa")}>
+                          <button className="btn wa" style={{fontSize:11,padding:"7px 10px"}}>📱 Avisar</button>
+                        </a>
+                        <button className="btn ghost" style={{fontSize:11,padding:"7px 9px"}} onClick={()=>removeWaitlist(wl.id)}>✕</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {requests.length>0&&(
               <div style={{marginBottom:20}}>
                 <div style={{fontSize:11,color:"#fb923c",fontWeight:700,letterSpacing:1,marginBottom:10}}>SOLICITUDES</div>
@@ -1731,6 +1760,27 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
     setTab("home");
   };
 
+  // Lista de espera: detecta si se ha liberado un hueco en una clase que el
+  // cliente esperaba, para avisarle y dejar que lo reserve.
+  const capOfC=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
+  const myWaits=(waitlist||[]).filter(w=>w.client_id===client.id&&w.date>=TODAY);
+  const freedWaits=myWaits.filter(w=>{
+    const blk=blocked.some(b=>b.date===w.date&&(b.time===w.time||b.time==="ALL"));
+    const taken=allSessions.filter(s=>s.date===w.date&&s.time===w.time).length;
+    return !blk && taken<capOfC(w.time);
+  });
+  const grabWaitlistSpot=async(wtry)=>{
+    if(client.sessions_left<=0) return notify("Sin sesiones en tu bono","err");
+    const taken=allSessions.filter(s=>s.date===wtry.date&&s.time===wtry.time).length;
+    if(taken>=capOfC(wtry.time)) return notify("El hueco se acaba de ocupar","err");
+    setSaving(true);
+    await sb.from("sessions").insert({client_id:client.id,date:wtry.date,time:wtry.time,type:"Fuerza",status:"pending",requested:true});
+    await sb.from("waitlist").delete().eq("id",wtry.id);
+    await loadAll(); setSaving(false);
+    notify("¡Hueco reservado! Tu trainer lo confirmará 🎯");
+  };
+  const leaveWait=async(id)=>{ await sb.from("waitlist").delete().eq("id",id); await loadAll(); notify("Fuera de la lista de espera"); };
+
   return(
     <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"22px 16px"}} className="fade">
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0ea5e9,#4ade80)",zIndex:500}}/>}
@@ -1748,6 +1798,25 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           💬 {client.welcome_msg}
         </div>
       )}
+
+      {/* Aviso: se ha liberado un hueco de tu lista de espera */}
+      {freedWaits.map(w=>(
+        <div key={w.id} style={{background:"#12210a",border:"1px solid #3f6212",borderRadius:14,padding:"12px 14px",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#a3e635",marginBottom:2}}>🎉 ¡Hueco libre a las {w.time}!</div>
+          <div style={{fontSize:12,color:"#7a8b52",marginBottom:10}}>Se ha liberado tu clase en espera del {fmtDate(w.date)}. ¡Corre, reserva antes de que se ocupe!</div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="btn grn" style={{flex:1,padding:"9px",justifyContent:"center"}} disabled={saving} onClick={()=>grabWaitlistSpot(w)}>Reservar ahora 🚀</button>
+            <button className="btn ghost" style={{padding:"9px 12px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
+          </div>
+        </div>
+      ))}
+      {/* Recordatorio de esperas aún llenas */}
+      {myWaits.filter(w=>!freedWaits.some(f=>f.id===w.id)).map(w=>(
+        <div key={w.id} style={{background:"#12100a",border:"1px solid #3a2f10",borderRadius:12,padding:"9px 13px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+          <div style={{fontSize:12,color:"#a1873c"}}>⏳ En espera · {fmtDate(w.date)} a las {w.time}</div>
+          <button className="btn ghost" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
+        </div>
+      ))}
 
       {/* Hero card */}
       <div className="hero-card" style={{marginBottom:18}}>
@@ -1931,7 +2000,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 }
 
 // ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
-function MultiSessionRequest({client, allSessions, allClients, blocked, config, loadAll, notify, saving, setSaving}) {
+function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist, config, loadAll, notify, saving, setSaving}) {
   const [date,setDate] = React.useState(TODAY);
   const [type,setType] = React.useState("Fuerza");
   const [picked,setPicked] = React.useState([]); // horas seleccionadas para esa fecha
@@ -1946,6 +2015,20 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, config, 
   const nowHM=new Date().toTimeString().slice(0,5);
   const isPast=(t)=>date<TODAY||(date===TODAY&&t<=nowHM);
   const available=(t)=>!slotBlocked(t)&&freeAt(t)>0&&!isPast(t);
+
+  // Lista de espera para huecos completos.
+  const myWait=(t)=>waitlist.find(w=>w.client_id===client.id&&w.date===date&&w.time===t);
+  const joinWaitlist=async(t)=>{
+    if(myWait(t)) return;
+    const {error}=await sb.from("waitlist").insert({client_id:client.id,date,time:t});
+    if(error) return notify("Necesitas crear la tabla waitlist (ver docs)","err");
+    await loadAll(); notify("En lista de espera ⏳ Te avisaremos si se libera");
+  };
+  const leaveWaitlist=async(t)=>{
+    const w=myWait(t); if(!w) return;
+    await sb.from("waitlist").delete().eq("id",w.id);
+    await loadAll(); notify("Fuera de la lista de espera");
+  };
 
   // Al cambiar de fecha, limpiamos la selección (los huecos cambian).
   const changeDate=(d)=>{ setDate(d); setPicked([]); };
@@ -2000,7 +2083,7 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, config, 
               return(
                 <div key={t} onClick={()=>toggle(t)}
                   style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,cursor:ok||sel?"pointer":"default",
-                    background:sel?"#0c2a1a":ok?"#050e05":"#0a0d12",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#161c28"}`,opacity:(!ok&&!sel)?0.55:1}}>
+                    background:sel?"#0c2a1a":ok?"#050e05":"#0a0d12",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#161c28"}`,opacity:(slotBlocked(t)||isPast(t))?0.55:1}}>
                   {/* Hora */}
                   <div style={{flexShrink:0,textAlign:"center",minWidth:44}}>
                     <div className="mono" style={{fontSize:15,fontWeight:700,color:sel?"#4ade80":ok?"#e8edf5":"#64748b"}}>{t}</div>
@@ -2025,7 +2108,13 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, config, 
                     ))}
                     {enrolled.length===0&&slotBlocked(t)&&<span style={{fontSize:11,color:"#4a1515"}}>No disponible</span>}
                   </div>
-                  <div style={{flexShrink:0,fontSize:10,fontWeight:700,color:"#334155"}} className="mono">{enrolled.length}/{cap}</div>
+                  <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
+                    <span className="mono" style={{fontSize:10,fontWeight:700,color:"#334155"}}>{enrolled.length}/{cap}</span>
+                    {free<=0&&!slotBlocked(t)&&!isPast(t)&&(myWait(t)
+                      ?<button onClick={e=>{e.stopPropagation();leaveWaitlist(t);}} style={{background:"#1f1405",border:"1px solid #78500f",color:"#facc15",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ En espera ✓</button>
+                      :<button onClick={e=>{e.stopPropagation();joinWaitlist(t);}} style={{background:"#160f04",border:"1px solid #78500f",color:"#facc15",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ Espera</button>
+                    )}
+                  </div>
                 </div>
               );
             })}
