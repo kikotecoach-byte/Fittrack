@@ -193,6 +193,21 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const TODAY = new Date().toISOString().split("T")[0];
 const TIME_SLOTS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00"];
 const SESSION_TYPES = ["Fuerza","Cardio","Funcional","HIIT","Movilidad","Evaluación"];
+const HOURS = Array.from({length:24},(_,h)=>String(h).padStart(2,"0")+":00");
+// Horario de trabajo por defecto: mañana 10-13, tarde 17-20, sesiones de 1h,
+// 1 atleta por hora. El coach lo edita y se guarda en la tabla app_settings.
+const DEFAULT_SCHEDULE = {
+  morningFrom:"10:00", morningTo:"13:00",
+  afternoonFrom:"17:00", afternoonTo:"20:00",
+  defaultCapacity:1, capacity:{},
+};
+// Genera las horas de una franja [from, to) en pasos de 1h. Ej: 10:00→13:00 = [10:00,11:00,12:00].
+const genSlots = (from,to) => {
+  const f=parseInt(from,10), t=parseInt(to,10), out=[];
+  if(isNaN(f)||isNaN(t)) return out;
+  for(let h=f;h<t;h++) out.push(String(h).padStart(2,"0")+":00");
+  return out;
+};
 const COLORS = ["#22d3ee","#f472b6","#a78bfa","#4ade80","#fb923c","#f59e0b","#38bdf8","#e879f9"];
 
 const uid = () => crypto.randomUUID();
@@ -205,6 +220,13 @@ const statusOf = c => c.sessions_left===0?"expired":c.sessions_left<=2?"alert":"
 const statusColor = s => s==="active"?"#4ade80":s==="alert"?"#facc15":"#f87171";
 const statusLabel = s => s==="active"?"Activo":s==="alert"?"Pocas sesiones":"Sin sesiones";
 const waLink = (phone,msg) => `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+// Mensaje de recordatorio ya escrito según el tipo de alerta (para envío de 1 clic).
+const reminderWA = (r) => {
+  const first = r.c.name.split(" ")[0];
+  if(r.type==="payment") return `Hola ${first}! 👋 Te recuerdo que tu pago de ${r.c.payment_amount}€ vence ${r.days===0?"hoy":r.days<0?`hace ${Math.abs(r.days)} días`:`en ${r.days} días`}. ¡Cualquier duda aquí estoy! 💪`;
+  if(r.type==="sessions") return `Hola ${first}! Te quedan ${r.c.sessions_left} sesión(es). ¿Renovamos el paquete para no interrumpir tu progreso? 🔥💪`;
+  return `Hola ${first}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪`;
+};
 const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
 
 function getMonthDays(year, month) {
@@ -238,6 +260,7 @@ function App() {
   const [history, setHistory] = React.useState([]);
   const [payments, setPayments] = React.useState([]);
   const [blocked, setBlocked] = React.useState([]);
+  const [waitlist, setWaitlist] = React.useState([]);
   const [forum, setForum] = React.useState([]);
   const [exercises, setExercises] = React.useState([]);
   const [plans, setPlans] = React.useState([]);
@@ -268,7 +291,7 @@ function App() {
 
   const loadAll = React.useCallback(async () => {
     try {
-      const [c,s,h,p,b,f,ex,pl,cp,pr,rec,ach,ab,st,te,cw,as_,ae,wh] = await Promise.all([
+      const [c,s,h,p,b,f,ex,pl,cp,pr,rec,ach,ab,st,te,cw,as_,ae,wh,wl] = await Promise.all([
         sb.from("clients").select("*").order("created_at"),
         sb.from("sessions").select("*").order("date").order("time"),
         sb.from("history").select("*").order("date",{ascending:false}),
@@ -288,6 +311,7 @@ function App() {
         sb.from("assigned_sessions").select("*").order("date"),
         sb.from("assigned_exercises").select("*").order("order_index"),
         sb.from("weight_history").select("*").order("changed_at",{ascending:false}),
+        sb.from("waitlist").select("*").order("created_at"),
       ]);
       setClients(c.data||[]); setSessions(s.data||[]); setHistory(h.data||[]);
       setPayments(p.data||[]); setBlocked(b.data||[]); setForum(f.data||[]);
@@ -296,6 +320,7 @@ function App() {
       setAnnualBlocks(ab.data||[]); setSessionTemplates(st.data||[]); setTemplateExercises(te.data||[]);
       setClientWeights(cw.data||[]); setAssignedSessions(as_.data||[]); setAssignedExercises(ae.data||[]);
       setWeightHistory(wh.data||[]);
+      setWaitlist(wl.data||[]);
     } catch(e) { notify("Error de conexión","err"); }
     setLoading(false);
   },[]);
@@ -353,8 +378,8 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#160404":toast.type==="wa"?"#052e16":"#060f1e",color:toast.type==="err"?"#f87171":toast.type==="wa"?"#4ade80":"#38bdf8",border:`1px solid ${toast.type==="err"?"#450a0a":toast.type==="wa"?"#14532d":"#0e3a5c"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
     </div>
   );
 }
@@ -412,9 +437,9 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
+function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
-  const [schedView,setSchedView] = React.useState("week");
+  const [schedView,setSchedView] = React.useState("day");
   const [showVacation,setShowVacation] = React.useState(false);
   const [expanded,setExpanded] = React.useState(null);
   const [waClient,setWaClient] = React.useState(null);
@@ -427,6 +452,28 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
   const [activeDay,setActiveDay] = React.useState(TODAY);
   const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:""});
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
+  const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
+  const [showSched,setShowSched] = React.useState(false);
+  const [moveSess,setMoveSess] = React.useState(null);
+
+  // Carga la configuración de horario (si la tabla existe; si no, usa los valores por defecto).
+  React.useEffect(()=>{
+    sb.from("app_settings").select("config").eq("id",1).then(({data})=>{
+      if(data&&data[0]&&data[0].config) setConfig({...DEFAULT_SCHEDULE,...data[0].config});
+    });
+  },[]);
+  const saveConfig = (cfg) => w(async()=>{
+    setConfig(cfg);
+    const {error}=await sb.from("app_settings").upsert({id:1,config:cfg});
+    if(error) return notify("Guarda la tabla app_settings (ver docs)","err");
+    notify("Horario guardado ✓");
+  });
+
+  // Franjas de trabajo derivadas de la config y capacidad (atletas) por hora.
+  const workSlots = [...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  const capOf = (t) => (config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
+  // Franjas visibles del día: las de trabajo + cualquier hora con sesión (para no ocultar nada).
+  const daySlots = Array.from(new Set([...workSlots,...sessions.filter(s=>s.date===activeDay).map(s=>s.time)])).sort();
 
   const reminders = [];
   clients.forEach(c=>{
@@ -437,7 +484,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
   });
   const requests = sessions.filter(s=>s.requested);
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
-  const alertCount = reminders.filter(r=>r.urgent).length+requests.length;
+  // Lista de espera con hueco libre (para avisar al cliente).
+  const freedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
+    const taken=sessions.filter(s=>s.date===x.date&&s.time===x.time).length;
+    const blk=blocked.some(b=>b.date===x.date&&(b.time===x.time||b.time==="ALL"));
+    const c=clients.find(cl=>cl.id===x.client_id);
+    return {wl:x,c,free:!blk&&taken<capOf(x.time)};
+  }).filter(o=>o.c&&o.free);
+  const alertCount = reminders.filter(r=>r.urgent).length+requests.length+freedWaitlist.length;
 
   // Income stats
   const thisMonth = new Date().toISOString().slice(0,7);
@@ -478,9 +532,33 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
     notify("Sesión completada ✓");
   });
 
+  // Cuenta una sesión suelta (cliente que entrena sin cita previa): la registra
+  // hoy en el historial y descuenta 1 del bono.
+  const countWalkin = (client) => w(async()=>{
+    const now=new Date().toTimeString().slice(0,5);
+    await sb.from("history").insert({client_id:client.id,date:TODAY,time:now,type:"Sesión"});
+    await sb.from("clients").update({sessions_left:Math.max(0,client.sessions_left-1)}).eq("id",client.id);
+    notify("Sesión contada ✓");
+  });
+
   const deleteSession = (id) => w(async()=>{ await sb.from("sessions").delete().eq("id",id); notify("Sesión eliminada"); });
-  const approveRequest = (id) => w(async()=>{ await sb.from("sessions").update({requested:false,status:"confirmed"}).eq("id",id); notify("Solicitud aprobada ✓"); });
+
+  // Aprobar una solicitud avisa si la clase ya está completa (permite forzar).
+  const approveRequest = (id) => {
+    const req=sessions.find(s=>s.id===id); if(!req) return;
+    const confirmadas=sessions.filter(s=>s.date===req.date&&s.time===req.time&&!s.requested).length;
+    const cap=capOf(req.time);
+    if(confirmadas>=cap && !window.confirm(`⚠️ La clase de las ${req.time} ya está completa (${confirmadas}/${cap}).\n¿Aprobar de todos modos?`)) return;
+    w(async()=>{ await sb.from("sessions").update({requested:false,status:"confirmed"}).eq("id",id); notify("Solicitud aprobada ✓"); });
+  };
   const denyRequest = (id) => w(async()=>{ await sb.from("sessions").delete().eq("id",id); notify("Solicitud rechazada"); });
+
+  // Mover una sesión a otro día/hora (reprogramar).
+  const rescheduleSession = (sess,date,time) => w(async()=>{
+    await sb.from("sessions").update({date,time}).eq("id",sess.id);
+    notify("Sesión movida ✓");
+  });
+  const removeWaitlist = (id) => w(async()=>{ await sb.from("waitlist").delete().eq("id",id); notify("Quitado de la lista de espera"); });
 
   const markPayment = (client, amount) => w(async()=>{
     const next=new Date(client.next_payment+"T12:00:00"); next.setMonth(next.getMonth()+1);
@@ -528,8 +606,6 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
   const calDays=getMonthDays(calYear,calMonth);
   const getDayStr=(day)=>`${calYear}-${String(calMonth+1).padStart(2,"0")}-${String(day).padStart(2,"0")}`;
 
-  const clientsPayingPending = clients.filter(c=>daysUntil(c.next_payment)<=5);
-  const clientsLowSessions = clients.filter(c=>c.sessions_left<=2);
 
   return (
     <div style={{minHeight:"100vh"}}>
@@ -560,6 +636,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
         {[
           {id:"dashboard",icon:"🏠",label:"Inicio"},
           {id:"clients",icon:"👥",label:"Clientes"},
+          {id:"feed",icon:"🎯",label:"Lista"},
           {id:"schedule",icon:"📅",label:"Agenda"},
           {id:"programming",icon:"📊",label:"Programa"},
           {id:"exercises",icon:"🏋️",label:"Ejercicios"},
@@ -644,6 +721,68 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
                   })
                 }
               </div>
+            </div>
+          </div>
+        )}
+
+        {/* FEED — PASAR LISTA */}
+        {view==="feed"&&(
+          <div>
+            <div style={{marginBottom:20}}>
+              <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Pasar lista</h1>
+              <p style={{color:"#334155",fontSize:12,marginTop:4}}>Marca quién entrena — se descuenta de su bono automáticamente.</p>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
+              {clients.map(c=>{
+                const nextSess=sessions.filter(s=>s.client_id===c.id&&!s.requested&&s.date>=TODAY)
+                  .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
+                return {c,nextSess,today:!!nextSess&&nextSess.date===TODAY};
+              }).sort((a,b)=>{
+                if(a.today!==b.today) return a.today?-1:1;                       // sesión hoy primero
+                if(a.today&&b.today) return a.nextSess.time.localeCompare(b.nextSess.time); // por hora
+                return 0;
+              }).map(({c,nextSess,today})=>{
+                const st=statusOf(c);
+                const pd=daysUntil(c.next_payment);
+                const cHist=history.filter(h=>h.client_id===c.id).sort((a,b)=>(b.date+(b.time||"")).localeCompare(a.date+(a.time||"")));
+                const last=cHist[0];
+                return(
+                  <div key={c.id} className="card" style={{border:`1px solid ${today?"#0e3a5c":"var(--border)"}`}}>
+                    <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12}}>
+                      {c.avatar_url
+                        ?<img src={c.avatar_url} alt={c.name} style={{width:46,height:46,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${c.color}45`}}/>
+                        :<div className="ring" style={{width:46,height:46,background:c.color+"18",color:c.color,border:`1.5px solid ${c.color}35`,fontSize:14}}>{ini(c.name)}</div>}
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
+                          <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
+                          {today&&<span style={{fontSize:9,fontWeight:700,color:"#38bdf8",background:"#08131f",border:"1px solid #0e3a5c",borderRadius:20,padding:"2px 7px"}}>HOY {nextSess.time}</span>}
+                        </div>
+                        <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {c.total_sessions} · {c.payment_amount}€</div>
+                      </div>
+                      <span className="pill" style={{background:statusColor(st)+"18",color:statusColor(st),border:`1px solid ${statusColor(st)}30`,whiteSpace:"nowrap"}}>{c.sessions_left}/{c.total_sessions}</span>
+                    </div>
+                    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
+                      <div style={{background:"#080d14",borderRadius:9,padding:"8px 10px"}}>
+                        <div style={{color:"#334155",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>CADUCIDAD BONO</div>
+                        <div style={{fontSize:12,color:pd<=3?"#f87171":"#94a3b8"}}>{isNaN(pd)?"—":pd<0?`vencido hace ${-pd}d`:pd===0?"hoy":`en ${pd}d`}</div>
+                      </div>
+                      <div style={{background:"#080d14",borderRadius:9,padding:"8px 10px"}}>
+                        <div style={{color:"#334155",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>ÚLTIMA SESIÓN</div>
+                        <div style={{fontSize:12,color:"#94a3b8"}}>{last?fmtDate(last.date):"—"}</div>
+                      </div>
+                      <div style={{background:"#080d14",borderRadius:9,padding:"8px 10px",gridColumn:"1 / -1"}}>
+                        <div style={{color:"#334155",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>SESIÓN AGENDADA</div>
+                        <div style={{fontSize:12,color:nextSess?"#38bdf8":"#475569"}}>{nextSess?`${nextSess.date===TODAY?"Hoy":fmtDate(nextSess.date)} · ${nextSess.time} · ${nextSess.type}`:"Sin agendar"}</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:8}}>
+                      <button className="btn grn" style={{flex:1,padding:"9px",justifyContent:"center"}} onClick={()=>nextSess?completeSession(nextSess):countWalkin(c)}>✓ Vino</button>
+                      <button className="btn danger" style={{padding:"9px 12px",opacity:nextSess?1:0.35}} disabled={!nextSess} onClick={()=>nextSess&&deleteSession(nextSess.id)}>✗ No vino</button>
+                      <button className="btn wa" style={{padding:"9px 12px"}} onClick={()=>setWaClient(c)}>📱</button>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
           </div>
         )}
@@ -769,7 +908,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <h1 className="mono" style={{fontSize:18,fontWeight:700}}>Agenda</h1>
-              <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
+              <div style={{display:"flex",gap:8}}>
+                <button className="btn ghost" style={{fontSize:12,padding:"8px 12px"}} onClick={()=>setShowSched(true)}>⚙️ Horario</button>
+                <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
+              </div>
             </div>
 
             {/* View switcher */}
@@ -823,30 +965,34 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
             {/* DAY VIEW */}
             {schedView==="day"&&(
               <div className="card" style={{padding:0,overflow:"hidden"}}>
-                {TIME_SLOTS.map((time,i)=>{
+                {daySlots.map((time,i)=>{
                   const slotBlocked=isBlocked(activeDay,time)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
                   const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                     .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
+                  const cap=capOf(time), isWork=workSlots.includes(time), full=slots.length>=cap;
                   return(
-                    <div key={time} style={{display:"flex",borderBottom:i<TIME_SLOTS.length-1?"1px solid #0d1520":"none",minHeight:52,background:slotBlocked?"#0d0505":"transparent"}}>
+                    <div key={time} style={{display:"flex",borderBottom:i<daySlots.length-1?"1px solid #0d1520":"none",minHeight:52,background:slotBlocked?"#0d0505":isWork?"transparent":"#070a10"}}>
                       <div className="mono" style={{width:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
                       <div style={{flex:1,padding:"7px 10px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
                         {slotBlocked
                           ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
                           :<>
-                            {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Libre · 🔒</span>}
                             {slots.map(s=>(
-                              <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:8,padding:"5px 9px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
+                              <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:10,padding:"5px 10px 5px 5px",fontSize:12,display:"flex",alignItems:"center",gap:7}}>
                                 {s.client.avatar_url
-                                  ?<img src={s.client.avatar_url} style={{width:20,height:20,borderRadius:"50%",objectFit:"cover"}}/>
-                                  :<div className="ring" style={{width:20,height:20,background:s.client.color+"30",color:s.client.color,fontSize:8}}>{ini(s.client.name)}</div>
+                                  ?<img src={s.client.avatar_url} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
+                                  :<div className="ring" style={{width:26,height:26,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
                                 }
-                                <span style={{color:s.client.color,fontWeight:700}}>{s.client.name}</span>
-                                <span style={{color:"#475569",fontSize:11}}>{s.type}</span>
-                                {s.requested&&<span style={{color:"#fb923c",fontSize:10}}>·req</span>}
-                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:12,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                                <div style={{lineHeight:1.2}}>
+                                  <div style={{color:s.client.color,fontWeight:700}}>{s.client.name}</div>
+                                  <div style={{color:"#475569",fontSize:10}}>{s.type}{s.requested&&<span style={{color:"#fb923c"}}> · pendiente</span>}</div>
+                                </div>
+                                <button title="Mover" style={{background:"none",border:"none",cursor:"pointer",color:"#38bdf8",fontSize:13,padding:0,marginLeft:2}} onClick={()=>setMoveSess(s)}>🕐</button>
+                                <button title="Completar" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:14,padding:0}} onClick={()=>completeSession(s)}>✓</button>
                               </div>
                             ))}
+                            {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>{isWork?"Libre · 🔒":"Fuera de horario · 🔒"}</span>}
+                            {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#facc15":"#4ade80",background:(full?"#facc15":"#4ade80")+"14",border:`1px solid ${(full?"#facc15":"#4ade80")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
                           </>
                         }
                       </div>
@@ -1102,6 +1248,27 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
               <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Alertas</h1>
               <button className="btn wa" onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
             </div>
+            {freedWaitlist.length>0&&(
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:11,color:"#a3e635",fontWeight:700,letterSpacing:1,marginBottom:10}}>⏳ HUECO LIBRE — AVISAR EN ESPERA</div>
+                {freedWaitlist.map(({wl,c})=>(
+                  <div key={wl.id} className="card" style={{marginBottom:8,border:"1px solid #3f6212"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      {c.avatar_url
+                        ?<img src={c.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover"}}/>
+                        :<div className="ring" style={{width:40,height:40,background:c.color+"18",color:c.color,fontSize:12}}>{ini(c.name)}</div>}
+                      <div style={{flex:1}}><div style={{fontWeight:700}}>{c.name}</div><div style={{fontSize:12,color:"#a3e635"}}>🎉 Hueco libre · {fmtDate(wl.date)} a las {wl.time}</div></div>
+                      <div style={{display:"flex",gap:6}}>
+                        <a href={waLink(c.phone||TRAINER_PHONE,`Hola ${c.name.split(" ")[0]}! 🎉 Se ha liberado un hueco en la clase de las ${wl.time} del ${fmtDate(wl.date)} que esperabas. ¿La quieres? Entra a la app y resérvala. 💪`)} target="_blank" rel="noreferrer" onClick={()=>notify("Abriendo WhatsApp...","wa")}>
+                          <button className="btn wa" style={{fontSize:11,padding:"7px 10px"}}>📱 Avisar</button>
+                        </a>
+                        <button className="btn ghost" style={{fontSize:11,padding:"7px 9px"}} onClick={()=>removeWaitlist(wl.id)}>✕</button>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
             {requests.length>0&&(
               <div style={{marginBottom:20}}>
                 <div style={{fontSize:11,color:"#fb923c",fontWeight:700,letterSpacing:1,marginBottom:10}}>SOLICITUDES</div>
@@ -1139,7 +1306,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
                     <div style={{display:"flex",flexDirection:"column",gap:5}}>
                       {r.type==="payment"&&<button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(r.c)}>💳 Pago</button>}
                       {(r.type==="sessions"||r.type==="expired")&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(r.c)}>↺ Renovar</button>}
-                      <button className="btn wa" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setWaClient(r.c)}>📱 WA</button>
+                      <a href={waLink(r.c.phone||TRAINER_PHONE,reminderWA(r))} target="_blank" rel="noreferrer" onClick={()=>notify("Abriendo WhatsApp...","wa")}>
+                        <button className="btn wa" style={{fontSize:11,padding:"6px 10px",width:"100%",justifyContent:"center"}}>📱 Avisar</button>
+                      </a>
+                      <button className="btn ghost" style={{fontSize:10,padding:"4px 10px"}} onClick={()=>setWaClient(r.c)}>Otro mensaje</button>
                     </div>
                   </div>
                 </div>
@@ -1181,7 +1351,126 @@ function AdminPanel({clients,sessions,history,payments,blocked,forum,exercises,p
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
-      {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify} clientsPayPending={clientsPayingPending} clientsLow={clientsLowSessions}/>}
+      {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
+      {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
+      {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
+    </div>
+  );
+}
+
+// ── MOVER SESIÓN (reprogramar) ─────────────────────────────────────────────
+function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
+  const [date,setDate] = React.useState(sess.date);
+  const cliente = clients.find(c=>c.id===sess.client_id);
+  const workSlots = [...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  const capOf = (t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
+  // Ocupación del destino sin contar la propia sesión que estamos moviendo.
+  const takenAt = (t)=>sessions.filter(s=>s.date===date&&s.time===t&&s.id!==sess.id).length;
+  const slots = Array.from(new Set([...workSlots, sess.date===date?sess.time:null].filter(Boolean))).sort();
+
+  const pick = (t)=>{
+    if(date===sess.date && t===sess.time) return onClose(); // sin cambios
+    const free = capOf(t)-takenAt(t);
+    if(free<=0 && !window.confirm(`⚠️ Las ${t} ya están completas (${takenAt(t)}/${capOf(t)}).\n¿Mover igualmente?`)) return;
+    onMove(date,t);
+  };
+
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>🕐 Mover sesión</h2>
+        <p style={{fontSize:12,color:"#475569",marginBottom:16}}>{cliente?cliente.name:"Cliente"} · {sess.type} — ahora el {fmtDate(sess.date)} a las {sess.time}</p>
+
+        <div style={{marginBottom:14}}><span className="lbl">NUEVO DÍA</span>
+          <input type="date" className="inp" value={date} min={TODAY} onChange={e=>setDate(e.target.value)}/>
+        </div>
+
+        <span className="lbl">NUEVA HORA</span>
+        <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:6,maxHeight:280,overflowY:"auto"}}>
+          {slots.map(t=>{
+            const actual = date===sess.date && t===sess.time;
+            const cap=capOf(t), taken=takenAt(t), free=cap-taken, full=free<=0, isWork=workSlots.includes(t);
+            return(
+              <button key={t} onClick={()=>pick(t)}
+                style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                  background:actual?"#0c2040":isWork?"#050e05":"#0a0d12",
+                  border:`1px solid ${actual?"#1e3a5a":full?"#3f1a1a":isWork?"#14532d":"#161c28"}`}}>
+                <span className="mono" style={{fontSize:14,fontWeight:700,color:actual?"#38bdf8":"#e8edf5",minWidth:44}}>{t}</span>
+                <span style={{flex:1,fontSize:12,color:actual?"#38bdf8":full?"#f87171":"#4ade80",fontWeight:700}}>
+                  {actual?"Actual":full?`Completa ${taken}/${cap}`:`${free} libre${free>1?"s":""} · ${taken}/${cap}`}
+                </span>
+                {!actual&&<span style={{fontSize:11,color:"#475569"}}>Mover aquí →</span>}
+              </button>
+            );
+          })}
+        </div>
+
+        <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── SCHEDULE / HORARIO MODAL ───────────────────────────────────────────────
+// Configura las franjas de mañana y tarde (sesiones de 1h) y los atletas por hora.
+function ScheduleModal({config,onSave,onClose}) {
+  const [cfg,setCfg] = React.useState({...DEFAULT_SCHEDULE,...config,capacity:{...(config.capacity||{})}});
+  const slots = [...genSlots(cfg.morningFrom,cfg.morningTo),...genSlots(cfg.afternoonFrom,cfg.afternoonTo)];
+  // Capacidad entre 1 y 5 atletas por hora.
+  const capOf = (t) => cfg.capacity[t]!=null?cfg.capacity[t]:cfg.defaultCapacity;
+  const setCap = (t,v) => setCfg(c=>({...c,capacity:{...c.capacity,[t]:Math.min(5,Math.max(1,parseInt(v||1,10)))}}));
+  const hourSel = (val,onCh) => (
+    <select className="inp" style={{appearance:"none"}} value={val} onChange={e=>onCh(e.target.value)}>
+      {HOURS.map(h=><option key={h} value={h}>{h}</option>)}
+    </select>
+  );
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>⚙️ Horario de trabajo</h2>
+        <p style={{fontSize:12,color:"#475569",marginBottom:18}}>Clases de 1 hora en punto. Define tus franjas y cuántos atletas admites por hora (de 1 a 5).</p>
+
+        <div style={{marginBottom:16}}>
+          <span className="lbl">☀️ MAÑANA</span>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {hourSel(cfg.morningFrom,v=>setCfg(c=>({...c,morningFrom:v})))}
+            <span style={{color:"#475569",fontSize:13}}>a</span>
+            {hourSel(cfg.morningTo,v=>setCfg(c=>({...c,morningTo:v})))}
+          </div>
+        </div>
+        <div style={{marginBottom:16}}>
+          <span className="lbl">🌙 TARDE</span>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {hourSel(cfg.afternoonFrom,v=>setCfg(c=>({...c,afternoonFrom:v})))}
+            <span style={{color:"#475569",fontSize:13}}>a</span>
+            {hourSel(cfg.afternoonTo,v=>setCfg(c=>({...c,afternoonTo:v})))}
+          </div>
+        </div>
+
+        <div style={{marginBottom:8}}>
+          <span className="lbl">👥 ATLETAS POR HORA (1–5)</span>
+          {slots.length===0
+            ?<p style={{fontSize:12,color:"#334155"}}>Ajusta las franjas para ver las horas.</p>
+            :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8}}>
+              {slots.map(t=>{const cap=capOf(t);return(
+                <div key={t} style={{background:"#080d14",borderRadius:9,padding:"7px 10px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                  <span className="mono" style={{fontSize:12,color:"#94a3b8"}}>{t}</span>
+                  <div style={{display:"flex",alignItems:"center",gap:5}}>
+                    <button className="btn ghost" style={{padding:"3px 8px",fontSize:15,lineHeight:1,opacity:cap<=1?0.35:1}} disabled={cap<=1} onClick={()=>setCap(t,cap-1)}>−</button>
+                    <span className="mono" style={{width:14,textAlign:"center",fontWeight:700,fontSize:13,color:"#38bdf8"}}>{cap}</span>
+                    <button className="btn ghost" style={{padding:"3px 8px",fontSize:15,lineHeight:1,opacity:cap>=5?0.35:1}} disabled={cap>=5} onClick={()=>setCap(t,cap+1)}>+</button>
+                  </div>
+                </div>
+              );})}
+            </div>
+          }
+        </div>
+
+        <div style={{display:"flex",gap:8,marginTop:18}}>
+          <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>{onSave(cfg);onClose();}}>Guardar horario</button>
+          <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -1340,42 +1629,96 @@ function WAModal({client,onClose,notify}) {
 }
 
 // ── BULK WA MODAL ──────────────────────────────────────────────────────────
-function BulkWAModal({clients,clientsPayPending,clientsLow,onClose,notify}) {
-  const [custom,setCustom]=React.useState("");
-  const [selected,setSelected]=React.useState("all");
-  const targets = selected==="pay"?clientsPayPending:selected==="low"?clientsLow:clients;
+// Plantillas por grupo. Los comodines {nombre} {sesiones} {importe} {vence}
+// se rellenan solos con los datos de cada cliente.
+const WA_TEMPLATES = {
+  pay: "Hola {nombre}! 👋 Te recuerdo que tu cuota de {importe}€ vence {vence}. ¡Cualquier duda aquí estoy! 💪",
+  low: "Hola {nombre}! Te quedan {sesiones} sesión(es). ¿Renovamos el paquete para no interrumpir tu progreso? 🔥💪",
+  expired: "Hola {nombre}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪",
+  all: "Hola {nombre}! 👋 Te escribo desde Kikote Gym. ",
+};
+// Rellena una plantilla con los datos reales de un cliente.
+const fillWA = (tpl,c) => {
+  const pd = daysUntil(c.next_payment);
+  const abs = Math.abs(pd);
+  const vence = isNaN(pd) ? "pronto" : pd===0 ? "hoy" : pd<0 ? `hace ${abs} día${abs===1?"":"s"}` : `en ${pd} día${pd===1?"":"s"}`;
+  return tpl
+    .split("{nombre}").join(c.name.split(" ")[0])
+    .split("{sesiones}").join(c.sessions_left)
+    .split("{importe}").join(c.payment_amount??"")
+    .split("{vence}").join(vence);
+};
+
+function BulkWAModal({clients,onClose,notify}) {
+  const [selected,setSelected]=React.useState("pay");
+  const [msg,setMsg]=React.useState(WA_TEMPLATES.pay);
+
+  // "Ya avisados hoy" se guarda en el móvil (no repites a nadie ni al recargar).
+  const doneKey = `kikote_wa_${TODAY}`;
+  const [done,setDone]=React.useState(()=>{
+    try { return new Set(JSON.parse(localStorage.getItem(doneKey)||"[]")); } catch { return new Set(); }
+  });
+  const marcar = (id)=>setDone(prev=>{
+    const n=new Set(prev); n.add(id);
+    try { localStorage.setItem(doneKey,JSON.stringify([...n])); } catch {}
+    return n;
+  });
+  const reiniciar = ()=>{ try{localStorage.removeItem(doneKey);}catch{} setDone(new Set()); };
+
+  const grupos = {
+    pay: clients.filter(c=>daysUntil(c.next_payment)<=5),
+    low: clients.filter(c=>c.sessions_left<=2&&c.sessions_left>0),
+    expired: clients.filter(c=>c.sessions_left===0),
+    all: clients,
+  };
+  const targets = grupos[selected]||clients;
+  // Sin avisar primero, avisados abajo: así vas tocando en fila.
+  const ordenados = [...targets].sort((a,b)=>(done.has(a.id)?1:0)-(done.has(b.id)?1:0));
+  const hechos = targets.filter(c=>done.has(c.id)).length;
+
+  const cambiarGrupo = (g)=>{ setSelected(g); setMsg(WA_TEMPLATES[g]); };
 
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:500}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:6}}>📱 WhatsApp masivo</h2>
-        <p style={{fontSize:12,color:"#475569",marginBottom:18}}>Abre WhatsApp para cada cliente con un clic. Elige el grupo a contactar.</p>
-        <div className="seg" style={{marginBottom:18}}>
-          <button className={`sb ${selected==="all"?"on":""}`} onClick={()=>setSelected("all")}>Todos ({clients.length})</button>
-          <button className={`sb ${selected==="pay"?"on":""}`} onClick={()=>setSelected("pay")}>Pago ({clientsPayPending.length})</button>
-          <button className={`sb ${selected==="low"?"on":""}`} onClick={()=>setSelected("low")}>Pocas sesiones ({clientsLow.length})</button>
+        <p style={{fontSize:12,color:"#475569",marginBottom:16}}>Elige el grupo, el mensaje ya viene escrito. Toca cada cliente para abrir WhatsApp y enviar.</p>
+        <div className="seg" style={{marginBottom:14,flexWrap:"wrap"}}>
+          <button className={`sb ${selected==="pay"?"on":""}`} onClick={()=>cambiarGrupo("pay")}>💳 Pago ({grupos.pay.length})</button>
+          <button className={`sb ${selected==="low"?"on":""}`} onClick={()=>cambiarGrupo("low")}>⚡ Pocas ({grupos.low.length})</button>
+          <button className={`sb ${selected==="expired"?"on":""}`} onClick={()=>cambiarGrupo("expired")}>🚫 Sin sesiones ({grupos.expired.length})</button>
+          <button className={`sb ${selected==="all"?"on":""}`} onClick={()=>cambiarGrupo("all")}>Todos ({grupos.all.length})</button>
         </div>
         <div>
-          <span className="lbl">MENSAJE</span>
-          <textarea className="inp" rows={4} style={{resize:"vertical"}} placeholder="Escribe el mensaje para todos..." value={custom} onChange={e=>setCustom(e.target.value)}/>
+          <span className="lbl">MENSAJE (se personaliza por cliente)</span>
+          <textarea className="inp" rows={3} style={{resize:"vertical"}} value={msg} onChange={e=>setMsg(e.target.value)}/>
+          <p style={{fontSize:10,color:"#334155",marginTop:5}}>Comodines: {"{nombre} {sesiones} {importe} {vence}"} — se rellenan solos.</p>
         </div>
-        {custom&&targets.length>0&&(
+        {targets.length>0?(
           <div style={{marginTop:14}}>
-            <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:10}}>ENVIAR A {targets.length} CLIENTE(S):</div>
-            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:240,overflowY:"auto"}}>
-              {targets.map(c=>(
-                <a key={c.id} href={waLink(c.phone||TRAINER_PHONE,custom)} target="_blank" rel="noreferrer"
-                  style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:"#050e05",border:"1px solid #14532d",borderRadius:10,textDecoration:"none"}}
-                  onClick={()=>notify(`Abriendo WA de ${c.name}...`,"wa")}>
-                  <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
-                  <div style={{flex:1,fontSize:13,fontWeight:600,color:"#4ade80"}}>{c.name}</div>
-                  <span style={{fontSize:11,color:"#475569"}}>📱 Abrir</span>
-                </a>
-              ))}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
+              <div style={{fontSize:11,color:"#334155",fontWeight:700}}>AVISADOS {hechos}/{targets.length}</div>
+              {hechos>0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 9px"}} onClick={reiniciar}>Reiniciar</button>}
+            </div>
+            <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
+              {ordenados.map(c=>{
+                const ok=done.has(c.id);
+                return(
+                  <a key={c.id} href={msg?waLink(c.phone||TRAINER_PHONE,fillWA(msg,c)):"#"} target="_blank" rel="noreferrer"
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:ok?"#0a0f0a":"#050e05",
+                      border:`1px solid ${ok?"#1e3a24":"#14532d"}`,borderRadius:10,textDecoration:"none",opacity:ok?0.55:1}}
+                    onClick={()=>{marcar(c.id);notify(`Abriendo WA de ${c.name}...`,"wa");}}>
+                    <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
+                    <div style={{flex:1,fontSize:13,fontWeight:600,color:ok?"#475569":"#4ade80"}}>{c.name}</div>
+                    <span style={{fontSize:11,color:ok?"#4ade80":"#475569"}}>{ok?"✓ avisado":"📱 Abrir"}</span>
+                  </a>
+                );
+              })}
             </div>
           </div>
+        ):(
+          <p style={{fontSize:12,color:"#334155",marginTop:14}}>No hay clientes en este grupo ahora mismo. 🎉</p>
         )}
-        {!custom&&<p style={{fontSize:12,color:"#334155",marginTop:12}}>Escribe el mensaje para ver los botones de envío.</p>}
         <button className="btn ghost" style={{width:"100%",marginTop:14,padding:10}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
@@ -1383,12 +1726,20 @@ function BulkWAModal({clients,clientsPayPending,clientsLow,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
+function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
   const [tab,setTab]=React.useState("home");
   const [reqDate,setReqDate]=React.useState(TODAY);
   const [reqTime,setReqTime]=React.useState("07:00");
   const [reqType,setReqType]=React.useState("Fuerza");
   const [saving,setSaving]=React.useState(false);
+  const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
+
+  // Carga el horario/capacidad definidos por el coach (para mostrar los huecos).
+  React.useEffect(()=>{
+    sb.from("app_settings").select("config").eq("id",1).then(({data})=>{
+      if(data&&data[0]&&data[0].config) setConfig({...DEFAULT_SCHEDULE,...data[0].config});
+    });
+  },[]);
 
   const mySessions=allSessions.filter(s=>s.client_id===client.id&&s.date>=TODAY).sort((a,b)=>a.date.localeCompare(b.date));
   const myHistory=allHistory.filter(s=>s.client_id===client.id).sort((a,b)=>b.date.localeCompare(a.date));
@@ -1409,6 +1760,27 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
     setTab("home");
   };
 
+  // Lista de espera: detecta si se ha liberado un hueco en una clase que el
+  // cliente esperaba, para avisarle y dejar que lo reserve.
+  const capOfC=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
+  const myWaits=(waitlist||[]).filter(w=>w.client_id===client.id&&w.date>=TODAY);
+  const freedWaits=myWaits.filter(w=>{
+    const blk=blocked.some(b=>b.date===w.date&&(b.time===w.time||b.time==="ALL"));
+    const taken=allSessions.filter(s=>s.date===w.date&&s.time===w.time).length;
+    return !blk && taken<capOfC(w.time);
+  });
+  const grabWaitlistSpot=async(wtry)=>{
+    if(client.sessions_left<=0) return notify("Sin sesiones en tu bono","err");
+    const taken=allSessions.filter(s=>s.date===wtry.date&&s.time===wtry.time).length;
+    if(taken>=capOfC(wtry.time)) return notify("El hueco se acaba de ocupar","err");
+    setSaving(true);
+    await sb.from("sessions").insert({client_id:client.id,date:wtry.date,time:wtry.time,type:"Fuerza",status:"pending",requested:true});
+    await sb.from("waitlist").delete().eq("id",wtry.id);
+    await loadAll(); setSaving(false);
+    notify("¡Hueco reservado! Tu trainer lo confirmará 🎯");
+  };
+  const leaveWait=async(id)=>{ await sb.from("waitlist").delete().eq("id",id); await loadAll(); notify("Fuera de la lista de espera"); };
+
   return(
     <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"22px 16px"}} className="fade">
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0ea5e9,#4ade80)",zIndex:500}}/>}
@@ -1426,6 +1798,25 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
           💬 {client.welcome_msg}
         </div>
       )}
+
+      {/* Aviso: se ha liberado un hueco de tu lista de espera */}
+      {freedWaits.map(w=>(
+        <div key={w.id} style={{background:"#12210a",border:"1px solid #3f6212",borderRadius:14,padding:"12px 14px",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#a3e635",marginBottom:2}}>🎉 ¡Hueco libre a las {w.time}!</div>
+          <div style={{fontSize:12,color:"#7a8b52",marginBottom:10}}>Se ha liberado tu clase en espera del {fmtDate(w.date)}. ¡Corre, reserva antes de que se ocupe!</div>
+          <div style={{display:"flex",gap:8}}>
+            <button className="btn grn" style={{flex:1,padding:"9px",justifyContent:"center"}} disabled={saving} onClick={()=>grabWaitlistSpot(w)}>Reservar ahora 🚀</button>
+            <button className="btn ghost" style={{padding:"9px 12px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
+          </div>
+        </div>
+      ))}
+      {/* Recordatorio de esperas aún llenas */}
+      {myWaits.filter(w=>!freedWaits.some(f=>f.id===w.id)).map(w=>(
+        <div key={w.id} style={{background:"#12100a",border:"1px solid #3a2f10",borderRadius:12,padding:"9px 13px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+          <div style={{fontSize:12,color:"#a1873c"}}>⏳ En espera · {fmtDate(w.date)} a las {w.time}</div>
+          <button className="btn ghost" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
+        </div>
+      ))}
 
       {/* Hero card */}
       <div className="hero-card" style={{marginBottom:18}}>
@@ -1555,7 +1946,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
                 <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
               </a>
             </div>
-            :<MultiSessionRequest client={client} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
+            :<MultiSessionRequest client={client} allSessions={allSessions} allClients={allClients} blocked={blocked} waitlist={waitlist} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
           }
         </div>
       )}
@@ -1608,82 +1999,131 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,forum,ex
   );
 }
 
-// ── MULTI SESSION REQUEST ─────────────────────────────────────────────────
-function MultiSessionRequest({client, loadAll, notify, saving, setSaving}) {
-  const emptySlot = () => ({date: TODAY, time: "08:00", type: "Fuerza"});
-  const [slots, setSlots] = React.useState([emptySlot()]);
+// ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
+function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist, config, loadAll, notify, saving, setSaving}) {
+  const [date,setDate] = React.useState(TODAY);
+  const [type,setType] = React.useState("Fuerza");
+  const [picked,setPicked] = React.useState([]); // horas seleccionadas para esa fecha
 
-  const addSlot = () => {
-    if(slots.length >= client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones disponibles`,"err");
-    if(slots.length >= 10) return notify("Máximo 10 sesiones a la vez","err");
-    setSlots(s=>[...s, emptySlot()]);
+  // Franjas y capacidad definidas por el coach.
+  const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  const capOf=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
+  const dayBlocked=blocked.some(b=>b.date===date&&b.time==="ALL");
+  const slotBlocked=(t)=>dayBlocked||blocked.some(b=>b.date===date&&b.time===t);
+  const takenAt=(t)=>allSessions.filter(s=>s.date===date&&s.time===t).length; // reservadas (pendientes + confirmadas)
+  const freeAt=(t)=>Math.max(0,capOf(t)-takenAt(t));
+  const nowHM=new Date().toTimeString().slice(0,5);
+  const isPast=(t)=>date<TODAY||(date===TODAY&&t<=nowHM);
+  const available=(t)=>!slotBlocked(t)&&freeAt(t)>0&&!isPast(t);
+
+  // Lista de espera para huecos completos.
+  const myWait=(t)=>waitlist.find(w=>w.client_id===client.id&&w.date===date&&w.time===t);
+  const joinWaitlist=async(t)=>{
+    if(myWait(t)) return;
+    const {error}=await sb.from("waitlist").insert({client_id:client.id,date,time:t});
+    if(error) return notify("Necesitas crear la tabla waitlist (ver docs)","err");
+    await loadAll(); notify("En lista de espera ⏳ Te avisaremos si se libera");
+  };
+  const leaveWaitlist=async(t)=>{
+    const w=myWait(t); if(!w) return;
+    await sb.from("waitlist").delete().eq("id",w.id);
+    await loadAll(); notify("Fuera de la lista de espera");
   };
 
-  const removeSlot = (i) => setSlots(s=>s.filter((_,idx)=>idx!==i));
+  // Al cambiar de fecha, limpiamos la selección (los huecos cambian).
+  const changeDate=(d)=>{ setDate(d); setPicked([]); };
+  const toggle=(t)=>{
+    if(!picked.includes(t)&&!available(t)) return;
+    if(!picked.includes(t)&&picked.length>=client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones`,"err");
+    setPicked(p=>p.includes(t)?p.filter(x=>x!==t):[...p,t]);
+  };
 
-  const updateSlot = (i, field, val) => setSlots(s=>s.map((slot,idx)=>idx===i?{...slot,[field]:val}:slot));
-
-  const submitAll = async() => {
-    const invalid = slots.find(s=>!s.date||!s.time||!s.type);
-    if(invalid) return notify("Completa todos los campos","err");
+  const submit=async()=>{
+    if(client.sessions_left===0) return notify("Sin sesiones. Contacta a tu trainer.","err");
+    if(picked.length===0) return notify("Elige al menos una hora libre","err");
+    // Revalida por si alguna se llenó justo antes de enviar.
+    const lleno=picked.find(t=>freeAt(t)<=0||slotBlocked(t)||isPast(t));
+    if(lleno) return notify(`La ${lleno} ya no está disponible`,"err");
     setSaving(true);
-    const inserts = slots.map(s=>({
-      client_id: client.id,
-      date: s.date,
-      time: s.time,
-      type: s.type,
-      status: "pending",
-      requested: true,
-    }));
-    const {error} = await sb.from("sessions").insert(inserts);
+    const inserts=picked.map(t=>({client_id:client.id,date,time:t,type,status:"pending",requested:true}));
+    const {error}=await sb.from("sessions").insert(inserts);
     if(error){ notify("Error al enviar","err"); setSaving(false); return; }
-    await loadAll();
-    setSaving(false);
-    setSlots([emptySlot()]);
-    notify(`✓ ${inserts.length} sesión${inserts.length>1?"es":""} solicitada${inserts.length>1?"s":""}! Tu trainer las confirmará pronto 🎯`);
+    await loadAll(); setSaving(false); setPicked([]);
+    notify(`✓ ${inserts.length} sesión${inserts.length>1?"es":""} solicitada${inserts.length>1?"s":""}! Tu trainer la${inserts.length>1?"s":""} confirmará 🎯`);
   };
 
   return(
     <div className="card">
       <div style={{background:"#080f1e",borderRadius:10,padding:"11px 13px",border:"1px solid #1e3a5a",fontSize:13,color:"#475569",marginBottom:16}}>
-        💡 Puedes solicitar varias sesiones a la vez. Tu trainer las confirmará en breve.
-        <div style={{marginTop:4,fontSize:12,color:"#334155"}}>Sesiones disponibles: <span style={{color:"#38bdf8",fontWeight:700}}>{client.sessions_left}</span></div>
+        💡 Elige un día y toca las horas libres que quieras reservar.
+        <div style={{marginTop:4,fontSize:12,color:"#334155"}}>Sesiones en tu bono: <span style={{color:"#38bdf8",fontWeight:700}}>{client.sessions_left}</span></div>
       </div>
 
-      {slots.map((slot,i)=>(
-        <div key={i} style={{background:"#080d14",borderRadius:12,padding:"12px",marginBottom:10,border:"1px solid #1e293b"}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-            <span style={{fontSize:12,fontWeight:700,color:"#38bdf8"}}>Sesión {i+1}</span>
-            {slots.length>1&&<button onClick={()=>removeSlot(i)} style={{background:"none",border:"none",color:"#f87171",cursor:"pointer",fontSize:16,padding:"0 4px"}}>✕</button>}
-          </div>
-          <div style={{display:"flex",flexDirection:"column",gap:10}}>
-            <div><span className="lbl">FECHA</span>
-              <input type="date" className="inp" value={slot.date} min={TODAY} onChange={e=>updateSlot(i,"date",e.target.value)}/>
-            </div>
-            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              <div><span className="lbl">HORA</span>
-                <select className="inp" style={{appearance:"none"}} value={slot.time} onChange={e=>updateSlot(i,"time",e.target.value)}>
-                  {TIME_SLOTS.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-              <div><span className="lbl">TIPO</span>
-                <select className="inp" style={{appearance:"none"}} value={slot.type} onChange={e=>updateSlot(i,"type",e.target.value)}>
-                  {SESSION_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-                </select>
-              </div>
-            </div>
-          </div>
-        </div>
-      ))}
-
-      <div style={{display:"flex",gap:8,marginTop:4}}>
-        {slots.length < Math.min(client.sessions_left, 10) &&(
-          <button className="btn ghost" style={{flex:1,padding:11,fontSize:13}} onClick={addSlot}>+ Añadir sesión</button>
-        )}
-        <button className="btn sky" style={{flex:2,padding:11,fontSize:13}} onClick={submitAll} disabled={saving}>
-          {saving?"Enviando...":`Solicitar ${slots.length} sesión${slots.length>1?"es":""} 🚀`}
-        </button>
+      <div style={{marginBottom:14}}><span className="lbl">DÍA</span>
+        <input type="date" className="inp" value={date} min={TODAY} onChange={e=>changeDate(e.target.value)}/>
       </div>
+      <div style={{marginBottom:16}}><span className="lbl">TIPO DE SESIÓN</span>
+        <select className="inp" style={{appearance:"none"}} value={type} onChange={e=>setType(e.target.value)}>
+          {SESSION_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
+        </select>
+      </div>
+
+      <span className="lbl">HORAS DEL DÍA</span>
+      {dayBlocked
+        ?<div style={{background:"#0d0505",border:"1px solid #3f1a1a",borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:"#f87171"}}>🚫 Día no disponible</div>
+        :workSlots.length===0
+          ?<div style={{fontSize:12,color:"#334155"}}>No hay horario configurado.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {workSlots.map(t=>{
+              const sel=picked.includes(t), free=freeAt(t), ok=available(t), cap=capOf(t);
+              const enrolled=allSessions.filter(s=>s.date===date&&s.time===t)
+                .map(s=>({...s,c:allClients.find(x=>x.id===s.client_id)})).filter(s=>s.c);
+              const estado=isPast(t)?"Pasada":slotBlocked(t)?"🚫 Bloqueada":free<=0?"Completa":`${free} libre${free>1?"s":""}`;
+              const estCol=sel?"#4ade80":(free<=0||slotBlocked(t)||isPast(t))?"#f87171":"#4ade80";
+              return(
+                <div key={t} onClick={()=>toggle(t)}
+                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,cursor:ok||sel?"pointer":"default",
+                    background:sel?"#0c2a1a":ok?"#050e05":"#0a0d12",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#161c28"}`,opacity:(slotBlocked(t)||isPast(t))?0.55:1}}>
+                  {/* Hora */}
+                  <div style={{flexShrink:0,textAlign:"center",minWidth:44}}>
+                    <div className="mono" style={{fontSize:15,fontWeight:700,color:sel?"#4ade80":ok?"#e8edf5":"#64748b"}}>{t}</div>
+                    <div style={{fontSize:9,fontWeight:700,marginTop:1,color:estCol}}>{sel?"✓ elegida":estado}</div>
+                  </div>
+                  {/* Personas apuntadas + huecos libres */}
+                  <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
+                    {enrolled.map(s=>{
+                      const yo=s.c.id===client.id;
+                      return(
+                        <div key={s.id} style={{display:"flex",alignItems:"center",gap:6,background:s.c.color+"18",border:`1px solid ${s.c.color}40`,borderRadius:20,padding:"3px 9px 3px 3px"}}>
+                          {s.c.avatar_url
+                            ?<img src={s.c.avatar_url} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover"}}/>
+                            :<div className="ring" style={{width:24,height:24,background:s.c.color+"30",color:s.c.color,fontSize:9}}>{ini(s.c.name)}</div>}
+                          <span style={{fontSize:12,fontWeight:700,color:s.c.color}}>{yo?"Tú":s.c.name.split(" ")[0]}</span>
+                        </div>
+                      );
+                    })}
+                    {/* Huecos libres como plazas vacías */}
+                    {!slotBlocked(t)&&!isPast(t)&&Array.from({length:free}).map((_,k)=>(
+                      <div key={"f"+k} style={{width:26,height:26,borderRadius:"50%",border:"1.5px dashed #1e3a2a",display:"flex",alignItems:"center",justifyContent:"center",color:"#1e3a2a",fontSize:13}}>+</div>
+                    ))}
+                    {enrolled.length===0&&slotBlocked(t)&&<span style={{fontSize:11,color:"#4a1515"}}>No disponible</span>}
+                  </div>
+                  <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
+                    <span className="mono" style={{fontSize:10,fontWeight:700,color:"#334155"}}>{enrolled.length}/{cap}</span>
+                    {free<=0&&!slotBlocked(t)&&!isPast(t)&&(myWait(t)
+                      ?<button onClick={e=>{e.stopPropagation();leaveWaitlist(t);}} style={{background:"#1f1405",border:"1px solid #78500f",color:"#facc15",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ En espera ✓</button>
+                      :<button onClick={e=>{e.stopPropagation();joinWaitlist(t);}} style={{background:"#160f04",border:"1px solid #78500f",color:"#facc15",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ Espera</button>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+      }
+
+      <button className="btn sky" style={{width:"100%",padding:12,fontSize:13,marginTop:16,opacity:picked.length?1:0.5}} onClick={submit} disabled={saving||picked.length===0}>
+        {saving?"Enviando...":picked.length?`Reservar ${picked.length} sesión${picked.length>1?"es":""} 🚀`:"Elige una hora libre"}
+      </button>
     </div>
   );
 }
