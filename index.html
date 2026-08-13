@@ -455,6 +455,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
   const [showSched,setShowSched] = React.useState(false);
   const [moveSess,setMoveSess] = React.useState(null);
+  const [quickView,setQuickView] = React.useState(null);
 
   // Carga la configuración de horario (si la tabla existe; si no, usa los valores por defecto).
   React.useEffect(()=>{
@@ -977,13 +978,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           :<>
                             {slots.map(s=>(
                               <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:10,padding:"5px 10px 5px 5px",fontSize:12,display:"flex",alignItems:"center",gap:7}}>
-                                {s.client.avatar_url
-                                  ?<img src={s.client.avatar_url} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
-                                  :<div className="ring" style={{width:26,height:26,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
-                                }
-                                <div style={{lineHeight:1.2}}>
-                                  <div style={{color:s.client.color,fontWeight:700}}>{s.client.name}</div>
-                                  <div style={{color:"#475569",fontSize:10}}>{s.type}{s.requested&&<span style={{color:"#fb923c"}}> · pendiente</span>}</div>
+                                <div style={{display:"flex",alignItems:"center",gap:7,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
+                                  {s.client.avatar_url
+                                    ?<img src={s.client.avatar_url} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
+                                    :<div className="ring" style={{width:26,height:26,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
+                                  }
+                                  <div style={{lineHeight:1.2}}>
+                                    <div style={{color:s.client.color,fontWeight:700}}>{s.client.name} <span style={{fontSize:9,color:"#475569"}}>ⓘ</span></div>
+                                    <div style={{color:"#475569",fontSize:10}}>{s.type}{s.requested&&<span style={{color:"#fb923c"}}> · pendiente</span>}</div>
+                                  </div>
                                 </div>
                                 <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#38bdf8",fontSize:13,padding:0,marginLeft:2}} onClick={()=>setMoveSess(s)}>🕐</button>
                                 <button title="Vino (cuenta en el bono)" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:14,padding:0}} onClick={()=>completeSession(s)}>✓</button>
@@ -1351,6 +1354,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} onClose={()=>setQuickView(null)}/>}
     </div>
   );
 }
@@ -1403,6 +1407,61 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
         </div>
 
         <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
+// Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
+function ClientQuickView({client,date,assignedSessions,assignedExercises,sessionTemplates,onClose}) {
+  const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
+  const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
+  const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
+          {client.avatar_url
+            ?<img src={client.avatar_url} style={{width:48,height:48,borderRadius:"50%",objectFit:"cover",border:`2px solid ${client.color}55`}}/>
+            :<div className="ring" style={{width:48,height:48,background:client.color+"20",color:client.color,fontSize:15,border:`2px solid ${client.color}55`}}>{ini(client.name)}</div>}
+          <div style={{flex:1,minWidth:0}}>
+            <h2 className="mono" style={{fontSize:16,fontWeight:700}}>{client.name}</h2>
+            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {client.sessions_left}/{client.total_sessions} · {fmtDate(date)}</div>
+          </div>
+        </div>
+
+        <div style={{marginBottom:14}}>
+          <span className="lbl">🎯 OBJETIVOS · LESIONES · NOTAS</span>
+          <div style={{background:"#080d14",border:"1px solid #1a2235",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#cbd5e1":"#334155",whiteSpace:"pre-wrap",lineHeight:1.45}}>
+            {client.notes||"Sin notas. Añádelas desde la ficha del cliente (Clientes → notas)."}
+          </div>
+        </div>
+
+        <div>
+          <span className="lbl">🏋️ ENTRENAMIENTO DE HOY</span>
+          {sess
+            ?<div style={{background:"#080d14",border:"1px solid #14532d",borderRadius:10,padding:"11px 13px"}}>
+              {tmpl&&<div style={{fontSize:13,fontWeight:700,color:"#4ade80",marginBottom:exs.length?8:0}}>{tmpl.name}</div>}
+              {exs.length===0
+                ?<div style={{fontSize:12,color:"#475569"}}>Sesión asignada (sin ejercicios detallados).</div>
+                :exs.map((e,i)=>(
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i>0?"1px solid #0d1520":"none"}}>
+                    <div style={{fontSize:12,color:"#e2e8f0",fontWeight:600}}>{e.exercise_name}</div>
+                    <div className="mono" style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap",textAlign:"right"}}>
+                      {e.sets&&e.reps?`${e.sets}×${e.reps}`:""}{e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}{e.protocol?` · ${e.protocol}`:""}
+                    </div>
+                  </div>
+                ))
+              }
+            </div>
+            :<div style={{background:"#080d14",border:"1px solid #1a2235",borderRadius:10,padding:"11px 13px",fontSize:12,color:"#475569"}}>
+              Sin entrenamiento asignado para hoy. Puedes asignarlo desde <b style={{color:"#64748b"}}>Programa</b>.
+            </div>
+          }
+        </div>
+
+        <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
   );
