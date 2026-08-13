@@ -51,15 +51,15 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
     display:flex;position:fixed;bottom:0;left:0;right:0;z-index:100;
     background:#080d14;border-top:1px solid #1a2235;
     align-items:center;justify-content:space-around;
-    padding:6px 0 calc(6px + env(safe-area-inset-bottom));
+    padding:9px 0 calc(16px + env(safe-area-inset-bottom));
     backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   }
   .bnav-btn{
-    display:flex;flex-direction:column;align-items:center;gap:2px;
-    padding:4px 8px;border:none;background:none;cursor:pointer;
+    display:flex;flex-direction:column;align-items:center;gap:3px;
+    padding:5px 10px;border:none;background:none;cursor:pointer;
     color:#4a5568;font-family:'Plus Jakarta Sans',sans-serif;
-    font-size:10px;font-weight:600;border-radius:8px;
-    -webkit-tap-highlight-color:transparent;min-width:48px;
+    font-size:11px;font-weight:600;border-radius:10px;
+    -webkit-tap-highlight-color:transparent;min-width:56px;
   }
   .bnav-btn.on{color:var(--sky);}
   .bnav-icon{font-size:22px;line-height:1.2;position:relative;display:inline-block;}
@@ -68,7 +68,7 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
 
   /* Main content padding for bottom nav */
   .admin-content{
-    padding-bottom:calc(70px + env(safe-area-inset-bottom)) !important;
+    padding-bottom:calc(88px + env(safe-area-inset-bottom)) !important;
   }
 
   /* Modals slide up from bottom */
@@ -636,10 +636,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {[
           {id:"dashboard",icon:"🏠",label:"Inicio"},
           {id:"clients",icon:"👥",label:"Clientes"},
-          {id:"feed",icon:"🎯",label:"Lista"},
           {id:"schedule",icon:"📅",label:"Agenda"},
           {id:"programming",icon:"📊",label:"Programa"},
-          {id:"exercises",icon:"🏋️",label:"Ejercicios"},
         ].map(item=>(
           <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")} onClick={()=>setView(item.id)}>
             <span className="bnav-icon">
@@ -987,8 +985,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   <div style={{color:s.client.color,fontWeight:700}}>{s.client.name}</div>
                                   <div style={{color:"#475569",fontSize:10}}>{s.type}{s.requested&&<span style={{color:"#fb923c"}}> · pendiente</span>}</div>
                                 </div>
-                                <button title="Mover" style={{background:"none",border:"none",cursor:"pointer",color:"#38bdf8",fontSize:13,padding:0,marginLeft:2}} onClick={()=>setMoveSess(s)}>🕐</button>
-                                <button title="Completar" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:14,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                                <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#38bdf8",fontSize:13,padding:0,marginLeft:2}} onClick={()=>setMoveSess(s)}>🕐</button>
+                                <button title="Vino (cuenta en el bono)" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:14,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                                <button title="No vino (no cuenta)" style={{background:"none",border:"none",cursor:"pointer",color:"#f87171",fontSize:13,padding:0}} onClick={()=>deleteSession(s.id)}>✗</button>
                               </div>
                             ))}
                             {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>{isWork?"Libre · 🔒":"Fuera de horario · 🔒"}</span>}
@@ -1000,6 +999,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   );
                 })}
               </div>
+            )}
+            {schedView==="day"&&(
+              <p style={{fontSize:11,color:"#334155",marginTop:10,paddingLeft:4}}>Pasa lista aquí: <b style={{color:"#4ade80"}}>✓ Vino</b> (cuenta en el bono) · <b style={{color:"#f87171"}}>✗ No vino</b> · <b style={{color:"#38bdf8"}}>🕐 Mover</b> a otra hora.</p>
             )}
 
             {/* WEEK VIEW - horizontal grid */}
@@ -1333,11 +1335,6 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             loadAll={loadAll}
             notify={notify}
           />
-        )}
-
-        {/* EXERCISES VIEW */}
-        {view==="exercises"&&(
-          <ExercisesAdmin exercises={exercises} loadAll={loadAll} notify={notify}/>
         )}
 
         {/* PLANS VIEW */}
