@@ -221,6 +221,8 @@ const COLORS = ["#22d3ee","#f472b6","#a78bfa","#4ade80","#fb923c","#f59e0b","#38
 const uid = () => crypto.randomUUID();
 const ini = n => n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
 const daysUntil = d => Math.ceil((new Date(d+"T12:00:00") - new Date(TODAY+"T12:00:00")) / 86400000);
+// Fin de semana = sábado o domingo (siempre libre, sin clases).
+const isWeekend = d => { const g=new Date(d+"T12:00:00").getDay(); return g===0||g===6; };
 const fmtDate = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"});
 const fmtLong = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
 const fmtMonth = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"});
@@ -964,50 +966,67 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
 
             {/* DAY VIEW */}
-            {schedView==="day"&&(
-              <div className="card swipe" style={{padding:0,overflow:"hidden"}}>
-                {daySlots.map((time,i)=>{
-                  const slotBlocked=isBlocked(activeDay,time)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
-                  const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
-                    .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
-                  const cap=capOf(time), isWork=workSlots.includes(time), full=slots.length>=cap;
-                  return(
-                    <div key={time} style={{display:"flex",borderBottom:i<daySlots.length-1?"1px solid #0d1520":"none",minHeight:52,background:slotBlocked?"#0d0505":isWork?"transparent":"#070a10"}}>
-                      <div className="mono" style={{width:56,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
-                      <div style={{flex:1,padding:"7px 10px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center"}}>
-                        {slotBlocked
-                          ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
-                          :<>
-                            {slots.map(s=>(
-                              <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:10,padding:"5px 10px 5px 5px",fontSize:12,display:"flex",alignItems:"center",gap:7}}>
-                                <div style={{display:"flex",alignItems:"center",gap:7,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
-                                  {s.client.avatar_url
-                                    ?<img src={s.client.avatar_url} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
-                                    :<div className="ring" style={{width:26,height:26,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
-                                  }
-                                  <div style={{lineHeight:1.2}}>
-                                    <div style={{color:s.client.color,fontWeight:700}}>{s.client.name} <span style={{fontSize:9,color:"#475569"}}>ⓘ</span></div>
-                                    <div style={{color:"#475569",fontSize:10}}>{s.type}{s.requested&&<span style={{color:"#fb923c"}}> · pendiente</span>}</div>
+            {schedView==="day"&&(()=>{
+              const dayOff=isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
+              if(dayOff){
+                const wknd=isWeekend(activeDay);
+                return(
+                  <div className="card swipe" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,textAlign:"center",height:"calc(100dvh - 300px)",minHeight:300,maxHeight:660}}>
+                    <div style={{fontSize:42}}>{wknd?"🌴":"🚫"}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:wknd?"#4ade80":"#f87171"}}>{wknd?"Fin de semana — libre":"Día no disponible"}</div>
+                    <div style={{fontSize:12,color:"#475569",maxWidth:240}}>{wknd?"No hay clases los sábados ni domingos.":"Este día está bloqueado (vacaciones)."}</div>
+                    {!wknd&&<button className="btn ghost" style={{padding:"8px 14px",fontSize:12}} onClick={()=>toggleBlockDay(activeDay)}>Desbloquear día</button>}
+                  </div>
+                );
+              }
+              return(
+                <div className="card swipe" style={{padding:0,overflow:"hidden",display:"flex",flexDirection:"column",height:"calc(100dvh - 300px)",minHeight:300,maxHeight:660}}>
+                  <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
+                    {daySlots.map((time,i)=>{
+                      const slotBlocked=isBlocked(activeDay,time);
+                      const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
+                        .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
+                      const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
+                      return(
+                        <div key={time} style={{flex:1,minHeight:0,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #0d1520":"none",background:slotBlocked?"#0d0505":isWork?"transparent":"#070a10"}}>
+                          <div className="mono" style={{width:48,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
+                          <div style={{flex:1,minWidth:0,overflowY:"auto",padding:"6px 9px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",alignContent:"center"}}>
+                            {slotBlocked
+                              ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
+                              :<>
+                                {slots.map(s=>(
+                                  <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:10,padding:"4px 8px 4px 4px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
+                                    <div style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
+                                      {s.client.avatar_url
+                                        ?<img src={s.client.avatar_url} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
+                                        :<div className="ring" style={{width:24,height:24,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
+                                      }
+                                      <span style={{color:s.client.color,fontWeight:700}}>{s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#475569"}}> ⓘ</span></span>
+                                    </div>
+                                    <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#38bdf8",fontSize:12,padding:0}} onClick={()=>setMoveSess(s)}>🕐</button>
+                                    <button title="Vino (cuenta en el bono)" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:13,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                                    <button title="No vino (no cuenta)" style={{background:"none",border:"none",cursor:"pointer",color:"#f87171",fontSize:12,padding:0}} onClick={()=>deleteSession(s.id)}>✗</button>
                                   </div>
-                                </div>
-                                <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#38bdf8",fontSize:13,padding:0,marginLeft:2}} onClick={()=>setMoveSess(s)}>🕐</button>
-                                <button title="Vino (cuenta en el bono)" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:14,padding:0}} onClick={()=>completeSession(s)}>✓</button>
-                                <button title="No vino (no cuenta)" style={{background:"none",border:"none",cursor:"pointer",color:"#f87171",fontSize:13,padding:0}} onClick={()=>deleteSession(s.id)}>✗</button>
-                              </div>
-                            ))}
-                            {slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>{isWork?"Libre · 🔒":"Fuera de horario · 🔒"}</span>}
-                            {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#facc15":"#4ade80",background:(full?"#facc15":"#4ade80")+"14",border:`1px solid ${(full?"#facc15":"#4ade80")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
-                          </>
-                        }
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {schedView==="day"&&(
-              <p style={{fontSize:11,color:"#334155",marginTop:10,paddingLeft:4}}>Pasa lista aquí: <b style={{color:"#4ade80"}}>✓ Vino</b> (cuenta en el bono) · <b style={{color:"#f87171"}}>✗ No vino</b> · <b style={{color:"#38bdf8"}}>🕐 Mover</b> a otra hora.</p>
-            )}
+                                ))}
+                                {isWork&&Array.from({length:free}).map((_,k)=>(
+                                  <button key={"f"+k} title="Hueco libre · toca para agendar" onClick={()=>{setNs(v=>({...v,date:activeDay,time})); setShowNS(true);}}
+                                    style={{width:28,height:28,borderRadius:"50%",border:"1.5px dashed #1e3a2a",background:"none",color:"#2f5741",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                                ))}
+                                {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
+                                {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#facc15":"#4ade80",background:(full?"#facc15":"#4ade80")+"14",border:`1px solid ${(full?"#facc15":"#4ade80")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
+                              </>
+                            }
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div style={{flexShrink:0,borderTop:"1px solid #0d1520",padding:"6px 10px",fontSize:10,color:"#334155"}}>
+                    <b style={{color:"#4ade80"}}>✓ Vino</b> · <b style={{color:"#f87171"}}>✗ No vino</b> · <b style={{color:"#38bdf8"}}>🕐 Mover</b> · <b style={{color:"#3f6b4f"}}>+ hueco libre</b>
+                  </div>
+                </div>
+              );
+            })()}
 
             {/* WEEK VIEW - horizontal grid */}
             {schedView==="week"&&(()=>{
@@ -2063,7 +2082,7 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
   // Franjas y capacidad definidas por el coach.
   const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
   const capOf=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
-  const dayBlocked=blocked.some(b=>b.date===date&&b.time==="ALL");
+  const dayBlocked=isWeekend(date)||blocked.some(b=>b.date===date&&b.time==="ALL");
   const slotBlocked=(t)=>dayBlocked||blocked.some(b=>b.date===date&&b.time===t);
   const takenAt=(t)=>allSessions.filter(s=>s.date===date&&s.time===t).length; // reservadas (pendientes + confirmadas)
   const freeAt=(t)=>Math.max(0,capOf(t)-takenAt(t));
@@ -2125,7 +2144,7 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
 
       <span className="lbl">HORAS DEL DÍA</span>
       {dayBlocked
-        ?<div style={{background:"#0d0505",border:"1px solid #3f1a1a",borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:"#f87171"}}>🚫 Día no disponible</div>
+        ?<div style={{background:isWeekend(date)?"#0a1206":"#0d0505",border:`1px solid ${isWeekend(date)?"#1e3a24":"#3f1a1a"}`,borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:isWeekend(date)?"#4ade80":"#f87171"}}>{isWeekend(date)?"🌴 Fin de semana — sin clases":"🚫 Día no disponible"}</div>
         :workSlots.length===0
           ?<div style={{fontSize:12,color:"#334155"}}>No hay horario configurado.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
