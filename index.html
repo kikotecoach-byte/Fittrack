@@ -1008,67 +1008,64 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             )}
 
             {/* WEEK VIEW - horizontal grid */}
-            {schedView==="week"&&(
-              <div style={{overflowX:"auto",WebkitOverflowScrolling:"touch"}}>
-                <div style={{minWidth:560}}>
+            {schedView==="week"&&(()=>{
+              const weekDays=getWeekDays(activeDay).slice(0,5);
+              const weekSlots=Array.from(new Set([...workSlots,...sessions.filter(s=>weekDays.includes(s.date)).map(s=>s.time)])).sort();
+              return(
+                <div style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
                   {/* Header row - days */}
-                  <div style={{display:"grid",gridTemplateColumns:"52px repeat(5,1fr)",gap:2,marginBottom:4}}>
+                  <div style={{display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2}}>
                     <div/>
-                    {getWeekDays(activeDay).slice(0,5).map(day=>{
+                    {weekDays.map(day=>{
                       const isToday=day===TODAY;
                       const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
-                      const cnt=sessions.filter(s=>s.date===day).length;
                       return(
-                        <div key={day} style={{textAlign:"center",padding:"6px 2px",borderRadius:8,
+                        <div key={day} style={{textAlign:"center",padding:"4px 2px",borderRadius:8,
                           background:isToday?"#0c2040":isBlkDay?"#1a0808":"#080d14",
                           border:isToday?"1px solid #1e3a5a":isBlkDay?"1px solid #3f0f0f":"1px solid #0d1520"}}>
-                          <div style={{fontSize:10,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#475569",fontWeight:700,textTransform:"capitalize"}}>
-                            {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"})}
+                          <div style={{fontSize:9,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#475569",fontWeight:700,textTransform:"capitalize"}}>
+                            {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}
                           </div>
-                          <div className="mono" style={{fontSize:14,fontWeight:700,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#e2e8f0"}}>
+                          <div className="mono" style={{fontSize:13,fontWeight:700,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#e2e8f0"}}>
                             {new Date(day+"T12:00:00").getDate()}
                           </div>
-                          {cnt>0&&!isBlkDay&&<div style={{fontSize:9,color:"#38bdf8"}}>{cnt} sesiones</div>}
-                          {isBlkDay&&<div style={{fontSize:9,color:"#f87171"}}>🚫</div>}
                         </div>
                       );
                     })}
                   </div>
-                  {/* Time rows */}
-                  {TIME_SLOTS.map((time,i)=>(
-                    <div key={time} style={{display:"grid",gridTemplateColumns:"52px repeat(5,1fr)",gap:2,marginBottom:2}}>
-                      <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:10,color:"#1e3a5a",fontWeight:700,paddingRight:4}}>{time}</div>
-                      {getWeekDays(activeDay).slice(0,5).map(day=>{
-                        const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
-                        const slotBlocked=isBlkDay||isBlocked(day,time);
-                        const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
-                          .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
-                        return(
-                          <div key={day} style={{minHeight:40,borderRadius:6,padding:"3px",
-                            background:slotBlocked?"#0d0505":daySessions.length>0?"#080d14":"#060a10",
-                            border:slotBlocked?"1px solid #3f0f0f":daySessions.length>0?"1px solid #1e293b":"1px solid #0d1520",
-                            cursor:"pointer"}}
-                            onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
-                            {slotBlocked&&<div style={{fontSize:9,color:"#4a1515",textAlign:"center",paddingTop:4}}>🚫</div>}
-                            {daySessions.map(s=>(
-                              <div key={s.id} style={{background:s.client.color+"25",borderRadius:4,padding:"2px 4px",marginBottom:2,cursor:"default"}}
-                                onClick={e=>e.stopPropagation()}>
-                                <div style={{fontSize:9,color:s.client.color,fontWeight:700,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                  {/* Time rows - fill available height */}
+                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:2,marginTop:3,minHeight:0}}>
+                    {weekSlots.map(time=>(
+                      <div key={time} style={{flex:1,display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2,minHeight:0}}>
+                        <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#1e3a5a",fontWeight:700}}>{time}</div>
+                        {weekDays.map(day=>{
+                          const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
+                          const slotBlocked=isBlkDay||isBlocked(day,time);
+                          const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
+                            .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                          return(
+                            <div key={day} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
+                              background:slotBlocked?"#0d0505":daySessions.length>0?"#080d14":"#060a10",
+                              border:slotBlocked?"1px solid #3f0f0f":daySessions.length>0?"1px solid #1e293b":"1px solid #0d1520",cursor:"pointer"}}
+                              onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
+                              {slotBlocked&&<div style={{fontSize:9,color:"#4a1515",textAlign:"center"}}>🚫</div>}
+                              {daySessions.slice(0,4).map(s=>(
+                                <div key={s.id} onClick={e=>{e.stopPropagation();setQuickView(s.client);}}
+                                  style={{background:s.client.color+"25",borderRadius:3,padding:"1px 4px",fontSize:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                                   {s.client.name.split(" ")[0]}
                                 </div>
-                                <div style={{fontSize:8,color:"#475569"}}>{s.type}</div>
-                                <button style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:10,padding:0,display:"block"}} onClick={()=>completeSession(s)}>✓</button>
-                              </div>
-                            ))}
-                          </div>
-                        );
-                      })}
-                    </div>
-                  ))}
-                  <p style={{fontSize:10,color:"#334155",marginTop:8,paddingLeft:56}}>💡 Toca celda vacía para bloquear/desbloquear ese slot</p>
+                              ))}
+                              {daySessions.length>4&&<div style={{fontSize:8,color:"#475569",paddingLeft:2}}>+{daySessions.length-4}</div>}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    ))}
+                  </div>
+                  <p style={{fontSize:10,color:"#334155",marginTop:6,paddingLeft:40}}>💡 Toca un nombre para su ficha · celda vacía para bloquear</p>
                 </div>
-              </div>
-            )}
+              );
+            })()}
 
             {/* Month view */}
             {schedView==="month"&&(
