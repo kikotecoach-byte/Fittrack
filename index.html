@@ -28,6 +28,14 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
 .fade{animation:fadeUp .25s ease both;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
+/* ─ Barrido suave al cambiar de vista + tacto en los toques ─ */
+.swipe{animation:swipeIn .3s cubic-bezier(.22,.61,.36,1) both;}
+@keyframes swipeIn{from{opacity:0;transform:translateY(10px) scale(.985)}to{opacity:1;transform:none}}
+.btn,.sb,.tab,.bnav-btn,.card{transition:transform .12s ease,background .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease;}
+.btn:active,.sb:active,.tab:active{transform:scale(.96);}
+.bnav-btn:active{transform:scale(.9);}
+@media(prefers-reduced-motion:reduce){.swipe,.fade{animation:none;}.btn,.sb,.tab,.bnav-btn{transition:none;}}
+
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
   font-size:13px;font-weight:600;color:#4a5568;border:none;background:none;width:100%;text-align:left;
@@ -929,18 +937,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   setActiveDay(d.toISOString().split("T")[0]);
                 }}>‹</button>
                 {schedView==="week"
-                  ? getWeekDays(activeDay).map(day=>{
-                      const cnt=sessions.filter(s=>s.date===day).length;
-                      const isBlk=blocked.some(b=>b.date===day&&b.time==="ALL");
-                      return(
-                        <button key={day} className={"tab"+(activeDay===day?" on":"")} onClick={()=>setActiveDay(day)}
-                          style={{flexShrink:0,opacity:isBlk?0.4:1}}>
-                          <div>{fmtDate(day)}</div>
-                          {cnt>0&&<div style={{fontSize:9,color:"#38bdf8"}}>{cnt}</div>}
-                          {isBlk&&<div style={{fontSize:9,color:"#f87171"}}>🚫</div>}
-                        </button>
-                      );
-                    })
+                  ? <span style={{fontSize:14,fontWeight:600,color:"#94a3b8",flex:1,textAlign:"center",textTransform:"capitalize"}}>{(()=>{
+                      const wd=getWeekDays(activeDay).slice(0,5);
+                      const a=new Date(wd[0]+"T12:00:00"), b=new Date(wd[4]+"T12:00:00");
+                      const o={day:"numeric",month:"short"};
+                      return `${a.toLocaleDateString("es-ES",o)} — ${b.toLocaleDateString("es-ES",o)}`;
+                    })()}</span>
                   : <span style={{fontSize:14,fontWeight:600,color:"#94a3b8",flex:1,textAlign:"center"}}>{fmtLong(activeDay)}</span>
                 }
                 <button className="btn ghost" style={{padding:"6px 10px",fontSize:13,flexShrink:0}} onClick={()=>{
@@ -963,7 +965,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
             {/* DAY VIEW */}
             {schedView==="day"&&(
-              <div className="card" style={{padding:0,overflow:"hidden"}}>
+              <div className="card swipe" style={{padding:0,overflow:"hidden"}}>
                 {daySlots.map((time,i)=>{
                   const slotBlocked=isBlocked(activeDay,time)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
                   const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
@@ -1012,7 +1014,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               const weekDays=getWeekDays(activeDay).slice(0,5);
               const weekSlots=Array.from(new Set([...workSlots,...sessions.filter(s=>weekDays.includes(s.date)).map(s=>s.time)])).sort();
               return(
-                <div style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
+                <div className="swipe" style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
                   {/* Header row - days */}
                   <div style={{display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2}}>
                     <div/>
@@ -1069,7 +1071,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
             {/* Month view */}
             {schedView==="month"&&(
-              <div>
+              <div className="swipe">
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                   <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()-1);setCalDate(d);}}>‹</button>
                   <span style={{fontSize:14,fontWeight:600,textTransform:"capitalize"}}>{fmtMonth(calDate.toISOString().split("T")[0])}</span>
