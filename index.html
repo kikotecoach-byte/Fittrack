@@ -2167,14 +2167,15 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
                   <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
                     {enrolled.map(s=>{
                       const yo=s.c.id===client.id;
-                      return(
-                        <div key={s.id} style={{display:"flex",alignItems:"center",gap:6,background:s.c.color+"18",border:`1px solid ${s.c.color}40`,borderRadius:20,padding:"3px 9px 3px 3px"}}>
+                      // Privacidad: solo el cliente ve su propia reserva; los demás son plazas ocupadas anónimas.
+                      return yo
+                        ?<div key={s.id} style={{display:"flex",alignItems:"center",gap:6,background:s.c.color+"18",border:`1px solid ${s.c.color}40`,borderRadius:20,padding:"3px 9px 3px 3px"}}>
                           {s.c.avatar_url
                             ?<img src={s.c.avatar_url} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover"}}/>
                             :<div className="ring" style={{width:24,height:24,background:s.c.color+"30",color:s.c.color,fontSize:9}}>{ini(s.c.name)}</div>}
-                          <span style={{fontSize:12,fontWeight:700,color:s.c.color}}>{yo?"Tú":s.c.name.split(" ")[0]}</span>
+                          <span style={{fontSize:12,fontWeight:700,color:s.c.color}}>Tú</span>
                         </div>
-                      );
+                        :<div key={s.id} title="Plaza ocupada" style={{width:26,height:26,borderRadius:"50%",background:"#1e293b",border:"1.5px solid #2b3a4f",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:700}}>•</div>;
                     })}
                     {/* Huecos libres como plazas vacías */}
                     {!slotBlocked(t)&&!isPast(t)&&Array.from({length:free}).map((_,k)=>(
@@ -2264,6 +2265,7 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
                   const c=allClients.find(x=>x.id===s.client_id);
                   if(!c) return null;
                   const isMe=c.id===client.id;
+                  // Privacidad: el cliente solo ve su propia clase; las demás son plazas ocupadas anónimas.
                   return(
                     <div key={s.id} style={{
                       display:"flex",alignItems:"center",gap:10,
@@ -2272,15 +2274,17 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
                       border:`1px solid ${isMe?"#1e3a5a":"#1a2235"}`,
                     }}>
                       <div className="mono" style={{fontSize:13,fontWeight:700,color:isMe?"#38bdf8":"#475569",minWidth:46,flexShrink:0}}>{s.time}</div>
-                      {c.avatar_url
-                        ?<img src={c.avatar_url} style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:`2px solid ${isMe?c.color+"80":c.color+"40"}`,flexShrink:0}}/>
-                        :<div className="ring" style={{width:34,height:34,background:c.color+(isMe?"30":"18"),color:c.color,fontSize:11,border:`1.5px solid ${c.color}${isMe?"60":"30"}`,flexShrink:0}}>{ini(c.name)}</div>
+                      {isMe
+                        ?(c.avatar_url
+                            ?<img src={c.avatar_url} style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color}80`,flexShrink:0}}/>
+                            :<div className="ring" style={{width:34,height:34,background:c.color+"30",color:c.color,fontSize:11,border:`1.5px solid ${c.color}60`,flexShrink:0}}>{ini(c.name)}</div>)
+                        :<div style={{width:34,height:34,borderRadius:"50%",background:"#1e293b",border:"1.5px solid #2b3a4f",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:16,fontWeight:700,flexShrink:0}}>•</div>
                       }
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:isMe?700:500,color:isMe?"#e2e8f0":"#94a3b8",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
-                          {isMe?"Yo (tú)":c.name}
+                        <div style={{fontSize:13,fontWeight:isMe?700:500,color:isMe?"#e2e8f0":"#64748b",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                          {isMe?"Yo (tú)":"Plaza ocupada"}
                         </div>
-                        <div style={{fontSize:11,color:"#475569"}}>{s.type}</div>
+                        {isMe&&<div style={{fontSize:11,color:"#475569"}}>{s.type}</div>}
                       </div>
                       {isMe&&<div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
                         <span style={{fontSize:14}}>✅</span>
