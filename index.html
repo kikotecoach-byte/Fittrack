@@ -467,6 +467,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showSched,setShowSched] = React.useState(false);
   const [moveSess,setMoveSess] = React.useState(null);
   const [quickView,setQuickView] = React.useState(null);
+  const [execData,setExecData] = React.useState(null);
 
   // Carga la configuración de horario (si la tabla existe; si no, usa los valores por defecto).
   React.useEffect(()=>{
@@ -1374,7 +1375,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
+      {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
     </div>
   );
 }
@@ -1434,7 +1436,7 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,assignedSessions,assignedExercises,sessionTemplates,onClose}) {
+function ClientQuickView({client,date,assignedSessions,assignedExercises,sessionTemplates,onExec,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -1481,7 +1483,95 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
           }
         </div>
 
-        <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cerrar</button>
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          {sess&&onExec&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onExec}>▶ Ejecutar entreno</button>}
+          <button className="btn ghost" style={{flex:sess&&onExec?"0 0 auto":1,padding:"11px 16px"}} onClick={onClose}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── EJECUTAR SESIÓN (registro de cargas durante el entreno) ────────────────
+function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
+  const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
+  const baseExs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const [rows,setRows]=React.useState(()=>baseExs.map(e=>({
+    id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
+    w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
+    r:(e.actual_reps!=null?e.actual_reps:(e.reps!=null?e.reps:"")),
+    done:!!e.done,
+  })));
+  const [saving,setSaving]=React.useState(false);
+  const setField=(id,k,v)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x));
+
+  const toggleDone=async(row)=>{
+    const nowDone=!row.done;
+    setField(row.id,"done",nowDone); setSaving(true);
+    const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));
+    const {error}=await sb.from("assigned_exercises").update({
+      done:nowDone, actual_weight:nowDone?w:null, actual_reps:nowDone?(row.r||null):null, done_at:nowDone?new Date().toISOString():null,
+    }).eq("id",row.id);
+    if(error){ notify("Ejecuta el SQL de entrenamiento (docs)","err"); setField(row.id,"done",!nowDone); setSaving(false); return; }
+    // Progresión: al marcar hecho con carga, actualizar la carga del cliente y guardar historial.
+    if(nowDone && w!=null){
+      const cw=(clientWeights||[]).find(x=>x.client_id===client.id && (x.exercise_name||"").toLowerCase()===row.name.toLowerCase());
+      const oldW=cw?cw.weight:null;
+      await sb.from("client_weights").upsert({client_id:client.id,exercise_name:row.name,weight:w,updated_at:new Date().toISOString()},{onConflict:"client_id,exercise_name"});
+      if(oldW!=null && Number(oldW)!==w) await sb.from("weight_history").insert({client_id:client.id,exercise_name:row.name,old_weight:oldW,new_weight:w,reason:"Sesión ejecutada"});
+    }
+    setSaving(false);
+  };
+
+  const finalizar=async()=>{
+    setSaving(true);
+    if(sess) await sb.from("assigned_sessions").update({status:"done"}).eq("id",sess.id);
+    await loadAll(); setSaving(false); notify("Entreno registrado ✓"); onClose();
+  };
+
+  const hechos=rows.filter(r=>r.done).length;
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+          {client.avatar_url
+            ?<img src={client.avatar_url} style={{width:44,height:44,borderRadius:"50%",objectFit:"cover"}}/>
+            :<div className="ring" style={{width:44,height:44,background:client.color+"20",color:client.color,fontSize:14}}>{ini(client.name)}</div>}
+          <div style={{flex:1,minWidth:0}}>
+            <h2 className="mono" style={{fontSize:16,fontWeight:700}}>Ejecutar · {client.name}</h2>
+            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{fmtDate(date)} · {hechos}/{rows.length} hechos</div>
+          </div>
+        </div>
+
+        {!sess||rows.length===0
+          ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
+            {rows.map(row=>(
+              <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
+                  <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{row.name}</div>
+                  <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}</div>
+                </div>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <div style={{flex:1}}>
+                    <span className="lbl" style={{marginBottom:3}}>PESO (kg)</span>
+                    <input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)}/>
+                  </div>
+                  <div style={{flex:1}}>
+                    <span className="lbl" style={{marginBottom:3}}>REPS</span>
+                    <input type="text" className="inp" style={{padding:"8px 10px"}} value={row.r} onChange={e=>setField(row.id,"r",e.target.value)}/>
+                  </div>
+                  <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",alignSelf:"flex-end",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        }
+
+        <div style={{display:"flex",gap:8,marginTop:16}}>
+          {sess&&rows.length>0&&<button className="btn sky" style={{flex:1,padding:12,justifyContent:"center"}} disabled={saving} onClick={finalizar}>Finalizar entreno</button>}
+          <button className="btn ghost" style={{flex:sess&&rows.length>0?"0 0 auto":1,padding:"12px 16px"}} onClick={onClose}>Cerrar</button>
+        </div>
       </div>
     </div>
   );
