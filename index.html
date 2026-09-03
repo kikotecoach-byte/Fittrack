@@ -9,7 +9,7 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="Kikote Gym">
 <meta name="mobile-web-app-capable" content="yes">
-<meta name="theme-color" content="#0ea5e9">
+<meta name="theme-color" content="#0284c7">
 <link rel="apple-touch-icon" href="/icon-192.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/react/18.2.0/umd/react.production.min.js"></script>
@@ -19,12 +19,12 @@
 <link href="https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;600&display=swap" rel="stylesheet">
 <style>
 *{box-sizing:border-box;margin:0;padding:0;}
-:root{--bg:#05080f;--card:#0f1520;--border:#1a2235;--border2:#243048;--text:#e8edf5;--muted:#4a5568;
-  --sky:#0ea5e9;--green:#10b981;--amber:#f59e0b;--red:#ef4444;}
-html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;
+:root{--bg:#eef1f7;--card:#ffffff;--border:#dbe2ec;--border2:#cfd8e6;--text:#0f172a;--muted:#64748b;
+  --sky:#0284c7;--green:#059669;--amber:#f59e0b;--red:#dc2626;}
+html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;
   -webkit-text-size-adjust:100%;-webkit-tap-highlight-color:transparent;}
 ::-webkit-scrollbar{width:3px;}
-::-webkit-scrollbar-thumb{background:#1e293b;border-radius:4px;}
+::-webkit-scrollbar-thumb{background:#cbd5e1;border-radius:4px;}
 .fade{animation:fadeUp .25s ease both;}
 @keyframes fadeUp{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
 
@@ -38,14 +38,14 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
 
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
-  font-size:13px;font-weight:600;color:#4a5568;border:none;background:none;width:100%;text-align:left;
+  font-size:13px;font-weight:600;color:#64748b;border:none;background:none;width:100%;text-align:left;
   font-family:'Plus Jakarta Sans',sans-serif;transition:all .18s;}
-.nav:hover,.nav:active{background:#0f1520;color:#94a3b8;}
-.nav.on{background:linear-gradient(135deg,#0c1d35,#0a1829);color:var(--sky);border:1px solid #0e3a5c;}
+.nav:hover,.nav:active{background:#ffffff;color:#64748b;}
+.nav.on{background:linear-gradient(135deg,#dcebfb,#dcebfb);color:var(--sky);border:1px solid #bcd3ee;}
 
 /* ─ Sidebar: hidden on mobile, visible on desktop ─ */
 .sidebar{width:200px;flex-shrink:0;padding:22px 10px;display:flex;flex-direction:column;
-  gap:3px;border-right:1px solid #0d1520;position:sticky;top:0;height:100vh;overflow:auto;}
+  gap:3px;border-right:1px solid #e6ebf3;position:sticky;top:0;height:100vh;overflow:auto;}
 
 /* ─ Bottom nav: visible on mobile only ─ */
 .bottom-nav{display:none;}
@@ -57,21 +57,22 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
   /* Show bottom nav */
   .bottom-nav{
     display:flex;position:fixed;bottom:0;left:0;right:0;z-index:100;
-    background:#080d14;border-top:1px solid #1a2235;
+    background:rgba(255,255,255,.9);border-top:1px solid #dbe2ec;
     align-items:center;justify-content:space-around;
     padding:9px 0 calc(16px + env(safe-area-inset-bottom));
     backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+    box-shadow:0 -2px 14px rgba(16,24,40,.06);
   }
   .bnav-btn{
     display:flex;flex-direction:column;align-items:center;gap:3px;
     padding:5px 10px;border:none;background:none;cursor:pointer;
-    color:#4a5568;font-family:'Plus Jakarta Sans',sans-serif;
+    color:#64748b;font-family:'Plus Jakarta Sans',sans-serif;
     font-size:11px;font-weight:600;border-radius:10px;
     -webkit-tap-highlight-color:transparent;min-width:56px;
   }
   .bnav-btn.on{color:var(--sky);}
   .bnav-icon{font-size:22px;line-height:1.2;position:relative;display:inline-block;}
-  .bnav-badge{position:absolute;top:-3px;right:-6px;background:#ef4444;color:#fff;
+  .bnav-badge{position:absolute;top:-3px;right:-6px;background:#dc2626;color:#fff;
     border-radius:10px;font-size:9px;font-weight:700;padding:1px 4px;min-width:15px;text-align:center;}
 
   /* Main content padding for bottom nav */
@@ -84,7 +85,7 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
   .mdl{border-radius:20px 20px 0 0 !important;
     padding-bottom:calc(24px + env(safe-area-inset-bottom)) !important;}
   .mdl::before{content:'';display:block;width:36px;height:4px;
-    background:#1e293b;border-radius:2px;margin:0 auto 16px;}
+    background:#cbd5e1;border-radius:2px;margin:0 auto 16px;}
 
   /* Cards full width */
   .clients-grid{grid-template-columns:1fr !important;}
@@ -98,7 +99,7 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
   /* Top bar on mobile */
   .mobile-topbar{
     display:flex !important;align-items:center;justify-content:space-between;
-    padding:12px 14px;border-bottom:1px solid #0d1520;
+    padding:12px 14px;border-bottom:1px solid #e6ebf3;
     background:var(--bg);position:sticky;top:0;z-index:50;
   }
 }
@@ -110,61 +111,61 @@ html{background:#05080f;}body{background:#05080f;color:var(--text);font-family:'
 }
 
 /* ─ Shared components ─ */
-.card{background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;}
+.card{background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:0 1px 3px rgba(16,24,40,.05);}
 .btn{border:none;border-radius:9px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;
   font-weight:700;font-size:13px;transition:all .18s;-webkit-tap-highlight-color:transparent;}
-.sky{background:linear-gradient(135deg,#0369a1,#0ea5e9);color:#fff;padding:9px 16px;}
+.sky{background:linear-gradient(135deg,#0369a1,#0284c7);color:#fff;padding:9px 16px;}
 .sky:active{opacity:.8;}
 .grn{background:linear-gradient(135deg,#065f46,#059669);color:#fff;padding:9px 16px;}
 .grn:active{opacity:.8;}
-.ghost{background:#111827;color:#64748b;padding:9px 14px;border:1px solid var(--border);}
+.ghost{background:#eef1f7;color:#64748b;padding:9px 14px;border:1px solid var(--border);}
 .ghost:active{opacity:.8;}
-.danger{background:#160404;color:#f87171;padding:7px 11px;border:1px solid #3f0f0f;}
+.danger{background:#fbe6e6;color:#dc2626;padding:7px 11px;border:1px solid #f2cccc;}
 .wa{background:linear-gradient(135deg,#14532d,#16a34a);color:#fff;padding:8px 13px;
   display:inline-flex;align-items:center;gap:6px;}
 .wa:active{opacity:.8;}
-.inp{background:#080d14;border:1px solid var(--border2);border-radius:9px;padding:9px 13px;
+.inp{background:#f1f4fa;border:1px solid var(--border2);border-radius:9px;padding:9px 13px;
   color:var(--text);font-family:'Plus Jakarta Sans',sans-serif;font-size:14px;width:100%;
   outline:none;transition:border .2s;-webkit-appearance:none;}
 .inp:focus{border-color:var(--sky);}
-.inp option{background:#0d1117;}
-.ovl{position:fixed;inset:0;background:rgba(0,0,0,.85);backdrop-filter:blur(8px);z-index:200;
+.inp option{background:#ffffff;}
+.ovl{position:fixed;inset:0;background:rgba(15,23,42,.4);backdrop-filter:blur(6px);z-index:200;
   display:flex;align-items:center;justify-content:center;padding:20px;}
-.mdl{background:#0c1220;border-radius:20px;border:1px solid var(--border2);padding:26px;
-  width:100%;max-width:480px;max-height:92vh;overflow-y:auto;}
-.pbar{height:6px;background:#111827;border-radius:10px;overflow:hidden;}
+.mdl{background:#ffffff;border-radius:20px;border:1px solid var(--border);padding:26px;
+  width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 50px rgba(16,24,40,.18);}
+.pbar{height:6px;background:#eef1f7;border-radius:10px;overflow:hidden;}
 .pfill{height:100%;border-radius:10px;transition:width .6s;}
 .notif{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:400;
   padding:12px 20px;border-radius:24px;font-size:13px;font-weight:600;
   animation:slideIn .3s ease;white-space:nowrap;}
 @keyframes slideIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
-.seg{display:flex;background:#080d14;border-radius:10px;padding:3px;gap:2px;}
+.seg{display:flex;background:#f1f4fa;border-radius:10px;padding:3px;gap:2px;}
 .sb{flex:1;padding:8px 6px;border:none;border-radius:8px;cursor:pointer;
   font-family:'Plus Jakarta Sans',sans-serif;font-size:13px;font-weight:600;
-  transition:all .2s;color:#4a5568;background:none;}
-.sb.on{background:#0f1829;color:var(--sky);}
+  transition:all .2s;color:#64748b;background:none;}
+.sb.on{background:#dcebfb;color:var(--sky);}
 .tab{padding:7px 14px;border-radius:8px;cursor:pointer;font-size:12px;font-weight:600;
-  border:none;background:none;transition:all .18s;color:#4a5568;
+  border:none;background:none;transition:all .18s;color:#64748b;
   font-family:'Plus Jakarta Sans',sans-serif;white-space:nowrap;}
-.tab.on{background:#0f1520;color:var(--sky);border:1px solid #0e3a5c;}
+.tab.on{background:#ffffff;color:var(--sky);border:1px solid #bcd3ee;}
 .ring{border-radius:50%;display:flex;align-items:center;justify-content:center;
   font-weight:800;flex-shrink:0;}
 .mono{font-family:'JetBrains Mono',monospace;}
-.lbl{font-size:11px;color:#4a5568;display:block;margin-bottom:5px;font-weight:700;letter-spacing:.8px;}
+.lbl{font-size:11px;color:#64748b;display:block;margin-bottom:5px;font-weight:700;letter-spacing:.8px;}
 .pill{display:inline-flex;align-items:center;padding:3px 9px;border-radius:20px;font-size:11px;font-weight:700;}
-.hero-card{background:linear-gradient(135deg,#090f1e,#0d1830);border-radius:20px;
-  border:1px solid #1e3a5a;padding:22px;position:relative;overflow:hidden;}
+.hero-card{background:linear-gradient(135deg,#eaf1fb,#e6f0fb);border-radius:20px;
+  border:1px solid #bcd3ee;padding:22px;position:relative;overflow:hidden;}
 .hero-card::before{content:'';position:absolute;top:-50px;right:-50px;width:160px;height:160px;
-  border-radius:50%;background:radial-gradient(circle,#0ea5e912,transparent 70%);}
+  border-radius:50%;background:radial-gradient(circle,#0284c712,transparent 70%);}
 .spin{animation:spin 1s linear infinite;}
 @keyframes spin{to{transform:rotate(360deg)}}
 .cal-day{width:36px;height:36px;border-radius:8px;display:flex;align-items:center;
   justify-content:center;cursor:pointer;font-size:13px;font-weight:600;
   transition:all .15s;border:1px solid transparent;}
 .cal-day:active{opacity:.7;}
-.cal-day.has-session{background:#0c2040;border-color:#1e3a5a;color:#38bdf8;}
-.cal-day.today{border-color:#0ea5e9;color:#0ea5e9;}
-.cal-day.blocked{background:#1a0808;color:#4a1515;}
+.cal-day.has-session{background:#dcebfb;border-color:#bcd3ee;color:#0284c7;}
+.cal-day.today{border-color:#0284c7;color:#0284c7;}
+.cal-day.blocked{background:#fbe6e6;color:#b56b6b;}
 .cal-day.other-month{opacity:.25;}
 .streak-fire{animation:pulse 2s ease-in-out infinite;}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
@@ -216,7 +217,7 @@ const genSlots = (from,to) => {
   for(let h=f;h<t;h++) out.push(String(h).padStart(2,"0")+":00");
   return out;
 };
-const COLORS = ["#22d3ee","#f472b6","#a78bfa","#4ade80","#fb923c","#f59e0b","#38bdf8","#e879f9"];
+const COLORS = ["#0891b2","#f472b6","#a78bfa","#16a34a","#ea580c","#f59e0b","#0284c7","#c026d3"];
 
 const uid = () => crypto.randomUUID();
 const ini = n => n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
@@ -227,7 +228,7 @@ const fmtDate = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday
 const fmtLong = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
 const fmtMonth = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"});
 const statusOf = c => c.sessions_left===0?"expired":c.sessions_left<=2?"alert":"active";
-const statusColor = s => s==="active"?"#4ade80":s==="alert"?"#facc15":"#f87171";
+const statusColor = s => s==="active"?"#16a34a":s==="alert"?"#ca8a04":"#dc2626";
 const statusLabel = s => s==="active"?"Activo":s==="alert"?"Pocas sesiones":"Sin sesiones";
 const waLink = (phone,msg) => `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 // Mensaje de recordatorio ya escrito según el tipo de alerta (para envío de 1 clic).
@@ -378,15 +379,15 @@ function App() {
 
   if(loading) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
-      <div className="mono" style={{fontSize:32,color:"#0ea5e9"}}>⚡</div>
-      <div style={{width:24,height:24,border:"3px solid #0ea5e930",borderTopColor:"#0ea5e9",borderRadius:"50%"}} className="spin"/>
-      <div style={{color:"#334155",fontSize:13}}>Conectando con {GYM_NAME}...</div>
+      <div className="mono" style={{fontSize:32,color:"#0284c7"}}>⚡</div>
+      <div style={{width:24,height:24,border:"3px solid #0284c730",borderTopColor:"#0284c7",borderRadius:"50%"}} className="spin"/>
+      <div style={{color:"#94a3b8",fontSize:13}}>Conectando con {GYM_NAME}...</div>
     </div>
   );
 
   return (
     <div>
-      {toast&&<div className="notif" style={{background:toast.type==="err"?"#160404":toast.type==="wa"?"#052e16":"#060f1e",color:toast.type==="err"?"#f87171":toast.type==="wa"?"#4ade80":"#38bdf8",border:`1px solid ${toast.type==="err"?"#450a0a":toast.type==="wa"?"#14532d":"#0e3a5c"}`}}>{toast.msg}</div>}
+      {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
       {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
       {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
@@ -399,17 +400,17 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
   const [remember, setRemember] = React.useState(true);
   const RememberBox = ({id}) => (
     <div style={{display:"flex",alignItems:"center",gap:10,padding:"2px 0"}}>
-      <input type="checkbox" id={id} checked={remember} onChange={e=>setRemember(e.target.checked)} style={{accentColor:"#0ea5e9",width:18,height:18,cursor:"pointer"}}/>
+      <input type="checkbox" id={id} checked={remember} onChange={e=>setRemember(e.target.checked)} style={{accentColor:"#0284c7",width:18,height:18,cursor:"pointer"}}/>
       <label htmlFor={id} style={{fontSize:13,color:"#64748b",cursor:"pointer"}}>Recordarme en este dispositivo</label>
     </div>
   );
   return (
-    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(ellipse at 50% 0%,#0c1d35,#05080f 60%)"}}>
+    <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(ellipse at 50% 0%,#dcebfb,#eef1f7 60%)"}}>
       <div style={{width:"100%",maxWidth:380}} className="fade">
         <div style={{textAlign:"center",marginBottom:32}}>
           <div style={{fontSize:38,marginBottom:8}}>🏋️</div>
-          <div className="mono" style={{fontSize:28,fontWeight:700,color:"#0ea5e9",letterSpacing:-1}}>{GYM_NAME}</div>
-          <div style={{color:"#334155",fontSize:13,marginTop:5}}>Tu centro de entrenamiento personal</div>
+          <div className="mono" style={{fontSize:28,fontWeight:700,color:"#0284c7",letterSpacing:-1}}>{GYM_NAME}</div>
+          <div style={{color:"#94a3b8",fontSize:13,marginTop:5}}>Tu centro de entrenamiento personal</div>
         </div>
         <div className="seg" style={{marginBottom:20}}>
           <button className={`sb ${loginTab==="client"?"on":""}`} onClick={()=>{setLoginTab("client");setLoginErr("");}}>Soy cliente</button>
@@ -418,24 +419,24 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
         <div className="card" style={{padding:26}}>
           {loginTab==="client"?(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <p style={{fontSize:13,color:"#475569",marginBottom:4}}>Ingresa tu nombre y el código de acceso.</p>
+              <p style={{fontSize:13,color:"#64748b",marginBottom:4}}>Ingresa tu nombre y el código de acceso.</p>
               <div><span className="lbl">NOMBRE COMPLETO</span>
                 <input className="inp" placeholder="Ej. Carlos Mendoza" value={loginName} onChange={e=>setLoginName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)}/>
               </div>
               <div><span className="lbl">CÓDIGO</span>
                 <input className="inp mono" placeholder="••••" maxLength={4} value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)} style={{letterSpacing:8,fontSize:20,textAlign:"center"}}/>
               </div>
-              {loginErr&&<p style={{fontSize:12,color:"#f87171"}}>{loginErr}</p>}
+              {loginErr&&<p style={{fontSize:12,color:"#dc2626"}}>{loginErr}</p>}
               <RememberBox id="remC"/>
               <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleClientLogin(remember)}>Entrar a mi portal</button>
-              <p style={{fontSize:11,color:"#1e3a5a",textAlign:"center"}}>¿Sin código? Escribe a tu trainer 📱</p>
+              <p style={{fontSize:11,color:"#bcd3ee",textAlign:"center"}}>¿Sin código? Escribe a tu trainer 📱</p>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <div><span className="lbl">CONTRASEÑA</span>
                 <input className="inp" type="password" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminLogin(remember)}/>
               </div>
-              {loginErr&&<p style={{fontSize:12,color:"#f87171"}}>{loginErr}</p>}
+              {loginErr&&<p style={{fontSize:12,color:"#dc2626"}}>{loginErr}</p>}
               <RememberBox id="remA"/>
               <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleAdminLogin(remember)}>Entrar al panel</button>
             </div>
@@ -624,7 +625,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       <div className="mobile-topbar">
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:18}}>🏋️</span>
-          <span className="mono" style={{fontSize:14,fontWeight:700,color:"#0ea5e9"}}>{GYM_NAME}</span>
+          <span className="mono" style={{fontSize:14,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</span>
         </div>
         <div style={{display:"flex",gap:8}}>
           <button className="btn wa" style={{fontSize:11,padding:"7px 11px"}} onClick={()=>setShowBulkWA(true)}>📱</button>
@@ -638,7 +639,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Ingresos"]].map(([id,label])=>(
             <button key={id} className={"tab"+(view===id?" on":"")} onClick={()=>setView(id)} style={{flexShrink:0,fontSize:12}}>{label}</button>
           ))}
-          <button className={"tab"} onClick={()=>setView("dashboard")} style={{flexShrink:0,fontSize:12,color:"#475569"}}>← Volver</button>
+          <button className={"tab"} onClick={()=>setView("dashboard")} style={{flexShrink:0,fontSize:12,color:"#64748b"}}>← Volver</button>
         </div>
       )}
 
@@ -660,31 +661,31 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         ))}
       </nav>
 
-      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0ea5e9,#4ade80)",zIndex:500}}/>}
-      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0ea5e9,#4ade80)",zIndex:500}}/>}
+      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
+      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
 
 
       {/* Content */}
-      <div style={{padding:"14px 14px 80px",minHeight:"100vh",background:"#05080f"}} className="fade admin-content">
+      <div style={{padding:"14px 14px 80px",minHeight:"100vh",background:"#eef1f7"}} className="fade admin-content">
 
         {/* DASHBOARD */}
         {view==="dashboard"&&(
           <div>
             <div style={{marginBottom:24}}>
               <h1 className="mono" style={{fontSize:20,fontWeight:700}}>{GYM_NAME} — Dashboard</h1>
-              <p style={{color:"#334155",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
+              <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
-                {label:"Clientes",val:clients.length,color:"#38bdf8"},
-                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,color:"#4ade80"},
-                {label:"Alertas",val:reminders.length,color:"#facc15"},
+                {label:"Clientes",val:clients.length,color:"#0284c7"},
+                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,color:"#16a34a"},
+                {label:"Alertas",val:reminders.length,color:"#ca8a04"},
                 {label:"Sesiones hoy",val:todaySessions.length,color:"#a78bfa"},
-                {label:"Este mes",val:`${monthIncome}€`,color:"#4ade80"},
+                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a"},
               ].map(s=>(
                 <div key={s.label} className="card">
                   <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
-                  <div style={{fontSize:10,color:"#334155",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
+                  <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
                 </div>
               ))}
             </div>
@@ -694,15 +695,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <h3 style={{fontSize:13,fontWeight:700}}>Sesiones de hoy</h3>
                   <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>{setView("schedule");setShowNS(true);}}>+ Nueva</button>
                 </div>
-                {todaySessions.length===0?<p style={{fontSize:12,color:"#1e293b"}}>Sin sesiones hoy</p>
+                {todaySessions.length===0?<p style={{fontSize:12,color:"#cbd5e1"}}>Sin sesiones hoy</p>
                   :todaySessions.sort((a,b)=>a.time.localeCompare(b.time)).map(s=>{
                     const c=clients.find(x=>x.id===s.client_id); if(!c) return null;
                     return(
-                      <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #0d1520"}}>
+                      <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #e6ebf3"}}>
                         <div className="ring" style={{width:32,height:32,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
-                        <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{c.name}</div><div style={{fontSize:11,color:"#475569"}}>{s.type}</div></div>
+                        <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{c.name}</div><div style={{fontSize:11,color:"#64748b"}}>{s.type}</div></div>
                         <div style={{textAlign:"right"}}>
-                          <div className="mono" style={{fontSize:13,fontWeight:600,color:"#38bdf8"}}>{s.time}</div>
+                          <div className="mono" style={{fontSize:13,fontWeight:600,color:"#0284c7"}}>{s.time}</div>
                           <button className="btn grn" style={{fontSize:10,padding:"3px 7px",marginTop:3}} onClick={()=>completeSession(s)}>✓ Hecha</button>
                         </div>
                       </div>
@@ -712,11 +713,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               </div>
               <div className="card">
                 <h3 style={{fontSize:13,fontWeight:700,marginBottom:14}}>Solicitudes pendientes</h3>
-                {requests.length===0?<p style={{fontSize:12,color:"#1e293b"}}>Sin solicitudes ✓</p>
+                {requests.length===0?<p style={{fontSize:12,color:"#cbd5e1"}}>Sin solicitudes ✓</p>
                   :requests.map(r=>{
                     const c=clients.find(x=>x.id===r.client_id); if(!c) return null;
                     return(
-                      <div key={r.id} style={{background:"#080f1e",borderRadius:10,padding:10,marginBottom:8,border:"1px solid #1e3a5a"}}>
+                      <div key={r.id} style={{background:"#eaf1fb",borderRadius:10,padding:10,marginBottom:8,border:"1px solid #bcd3ee"}}>
                         <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
                           <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
                           <div><div style={{fontSize:12,fontWeight:700}}>{c.name}</div><div style={{fontSize:11,color:"#64748b"}}>{r.type} · {fmtDate(r.date)} {r.time}</div></div>
@@ -739,7 +740,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           <div>
             <div style={{marginBottom:20}}>
               <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Pasar lista</h1>
-              <p style={{color:"#334155",fontSize:12,marginTop:4}}>Marca quién entrena — se descuenta de su bono automáticamente.</p>
+              <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>Marca quién entrena — se descuenta de su bono automáticamente.</p>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
               {clients.map(c=>{
@@ -756,7 +757,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const cHist=history.filter(h=>h.client_id===c.id).sort((a,b)=>(b.date+(b.time||"")).localeCompare(a.date+(a.time||"")));
                 const last=cHist[0];
                 return(
-                  <div key={c.id} className="card" style={{border:`1px solid ${today?"#0e3a5c":"var(--border)"}`}}>
+                  <div key={c.id} className="card" style={{border:`1px solid ${today?"#bcd3ee":"var(--border)"}`}}>
                     <div style={{display:"flex",gap:12,alignItems:"center",marginBottom:12}}>
                       {c.avatar_url
                         ?<img src={c.avatar_url} alt={c.name} style={{width:46,height:46,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${c.color}45`}}/>
@@ -764,24 +765,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       <div style={{flex:1,minWidth:0}}>
                         <div style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap"}}>
                           <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
-                          {today&&<span style={{fontSize:9,fontWeight:700,color:"#38bdf8",background:"#08131f",border:"1px solid #0e3a5c",borderRadius:20,padding:"2px 7px"}}>HOY {nextSess.time}</span>}
+                          {today&&<span style={{fontSize:9,fontWeight:700,color:"#0284c7",background:"#e6f0fb",border:"1px solid #bcd3ee",borderRadius:20,padding:"2px 7px"}}>HOY {nextSess.time}</span>}
                         </div>
                         <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {c.total_sessions} · {c.payment_amount}€</div>
                       </div>
                       <span className="pill" style={{background:statusColor(st)+"18",color:statusColor(st),border:`1px solid ${statusColor(st)}30`,whiteSpace:"nowrap"}}>{c.sessions_left}/{c.total_sessions}</span>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-                      <div style={{background:"#080d14",borderRadius:9,padding:"8px 10px"}}>
-                        <div style={{color:"#334155",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>CADUCIDAD BONO</div>
-                        <div style={{fontSize:12,color:pd<=3?"#f87171":"#94a3b8"}}>{isNaN(pd)?"—":pd<0?`vencido hace ${-pd}d`:pd===0?"hoy":`en ${pd}d`}</div>
+                      <div style={{background:"#f1f4fa",borderRadius:9,padding:"8px 10px"}}>
+                        <div style={{color:"#94a3b8",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>CADUCIDAD BONO</div>
+                        <div style={{fontSize:12,color:pd<=3?"#dc2626":"#64748b"}}>{isNaN(pd)?"—":pd<0?`vencido hace ${-pd}d`:pd===0?"hoy":`en ${pd}d`}</div>
                       </div>
-                      <div style={{background:"#080d14",borderRadius:9,padding:"8px 10px"}}>
-                        <div style={{color:"#334155",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>ÚLTIMA SESIÓN</div>
-                        <div style={{fontSize:12,color:"#94a3b8"}}>{last?fmtDate(last.date):"—"}</div>
+                      <div style={{background:"#f1f4fa",borderRadius:9,padding:"8px 10px"}}>
+                        <div style={{color:"#94a3b8",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>ÚLTIMA SESIÓN</div>
+                        <div style={{fontSize:12,color:"#64748b"}}>{last?fmtDate(last.date):"—"}</div>
                       </div>
-                      <div style={{background:"#080d14",borderRadius:9,padding:"8px 10px",gridColumn:"1 / -1"}}>
-                        <div style={{color:"#334155",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>SESIÓN AGENDADA</div>
-                        <div style={{fontSize:12,color:nextSess?"#38bdf8":"#475569"}}>{nextSess?`${nextSess.date===TODAY?"Hoy":fmtDate(nextSess.date)} · ${nextSess.time} · ${nextSess.type}`:"Sin agendar"}</div>
+                      <div style={{background:"#f1f4fa",borderRadius:9,padding:"8px 10px",gridColumn:"1 / -1"}}>
+                        <div style={{color:"#94a3b8",fontWeight:700,fontSize:9,marginBottom:3,letterSpacing:.5}}>SESIÓN AGENDADA</div>
+                        <div style={{fontSize:12,color:nextSess?"#0284c7":"#64748b"}}>{nextSess?`${nextSess.date===TODAY?"Hoy":fmtDate(nextSess.date)} · ${nextSess.time} · ${nextSess.type}`:"Sin agendar"}</div>
                       </div>
                     </div>
                     <div style={{display:"flex",gap:8}}>
@@ -800,7 +801,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="clients"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <div><h1 className="mono" style={{fontSize:20,fontWeight:700}}>Clientes</h1><p style={{color:"#334155",fontSize:12,marginTop:3}}>{clients.length} registrados</p></div>
+              <div><h1 className="mono" style={{fontSize:20,fontWeight:700}}>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados</p></div>
               <button className="btn sky" onClick={()=>setShowNC(true)}>+ Nuevo</button>
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
@@ -810,15 +811,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const cHist=history.filter(h=>h.client_id===c.id);
                 const streak=calcStreak(cHist);
                 return(
-                  <div key={c.id} className="card" style={{cursor:"pointer",transition:"all .2s",border:`1px solid ${open?"#0e3a5c":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
+                  <div key={c.id} className="card" style={{cursor:"pointer",transition:"all .2s",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                       <div style={{display:"flex",gap:11,alignItems:"center"}}>
                         <div className="ring" style={{width:42,height:42,background:c.color+"18",color:c.color,border:`1.5px solid ${c.color}35`,fontSize:13}}>{ini(c.name)}</div>
                         <div>
                           <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
                           <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2}}>
-                            <div className="mono" style={{color:"#334155",fontSize:11}}>#{c.code}</div>
-                            {streak>0&&<span style={{fontSize:10,color:"#fb923c"}}>🔥{streak}</span>}
+                            <div className="mono" style={{color:"#94a3b8",fontSize:11}}>#{c.code}</div>
+                            {streak>0&&<span style={{fontSize:10,color:"#ea580c"}}>🔥{streak}</span>}
                           </div>
                         </div>
                       </div>
@@ -826,20 +827,20 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     </div>
                     <div style={{marginBottom:11}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
-                        <span style={{fontSize:10,color:"#475569",fontWeight:700}}>SESIONES</span>
+                        <span style={{fontSize:10,color:"#64748b",fontWeight:700}}>SESIONES</span>
                         <span className="mono" style={{fontSize:11,fontWeight:700}}>{c.sessions_left}/{c.total_sessions}</span>
                       </div>
-                      <div className="pbar"><div className="pfill" style={{width:`${pct}%`,background:pct>40?"#4ade80":pct>20?"#facc15":"#f87171"}}/></div>
+                      <div className="pbar"><div className="pfill" style={{width:`${pct}%`,background:pct>40?"#16a34a":pct>20?"#ca8a04":"#dc2626"}}/></div>
                     </div>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div>
-                        <div style={{fontSize:10,color:"#334155",fontWeight:700}}>PRÓXIMO PAGO</div>
-                        <div style={{fontSize:12,color:pd<=3?"#f87171":"#64748b"}}>{pd<0?"Vencido":pd===0?"Hoy":`${pd}d`} · {c.payment_amount}€</div>
+                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>PRÓXIMO PAGO</div>
+                        <div style={{fontSize:12,color:pd<=3?"#dc2626":"#64748b"}}>{pd<0?"Vencido":pd===0?"Hoy":`${pd}d`} · {c.payment_amount}€</div>
                       </div>
                       <button className="btn wa" style={{fontSize:11}} onClick={e=>{e.stopPropagation();setWaClient(c);}}>📱 WA</button>
                     </div>
                     {open&&(
-                      <div style={{marginTop:14,borderTop:"1px solid #0d1520",paddingTop:14}} onClick={e=>e.stopPropagation()}>
+                      <div style={{marginTop:14,borderTop:"1px solid #e6ebf3",paddingTop:14}} onClick={e=>e.stopPropagation()}>
                         <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pago</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
@@ -883,13 +884,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <span className="lbl">NOTAS PRIVADAS (solo tú las ves)</span>
                           <NotesEditor initialNotes={c.notes||""} onSave={(n)=>saveNotes(c.id,n)}/>
                         </div>
-                        <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:8}}>PRÓXIMAS SESIONES</div>
-                        {cSess.length===0?<p style={{fontSize:12,color:"#1e293b"}}>Sin sesiones agendadas</p>
+                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>PRÓXIMAS SESIONES</div>
+                        {cSess.length===0?<p style={{fontSize:12,color:"#cbd5e1"}}>Sin sesiones agendadas</p>
                           :cSess.sort((a,b)=>a.date.localeCompare(b.date)).map(s=>(
-                            <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #090f1a"}}>
+                            <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f4fa"}}>
                               <div>
                                 <div style={{fontSize:12}}>{fmtDate(s.date)} · {s.time}</div>
-                                <div style={{fontSize:11,color:"#475569"}}>{s.type}{s.requested&&<span style={{color:"#fb923c",marginLeft:6,fontWeight:700}}>· solicitud</span>}</div>
+                                <div style={{fontSize:11,color:"#64748b"}}>{s.type}{s.requested&&<span style={{color:"#ea580c",marginLeft:6,fontWeight:700}}>· solicitud</span>}</div>
                               </div>
                               <div style={{display:"flex",gap:5}}>
                                 {s.requested
@@ -939,13 +940,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   setActiveDay(d.toISOString().split("T")[0]);
                 }}>‹</button>
                 {schedView==="week"
-                  ? <span style={{fontSize:14,fontWeight:600,color:"#94a3b8",flex:1,textAlign:"center",textTransform:"capitalize"}}>{(()=>{
+                  ? <span style={{fontSize:14,fontWeight:600,color:"#64748b",flex:1,textAlign:"center",textTransform:"capitalize"}}>{(()=>{
                       const wd=getWeekDays(activeDay).slice(0,5);
                       const a=new Date(wd[0]+"T12:00:00"), b=new Date(wd[4]+"T12:00:00");
                       const o={day:"numeric",month:"short"};
                       return `${a.toLocaleDateString("es-ES",o)} — ${b.toLocaleDateString("es-ES",o)}`;
                     })()}</span>
-                  : <span style={{fontSize:14,fontWeight:600,color:"#94a3b8",flex:1,textAlign:"center"}}>{fmtLong(activeDay)}</span>
+                  : <span style={{fontSize:14,fontWeight:600,color:"#64748b",flex:1,textAlign:"center"}}>{fmtLong(activeDay)}</span>
                 }
                 <button className="btn ghost" style={{padding:"6px 10px",fontSize:13,flexShrink:0}} onClick={()=>{
                   const d=new Date(activeDay+"T12:00:00");
@@ -961,7 +962,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 onClick={()=>toggleBlockDay(activeDay)}>
                 {blocked.some(b=>b.date===activeDay&&b.time==="ALL")?"✓ Día desbloqueado":"🚫 Bloquear día"}
               </button>
-              <button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#facc15"}}
+              <button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#ca8a04"}}
                 onClick={()=>setShowVacation(true)}>🏖 Vacaciones</button>
             </div>
 
@@ -973,8 +974,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 return(
                   <div className="card swipe" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,textAlign:"center",height:"calc(100dvh - 300px)",minHeight:300,maxHeight:660}}>
                     <div style={{fontSize:42}}>{wknd?"🌴":"🚫"}</div>
-                    <div style={{fontSize:16,fontWeight:700,color:wknd?"#4ade80":"#f87171"}}>{wknd?"Fin de semana — libre":"Día no disponible"}</div>
-                    <div style={{fontSize:12,color:"#475569",maxWidth:240}}>{wknd?"No hay clases los sábados ni domingos.":"Este día está bloqueado (vacaciones)."}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:wknd?"#16a34a":"#dc2626"}}>{wknd?"Fin de semana — libre":"Día no disponible"}</div>
+                    <div style={{fontSize:12,color:"#64748b",maxWidth:240}}>{wknd?"No hay clases los sábados ni domingos.":"Este día está bloqueado (vacaciones)."}</div>
                     {!wknd&&<button className="btn ghost" style={{padding:"8px 14px",fontSize:12}} onClick={()=>toggleBlockDay(activeDay)}>Desbloquear día</button>}
                   </div>
                 );
@@ -988,11 +989,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
-                        <div key={time} style={{flex:1,minHeight:0,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #0d1520":"none",background:slotBlocked?"#0d0505":isWork?"transparent":"#070a10"}}>
-                          <div className="mono" style={{width:48,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #0d1520",color:slotBlocked?"#4a1515":"#1e3a5a",fontSize:11,fontWeight:700}}>{time}</div>
+                        <div key={time} style={{flex:1,minHeight:0,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
+                          <div className="mono" style={{width:48,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":"#bcd3ee",fontSize:11,fontWeight:700}}>{time}</div>
                           <div style={{flex:1,minWidth:0,overflowY:"auto",padding:"6px 9px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",alignContent:"center"}}>
                             {slotBlocked
-                              ?<span style={{fontSize:11,color:"#4a1515",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
+                              ?<span style={{fontSize:11,color:"#b56b6b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
                               :<>
                                 {slots.map(s=>(
                                   <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:10,padding:"4px 8px 4px 4px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
@@ -1001,19 +1002,19 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                         ?<img src={s.client.avatar_url} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
                                         :<div className="ring" style={{width:24,height:24,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
                                       }
-                                      <span style={{color:s.client.color,fontWeight:700}}>{s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#475569"}}> ⓘ</span></span>
+                                      <span style={{color:s.client.color,fontWeight:700}}>{s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span></span>
                                     </div>
-                                    <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#38bdf8",fontSize:12,padding:0}} onClick={()=>setMoveSess(s)}>🕐</button>
-                                    <button title="Vino (cuenta en el bono)" style={{background:"none",border:"none",cursor:"pointer",color:"#4ade80",fontSize:13,padding:0}} onClick={()=>completeSession(s)}>✓</button>
-                                    <button title="No vino (no cuenta)" style={{background:"none",border:"none",cursor:"pointer",color:"#f87171",fontSize:12,padding:0}} onClick={()=>deleteSession(s.id)}>✗</button>
+                                    <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#0284c7",fontSize:12,padding:0}} onClick={()=>setMoveSess(s)}>🕐</button>
+                                    <button title="Vino (cuenta en el bono)" style={{background:"none",border:"none",cursor:"pointer",color:"#16a34a",fontSize:13,padding:0}} onClick={()=>completeSession(s)}>✓</button>
+                                    <button title="No vino (no cuenta)" style={{background:"none",border:"none",cursor:"pointer",color:"#dc2626",fontSize:12,padding:0}} onClick={()=>deleteSession(s.id)}>✗</button>
                                   </div>
                                 ))}
                                 {isWork&&Array.from({length:free}).map((_,k)=>(
                                   <button key={"f"+k} title="Hueco libre · toca para agendar" onClick={()=>{setNs(v=>({...v,date:activeDay,time})); setShowNS(true);}}
-                                    style={{width:28,height:28,borderRadius:"50%",border:"1.5px dashed #1e3a2a",background:"none",color:"#2f5741",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
+                                    style={{width:28,height:28,borderRadius:"50%",border:"1.5px dashed #c9e6d1",background:"none",color:"#5f9e77",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
                                 ))}
-                                {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#1e293b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
-                                {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#facc15":"#4ade80",background:(full?"#facc15":"#4ade80")+"14",border:`1px solid ${(full?"#facc15":"#4ade80")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
+                                {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
+                                {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
                               </>
                             }
                           </div>
@@ -1021,8 +1022,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       );
                     })}
                   </div>
-                  <div style={{flexShrink:0,borderTop:"1px solid #0d1520",padding:"6px 10px",fontSize:10,color:"#334155"}}>
-                    <b style={{color:"#4ade80"}}>✓ Vino</b> · <b style={{color:"#f87171"}}>✗ No vino</b> · <b style={{color:"#38bdf8"}}>🕐 Mover</b> · <b style={{color:"#3f6b4f"}}>+ hueco libre</b>
+                  <div style={{flexShrink:0,borderTop:"1px solid #e6ebf3",padding:"6px 10px",fontSize:10,color:"#94a3b8"}}>
+                    <b style={{color:"#16a34a"}}>✓ Vino</b> · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b> · <b style={{color:"#5f9e77"}}>+ hueco libre</b>
                   </div>
                 </div>
               );
@@ -1042,12 +1043,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
                       return(
                         <div key={day} style={{textAlign:"center",padding:"4px 2px",borderRadius:8,
-                          background:isToday?"#0c2040":isBlkDay?"#1a0808":"#080d14",
-                          border:isToday?"1px solid #1e3a5a":isBlkDay?"1px solid #3f0f0f":"1px solid #0d1520"}}>
-                          <div style={{fontSize:9,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#475569",fontWeight:700,textTransform:"capitalize"}}>
+                          background:isToday?"#dcebfb":isBlkDay?"#fbe6e6":"#f1f4fa",
+                          border:isToday?"1px solid #bcd3ee":isBlkDay?"1px solid #f2cccc":"1px solid #e6ebf3"}}>
+                          <div style={{fontSize:9,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#64748b",fontWeight:700,textTransform:"capitalize"}}>
                             {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}
                           </div>
-                          <div className="mono" style={{fontSize:13,fontWeight:700,color:isBlkDay?"#4a1515":isToday?"#38bdf8":"#e2e8f0"}}>
+                          <div className="mono" style={{fontSize:13,fontWeight:700,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#0f172a"}}>
                             {new Date(day+"T12:00:00").getDate()}
                           </div>
                         </div>
@@ -1058,7 +1059,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <div style={{flex:1,display:"flex",flexDirection:"column",gap:2,marginTop:3,minHeight:0}}>
                     {weekSlots.map(time=>(
                       <div key={time} style={{flex:1,display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2,minHeight:0}}>
-                        <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#1e3a5a",fontWeight:700}}>{time}</div>
+                        <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#bcd3ee",fontWeight:700}}>{time}</div>
                         {weekDays.map(day=>{
                           const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
                           const slotBlocked=isBlkDay||isBlocked(day,time);
@@ -1066,24 +1067,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                             .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                           return(
                             <div key={day} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
-                              background:slotBlocked?"#0d0505":daySessions.length>0?"#080d14":"#060a10",
-                              border:slotBlocked?"1px solid #3f0f0f":daySessions.length>0?"1px solid #1e293b":"1px solid #0d1520",cursor:"pointer"}}
+                              background:slotBlocked?"#fbecec":daySessions.length>0?"#f1f4fa":"#f1f4fa",
+                              border:slotBlocked?"1px solid #f2cccc":daySessions.length>0?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
                               onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
-                              {slotBlocked&&<div style={{fontSize:9,color:"#4a1515",textAlign:"center"}}>🚫</div>}
+                              {slotBlocked&&<div style={{fontSize:9,color:"#b56b6b",textAlign:"center"}}>🚫</div>}
                               {daySessions.slice(0,4).map(s=>(
                                 <div key={s.id} onClick={e=>{e.stopPropagation();setQuickView(s.client);}}
                                   style={{background:s.client.color+"25",borderRadius:3,padding:"1px 4px",fontSize:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
                                   {s.client.name.split(" ")[0]}
                                 </div>
                               ))}
-                              {daySessions.length>4&&<div style={{fontSize:8,color:"#475569",paddingLeft:2}}>+{daySessions.length-4}</div>}
+                              {daySessions.length>4&&<div style={{fontSize:8,color:"#64748b",paddingLeft:2}}>+{daySessions.length-4}</div>}
                             </div>
                           );
                         })}
                       </div>
                     ))}
                   </div>
-                  <p style={{fontSize:10,color:"#334155",marginTop:6,paddingLeft:40}}>💡 Toca un nombre para su ficha · celda vacía para bloquear</p>
+                  <p style={{fontSize:10,color:"#94a3b8",marginTop:6,paddingLeft:40}}>💡 Toca un nombre para su ficha · celda vacía para bloquear</p>
                 </div>
               );
             })()}
@@ -1096,56 +1097,57 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <span style={{fontSize:14,fontWeight:600,textTransform:"capitalize"}}>{fmtMonth(calDate.toISOString().split("T")[0])}</span>
                   <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()+1);setCalDate(d);}}>›</button>
                 </div>
-                <div className="card">
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:6}}>
+                <div className="card" style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 250px)",minHeight:360,maxHeight:700,padding:12}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3,marginBottom:5,flexShrink:0}}>
                     {["L","M","X","J","V","S","D"].map(d=>(
-                      <div key={d} style={{textAlign:"center",fontSize:10,color:"#334155",fontWeight:700,padding:"3px 0"}}>{d}</div>
+                      <div key={d} style={{textAlign:"center",fontSize:10,color:"#94a3b8",fontWeight:700}}>{d}</div>
                     ))}
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:3}}>
+                  <div style={{flex:1,display:"grid",gridTemplateColumns:"repeat(7,1fr)",gridAutoRows:"1fr",gap:3,minHeight:0}}>
                     {getMonthDays(calDate.getFullYear(),calDate.getMonth()).map((cell,i)=>{
                       const dateStr=cell.cur?getDayStr(cell.day):"";
-                      const hasSess=dateStr&&sessions.some(s=>s.date===dateStr);
+                      const cnt=dateStr?sessions.filter(s=>s.date===dateStr&&!s.requested).length:0;
                       const isToday=dateStr===TODAY;
+                      const wknd=dateStr&&isWeekend(dateStr);
                       const blkEntry=dateStr&&blocked.find(b=>b.date===dateStr&&b.time==="ALL");
                       const isBlk=!!blkEntry&&blkEntry.reason==="Día bloqueado";
                       const isVac=!!blkEntry&&blkEntry.reason==="Vacaciones";
                       const isFest=!!blkEntry&&blkEntry.reason==="Festivo";
+                      const off=wknd||isBlk||isVac||isFest;
                       return(
                         <div key={i} style={{
-                          aspectRatio:"1",borderRadius:8,display:"flex",flexDirection:"column",
-                          alignItems:"center",justifyContent:"center",cursor:cell.cur?"pointer":"default",
-                          fontSize:12,fontWeight:600,transition:"all .15s",
-                          background:isVac?"#0a0f05":isFest?"#1a1000":isBlk?"#1a0808":hasSess&&cell.cur?"#0c2040":"transparent",
-                          border:isToday?"1px solid #0ea5e9":isVac?"1px solid #14532d":isFest?"1px solid #78350f":isBlk?"1px solid #3f0f0f":"1px solid transparent",
-                          color:!cell.cur?"#1e293b":isBlk?"#4a1515":isVac?"#4ade80":isFest?"#fb923c":isToday?"#0ea5e9":hasSess?"#38bdf8":"#94a3b8",
-                          opacity:!cell.cur?0.3:1,
+                          borderRadius:9,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,
+                          cursor:cell.cur?"pointer":"default",position:"relative",overflow:"hidden",
+                          background:isToday?"#dcebfb":isVac?"#eef8dd":isFest?"#fbf4e3":isBlk?"#fbe6e6":wknd?"#f4f6fb":cnt>0?"#e9f2fd":"#ffffff",
+                          border:isToday?"1.5px solid #0284c7":isVac?"1px solid #cbe8a4":isFest?"1px solid #eed7bd":isBlk?"1px solid #f2cccc":"1px solid #eef1f7",
+                          opacity:!cell.cur?0.35:1,
                         }}
                         onClick={()=>{
                           if(!cell.cur) return;
                           if(isBlk){toggleBlockDay(dateStr);}
                           else{setActiveDay(dateStr);setSchedView("day");}
                         }}>
-                          <span>{cell.day}</span>
-                          {hasSess&&cell.cur&&!isBlk&&!isVac&&!isFest&&<span style={{width:4,height:4,borderRadius:"50%",background:"#38bdf8",marginTop:1}}/>}
-                          {isBlk&&<span style={{fontSize:8}}>🚫</span>}
-                          {isVac&&<span style={{fontSize:8}}>🏖</span>}
-                          {isFest&&<span style={{fontSize:8}}>🎉</span>}
+                          <span style={{fontSize:13,fontWeight:isToday?800:600,color:!cell.cur?"#cbd5e1":isToday?"#0284c7":off?"#94a3b8":"#334155"}}>{cell.day}</span>
+                          {cnt>0&&!off&&<span style={{fontSize:10,fontWeight:800,color:"#0284c7",background:"#ffffff",border:"1px solid #bcd3ee",borderRadius:20,padding:"0 5px",lineHeight:"15px"}}>{cnt}</span>}
+                          {cnt>0&&(isBlk||isVac||isFest)&&<span style={{fontSize:9,fontWeight:700,color:"#64748b"}}>{cnt}</span>}
+                          {isBlk&&<span style={{fontSize:11}}>🚫</span>}
+                          {isVac&&<span style={{fontSize:11}}>🏖</span>}
+                          {isFest&&<span style={{fontSize:11}}>🎉</span>}
+                          {wknd&&!isBlk&&!isVac&&!isFest&&<span style={{fontSize:10,opacity:.75}}>🌴</span>}
                         </div>
                       );
                     })}
                   </div>
                 </div>
-                <div style={{marginTop:10,display:"flex",gap:10,fontSize:11,color:"#334155",flexWrap:"wrap",lineHeight:1.8}}>
-                  <span>🔵 Sesiones</span>
-                  <span>🚫 Bloqueado</span>
-                  <span>🏖 Vacaciones</span>
-                  <span>🎉 Festivo</span>
-                  <span style={{color:"#0ea5e9"}}>Hoy</span>
+                <div style={{marginTop:8,display:"flex",gap:12,fontSize:11,color:"#94a3b8",flexWrap:"wrap",justifyContent:"center"}}>
+                  <span><b style={{color:"#0284c7"}}>3</b> nº de clases</span>
+                  <span>🌴 finde</span>
+                  <span>🚫 bloqueado</span>
+                  <span>🏖 vacaciones</span>
                 </div>
               </div>
             )}
-            <p style={{fontSize:11,color:"#334155",marginTop:10}}>💡 Toca "Libre · 🔒" para bloquear una hora</p>
+            {schedView==="week"&&<p style={{fontSize:11,color:"#94a3b8",marginTop:10}}>💡 Toca una celda vacía para bloquear una hora</p>}
           </div>
         )}
 
@@ -1154,12 +1156,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
               <h1 className="mono" style={{fontSize:18,fontWeight:700}}>💬 Comunidad</h1>
-              <span style={{fontSize:12,color:"#334155"}}>{forum.length} publicaciones</span>
+              <span style={{fontSize:12,color:"#94a3b8"}}>{forum.length} publicaciones</span>
             </div>
             {forum.length===0
               ? <div className="card" style={{textAlign:"center",padding:40}}>
                   <div style={{fontSize:28,marginBottom:8}}>💬</div>
-                  <div style={{color:"#475569",fontSize:13}}>Sin publicaciones aún</div>
+                  <div style={{color:"#64748b",fontSize:13}}>Sin publicaciones aún</div>
                 </div>
               : forum.map(post=>{
                   const c=clients.find(x=>x.id===post.client_id);
@@ -1167,21 +1169,21 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     <div key={post.id} className="card" style={{marginBottom:10}}>
                       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
                         {c?.avatar_url
-                          ? <img src={c.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c?.color||"#38bdf8"}`}}/>
-                          : <div className="ring" style={{width:36,height:36,background:(c?.color||"#38bdf8")+"20",color:c?.color||"#38bdf8",fontSize:12,border:`1.5px solid ${c?.color||"#38bdf8"}35`}}>{ini(post.client_name)}</div>
+                          ? <img src={c.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c?.color||"#0284c7"}`}}/>
+                          : <div className="ring" style={{width:36,height:36,background:(c?.color||"#0284c7")+"20",color:c?.color||"#0284c7",fontSize:12,border:`1.5px solid ${c?.color||"#0284c7"}35`}}>{ini(post.client_name)}</div>
                         }
                         <div style={{flex:1}}>
                           <div style={{fontWeight:700,fontSize:13}}>{post.client_name}</div>
-                          <div style={{fontSize:11,color:"#334155"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                          <div style={{fontSize:11,color:"#94a3b8"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
                         </div>
                         <button className="btn danger" style={{fontSize:10,padding:"4px 8px"}} onClick={async()=>{
                           await sb.from("forum_posts").delete().eq("id",post.id);
                           await loadAll();
                         }}>🗑</button>
                       </div>
-                      <p style={{fontSize:13,color:"#94a3b8",lineHeight:1.5,marginBottom:post.image_url?10:0}}>{post.content}</p>
+                      <p style={{fontSize:13,color:"#64748b",lineHeight:1.5,marginBottom:post.image_url?10:0}}>{post.content}</p>
                       {post.image_url&&<img src={post.image_url} style={{width:"100%",borderRadius:10,maxHeight:240,objectFit:"cover",marginTop:8}}/>}
-                      <div style={{marginTop:8,fontSize:11,color:"#334155"}}>❤️ {post.likes} likes</div>
+                      <div style={{marginTop:8,fontSize:11,color:"#94a3b8"}}>❤️ {post.likes} likes</div>
                     </div>
                   );
                 })
@@ -1203,7 +1205,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <div className="card">
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:8}}>
                 {["Lun","Mar","Mié","Jue","Vie","Sáb","Dom"].map(d=>(
-                  <div key={d} style={{textAlign:"center",fontSize:11,color:"#334155",fontWeight:700,padding:"4px 0"}}>{d}</div>
+                  <div key={d} style={{textAlign:"center",fontSize:11,color:"#94a3b8",fontWeight:700,padding:"4px 0"}}>{d}</div>
                 ))}
               </div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
@@ -1216,16 +1218,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     <div key={i} className={`cal-day ${!cell.cur?"other-month":""} ${hasSess&&cell.cur?"has-session":""} ${isToday?"today":""} ${isBlk&&cell.cur?"blocked":""}`}
                       onClick={()=>cell.cur&&setActiveDay(dateStr)&&setView("schedule")}>
                       <span>{cell.day}</span>
-                      {hasSess&&cell.cur&&<span style={{position:"absolute",width:4,height:4,borderRadius:"50%",background:"#38bdf8",bottom:2,left:"50%",transform:"translateX(-50%)"}}/>}
+                      {hasSess&&cell.cur&&<span style={{position:"absolute",width:4,height:4,borderRadius:"50%",background:"#0284c7",bottom:2,left:"50%",transform:"translateX(-50%)"}}/>}
                     </div>
                   );
                 })}
               </div>
             </div>
-            <div style={{marginTop:16,display:"flex",gap:12,fontSize:11,color:"#334155"}}>
+            <div style={{marginTop:16,display:"flex",gap:12,fontSize:11,color:"#94a3b8"}}>
               <span>🔵 Con sesiones</span>
               <span>🔴 Bloqueado</span>
-              <span style={{color:"#0ea5e9"}}>Hoy</span>
+              <span style={{color:"#0284c7"}}>Hoy</span>
             </div>
           </div>
         )}
@@ -1236,27 +1238,27 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:22}}>Ingresos</h1>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:22}}>
               {[
-                {label:"Este mes",val:`${monthIncome}€`,color:"#4ade80"},
-                {label:"Total acumulado",val:`${totalIncome}€`,color:"#38bdf8"},
+                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a"},
+                {label:"Total acumulado",val:`${totalIncome}€`,color:"#0284c7"},
                 {label:"Pagos registrados",val:payments.length,color:"#a78bfa"},
-                {label:"Ticket medio",val:`${payments.length>0?Math.round(totalIncome/payments.length):0}€`,color:"#fb923c"},
+                {label:"Ticket medio",val:`${payments.length>0?Math.round(totalIncome/payments.length):0}€`,color:"#ea580c"},
               ].map(s=>(
                 <div key={s.label} className="card">
                   <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
-                  <div style={{fontSize:10,color:"#334155",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
+                  <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
                 </div>
               ))}
             </div>
             <div className="card">
               <h3 style={{fontSize:13,fontWeight:700,marginBottom:14}}>Historial de pagos</h3>
-              {payments.length===0?<p style={{fontSize:13,color:"#1e293b"}}>Sin pagos registrados aún</p>
+              {payments.length===0?<p style={{fontSize:13,color:"#cbd5e1"}}>Sin pagos registrados aún</p>
                 :payments.map(p=>(
-                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #0d1520"}}>
+                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3"}}>
                     <div>
                       <div style={{fontSize:13,fontWeight:600}}>{p.client_name}</div>
-                      <div style={{fontSize:11,color:"#475569",marginTop:2}}>{p.paid_at}</div>
+                      <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.paid_at}</div>
                     </div>
-                    <div className="mono" style={{fontSize:15,fontWeight:700,color:"#4ade80"}}>{p.amount}€</div>
+                    <div className="mono" style={{fontSize:15,fontWeight:700,color:"#16a34a"}}>{p.amount}€</div>
                   </div>
                 ))
               }
@@ -1273,14 +1275,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
             {freedWaitlist.length>0&&(
               <div style={{marginBottom:20}}>
-                <div style={{fontSize:11,color:"#a3e635",fontWeight:700,letterSpacing:1,marginBottom:10}}>⏳ HUECO LIBRE — AVISAR EN ESPERA</div>
+                <div style={{fontSize:11,color:"#65a30d",fontWeight:700,letterSpacing:1,marginBottom:10}}>⏳ HUECO LIBRE — AVISAR EN ESPERA</div>
                 {freedWaitlist.map(({wl,c})=>(
-                  <div key={wl.id} className="card" style={{marginBottom:8,border:"1px solid #3f6212"}}>
+                  <div key={wl.id} className="card" style={{marginBottom:8,border:"1px solid #cbe8a4"}}>
                     <div style={{display:"flex",alignItems:"center",gap:12}}>
                       {c.avatar_url
                         ?<img src={c.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover"}}/>
                         :<div className="ring" style={{width:40,height:40,background:c.color+"18",color:c.color,fontSize:12}}>{ini(c.name)}</div>}
-                      <div style={{flex:1}}><div style={{fontWeight:700}}>{c.name}</div><div style={{fontSize:12,color:"#a3e635"}}>🎉 Hueco libre · {fmtDate(wl.date)} a las {wl.time}</div></div>
+                      <div style={{flex:1}}><div style={{fontWeight:700}}>{c.name}</div><div style={{fontSize:12,color:"#65a30d"}}>🎉 Hueco libre · {fmtDate(wl.date)} a las {wl.time}</div></div>
                       <div style={{display:"flex",gap:6}}>
                         <a href={waLink(c.phone||TRAINER_PHONE,`Hola ${c.name.split(" ")[0]}! 🎉 Se ha liberado un hueco en la clase de las ${wl.time} del ${fmtDate(wl.date)} que esperabas. ¿La quieres? Entra a la app y resérvala. 💪`)} target="_blank" rel="noreferrer" onClick={()=>notify("Abriendo WhatsApp...","wa")}>
                           <button className="btn wa" style={{fontSize:11,padding:"7px 10px"}}>📱 Avisar</button>
@@ -1294,14 +1296,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             )}
             {requests.length>0&&(
               <div style={{marginBottom:20}}>
-                <div style={{fontSize:11,color:"#fb923c",fontWeight:700,letterSpacing:1,marginBottom:10}}>SOLICITUDES</div>
+                <div style={{fontSize:11,color:"#ea580c",fontWeight:700,letterSpacing:1,marginBottom:10}}>SOLICITUDES</div>
                 {requests.map(r=>{
                   const c=clients.find(x=>x.id===r.client_id); if(!c) return null;
                   return(
-                    <div key={r.id} className="card" style={{marginBottom:8,border:"1px solid #2d1a08"}}>
+                    <div key={r.id} className="card" style={{marginBottom:8,border:"1px solid #eed7bd"}}>
                       <div style={{display:"flex",alignItems:"center",gap:12}}>
                         <div className="ring" style={{width:40,height:40,background:c.color+"18",color:c.color,fontSize:12}}>{ini(c.name)}</div>
-                        <div style={{flex:1}}><div style={{fontWeight:700}}>{c.name}</div><div style={{fontSize:12,color:"#fb923c"}}>📅 {r.type} · {fmtDate(r.date)} a las {r.time}</div></div>
+                        <div style={{flex:1}}><div style={{fontWeight:700}}>{c.name}</div><div style={{fontSize:12,color:"#ea580c"}}>📅 {r.type} · {fmtDate(r.date)} a las {r.time}</div></div>
                         <div style={{display:"flex",gap:6}}>
                           <button className="btn grn" style={{fontSize:11,padding:"7px 11px"}} onClick={()=>approveRequest(r.id)}>✓</button>
                           <button className="btn danger" onClick={()=>denyRequest(r.id)}>✕</button>
@@ -1313,14 +1315,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               </div>
             )}
             {reminders.length===0&&requests.length===0
-              ?<div className="card" style={{textAlign:"center",padding:48}}><div style={{fontSize:32,marginBottom:10}}>✓</div><div style={{color:"#4ade80",fontWeight:700}}>Todo al día</div></div>
+              ?<div className="card" style={{textAlign:"center",padding:48}}><div style={{fontSize:32,marginBottom:10}}>✓</div><div style={{color:"#16a34a",fontWeight:700}}>Todo al día</div></div>
               :reminders.map((r,i)=>(
-                <div key={i} className="card" style={{marginBottom:10,border:`1px solid ${r.urgent?"#3f1a1a":"#1a2d1a"}`,background:r.urgent?"#080404":"#040804"}}>
+                <div key={i} className="card" style={{marginBottom:10,border:`1px solid ${r.urgent?"#f2cccc":"#e2f2e2"}`,background:r.urgent?"#fbecec":"#f1f4fa"}}>
                   <div style={{display:"flex",alignItems:"center",gap:14}}>
                     <div className="ring" style={{width:42,height:42,background:r.c.color+"18",color:r.c.color,fontSize:13}}>{ini(r.c.name)}</div>
                     <div style={{flex:1}}>
                       <div style={{fontWeight:700}}>{r.c.name}</div>
-                      <div style={{fontSize:12,color:r.urgent?"#f87171":"#facc15",marginTop:2}}>
+                      <div style={{fontSize:12,color:r.urgent?"#dc2626":"#ca8a04",marginTop:2}}>
                         {r.type==="payment"&&`💳 ${r.c.payment_amount}€ — ${r.days<0?`vencido hace ${Math.abs(r.days)}d`:r.days===0?"vence hoy":`en ${r.days}d`}`}
                         {r.type==="sessions"&&`⚡ ${r.c.sessions_left} sesión(es) restante(s)`}
                         {r.type==="expired"&&"🚫 Sin sesiones — necesita renovación"}
@@ -1398,7 +1400,7 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>🕐 Mover sesión</h2>
-        <p style={{fontSize:12,color:"#475569",marginBottom:16}}>{cliente?cliente.name:"Cliente"} · {sess.type} — ahora el {fmtDate(sess.date)} a las {sess.time}</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:16}}>{cliente?cliente.name:"Cliente"} · {sess.type} — ahora el {fmtDate(sess.date)} a las {sess.time}</p>
 
         <div style={{marginBottom:14}}><span className="lbl">NUEVO DÍA</span>
           <input type="date" className="inp" value={date} min={TODAY} onChange={e=>setDate(e.target.value)}/>
@@ -1412,13 +1414,13 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
             return(
               <button key={t} onClick={()=>pick(t)}
                 style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
-                  background:actual?"#0c2040":isWork?"#050e05":"#0a0d12",
-                  border:`1px solid ${actual?"#1e3a5a":full?"#3f1a1a":isWork?"#14532d":"#161c28"}`}}>
-                <span className="mono" style={{fontSize:14,fontWeight:700,color:actual?"#38bdf8":"#e8edf5",minWidth:44}}>{t}</span>
-                <span style={{flex:1,fontSize:12,color:actual?"#38bdf8":full?"#f87171":"#4ade80",fontWeight:700}}>
+                  background:actual?"#dcebfb":isWork?"#edf7ed":"#f1f4fa",
+                  border:`1px solid ${actual?"#bcd3ee":full?"#f2cccc":isWork?"#14532d":"#e6ebf3"}`}}>
+                <span className="mono" style={{fontSize:14,fontWeight:700,color:actual?"#0284c7":"#0f172a",minWidth:44}}>{t}</span>
+                <span style={{flex:1,fontSize:12,color:actual?"#0284c7":full?"#dc2626":"#16a34a",fontWeight:700}}>
                   {actual?"Actual":full?`Completa ${taken}/${cap}`:`${free} libre${free>1?"s":""} · ${taken}/${cap}`}
                 </span>
-                {!actual&&<span style={{fontSize:11,color:"#475569"}}>Mover aquí →</span>}
+                {!actual&&<span style={{fontSize:11,color:"#64748b"}}>Mover aquí →</span>}
               </button>
             );
           })}
@@ -1451,7 +1453,7 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
 
         <div style={{marginBottom:14}}>
           <span className="lbl">🎯 OBJETIVOS · LESIONES · NOTAS</span>
-          <div style={{background:"#080d14",border:"1px solid #1a2235",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#cbd5e1":"#334155",whiteSpace:"pre-wrap",lineHeight:1.45}}>
+          <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#64748b":"#94a3b8",whiteSpace:"pre-wrap",lineHeight:1.45}}>
             {client.notes||"Sin notas. Añádelas desde la ficha del cliente (Clientes → notas)."}
           </div>
         </div>
@@ -1459,13 +1461,13 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
         <div>
           <span className="lbl">🏋️ ENTRENAMIENTO DE HOY</span>
           {sess
-            ?<div style={{background:"#080d14",border:"1px solid #14532d",borderRadius:10,padding:"11px 13px"}}>
-              {tmpl&&<div style={{fontSize:13,fontWeight:700,color:"#4ade80",marginBottom:exs.length?8:0}}>{tmpl.name}</div>}
+            ?<div style={{background:"#f1f4fa",border:"1px solid #14532d",borderRadius:10,padding:"11px 13px"}}>
+              {tmpl&&<div style={{fontSize:13,fontWeight:700,color:"#16a34a",marginBottom:exs.length?8:0}}>{tmpl.name}</div>}
               {exs.length===0
-                ?<div style={{fontSize:12,color:"#475569"}}>Sesión asignada (sin ejercicios detallados).</div>
+                ?<div style={{fontSize:12,color:"#64748b"}}>Sesión asignada (sin ejercicios detallados).</div>
                 :exs.map((e,i)=>(
-                  <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i>0?"1px solid #0d1520":"none"}}>
-                    <div style={{fontSize:12,color:"#e2e8f0",fontWeight:600}}>{e.exercise_name}</div>
+                  <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i>0?"1px solid #e6ebf3":"none"}}>
+                    <div style={{fontSize:12,color:"#0f172a",fontWeight:600}}>{e.exercise_name}</div>
                     <div className="mono" style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap",textAlign:"right"}}>
                       {e.sets&&e.reps?`${e.sets}×${e.reps}`:""}{e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}{e.protocol?` · ${e.protocol}`:""}
                     </div>
@@ -1473,7 +1475,7 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
                 ))
               }
             </div>
-            :<div style={{background:"#080d14",border:"1px solid #1a2235",borderRadius:10,padding:"11px 13px",fontSize:12,color:"#475569"}}>
+            :<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:12,color:"#64748b"}}>
               Sin entrenamiento asignado para hoy. Puedes asignarlo desde <b style={{color:"#64748b"}}>Programa</b>.
             </div>
           }
@@ -1502,13 +1504,13 @@ function ScheduleModal({config,onSave,onClose}) {
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>⚙️ Horario de trabajo</h2>
-        <p style={{fontSize:12,color:"#475569",marginBottom:18}}>Clases de 1 hora en punto. Define tus franjas y cuántos atletas admites por hora (de 1 a 5).</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:18}}>Clases de 1 hora en punto. Define tus franjas y cuántos atletas admites por hora (de 1 a 5).</p>
 
         <div style={{marginBottom:16}}>
           <span className="lbl">☀️ MAÑANA</span>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {hourSel(cfg.morningFrom,v=>setCfg(c=>({...c,morningFrom:v})))}
-            <span style={{color:"#475569",fontSize:13}}>a</span>
+            <span style={{color:"#64748b",fontSize:13}}>a</span>
             {hourSel(cfg.morningTo,v=>setCfg(c=>({...c,morningTo:v})))}
           </div>
         </div>
@@ -1516,7 +1518,7 @@ function ScheduleModal({config,onSave,onClose}) {
           <span className="lbl">🌙 TARDE</span>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             {hourSel(cfg.afternoonFrom,v=>setCfg(c=>({...c,afternoonFrom:v})))}
-            <span style={{color:"#475569",fontSize:13}}>a</span>
+            <span style={{color:"#64748b",fontSize:13}}>a</span>
             {hourSel(cfg.afternoonTo,v=>setCfg(c=>({...c,afternoonTo:v})))}
           </div>
         </div>
@@ -1524,14 +1526,14 @@ function ScheduleModal({config,onSave,onClose}) {
         <div style={{marginBottom:8}}>
           <span className="lbl">👥 ATLETAS POR HORA (1–5)</span>
           {slots.length===0
-            ?<p style={{fontSize:12,color:"#334155"}}>Ajusta las franjas para ver las horas.</p>
+            ?<p style={{fontSize:12,color:"#94a3b8"}}>Ajusta las franjas para ver las horas.</p>
             :<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(120px,1fr))",gap:8}}>
               {slots.map(t=>{const cap=capOf(t);return(
-                <div key={t} style={{background:"#080d14",borderRadius:9,padding:"7px 10px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-                  <span className="mono" style={{fontSize:12,color:"#94a3b8"}}>{t}</span>
+                <div key={t} style={{background:"#f1f4fa",borderRadius:9,padding:"7px 10px",display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+                  <span className="mono" style={{fontSize:12,color:"#64748b"}}>{t}</span>
                   <div style={{display:"flex",alignItems:"center",gap:5}}>
                     <button className="btn ghost" style={{padding:"3px 8px",fontSize:15,lineHeight:1,opacity:cap<=1?0.35:1}} disabled={cap<=1} onClick={()=>setCap(t,cap-1)}>−</button>
-                    <span className="mono" style={{width:14,textAlign:"center",fontWeight:700,fontSize:13,color:"#38bdf8"}}>{cap}</span>
+                    <span className="mono" style={{width:14,textAlign:"center",fontWeight:700,fontSize:13,color:"#0284c7"}}>{cap}</span>
                     <button className="btn ghost" style={{padding:"3px 8px",fontSize:15,lineHeight:1,opacity:cap>=5?0.35:1}} disabled={cap>=5} onClick={()=>setCap(t,cap+1)}>+</button>
                   </div>
                 </div>
@@ -1573,7 +1575,7 @@ function PayModal({client,onSave,onClose}) {
           <div><span className="lbl">IMPORTE (€)</span>
             <input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)}/>
           </div>
-          <div style={{background:"#060f1e",borderRadius:10,padding:"10px 13px",fontSize:12,color:"#475569",border:"1px solid #1e3a5a"}}>
+          <div style={{background:"#eaf1fb",borderRadius:10,padding:"10px 13px",fontSize:12,color:"#64748b",border:"1px solid #bcd3ee"}}>
             ✓ Se registrará el pago y la fecha del próximo pago avanzará un mes automáticamente.
           </div>
           <div style={{display:"flex",gap:8}}>
@@ -1613,7 +1615,7 @@ function SessionModal({clients,ns,setNs,onSave,onClose}) {
             </div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            <input type="checkbox" id="conf" checked={ns.confirmed} onChange={e=>setNs(s=>({...s,confirmed:e.target.checked}))} style={{accentColor:"#0ea5e9"}}/>
+            <input type="checkbox" id="conf" checked={ns.confirmed} onChange={e=>setNs(s=>({...s,confirmed:e.target.checked}))} style={{accentColor:"#0284c7"}}/>
             <label htmlFor="conf" style={{fontSize:13,color:"#64748b",cursor:"pointer"}}>Confirmada</label>
           </div>
           <div style={{display:"flex",gap:8}}>
@@ -1677,15 +1679,15 @@ function WAModal({client,onClose,notify}) {
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:460}}>
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:20}}>
           <div className="ring" style={{width:44,height:44,background:client.color+"20",color:client.color,fontSize:14,border:`2px solid ${client.color}40`}}>{ini(client.name)}</div>
-          <div><h2 className="mono" style={{fontSize:15,fontWeight:700}}>WhatsApp — {client.name}</h2><div style={{fontSize:12,color:"#475569"}}>+{client.phone||"sin número"}</div></div>
+          <div><h2 className="mono" style={{fontSize:15,fontWeight:700}}>WhatsApp — {client.name}</h2><div style={{fontSize:12,color:"#64748b"}}>+{client.phone||"sin número"}</div></div>
         </div>
         <div style={{display:"flex",flexDirection:"column",gap:8,marginBottom:16}}>
           {msgs.map((m,i)=>(
             <a key={i} href={waLink(client.phone||TRAINER_PHONE,m.text)} target="_blank" rel="noreferrer"
-              style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",background:"#050e05",border:"1px solid #14532d",borderRadius:11,textDecoration:"none"}}
+              style={{display:"flex",alignItems:"center",gap:12,padding:"11px 13px",background:"#edf7ed",border:"1px solid #14532d",borderRadius:11,textDecoration:"none"}}
               onClick={()=>notify("Abriendo WhatsApp...","wa")}>
               <span style={{fontSize:16}}>💬</span>
-              <div><div style={{fontSize:13,fontWeight:700,color:"#4ade80"}}>{m.label}</div><div style={{fontSize:11,color:"#475569",marginTop:1}}>{m.text.slice(0,70)}…</div></div>
+              <div><div style={{fontSize:13,fontWeight:700,color:"#16a34a"}}>{m.label}</div><div style={{fontSize:11,color:"#64748b",marginTop:1}}>{m.text.slice(0,70)}…</div></div>
             </a>
           ))}
         </div>
@@ -1756,7 +1758,7 @@ function BulkWAModal({clients,onClose,notify}) {
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:500}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:6}}>📱 WhatsApp masivo</h2>
-        <p style={{fontSize:12,color:"#475569",marginBottom:16}}>Elige el grupo, el mensaje ya viene escrito. Toca cada cliente para abrir WhatsApp y enviar.</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:16}}>Elige el grupo, el mensaje ya viene escrito. Toca cada cliente para abrir WhatsApp y enviar.</p>
         <div className="seg" style={{marginBottom:14,flexWrap:"wrap"}}>
           <button className={`sb ${selected==="pay"?"on":""}`} onClick={()=>cambiarGrupo("pay")}>💳 Pago ({grupos.pay.length})</button>
           <button className={`sb ${selected==="low"?"on":""}`} onClick={()=>cambiarGrupo("low")}>⚡ Pocas ({grupos.low.length})</button>
@@ -1766,12 +1768,12 @@ function BulkWAModal({clients,onClose,notify}) {
         <div>
           <span className="lbl">MENSAJE (se personaliza por cliente)</span>
           <textarea className="inp" rows={3} style={{resize:"vertical"}} value={msg} onChange={e=>setMsg(e.target.value)}/>
-          <p style={{fontSize:10,color:"#334155",marginTop:5}}>Comodines: {"{nombre} {sesiones} {importe} {vence}"} — se rellenan solos.</p>
+          <p style={{fontSize:10,color:"#94a3b8",marginTop:5}}>Comodines: {"{nombre} {sesiones} {importe} {vence}"} — se rellenan solos.</p>
         </div>
         {targets.length>0?(
           <div style={{marginTop:14}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-              <div style={{fontSize:11,color:"#334155",fontWeight:700}}>AVISADOS {hechos}/{targets.length}</div>
+              <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>AVISADOS {hechos}/{targets.length}</div>
               {hechos>0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 9px"}} onClick={reiniciar}>Reiniciar</button>}
             </div>
             <div style={{display:"flex",flexDirection:"column",gap:6,maxHeight:260,overflowY:"auto"}}>
@@ -1779,19 +1781,19 @@ function BulkWAModal({clients,onClose,notify}) {
                 const ok=done.has(c.id);
                 return(
                   <a key={c.id} href={msg?waLink(c.phone||TRAINER_PHONE,fillWA(msg,c)):"#"} target="_blank" rel="noreferrer"
-                    style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:ok?"#0a0f0a":"#050e05",
-                      border:`1px solid ${ok?"#1e3a24":"#14532d"}`,borderRadius:10,textDecoration:"none",opacity:ok?0.55:1}}
+                    style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:ok?"#f2f5f2":"#edf7ed",
+                      border:`1px solid ${ok?"#c9e6d1":"#14532d"}`,borderRadius:10,textDecoration:"none",opacity:ok?0.55:1}}
                     onClick={()=>{marcar(c.id);notify(`Abriendo WA de ${c.name}...`,"wa");}}>
                     <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
-                    <div style={{flex:1,fontSize:13,fontWeight:600,color:ok?"#475569":"#4ade80"}}>{c.name}</div>
-                    <span style={{fontSize:11,color:ok?"#4ade80":"#475569"}}>{ok?"✓ avisado":"📱 Abrir"}</span>
+                    <div style={{flex:1,fontSize:13,fontWeight:600,color:ok?"#64748b":"#16a34a"}}>{c.name}</div>
+                    <span style={{fontSize:11,color:ok?"#16a34a":"#64748b"}}>{ok?"✓ avisado":"📱 Abrir"}</span>
                   </a>
                 );
               })}
             </div>
           </div>
         ):(
-          <p style={{fontSize:12,color:"#334155",marginTop:14}}>No hay clientes en este grupo ahora mismo. 🎉</p>
+          <p style={{fontSize:12,color:"#94a3b8",marginTop:14}}>No hay clientes en este grupo ahora mismo. 🎉</p>
         )}
         <button className="btn ghost" style={{width:"100%",marginTop:14,padding:10}} onClick={onClose}>Cerrar</button>
       </div>
@@ -1857,27 +1859,27 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
   return(
     <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"22px 16px"}} className="fade">
-      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0ea5e9,#4ade80)",zIndex:500}}/>}
+      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
           <span style={{fontSize:18}}>🏋️</span>
-          <div className="mono" style={{fontSize:13,fontWeight:700,color:"#0ea5e9"}}>{GYM_NAME}</div>
+          <div className="mono" style={{fontSize:13,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</div>
         </div>
         <button className="btn ghost" style={{fontSize:12,padding:"6px 11px"}} onClick={onLogout}>Salir</button>
       </div>
 
       {/* Welcome message */}
       {client.welcome_msg&&(
-        <div style={{background:"#060f1e",border:"1px solid #0e3a5c",borderRadius:14,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#94a3b8"}}>
+        <div style={{background:"#eaf1fb",border:"1px solid #bcd3ee",borderRadius:14,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#64748b"}}>
           💬 {client.welcome_msg}
         </div>
       )}
 
       {/* Aviso: se ha liberado un hueco de tu lista de espera */}
       {freedWaits.map(w=>(
-        <div key={w.id} style={{background:"#12210a",border:"1px solid #3f6212",borderRadius:14,padding:"12px 14px",marginBottom:12}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#a3e635",marginBottom:2}}>🎉 ¡Hueco libre a las {w.time}!</div>
-          <div style={{fontSize:12,color:"#7a8b52",marginBottom:10}}>Se ha liberado tu clase en espera del {fmtDate(w.date)}. ¡Corre, reserva antes de que se ocupe!</div>
+        <div key={w.id} style={{background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:14,padding:"12px 14px",marginBottom:12}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#65a30d",marginBottom:2}}>🎉 ¡Hueco libre a las {w.time}!</div>
+          <div style={{fontSize:12,color:"#6b7a3f",marginBottom:10}}>Se ha liberado tu clase en espera del {fmtDate(w.date)}. ¡Corre, reserva antes de que se ocupe!</div>
           <div style={{display:"flex",gap:8}}>
             <button className="btn grn" style={{flex:1,padding:"9px",justifyContent:"center"}} disabled={saving} onClick={()=>grabWaitlistSpot(w)}>Reservar ahora 🚀</button>
             <button className="btn ghost" style={{padding:"9px 12px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
@@ -1886,7 +1888,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
       ))}
       {/* Recordatorio de esperas aún llenas */}
       {myWaits.filter(w=>!freedWaits.some(f=>f.id===w.id)).map(w=>(
-        <div key={w.id} style={{background:"#12100a",border:"1px solid #3a2f10",borderRadius:12,padding:"9px 13px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+        <div key={w.id} style={{background:"#fbf4e3",border:"1px solid #ecdfb0",borderRadius:12,padding:"9px 13px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
           <div style={{fontSize:12,color:"#a1873c"}}>⏳ En espera · {fmtDate(w.date)} a las {w.time}</div>
           <button className="btn ghost" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
         </div>
@@ -1903,50 +1905,50 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
             <div>
               <div style={{fontWeight:800,fontSize:16}}>{client.name}</div>
               <div style={{display:"flex",gap:8,marginTop:3,alignItems:"center"}}>
-                {streak>0&&<span style={{fontSize:12,color:"#fb923c"}} className="streak-fire">🔥 {streak} semanas seguidas</span>}
-                {streak===0&&<span style={{fontSize:11,color:"#334155"}}>Miembro activo</span>}
+                {streak>0&&<span style={{fontSize:12,color:"#ea580c"}} className="streak-fire">🔥 {streak} semanas seguidas</span>}
+                {streak===0&&<span style={{fontSize:11,color:"#94a3b8"}}>Miembro activo</span>}
               </div>
             </div>
           </div>
           <div style={{textAlign:"right"}}>
             <div className="mono" style={{fontSize:32,fontWeight:700,color:client.color,lineHeight:1}}>{client.sessions_left}</div>
-            <div style={{fontSize:10,color:"#334155",fontWeight:700}}>SESIONES</div>
+            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>SESIONES</div>
           </div>
         </div>
 
         {/* Progress */}
         <div style={{marginBottom:14}}>
-          <div className="pbar" style={{height:9,background:"#071020"}}>
-            <div className="pfill" style={{width:`${pct}%`,background:`linear-gradient(90deg,${pct>40?"#0ea5e9,#4ade80":pct>20?"#f59e0b,#fbbf24":"#ef4444,#f87171"})`}}/>
+          <div className="pbar" style={{height:9,background:"#eaf1fb"}}>
+            <div className="pfill" style={{width:`${pct}%`,background:`linear-gradient(90deg,${pct>40?"#0284c7,#16a34a":pct>20?"#f59e0b,#ca8a04":"#dc2626,#dc2626"})`}}/>
           </div>
-          <div style={{display:"flex",justifyContent:"space-between",marginTop:5,fontSize:10,color:"#334155"}}>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:5,fontSize:10,color:"#94a3b8"}}>
             <span>{client.sessions_left} disponibles</span><span>{client.total_sessions} total</span>
           </div>
         </div>
 
         {/* Stats row */}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
-          <div style={{background:"#071020",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+          <div style={{background:"#eaf1fb",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
             <div className="mono" style={{fontSize:16,fontWeight:700,color:"#a78bfa"}}>{thisMonthSessions}</div>
-            <div style={{fontSize:9,color:"#334155",fontWeight:700}}>ESTE MES</div>
+            <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>ESTE MES</div>
           </div>
-          <div style={{background:"#071020",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
-            <div className="mono" style={{fontSize:16,fontWeight:700,color:"#4ade80"}}>{myHistory.length}</div>
-            <div style={{fontSize:9,color:"#334155",fontWeight:700}}>TOTAL</div>
+          <div style={{background:"#eaf1fb",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+            <div className="mono" style={{fontSize:16,fontWeight:700,color:"#16a34a"}}>{myHistory.length}</div>
+            <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>TOTAL</div>
           </div>
-          <div style={{background:"#071020",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
-            <div className="mono" style={{fontSize:16,fontWeight:700,color:nextCountdown===0?"#facc15":nextCountdown!==null?"#38bdf8":"#334155"}}>
+          <div style={{background:"#eaf1fb",borderRadius:10,padding:"8px 10px",textAlign:"center"}}>
+            <div className="mono" style={{fontSize:16,fontWeight:700,color:nextCountdown===0?"#ca8a04":nextCountdown!==null?"#0284c7":"#94a3b8"}}>
               {nextCountdown===null?"—":nextCountdown===0?"Hoy":`${nextCountdown}d`}
             </div>
-            <div style={{fontSize:9,color:"#334155",fontWeight:700}}>PRÓXIMA</div>
+            <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>PRÓXIMA</div>
           </div>
         </div>
 
         {/* Payment + countdown */}
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <div style={{fontSize:10,color:"#334155",fontWeight:700}}>PRÓXIMO PAGO</div>
-            <div style={{fontSize:13,color:pd<=3?"#f87171":pd<=7?"#facc15":"#64748b",marginTop:2}}>
+            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>PRÓXIMO PAGO</div>
+            <div style={{fontSize:13,color:pd<=3?"#dc2626":pd<=7?"#ca8a04":"#64748b",marginTop:2}}>
               {client.payment_amount}€ · {pd<0?`Vencido hace ${Math.abs(pd)}d`:pd===0?"¡Vence hoy!":pd<=3?`⚠️ En ${pd} días`:`En ${pd} días`}
             </div>
           </div>
@@ -1976,27 +1978,27 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
       {tab==="home"&&(
         <div>
-          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:10}}>PRÓXIMAS SESIONES</div>
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>PRÓXIMAS SESIONES</div>
           {mySessions.length===0
             ?<div className="card" style={{textAlign:"center",padding:34}}>
               <div style={{fontSize:26,marginBottom:8}}>📅</div>
-              <div style={{color:"#475569",fontSize:13}}>Sin sesiones agendadas</div>
+              <div style={{color:"#64748b",fontSize:13}}>Sin sesiones agendadas</div>
               <button className="btn sky" style={{marginTop:12,padding:"9px 18px"}} onClick={()=>setTab("request")}>Solicitar sesión</button>
             </div>
             :mySessions.map(s=>(
-              <div key={s.id} className="card" style={{marginBottom:9,border:`1px solid ${s.requested?"#2d1a08":"var(--border)"}`}}>
+              <div key={s.id} className="card" style={{marginBottom:9,border:`1px solid ${s.requested?"#eed7bd":"var(--border)"}`}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:14}}>{s.type}</div>
-                    <div style={{fontSize:12,color:"#475569",marginTop:3}}>{fmtLong(s.date)}</div>
+                    <div style={{fontSize:12,color:"#64748b",marginTop:3}}>{fmtLong(s.date)}</div>
                   </div>
                   <div style={{textAlign:"right"}}>
-                    <div className="mono" style={{fontSize:17,fontWeight:700,color:"#38bdf8"}}>{s.time}</div>
-                    <div style={{marginTop:4,fontSize:11,color:s.requested?"#fb923c":s.status==="confirmed"?"#4ade80":"#facc15"}}>
+                    <div className="mono" style={{fontSize:17,fontWeight:700,color:"#0284c7"}}>{s.time}</div>
+                    <div style={{marginTop:4,fontSize:11,color:s.requested?"#ea580c":s.status==="confirmed"?"#16a34a":"#ca8a04"}}>
                       {s.requested?"⏳ Pendiente":s.status==="confirmed"?"✓ Confirmada":"Por confirmar"}
                     </div>
                     {!s.requested&&daysUntil(s.date)<=1&&(
-                      <div style={{fontSize:10,color:"#facc15",marginTop:2}}>{daysUntil(s.date)===0?"¡Hoy!":"¡Mañana!"}</div>
+                      <div style={{fontSize:10,color:"#ca8a04",marginTop:2}}>{daysUntil(s.date)===0?"¡Hoy!":"¡Mañana!"}</div>
                     )}
                   </div>
                 </div>
@@ -2011,11 +2013,11 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
       {tab==="request"&&(
         <div>
-          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:12}}>SOLICITAR SESIONES</div>
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:12}}>SOLICITAR SESIONES</div>
           {client.sessions_left===0
-            ?<div className="card" style={{textAlign:"center",padding:34,border:"1px solid #3f1a1a"}}>
+            ?<div className="card" style={{textAlign:"center",padding:34,border:"1px solid #f2cccc"}}>
               <div style={{fontSize:26,marginBottom:8}}>🚫</div>
-              <div style={{color:"#f87171",fontWeight:700,marginBottom:6}}>Sin sesiones disponibles</div>
+              <div style={{color:"#dc2626",fontWeight:700,marginBottom:6}}>Sin sesiones disponibles</div>
               <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quisiera renovar mi paquete 💪`)} target="_blank" rel="noreferrer">
                 <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
               </a>
@@ -2027,26 +2029,26 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
       {tab==="history"&&(
         <div>
-          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:10}}>HISTORIAL DE SESIONES</div>
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>HISTORIAL DE SESIONES</div>
           {myHistory.length===0
-            ?<div className="card" style={{textAlign:"center",padding:34}}><div style={{fontSize:26,marginBottom:8}}>📋</div><div style={{color:"#475569",fontSize:13}}>Sin sesiones completadas aún</div></div>
+            ?<div className="card" style={{textAlign:"center",padding:34}}><div style={{fontSize:26,marginBottom:8}}>📋</div><div style={{color:"#64748b",fontSize:13}}>Sin sesiones completadas aún</div></div>
             :myHistory.map(s=>(
               <div key={s.id} className="card" style={{marginBottom:8}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div><div style={{fontWeight:700}}>{s.type}</div><div style={{fontSize:12,color:"#475569",marginTop:2}}>{fmtLong(s.date)}</div></div>
-                  <div style={{textAlign:"right"}}><div className="mono" style={{color:"#475569",fontSize:12}}>{s.time}</div><div style={{fontSize:11,color:"#4ade80",marginTop:3}}>✓ Completada</div></div>
+                  <div><div style={{fontWeight:700}}>{s.type}</div><div style={{fontSize:12,color:"#64748b",marginTop:2}}>{fmtLong(s.date)}</div></div>
+                  <div style={{textAlign:"right"}}><div className="mono" style={{color:"#64748b",fontSize:12}}>{s.time}</div><div style={{fontSize:11,color:"#16a34a",marginTop:3}}>✓ Completada</div></div>
                 </div>
               </div>
             ))
           }
           <div style={{marginTop:14,display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            <div style={{padding:"14px",background:"#080f1e",borderRadius:12,border:"1px solid #1e3a5a",textAlign:"center"}}>
-              <div className="mono" style={{fontSize:22,fontWeight:700,color:"#38bdf8"}}>{myHistory.length}</div>
-              <div style={{fontSize:10,color:"#334155",fontWeight:700,marginTop:3}}>TOTAL</div>
+            <div style={{padding:"14px",background:"#eaf1fb",borderRadius:12,border:"1px solid #bcd3ee",textAlign:"center"}}>
+              <div className="mono" style={{fontSize:22,fontWeight:700,color:"#0284c7"}}>{myHistory.length}</div>
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginTop:3}}>TOTAL</div>
             </div>
-            <div style={{padding:"14px",background:"#080f1e",borderRadius:12,border:"1px solid #1e3a5a",textAlign:"center"}}>
-              <div className="mono" style={{fontSize:22,fontWeight:700,color:"#fb923c"}}>{streak>0?`🔥${streak}`:"0"}</div>
-              <div style={{fontSize:10,color:"#334155",fontWeight:700,marginTop:3}}>SEMANAS RACHA</div>
+            <div style={{padding:"14px",background:"#eaf1fb",borderRadius:12,border:"1px solid #bcd3ee",textAlign:"center"}}>
+              <div className="mono" style={{fontSize:22,fontWeight:700,color:"#ea580c"}}>{streak>0?`🔥${streak}`:"0"}</div>
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginTop:3}}>SEMANAS RACHA</div>
             </div>
           </div>
         </div>
@@ -2128,9 +2130,9 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
 
   return(
     <div className="card">
-      <div style={{background:"#080f1e",borderRadius:10,padding:"11px 13px",border:"1px solid #1e3a5a",fontSize:13,color:"#475569",marginBottom:16}}>
+      <div style={{background:"#eaf1fb",borderRadius:10,padding:"11px 13px",border:"1px solid #bcd3ee",fontSize:13,color:"#64748b",marginBottom:16}}>
         💡 Elige un día y toca las horas libres que quieras reservar.
-        <div style={{marginTop:4,fontSize:12,color:"#334155"}}>Sesiones en tu bono: <span style={{color:"#38bdf8",fontWeight:700}}>{client.sessions_left}</span></div>
+        <div style={{marginTop:4,fontSize:12,color:"#94a3b8"}}>Sesiones en tu bono: <span style={{color:"#0284c7",fontWeight:700}}>{client.sessions_left}</span></div>
       </div>
 
       <div style={{marginBottom:14}}><span className="lbl">DÍA</span>
@@ -2144,23 +2146,23 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
 
       <span className="lbl">HORAS DEL DÍA</span>
       {dayBlocked
-        ?<div style={{background:isWeekend(date)?"#0a1206":"#0d0505",border:`1px solid ${isWeekend(date)?"#1e3a24":"#3f1a1a"}`,borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:isWeekend(date)?"#4ade80":"#f87171"}}>{isWeekend(date)?"🌴 Fin de semana — sin clases":"🚫 Día no disponible"}</div>
+        ?<div style={{background:isWeekend(date)?"#edf7ed":"#fbecec",border:`1px solid ${isWeekend(date)?"#c9e6d1":"#f2cccc"}`,borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:isWeekend(date)?"#16a34a":"#dc2626"}}>{isWeekend(date)?"🌴 Fin de semana — sin clases":"🚫 Día no disponible"}</div>
         :workSlots.length===0
-          ?<div style={{fontSize:12,color:"#334155"}}>No hay horario configurado.</div>
+          ?<div style={{fontSize:12,color:"#94a3b8"}}>No hay horario configurado.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {workSlots.map(t=>{
               const sel=picked.includes(t), free=freeAt(t), ok=available(t), cap=capOf(t);
               const enrolled=allSessions.filter(s=>s.date===date&&s.time===t)
                 .map(s=>({...s,c:allClients.find(x=>x.id===s.client_id)})).filter(s=>s.c);
               const estado=isPast(t)?"Pasada":slotBlocked(t)?"🚫 Bloqueada":free<=0?"Completa":`${free} libre${free>1?"s":""}`;
-              const estCol=sel?"#4ade80":(free<=0||slotBlocked(t)||isPast(t))?"#f87171":"#4ade80";
+              const estCol=sel?"#16a34a":(free<=0||slotBlocked(t)||isPast(t))?"#dc2626":"#16a34a";
               return(
                 <div key={t} onClick={()=>toggle(t)}
                   style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,cursor:ok||sel?"pointer":"default",
-                    background:sel?"#0c2a1a":ok?"#050e05":"#0a0d12",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#161c28"}`,opacity:(slotBlocked(t)||isPast(t))?0.55:1}}>
+                    background:sel?"#dff3e6":ok?"#edf7ed":"#f1f4fa",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#e6ebf3"}`,opacity:(slotBlocked(t)||isPast(t))?0.55:1}}>
                   {/* Hora */}
                   <div style={{flexShrink:0,textAlign:"center",minWidth:44}}>
-                    <div className="mono" style={{fontSize:15,fontWeight:700,color:sel?"#4ade80":ok?"#e8edf5":"#64748b"}}>{t}</div>
+                    <div className="mono" style={{fontSize:15,fontWeight:700,color:sel?"#16a34a":ok?"#0f172a":"#64748b"}}>{t}</div>
                     <div style={{fontSize:9,fontWeight:700,marginTop:1,color:estCol}}>{sel?"✓ elegida":estado}</div>
                   </div>
                   {/* Personas apuntadas + huecos libres */}
@@ -2175,19 +2177,19 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
                             :<div className="ring" style={{width:24,height:24,background:s.c.color+"30",color:s.c.color,fontSize:9}}>{ini(s.c.name)}</div>}
                           <span style={{fontSize:12,fontWeight:700,color:s.c.color}}>Tú</span>
                         </div>
-                        :<div key={s.id} title="Plaza ocupada" style={{width:26,height:26,borderRadius:"50%",background:"#1e293b",border:"1.5px solid #2b3a4f",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:700}}>•</div>;
+                        :<div key={s.id} title="Plaza ocupada" style={{width:26,height:26,borderRadius:"50%",background:"#cbd5e1",border:"1.5px solid #cbd5e1",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:700}}>•</div>;
                     })}
                     {/* Huecos libres como plazas vacías */}
                     {!slotBlocked(t)&&!isPast(t)&&Array.from({length:free}).map((_,k)=>(
-                      <div key={"f"+k} style={{width:26,height:26,borderRadius:"50%",border:"1.5px dashed #1e3a2a",display:"flex",alignItems:"center",justifyContent:"center",color:"#1e3a2a",fontSize:13}}>+</div>
+                      <div key={"f"+k} style={{width:26,height:26,borderRadius:"50%",border:"1.5px dashed #c9e6d1",display:"flex",alignItems:"center",justifyContent:"center",color:"#c9e6d1",fontSize:13}}>+</div>
                     ))}
-                    {enrolled.length===0&&slotBlocked(t)&&<span style={{fontSize:11,color:"#4a1515"}}>No disponible</span>}
+                    {enrolled.length===0&&slotBlocked(t)&&<span style={{fontSize:11,color:"#b56b6b"}}>No disponible</span>}
                   </div>
                   <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
-                    <span className="mono" style={{fontSize:10,fontWeight:700,color:"#334155"}}>{enrolled.length}/{cap}</span>
+                    <span className="mono" style={{fontSize:10,fontWeight:700,color:"#94a3b8"}}>{enrolled.length}/{cap}</span>
                     {free<=0&&!slotBlocked(t)&&!isPast(t)&&(myWait(t)
-                      ?<button onClick={e=>{e.stopPropagation();leaveWaitlist(t);}} style={{background:"#1f1405",border:"1px solid #78500f",color:"#facc15",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ En espera ✓</button>
-                      :<button onClick={e=>{e.stopPropagation();joinWaitlist(t);}} style={{background:"#160f04",border:"1px solid #78500f",color:"#facc15",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ Espera</button>
+                      ?<button onClick={e=>{e.stopPropagation();leaveWaitlist(t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ En espera ✓</button>
+                      :<button onClick={e=>{e.stopPropagation();joinWaitlist(t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ Espera</button>
                     )}
                   </div>
                 </div>
@@ -2227,7 +2229,7 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
           const d=new Date(calWeek+"T12:00:00"); d.setDate(d.getDate()-7);
           setCalWeek(d.toISOString().split("T")[0]);
         }}>‹ Ant.</button>
-        <span style={{fontSize:13,fontWeight:600,color:"#94a3b8"}}>
+        <span style={{fontSize:13,fontWeight:600,color:"#64748b"}}>
           {new Date(workDays[0]+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})} – {new Date(workDays[4]+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}
         </span>
         <button className="btn ghost" style={{padding:"7px 12px",fontSize:13}} onClick={()=>{
@@ -2239,27 +2241,27 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
       {!hasAnySessions
         ? <div className="card" style={{textAlign:"center",padding:34}}>
             <div style={{fontSize:26,marginBottom:8}}>📅</div>
-            <div style={{color:"#475569",fontSize:13}}>Sin clases esta semana</div>
+            <div style={{color:"#64748b",fontSize:13}}>Sin clases esta semana</div>
           </div>
         : workDays.map(day=>{
             const daySess = sessionsByDay[day];
             const isToday = day===TODAY;
             if(daySess.length===0) return(
               <div key={day} style={{marginBottom:10,opacity:0.4}}>
-                <div style={{fontSize:11,fontWeight:700,color:"#334155",marginBottom:4,textTransform:"capitalize",paddingLeft:4}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:4,textTransform:"capitalize",paddingLeft:4}}>
                   {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"})}
                 </div>
-                <div style={{fontSize:11,color:"#1e293b",padding:"8px 12px",background:"#080d14",borderRadius:8}}>Sin clases</div>
+                <div style={{fontSize:11,color:"#cbd5e1",padding:"8px 12px",background:"#f1f4fa",borderRadius:8}}>Sin clases</div>
               </div>
             );
             return(
               <div key={day} style={{marginBottom:14}}>
                 <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-                  <div style={{fontSize:11,fontWeight:700,color:isToday?"#38bdf8":"#475569",textTransform:"capitalize"}}>
+                  <div style={{fontSize:11,fontWeight:700,color:isToday?"#0284c7":"#64748b",textTransform:"capitalize"}}>
                     {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"})}
                   </div>
-                  {isToday&&<span style={{fontSize:10,background:"#0c2040",color:"#38bdf8",padding:"2px 7px",borderRadius:10,fontWeight:700}}>Hoy</span>}
-                  <span style={{fontSize:10,color:"#334155"}}>{daySess.length} clase{daySess.length>1?"s":""}</span>
+                  {isToday&&<span style={{fontSize:10,background:"#dcebfb",color:"#0284c7",padding:"2px 7px",borderRadius:10,fontWeight:700}}>Hoy</span>}
+                  <span style={{fontSize:10,color:"#94a3b8"}}>{daySess.length} clase{daySess.length>1?"s":""}</span>
                 </div>
                 {daySess.map(s=>{
                   const c=allClients.find(x=>x.id===s.client_id);
@@ -2270,25 +2272,25 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
                     <div key={s.id} style={{
                       display:"flex",alignItems:"center",gap:10,
                       padding:"10px 12px",borderRadius:12,marginBottom:6,
-                      background:isMe?"#0a1628":"#0a0d14",
-                      border:`1px solid ${isMe?"#1e3a5a":"#1a2235"}`,
+                      background:isMe?"#e3eefb":"#f1f4fa",
+                      border:`1px solid ${isMe?"#bcd3ee":"#dbe2ec"}`,
                     }}>
-                      <div className="mono" style={{fontSize:13,fontWeight:700,color:isMe?"#38bdf8":"#475569",minWidth:46,flexShrink:0}}>{s.time}</div>
+                      <div className="mono" style={{fontSize:13,fontWeight:700,color:isMe?"#0284c7":"#64748b",minWidth:46,flexShrink:0}}>{s.time}</div>
                       {isMe
                         ?(c.avatar_url
                             ?<img src={c.avatar_url} style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color}80`,flexShrink:0}}/>
                             :<div className="ring" style={{width:34,height:34,background:c.color+"30",color:c.color,fontSize:11,border:`1.5px solid ${c.color}60`,flexShrink:0}}>{ini(c.name)}</div>)
-                        :<div style={{width:34,height:34,borderRadius:"50%",background:"#1e293b",border:"1.5px solid #2b3a4f",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:16,fontWeight:700,flexShrink:0}}>•</div>
+                        :<div style={{width:34,height:34,borderRadius:"50%",background:"#cbd5e1",border:"1.5px solid #cbd5e1",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:16,fontWeight:700,flexShrink:0}}>•</div>
                       }
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:isMe?700:500,color:isMe?"#e2e8f0":"#64748b",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
+                        <div style={{fontSize:13,fontWeight:isMe?700:500,color:isMe?"#0f172a":"#64748b",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>
                           {isMe?"Yo (tú)":"Plaza ocupada"}
                         </div>
-                        {isMe&&<div style={{fontSize:11,color:"#475569"}}>{s.type}</div>}
+                        {isMe&&<div style={{fontSize:11,color:"#64748b"}}>{s.type}</div>}
                       </div>
                       {isMe&&<div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}>
                         <span style={{fontSize:14}}>✅</span>
-                        <span style={{fontSize:9,color:"#4ade80",fontWeight:700}}>Apuntado</span>
+                        <span style={{fontSize:9,color:"#16a34a",fontWeight:700}}>Apuntado</span>
                       </div>}
                     </div>
                   );
@@ -2386,7 +2388,7 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
       {forum.length===0
         ? <div className="card" style={{textAlign:"center",padding:34}}>
             <div style={{fontSize:28,marginBottom:8}}>💬</div>
-            <div style={{color:"#475569",fontSize:13}}>Sé el primero en publicar algo 💪</div>
+            <div style={{color:"#64748b",fontSize:13}}>Sé el primero en publicar algo 💪</div>
           </div>
         : forum.map(post=>{
             const c=allClients.find(x=>x.id===post.client_id);
@@ -2396,18 +2398,18 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
               <div key={post.id} className="card" style={{marginBottom:10}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
                   {c?.avatar_url
-                    ? <img src={c.avatar_url} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color||"#38bdf8"}`}}/>
-                    : <div className="ring" style={{width:38,height:38,background:(c?.color||"#38bdf8")+"20",color:c?.color||"#38bdf8",fontSize:12,border:`1.5px solid ${c?.color||"#38bdf8"}35`}}>{ini(post.client_name)}</div>
+                    ? <img src={c.avatar_url} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color||"#0284c7"}`}}/>
+                    : <div className="ring" style={{width:38,height:38,background:(c?.color||"#0284c7")+"20",color:c?.color||"#0284c7",fontSize:12,border:`1.5px solid ${c?.color||"#0284c7"}35`}}>{ini(post.client_name)}</div>
                   }
                   <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:13}}>{post.client_name} {isMe&&<span style={{fontSize:10,color:"#38bdf8"}}>· tú</span>}</div>
-                    <div style={{fontSize:11,color:"#334155"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
+                    <div style={{fontWeight:700,fontSize:13}}>{post.client_name} {isMe&&<span style={{fontSize:10,color:"#0284c7"}}>· tú</span>}</div>
+                    <div style={{fontSize:11,color:"#94a3b8"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
                   </div>
                 </div>
-                {post.content&&<p style={{fontSize:13,color:"#94a3b8",lineHeight:1.55,marginBottom:post.image_url?10:8}}>{post.content}</p>}
+                {post.content&&<p style={{fontSize:13,color:"#64748b",lineHeight:1.55,marginBottom:post.image_url?10:8}}>{post.content}</p>}
                 {post.image_url&&<img src={post.image_url} style={{width:"100%",borderRadius:10,maxHeight:260,objectFit:"cover",marginBottom:8}}/>}
                 <div style={{display:"flex",alignItems:"center",gap:10}}>
-                  <button onClick={()=>toggleLike(post)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:liked?"#f87171":"#475569",display:"flex",alignItems:"center",gap:4,padding:"4px 8px",borderRadius:8,transition:"all .15s"}}>
+                  <button onClick={()=>toggleLike(post)} style={{background:"none",border:"none",cursor:"pointer",fontSize:13,color:liked?"#dc2626":"#64748b",display:"flex",alignItems:"center",gap:4,padding:"4px 8px",borderRadius:8,transition:"all .15s"}}>
                     {liked?"❤️":"🤍"} <span style={{fontWeight:600}}>{post.likes||0}</span>
                   </button>
                 </div>
@@ -2426,16 +2428,16 @@ function VacationModal({onSave, onClose}) {
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:6}}>🏖 Modo vacaciones</h2>
-        <p style={{fontSize:13,color:"#475569",marginBottom:18}}>Bloquea todos los días laborables (L-V) del período seleccionado.</p>
+        <p style={{fontSize:13,color:"#64748b",marginBottom:18}}>Bloquea todos los días laborables (L-V) del período seleccionado.</p>
         <div style={{display:"flex",flexDirection:"column",gap:14}}>
           <div><span className="lbl">DESDE</span><input type="date" className="inp" value={start} min={TODAY} onChange={e=>setStart(e.target.value)}/></div>
           <div><span className="lbl">HASTA</span><input type="date" className="inp" value={end} min={start} onChange={e=>setEnd(e.target.value)}/></div>
-          <div style={{background:"#080f1e",borderRadius:10,padding:"10px 13px",border:"1px solid #1e3a5a",fontSize:12,color:"#475569"}}>
+          <div style={{background:"#eaf1fb",borderRadius:10,padding:"10px 13px",border:"1px solid #bcd3ee",fontSize:12,color:"#64748b"}}>
             Solo se bloquearán lunes a viernes. Los fines de semana se omiten.
           </div>
           <div style={{display:"flex",gap:8}}>
             <button className="btn ghost" style={{flex:1,padding:9,fontSize:12}} onClick={()=>onSave(start,end,"Vacaciones")}>🏖 Vacaciones</button>
-            <button className="btn ghost" style={{flex:1,padding:9,fontSize:12,color:"#fb923c"}} onClick={()=>onSave(start,end,"Festivo")}>🎉 Festivo</button>
+            <button className="btn ghost" style={{flex:1,padding:9,fontSize:12,color:"#ea580c"}} onClick={()=>onSave(start,end,"Festivo")}>🎉 Festivo</button>
           </div>
           <button className="btn ghost" style={{width:"100%",padding:11,marginTop:4}} onClick={onClose}>Cancelar</button>
         </div>
@@ -2452,7 +2454,7 @@ function ExercisesAdmin({exercises, loadAll, notify}) {
   const [ex, setEx] = React.useState({name:"",category:"Fuerza",muscle_group:"",description:"",difficulty:"Intermedio"});
   const CATS = ["Todos","Fuerza","Cardio","HIIT","Funcional","Movilidad"];
   const DIFFS = ["Principiante","Intermedio","Avanzado"];
-  const diffColor = d => d==="Principiante"?"#4ade80":d==="Avanzado"?"#f87171":"#facc15";
+  const diffColor = d => d==="Principiante"?"#16a34a":d==="Avanzado"?"#dc2626":"#ca8a04";
 
   const filtered = filter==="Todos"?exercises:exercises.filter(e=>e.category===filter);
 
@@ -2492,14 +2494,14 @@ function ExercisesAdmin({exercises, loadAll, notify}) {
                   <span style={{fontWeight:700,fontSize:14}}>{e.name}</span>
                   <span className="pill" style={{background:diffColor(e.difficulty)+"18",color:diffColor(e.difficulty),border:`1px solid ${diffColor(e.difficulty)}30`,fontSize:9}}>{e.difficulty}</span>
                 </div>
-                <div style={{fontSize:11,color:"#38bdf8",marginBottom:3}}>{e.category} · {e.muscle_group}</div>
-                {e.description&&<div style={{fontSize:11,color:"#475569",lineHeight:1.4}}>{e.description}</div>}
+                <div style={{fontSize:11,color:"#0284c7",marginBottom:3}}>{e.category} · {e.muscle_group}</div>
+                {e.description&&<div style={{fontSize:11,color:"#64748b",lineHeight:1.4}}>{e.description}</div>}
               </div>
               <button className="btn danger" style={{fontSize:10,padding:"4px 8px",marginLeft:8,flexShrink:0}} onClick={()=>deleteEx(e.id)}>🗑</button>
             </div>
           </div>
         ))}
-        {filtered.length===0&&<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>Sin ejercicios en esta categoría</div>}
+        {filtered.length===0&&<div className="card" style={{textAlign:"center",padding:32,color:"#94a3b8"}}>Sin ejercicios en esta categoría</div>}
       </div>
 
       {showAdd&&(
@@ -2614,16 +2616,16 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
               <button className="btn ghost" style={{fontSize:12,padding:"7px 12px",marginBottom:14}} onClick={()=>setEditPlan(null)}>← Volver a planes</button>
               <div className="card" style={{marginBottom:14}}>
                 <div style={{fontWeight:700,fontSize:16,marginBottom:4}}>{editPlan.name}</div>
-                <div style={{fontSize:12,color:"#475569"}}>{editPlan.category} · {editPlan.duration_weeks} semanas</div>
+                <div style={{fontSize:12,color:"#64748b"}}>{editPlan.category} · {editPlan.duration_weeks} semanas</div>
               </div>
               {(editPlan.plan_days||[]).sort((a,b)=>a.day_number-b.day_number).map(day=>(
                 <div key={day.id} className="card" style={{marginBottom:10}}>
-                  <div style={{fontWeight:700,fontSize:13,color:"#38bdf8",marginBottom:10}}>{day.day_name||`Día ${day.day_number}`}</div>
+                  <div style={{fontWeight:700,fontSize:13,color:"#0284c7",marginBottom:10}}>{day.day_name||`Día ${day.day_number}`}</div>
                   {(day.plan_exercises||[]).sort((a,b)=>a.order_index-b.order_index).map(pe=>(
-                    <div key={pe.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #0d1520"}}>
+                    <div key={pe.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #e6ebf3"}}>
                       <div>
                         <div style={{fontSize:13,fontWeight:600}}>{pe.exercise_name}</div>
-                        <div style={{fontSize:11,color:"#475569"}}>{pe.sets} series × {pe.reps} · {pe.rest_seconds}s descanso</div>
+                        <div style={{fontSize:11,color:"#64748b"}}>{pe.sets} series × {pe.reps} · {pe.rest_seconds}s descanso</div>
                       </div>
                       <button className="btn danger" style={{fontSize:10,padding:"3px 7px"}} onClick={()=>removeEx(pe.id)}>✕</button>
                     </div>
@@ -2649,7 +2651,7 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
                   <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:8}}>
                     <div>
                       <div style={{fontWeight:700,fontSize:14}}>{plan.name}</div>
-                      <div style={{fontSize:11,color:"#475569",marginTop:2}}>{plan.category} · {plan.duration_weeks} sem · {(plan.plan_days||[]).length} días</div>
+                      <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{plan.category} · {plan.duration_weeks} sem · {(plan.plan_days||[]).length} días</div>
                     </div>
                     <div style={{display:"flex",gap:6}}>
                       <button className="btn sky" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>setEditPlan(plan)}>✏️</button>
@@ -2657,10 +2659,10 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
                       <button className="btn danger" style={{fontSize:10,padding:"5px 8px"}} onClick={()=>deletePlan(plan.id)}>🗑</button>
                     </div>
                   </div>
-                  {plan.description&&<div style={{fontSize:12,color:"#334155"}}>{plan.description}</div>}
+                  {plan.description&&<div style={{fontSize:12,color:"#94a3b8"}}>{plan.description}</div>}
                 </div>
               ))}
-              {plans.length===0&&<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>Sin planes creados aún</div>}
+              {plans.length===0&&<div className="card" style={{textAlign:"center",padding:32,color:"#94a3b8"}}>Sin planes creados aún</div>}
             </div>
           )}
         </div>
@@ -2681,10 +2683,10 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
                 {cp.map(a=>{
                   const plan=plans.find(p=>p.id===a.plan_id);
                   return plan?(
-                    <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderTop:"1px solid #0d1520"}}>
+                    <div key={a.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"6px 0",borderTop:"1px solid #e6ebf3"}}>
                       <div>
                         <div style={{fontSize:12,fontWeight:600}}>{plan.name}</div>
-                        <div style={{fontSize:10,color:"#475569"}}>Desde {a.start_date}</div>
+                        <div style={{fontSize:10,color:"#64748b"}}>Desde {a.start_date}</div>
                       </div>
                       <button className="btn danger" style={{fontSize:10,padding:"3px 7px"}} onClick={async()=>{
                         await sb.from("client_plans").delete().eq("id",a.id);
@@ -2751,10 +2753,10 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
               {plans.map(plan=>(
                 <button key={plan.id} className="btn ghost" style={{textAlign:"left",padding:12}} onClick={()=>assignPlan(plan.id)}>
                   <div style={{fontWeight:700}}>{plan.name}</div>
-                  <div style={{fontSize:11,color:"#475569"}}>{plan.category} · {plan.duration_weeks} semanas</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{plan.category} · {plan.duration_weeks} semanas</div>
                 </button>
               ))}
-              {plans.length===0&&<p style={{fontSize:13,color:"#334155"}}>Crea un plan primero</p>}
+              {plans.length===0&&<p style={{fontSize:13,color:"#94a3b8"}}>Crea un plan primero</p>}
               <button className="btn ghost" style={{padding:10}} onClick={()=>{setShowAssign(null);setAssignClient("");}}>Cancelar</button>
             </div>
           </div>
@@ -2814,9 +2816,9 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
 
   const StatCard = ({label,value,unit,diffVal}) => (
     <div className="stat-box">
-      <div className="mono" style={{fontSize:18,fontWeight:700,color:"#e2e8f0"}}>{value||"—"}<span style={{fontSize:11,color:"#475569",marginLeft:2}}>{value?unit:""}</span></div>
-      {diffVal!==null&&diffVal!==undefined&&<div style={{fontSize:10,color:diffVal>0?"#f87171":"#4ade80",marginTop:2}}>{diffVal>0?"+":""}{diffVal?.toFixed(1)}</div>}
-      <div style={{fontSize:9,color:"#334155",fontWeight:700,marginTop:3}}>{label.toUpperCase()}</div>
+      <div className="mono" style={{fontSize:18,fontWeight:700,color:"#0f172a"}}>{value||"—"}<span style={{fontSize:11,color:"#64748b",marginLeft:2}}>{value?unit:""}</span></div>
+      {diffVal!==null&&diffVal!==undefined&&<div style={{fontSize:10,color:diffVal>0?"#dc2626":"#16a34a",marginTop:2}}>{diffVal>0?"+":""}{diffVal?.toFixed(1)}</div>}
+      <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,marginTop:3}}>{label.toUpperCase()}</div>
     </div>
   );
 
@@ -2843,16 +2845,16 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
           </div>
           {latest?(
             <div>
-              <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:10}}>ÚLTIMA MEDICIÓN — {latest.date}</div>
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>ÚLTIMA MEDICIÓN — {latest.date}</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
                 <StatCard label="Peso" value={latest.weight} unit="kg" diffVal={diff("weight")}/>
                 <StatCard label="% Grasa" value={latest.body_fat} unit="%" diffVal={diff("body_fat")}/>
                 <StatCard label="Cintura" value={latest.waist} unit="cm" diffVal={diff("waist")}/>
               </div>
-              {latest.notes&&<div style={{fontSize:12,color:"#475569",padding:"10px 12px",background:"#080d14",borderRadius:10,marginBottom:14}}>{latest.notes}</div>}
-              <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:10}}>HISTORIAL</div>
+              {latest.notes&&<div style={{fontSize:12,color:"#64748b",padding:"10px 12px",background:"#f1f4fa",borderRadius:10,marginBottom:14}}>{latest.notes}</div>}
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>HISTORIAL</div>
               {myProgress.map(p=>(
-                <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #0d1520",fontSize:12}}>
+                <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #e6ebf3",fontSize:12}}>
                   <span style={{color:"#64748b"}}>{p.date}</span>
                   <span>{p.weight?`${p.weight}kg`:""} {p.body_fat?`${p.body_fat}%`:""} {p.waist?`${p.waist}cm`:""}</span>
                 </div>
@@ -2861,7 +2863,7 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
           ):(
             <div className="card" style={{textAlign:"center",padding:36}}>
               <div style={{fontSize:28,marginBottom:8}}>📊</div>
-              <div style={{color:"#475569",fontSize:13,marginBottom:14}}>Sin mediciones aún. ¡Empieza hoy!</div>
+              <div style={{color:"#64748b",fontSize:13,marginBottom:14}}>Sin mediciones aún. ¡Empieza hoy!</div>
               <button className="btn sky" style={{padding:"10px 20px"}} onClick={()=>setShowLog(true)}>Registrar primera medición</button>
             </div>
           )}
@@ -2876,7 +2878,7 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
           {myRecords.length===0
             ?<div className="card" style={{textAlign:"center",padding:36}}>
               <div style={{fontSize:28,marginBottom:8}}>🏆</div>
-              <div style={{color:"#475569",fontSize:13}}>Aún no tienes marcas registradas</div>
+              <div style={{color:"#64748b",fontSize:13}}>Aún no tienes marcas registradas</div>
             </div>
             :<div>
               {Object.entries(myRecords.reduce((acc,r)=>{
@@ -2890,14 +2892,14 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div>
                         <div style={{fontWeight:700,fontSize:14}}>{name}</div>
-                        <div style={{fontSize:11,color:"#475569",marginTop:2}}>{recs.length} registros · Mejor: <span style={{color:"#facc15",fontWeight:700}}>{best.value}{best.unit}</span></div>
+                        <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{recs.length} registros · Mejor: <span style={{color:"#ca8a04",fontWeight:700}}>{best.value}{best.unit}</span></div>
                       </div>
-                      <div className="mono" style={{fontSize:20,fontWeight:700,color:"#facc15"}}>{best.value}<span style={{fontSize:11}}>{best.unit}</span></div>
+                      <div className="mono" style={{fontSize:20,fontWeight:700,color:"#ca8a04"}}>{best.value}<span style={{fontSize:11}}>{best.unit}</span></div>
                     </div>
                     <div style={{marginTop:8}}>
                       {recs.sort((a,b)=>b.date.localeCompare(a.date)).slice(0,3).map(r=>(
-                        <div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderTop:"1px solid #0d1520",color:"#64748b"}}>
-                          <span>{r.date}</span><span style={{fontWeight:600,color:"#e2e8f0"}}>{r.value}{r.unit}</span>
+                        <div key={r.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"4px 0",borderTop:"1px solid #e6ebf3",color:"#64748b"}}>
+                          <span>{r.date}</span><span style={{fontWeight:600,color:"#0f172a"}}>{r.value}{r.unit}</span>
                         </div>
                       ))}
                     </div>
@@ -2915,11 +2917,11 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
             {ACHIEVEMENT_LIST.map(a=>{
               const earned = myAchievements.find(x=>x.type===a.type);
               return(
-                <div key={a.type} className="card" style={{textAlign:"center",padding:16,opacity:earned?1:0.35,border:earned?"1px solid #1e3a5a":"1px solid var(--border)"}}>
+                <div key={a.type} className="card" style={{textAlign:"center",padding:16,opacity:earned?1:0.35,border:earned?"1px solid #bcd3ee":"1px solid var(--border)"}}>
                   <div style={{fontSize:30,marginBottom:6}}>{a.emoji}</div>
-                  <div style={{fontSize:12,fontWeight:700,color:earned?"#e2e8f0":"#334155"}}>{a.title}</div>
-                  {earned&&<div style={{fontSize:10,color:"#334155",marginTop:4}}>{new Date(earned.earned_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>}
-                  {!earned&&<div style={{fontSize:10,color:"#1e293b",marginTop:4}}>Por conseguir</div>}
+                  <div style={{fontSize:12,fontWeight:700,color:earned?"#0f172a":"#94a3b8"}}>{a.title}</div>
+                  {earned&&<div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>{new Date(earned.earned_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>}
+                  {!earned&&<div style={{fontSize:10,color:"#cbd5e1",marginTop:4}}>Por conseguir</div>}
                 </div>
               );
             })}
@@ -2992,8 +2994,8 @@ function PlanTab({client, plans, clientPlans, exercises}) {
   if(myActivePlans.length===0) return(
     <div className="card" style={{textAlign:"center",padding:40}}>
       <div style={{fontSize:30,marginBottom:10}}>📋</div>
-      <div style={{color:"#475569",fontSize:13,marginBottom:6}}>No tienes ningún plan asignado</div>
-      <div style={{fontSize:12,color:"#334155"}}>Tu trainer te asignará un plan de entrenamiento pronto</div>
+      <div style={{color:"#64748b",fontSize:13,marginBottom:6}}>No tienes ningún plan asignado</div>
+      <div style={{fontSize:12,color:"#94a3b8"}}>Tu trainer te asignará un plan de entrenamiento pronto</div>
     </div>
   );
 
@@ -3007,30 +3009,30 @@ function PlanTab({client, plans, clientPlans, exercises}) {
             <div className="hero-card" style={{marginBottom:16}}>
               <div style={{fontWeight:800,fontSize:16,marginBottom:4}}>{plan.name}</div>
               <div style={{fontSize:12,color:"#64748b",marginBottom:10}}>{plan.category} · {plan.duration_weeks} semanas · Inicio: {cp.start_date}</div>
-              {plan.description&&<div style={{fontSize:13,color:"#94a3b8"}}>{plan.description}</div>}
+              {plan.description&&<div style={{fontSize:13,color:"#64748b"}}>{plan.description}</div>}
             </div>
             {(plan.plan_days||[]).sort((a,b)=>a.day_number-b.day_number).map(day=>(
               <div key={day.id} className="card" style={{marginBottom:10}}>
-                <div style={{fontWeight:700,fontSize:14,color:"#38bdf8",marginBottom:12}}>{day.day_name||`Día ${day.day_number}`}</div>
+                <div style={{fontWeight:700,fontSize:14,color:"#0284c7",marginBottom:12}}>{day.day_name||`Día ${day.day_number}`}</div>
                 {(day.plan_exercises||[]).sort((a,b)=>a.order_index-b.order_index).map((pe,i)=>{
                   const ex = exercises.find(e=>e.id===pe.exercise_id);
                   return(
-                    <div key={pe.id} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:i<day.plan_exercises.length-1?"1px solid #0d1520":"none",alignItems:"flex-start"}}>
-                      <div style={{minWidth:24,height:24,borderRadius:6,background:"#0c2040",color:"#38bdf8",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{i+1}</div>
+                    <div key={pe.id} style={{display:"flex",gap:12,padding:"10px 0",borderBottom:i<day.plan_exercises.length-1?"1px solid #e6ebf3":"none",alignItems:"flex-start"}}>
+                      <div style={{minWidth:24,height:24,borderRadius:6,background:"#dcebfb",color:"#0284c7",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,flexShrink:0}}>{i+1}</div>
                       <div style={{flex:1}}>
                         <div style={{fontWeight:600,fontSize:14}}>{pe.exercise_name}</div>
                         <div style={{display:"flex",gap:12,marginTop:4}}>
-                          <span style={{fontSize:12,color:"#38bdf8",fontWeight:700}}>{pe.sets} × {pe.reps}</span>
-                          {pe.rest_seconds&&<span style={{fontSize:11,color:"#475569"}}>⏱ {pe.rest_seconds}s</span>}
+                          <span style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{pe.sets} × {pe.reps}</span>
+                          {pe.rest_seconds&&<span style={{fontSize:11,color:"#64748b"}}>⏱ {pe.rest_seconds}s</span>}
                         </div>
-                        {ex?.muscle_group&&<div style={{fontSize:10,color:"#334155",marginTop:2}}>{ex.muscle_group}</div>}
-                        {pe.notes&&<div style={{fontSize:11,color:"#475569",marginTop:4,fontStyle:"italic"}}>{pe.notes}</div>}
-                        {ex?.description&&<div style={{fontSize:11,color:"#1e3a5a",marginTop:4,lineHeight:1.4}}>{ex.description}</div>}
+                        {ex?.muscle_group&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{ex.muscle_group}</div>}
+                        {pe.notes&&<div style={{fontSize:11,color:"#64748b",marginTop:4,fontStyle:"italic"}}>{pe.notes}</div>}
+                        {ex?.description&&<div style={{fontSize:11,color:"#bcd3ee",marginTop:4,lineHeight:1.4}}>{ex.description}</div>}
                       </div>
                     </div>
                   );
                 })}
-                {(day.plan_exercises||[]).length===0&&<div style={{fontSize:12,color:"#1e293b"}}>Sin ejercicios asignados</div>}
+                {(day.plan_exercises||[]).length===0&&<div style={{fontSize:12,color:"#cbd5e1"}}>Sin ejercicios asignados</div>}
               </div>
             ))}
           </div>
@@ -3070,8 +3072,8 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
   });
 
   const BLOCK_COLORS = {
-    acondicionamiento:"#94a3b8",fuerza:"#4ade80",hipertrofia:"#f472b6",
-    hibrido:"#f59e0b",descarga:"#334155"
+    acondicionamiento:"#64748b",fuerza:"#16a34a",hipertrofia:"#f472b6",
+    hibrido:"#f59e0b",descarga:"#94a3b8"
   };
 
   const PROTOCOL_LABELS = {
@@ -3167,11 +3169,11 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
 
   return (
     <div>
-      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0ea5e9,#4ade80)",zIndex:500}}/>}
+      {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
         <h1 className="mono" style={{fontSize:18,fontWeight:700}}>📊 Programación</h1>
-        {currentBlock&&<span className="pill" style={{background:(BLOCK_COLORS[currentBlock.type]||"#334155")+"20",color:BLOCK_COLORS[currentBlock.type]||"#94a3b8",border:`1px solid ${(BLOCK_COLORS[currentBlock.type]||"#334155")}30`,fontSize:11}}>Semana {currentWeek} · {currentBlock.name}</span>}
+        {currentBlock&&<span className="pill" style={{background:(BLOCK_COLORS[currentBlock.type]||"#94a3b8")+"20",color:BLOCK_COLORS[currentBlock.type]||"#64748b",border:`1px solid ${(BLOCK_COLORS[currentBlock.type]||"#94a3b8")}30`,fontSize:11}}>Semana {currentWeek} · {currentBlock.name}</span>}
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
@@ -3183,10 +3185,10 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
       {/* ── MACROCICLO TAB ── */}
       {tab==="macrocycle"&&(
         <div>
-          <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:12}}>PROGRAMACIÓN ANUAL 2026 — {annualBlocks.reduce((a,b)=>a+b.week_count,0)} SEMANAS</div>
+          <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:12}}>PROGRAMACIÓN ANUAL 2026 — {annualBlocks.reduce((a,b)=>a+b.week_count,0)} SEMANAS</div>
 
           {/* Visual timeline */}
-          <div style={{background:"#0a0d14",borderRadius:12,padding:12,marginBottom:16,overflowX:"auto"}}>
+          <div style={{background:"#f1f4fa",borderRadius:12,padding:12,marginBottom:16,overflowX:"auto"}}>
             <div style={{display:"flex",gap:2,minWidth:480,height:32,alignItems:"center"}}>
               {annualBlocks.map(block=>{
                 const pct = (block.week_count / 46) * 100;
@@ -3194,8 +3196,8 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                 return(
                   <div key={block.id} style={{
                     flex:block.week_count,height:isActive?32:24,borderRadius:6,
-                    background:(BLOCK_COLORS[block.type]||"#334155")+(isActive?"":"40"),
-                    border:isActive?`2px solid ${BLOCK_COLORS[block.type]||"#334155"}`:"none",
+                    background:(BLOCK_COLORS[block.type]||"#94a3b8")+(isActive?"":"40"),
+                    border:isActive?`2px solid ${BLOCK_COLORS[block.type]||"#94a3b8"}`:"none",
                     display:"flex",alignItems:"center",justifyContent:"center",
                     cursor:"pointer",transition:"all .2s",position:"relative",
                     minWidth:20,
@@ -3213,42 +3215,42 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
             const blockTemplates = sessionTemplates.filter(t=>t.block_id===block.id);
             const open = selBlock?.id === block.id;
             return(
-              <div key={block.id} className="card" style={{marginBottom:8,border:`1px solid ${isActive?(BLOCK_COLORS[block.type]||"#334155")+"60":"var(--border)"}`}} onClick={()=>setSelBlock(open?null:block)}>
+              <div key={block.id} className="card" style={{marginBottom:8,border:`1px solid ${isActive?(BLOCK_COLORS[block.type]||"#94a3b8")+"60":"var(--border)"}`}} onClick={()=>setSelBlock(open?null:block)}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start"}}>
                   <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                    <div style={{width:12,height:12,borderRadius:3,background:BLOCK_COLORS[block.type]||"#334155",flexShrink:0}}/>
+                    <div style={{width:12,height:12,borderRadius:3,background:BLOCK_COLORS[block.type]||"#94a3b8",flexShrink:0}}/>
                     <div>
                       <div style={{display:"flex",alignItems:"center",gap:8}}>
                         <span style={{fontWeight:700,fontSize:14}}>{block.name}</span>
-                        {isActive&&<span style={{fontSize:10,background:"#0c2040",color:"#38bdf8",padding:"2px 7px",borderRadius:8,fontWeight:700}}>← Ahora</span>}
+                        {isActive&&<span style={{fontSize:10,background:"#dcebfb",color:"#0284c7",padding:"2px 7px",borderRadius:8,fontWeight:700}}>← Ahora</span>}
                       </div>
-                      <div style={{fontSize:11,color:"#475569",marginTop:2}}>{block.week_count} semanas · Sem {block.start_week}-{block.end_week} · {block.rep_range} reps · {blockTemplates.length} plantillas</div>
+                      <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{block.week_count} semanas · Sem {block.start_week}-{block.end_week} · {block.rep_range} reps · {blockTemplates.length} plantillas</div>
                     </div>
                   </div>
-                  <span style={{fontSize:18,color:"#334155"}}>{open?"▲":"▼"}</span>
+                  <span style={{fontSize:18,color:"#94a3b8"}}>{open?"▲":"▼"}</span>
                 </div>
 
                 {open&&(
-                  <div style={{marginTop:12,borderTop:"1px solid #0d1520",paddingTop:12}} onClick={e=>e.stopPropagation()}>
-                    <div style={{fontSize:11,color:"#334155",marginBottom:8,lineHeight:1.5}}>{block.intensity_note}</div>
+                  <div style={{marginTop:12,borderTop:"1px solid #e6ebf3",paddingTop:12}} onClick={e=>e.stopPropagation()}>
+                    <div style={{fontSize:11,color:"#94a3b8",marginBottom:8,lineHeight:1.5}}>{block.intensity_note}</div>
 
-                    <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:8}}>PLANTILLAS DE SESIÓN</div>
+                    <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>PLANTILLAS DE SESIÓN</div>
                     {blockTemplates.map(t=>{
                       const texes = templateExercises.filter(te=>te.template_id===t.id);
                       return(
-                        <div key={t.id} style={{background:"#0a0d14",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+                        <div key={t.id} style={{background:"#f1f4fa",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:texes.length>0?8:0}}>
                             <div>
                               <div style={{fontSize:13,fontWeight:600}}>{t.name}</div>
-                              <div style={{fontSize:11,color:"#475569"}}>{PROTOCOL_LABELS[t.protocol]||t.protocol} · {texes.length} ejercicios</div>
+                              <div style={{fontSize:11,color:"#64748b"}}>{PROTOCOL_LABELS[t.protocol]||t.protocol} · {texes.length} ejercicios</div>
                             </div>
                             <button className="btn sky" style={{fontSize:10,padding:"4px 8px"}} onClick={()=>setShowTemplateModal(t)}>✏️ Editar</button>
                           </div>
                           {texes.map(ex=>(
-                            <div key={ex.id} style={{fontSize:11,color:"#64748b",padding:"3px 0",borderTop:"1px solid #111827",display:"flex",gap:8}}>
+                            <div key={ex.id} style={{fontSize:11,color:"#64748b",padding:"3px 0",borderTop:"1px solid #eef1f7",display:"flex",gap:8}}>
                               <span style={{flex:1}}>{ex.exercise_name}</span>
-                              <span className="mono" style={{color:"#38bdf8"}}>{ex.sets}×{ex.reps}</span>
-                              {ex.is_main&&<span style={{color:"#facc15",fontSize:9,fontWeight:700}}>★</span>}
+                              <span className="mono" style={{color:"#0284c7"}}>{ex.sets}×{ex.reps}</span>
+                              {ex.is_main&&<span style={{color:"#ca8a04",fontSize:9,fontWeight:700}}>★</span>}
                             </div>
                           ))}
                         </div>
@@ -3277,7 +3279,7 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
 
           {selClientObj&&(
             <div>
-              <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:10}}>PRÓXIMOS 14 DÍAS — {selClientObj.name}</div>
+              <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:10}}>PRÓXIMOS 14 DÍAS — {selClientObj.name}</div>
 
               {next14Days.map(date=>{
                 const dayName = new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
@@ -3290,11 +3292,11 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                 if(isWeekend) return null;
 
                 return(
-                  <div key={date} className="card" style={{marginBottom:8,border:`1px solid ${isToday?"#0e3a5c":"var(--border)"}`}}>
+                  <div key={date} className="card" style={{marginBottom:8,border:`1px solid ${isToday?"#bcd3ee":"var(--border)"}`}}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:existing.length>0?10:0}}>
                       <div>
-                        <div style={{fontSize:13,fontWeight:600,textTransform:"capitalize"}}>{dayName}{isToday&&<span style={{fontSize:10,color:"#38bdf8",marginLeft:6,fontWeight:700}}>HOY</span>}</div>
-                        {blk&&<div style={{fontSize:10,color:"#334155",marginTop:2}}>{blk.name}</div>}
+                        <div style={{fontSize:13,fontWeight:600,textTransform:"capitalize"}}>{dayName}{isToday&&<span style={{fontSize:10,color:"#0284c7",marginLeft:6,fontWeight:700}}>HOY</span>}</div>
+                        {blk&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{blk.name}</div>}
                       </div>
                       <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowAssignModal({date,clientId:selClient,block:blk})}>+ Sesión</button>
                     </div>
@@ -3303,11 +3305,11 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                       const tmpl = sessionTemplates.find(t=>t.id===sess.template_id);
                       const sessExes = assignedExercises.filter(ae=>ae.session_id===sess.id);
                       return(
-                        <div key={sess.id} style={{background:"#080d14",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
+                        <div key={sess.id} style={{background:"#f1f4fa",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
                           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
                             <div>
-                              <div style={{fontSize:12,fontWeight:700,color:"#38bdf8"}}>{tmpl?.name||"Sesión"}</div>
-                              <div style={{fontSize:10,color:"#475569"}}>{sessExes.length} ejercicios · {sess.status==="completed"?"✓ Completada":sess.status==="pending"?"Pendiente":"Omitida"}</div>
+                              <div style={{fontSize:12,fontWeight:700,color:"#0284c7"}}>{tmpl?.name||"Sesión"}</div>
+                              <div style={{fontSize:10,color:"#64748b"}}>{sessExes.length} ejercicios · {sess.status==="completed"?"✓ Completada":sess.status==="pending"?"Pendiente":"Omitida"}</div>
                             </div>
                             <div style={{display:"flex",gap:5}}>
                               {sess.status==="completed"&&<span style={{fontSize:12}}>✅</span>}
@@ -3318,12 +3320,12 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                             </div>
                           </div>
                           {sessExes.map(ae=>(
-                            <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #111827",color:"#64748b"}}>
+                            <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #eef1f7",color:"#64748b"}}>
                               <span>{ae.exercise_name}</span>
                               <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                                <span className="mono" style={{color:"#38bdf8"}}>{ae.sets}×{ae.reps}</span>
-                                {ae.prescribed_weight&&<span style={{color:"#facc15",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
-                                {ae.completed&&<span style={{color:"#4ade80",fontSize:10}}>✓</span>}
+                                <span className="mono" style={{color:"#0284c7"}}>{ae.sets}×{ae.reps}</span>
+                                {ae.prescribed_weight&&<span style={{color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+                                {ae.completed&&<span style={{color:"#16a34a",fontSize:10}}>✓</span>}
                               </div>
                             </div>
                           ))}
@@ -3351,12 +3353,12 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
           {selClientObj&&(
             <div>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
-                <div style={{fontSize:11,color:"#334155",fontWeight:700}}>PESOS BASE — {selClientObj.name}</div>
+                <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>PESOS BASE — {selClientObj.name}</div>
                 <button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>setShowWeightModal(selClient)}>+ Añadir ejercicio</button>
               </div>
 
               {clientWeights.filter(cw=>cw.client_id===selClient).length===0
-                ?<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>
+                ?<div className="card" style={{textAlign:"center",padding:32,color:"#94a3b8"}}>
                   Sin pesos registrados. Añade los ejercicios principales.
                 </div>
                 :clientWeights.filter(cw=>cw.client_id===selClient).map(cw=>{
@@ -3366,10 +3368,10 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:hist.length>0?8:0}}>
                         <div style={{flex:1}}>
                           <div style={{fontWeight:600,fontSize:14}}>{cw.exercise_name}</div>
-                          <div style={{fontSize:11,color:"#475569",marginTop:2}}>Actualizado: {new Date(cw.updated_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>
+                          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Actualizado: {new Date(cw.updated_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                          <div className="mono" style={{fontSize:22,fontWeight:700,color:"#facc15"}}>{cw.weight}<span style={{fontSize:12,color:"#475569"}}>kg</span></div>
+                          <div className="mono" style={{fontSize:22,fontWeight:700,color:"#ca8a04"}}>{cw.weight}<span style={{fontSize:12,color:"#64748b"}}>kg</span></div>
                           <WeightEditor cw={cw} onSave={(newW)=>w(async()=>{
                             await updateWeight(selClient,cw.exercise_name,newW,cw.weight);
                             notify(`${cw.exercise_name}: ${cw.weight}→${newW}kg ✓`);
@@ -3379,8 +3381,8 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                       {hist.length>0&&(
                         <div style={{display:"flex",gap:8,overflowX:"auto"}}>
                           {hist.reverse().map((h,i)=>(
-                            <div key={i} style={{fontSize:10,color:"#334155",flexShrink:0}}>
-                              {h.old_weight}→<span style={{color:"#4ade80"}}>{h.new_weight}kg</span>
+                            <div key={i} style={{fontSize:10,color:"#94a3b8",flexShrink:0}}>
+                              {h.old_weight}→<span style={{color:"#16a34a"}}>{h.new_weight}kg</span>
                             </div>
                           ))}
                         </div>
@@ -3397,22 +3399,22 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
       {/* ── PROGRESSION TAB ── */}
       {tab==="progress_view"&&(
         <div>
-          <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:12}}>SUGERENCIAS DE PROGRESIÓN</div>
+          <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:12}}>SUGERENCIAS DE PROGRESIÓN</div>
 
           {progressionSuggestions.length===0
-            ?<div className="card" style={{textAlign:"center",padding:32,color:"#334155"}}>
+            ?<div className="card" style={{textAlign:"center",padding:32,color:"#94a3b8"}}>
               Sin sugerencias aún. Las verás cuando un cliente complete 3+ sesiones del mismo ejercicio.
             </div>
             :progressionSuggestions.map((s,i)=>(
-              <div key={i} className="card" style={{marginBottom:10,border:"1px solid #1a2d1a"}}>
+              <div key={i} className="card" style={{marginBottom:10,border:"1px solid #e2f2e2"}}>
                 <div style={{display:"flex",alignItems:"center",gap:12}}>
                   <div className="ring" style={{width:38,height:38,background:s.client.color+"20",color:s.client.color,fontSize:12,border:`1.5px solid ${s.client.color}35`}}>{s.client.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
                   <div style={{flex:1}}>
                     <div style={{fontWeight:700,fontSize:13}}>{s.client.name}</div>
-                    <div style={{fontSize:12,color:"#22c55e",marginTop:2}}>
+                    <div style={{fontSize:12,color:"#16a34a",marginTop:2}}>
                       ✓ {s.exercise} — {s.sessions} sesiones completadas
                     </div>
-                    {s.currentWeight&&<div style={{fontSize:11,color:"#475569"}}>Peso actual: <span className="mono" style={{color:"#facc15"}}>{s.currentWeight}kg</span></div>}
+                    {s.currentWeight&&<div style={{fontSize:11,color:"#64748b"}}>Peso actual: <span className="mono" style={{color:"#ca8a04"}}>{s.currentWeight}kg</span></div>}
                   </div>
                   <button className="btn grn" style={{fontSize:11,padding:"7px 11px",flexShrink:0}} onClick={()=>setShowWeightModal(s.client.id)}>↑ Subir peso</button>
                 </div>
@@ -3421,7 +3423,7 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
           }
 
           <div style={{marginTop:20}}>
-            <div style={{fontSize:11,color:"#334155",fontWeight:700,marginBottom:10}}>RESUMEN DE PESOS POR CLIENTE</div>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:10}}>RESUMEN DE PESOS POR CLIENTE</div>
             {clients.map(c=>{
               const cWts = clientWeights.filter(w=>w.client_id===c.id);
               const cSessions = assignedSessions.filter(s=>s.client_id===c.id);
@@ -3432,16 +3434,16 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                     <div className="ring" style={{width:34,height:34,background:c.color+"20",color:c.color,fontSize:11}}>{c.name.split(" ").map(w=>w[0]).join("").slice(0,2)}</div>
                     <div style={{flex:1}}>
                       <div style={{fontSize:13,fontWeight:600}}>{c.name}</div>
-                      <div style={{fontSize:11,color:"#475569"}}>{cWts.length} ejercicios · {completed} sesiones completadas</div>
+                      <div style={{fontSize:11,color:"#64748b"}}>{cWts.length} ejercicios · {completed} sesiones completadas</div>
                     </div>
                   </div>
                   {cWts.slice(0,4).map(cw=>(
-                    <div key={cw.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #0d1520",color:"#64748b"}}>
+                    <div key={cw.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #e6ebf3",color:"#64748b"}}>
                       <span>{cw.exercise_name}</span>
-                      <span className="mono" style={{color:"#facc15",fontWeight:700}}>{cw.weight}kg</span>
+                      <span className="mono" style={{color:"#ca8a04",fontWeight:700}}>{cw.weight}kg</span>
                     </div>
                   ))}
-                  {cWts.length>4&&<div style={{fontSize:10,color:"#334155",marginTop:4}}>+{cWts.length-4} más...</div>}
+                  {cWts.length>4&&<div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>+{cWts.length-4} más...</div>}
                 </div>
               );
             })}
@@ -3528,9 +3530,9 @@ function AssignSessionModal({data, clients, sessionTemplates, templateExercises,
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>Asignar sesión</h2>
-        <p style={{fontSize:12,color:"#475569",marginBottom:16}}>{client?.name} · {new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:16}}>{client?.name} · {new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}</p>
 
-        {block&&<div style={{fontSize:11,color:"#334155",marginBottom:10}}>Bloque activo: <span style={{color:"#38bdf8",fontWeight:700}}>{block.name}</span></div>}
+        {block&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>Bloque activo: <span style={{color:"#0284c7",fontWeight:700}}>{block.name}</span></div>}
 
         <div style={{marginBottom:14}}>
           <span className="lbl">PLANTILLA DE SESIÓN</span>
@@ -3542,20 +3544,20 @@ function AssignSessionModal({data, clients, sessionTemplates, templateExercises,
 
         {selTemplate&&previewExes.length>0&&(
           <div style={{marginBottom:14}}>
-            <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:8}}>PREVIEW — ejercicios con pesos del cliente</div>
+            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>PREVIEW — ejercicios con pesos del cliente</div>
             {previewExes.map(ex=>{
               const cw = cWeights.find(w=>w.exercise_name.toLowerCase()===ex.exercise_name.toLowerCase());
               return(
-                <div key={ex.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #0d1520",fontSize:12}}>
+                <div key={ex.id} style={{display:"flex",justifyContent:"space-between",padding:"7px 0",borderBottom:"1px solid #e6ebf3",fontSize:12}}>
                   <div>
                     <span style={{fontWeight:600}}>{ex.exercise_name}</span>
-                    {ex.is_main&&<span style={{fontSize:9,color:"#facc15",marginLeft:5}}>★ principal</span>}
+                    {ex.is_main&&<span style={{fontSize:9,color:"#ca8a04",marginLeft:5}}>★ principal</span>}
                   </div>
                   <div style={{display:"flex",gap:10,alignItems:"center"}}>
-                    <span className="mono" style={{color:"#94a3b8"}}>{ex.sets}×{ex.reps}</span>
+                    <span className="mono" style={{color:"#64748b"}}>{ex.sets}×{ex.reps}</span>
                     {cw
-                      ?<span className="mono" style={{color:"#facc15",fontWeight:700}}>{cw.weight}kg</span>
-                      :<span style={{fontSize:10,color:"#f87171"}}>sin peso</span>
+                      ?<span className="mono" style={{color:"#ca8a04",fontWeight:700}}>{cw.weight}kg</span>
+                      :<span style={{fontSize:10,color:"#dc2626"}}>sin peso</span>
                     }
                   </div>
                 </div>
@@ -3565,7 +3567,7 @@ function AssignSessionModal({data, clients, sessionTemplates, templateExercises,
         )}
 
         {selTemplate&&previewExes.length===0&&(
-          <div style={{background:"#0a0d14",borderRadius:10,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#475569"}}>
+          <div style={{background:"#f1f4fa",borderRadius:10,padding:"10px 12px",marginBottom:14,fontSize:12,color:"#64748b"}}>
             Esta plantilla no tiene ejercicios. Edítala primero desde el Macrociclo.
           </div>
         )}
@@ -3613,7 +3615,7 @@ function AddWeightModal({clientId, clientWeights, onSave, onClose}) {
           </div>
           <div>
             <span className="lbl">PESO BASE (kg)</span>
-            {existing&&<div style={{fontSize:11,color:"#475569",marginBottom:5}}>Actual: <span style={{color:"#facc15",fontWeight:700}}>{existing.weight}kg</span></div>}
+            {existing&&<div style={{fontSize:11,color:"#64748b",marginBottom:5}}>Actual: <span style={{color:"#ca8a04",fontWeight:700}}>{existing.weight}kg</span></div>}
             <input type="number" className="inp" step="0.5" placeholder="80" value={weight} onChange={e=>setWeight(e.target.value)}/>
           </div>
           <div style={{display:"flex",gap:8}}>
@@ -3657,17 +3659,17 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>✏️ {template.name}</h2>
-        <p style={{fontSize:11,color:"#475569",marginBottom:16}}>{template.protocol} · Edita los ejercicios base de esta plantilla</p>
+        <p style={{fontSize:11,color:"#64748b",marginBottom:16}}>{template.protocol} · Edita los ejercicios base de esta plantilla</p>
 
         {exercises.sort((a,b)=>a.order_index-b.order_index).map((ex,i)=>(
-          <div key={ex.id} style={{background:"#0a0d14",borderRadius:10,padding:10,marginBottom:6}}>
+          <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,marginBottom:6}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <div style={{flex:1}}>
                 <input className="inp" style={{fontSize:13,padding:"5px 8px"}} value={ex.exercise_name}
                   onChange={e=>updateEx(ex.id,"exercise_name",e.target.value)}/>
               </div>
               <div style={{display:"flex",gap:5,marginLeft:8}}>
-                <button style={{background:ex.is_main?"#1a1500":"none",border:"1px solid #2a2000",borderRadius:6,color:ex.is_main?"#facc15":"#334155",fontSize:10,padding:"3px 6px",cursor:"pointer"}} onClick={()=>updateEx(ex.id,"is_main",!ex.is_main)}>★</button>
+                <button style={{background:ex.is_main?"#fbf3df":"none",border:"1px solid #f5ecd0",borderRadius:6,color:ex.is_main?"#ca8a04":"#94a3b8",fontSize:10,padding:"3px 6px",cursor:"pointer"}} onClick={()=>updateEx(ex.id,"is_main",!ex.is_main)}>★</button>
                 <button className="btn danger" style={{padding:"3px 7px"}} onClick={()=>deleteEx(ex.id)}>✕</button>
               </div>
             </div>
@@ -3676,12 +3678,12 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
               <div><span className="lbl" style={{fontSize:9}}>REPS</span><input className="inp" style={{padding:"5px 7px",fontSize:12}} value={ex.reps} onChange={e=>updateEx(ex.id,"reps",e.target.value)}/></div>
               <div><span className="lbl" style={{fontSize:9}}>DESCANSO(s)</span><input type="number" className="inp" style={{padding:"5px 7px",fontSize:12}} value={ex.rest_seconds} onChange={e=>updateEx(ex.id,"rest_seconds",parseInt(e.target.value))}/></div>
             </div>
-            {ex.is_main&&<div style={{fontSize:10,color:"#facc15",marginTop:5}}>★ Ejercicio principal — se usará el peso base del cliente</div>}
+            {ex.is_main&&<div style={{fontSize:10,color:"#ca8a04",marginTop:5}}>★ Ejercicio principal — se usará el peso base del cliente</div>}
           </div>
         ))}
 
-        <div style={{background:"#0a0d14",borderRadius:10,padding:10,marginTop:10,border:"1px dashed #1e293b"}}>
-          <div style={{fontSize:11,color:"#38bdf8",fontWeight:700,marginBottom:8}}>+ Nuevo ejercicio</div>
+        <div style={{background:"#f1f4fa",borderRadius:10,padding:10,marginTop:10,border:"1px dashed #cbd5e1"}}>
+          <div style={{fontSize:11,color:"#0284c7",fontWeight:700,marginBottom:8}}>+ Nuevo ejercicio</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <input className="inp" placeholder="Nombre del ejercicio" value={newEx.exercise_name} onChange={e=>setNewEx(v=>({...v,exercise_name:e.target.value}))}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
@@ -3691,7 +3693,7 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
             </div>
             <input className="inp" placeholder="Notas técnicas..." value={newEx.notes} onChange={e=>setNewEx(v=>({...v,notes:e.target.value}))}/>
             <div style={{display:"flex",alignItems:"center",gap:8}}>
-              <input type="checkbox" id="isMain" checked={newEx.is_main} onChange={e=>setNewEx(v=>({...v,is_main:e.target.checked}))} style={{accentColor:"#facc15"}}/>
+              <input type="checkbox" id="isMain" checked={newEx.is_main} onChange={e=>setNewEx(v=>({...v,is_main:e.target.checked}))} style={{accentColor:"#ca8a04"}}/>
               <label htmlFor="isMain" style={{fontSize:12,color:"#64748b",cursor:"pointer"}}>Ejercicio principal (usa peso base del cliente ★)</label>
             </div>
             <button className="btn sky" style={{width:"100%",padding:9,fontSize:12}} onClick={addExercise} disabled={saving}>{saving?"Guardando...":"Añadir ejercicio"}</button>
@@ -3748,35 +3750,35 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
   if(todaySessions.length===0) return(
     <div>
       {currentBlock&&(
-        <div style={{background:"linear-gradient(135deg,#0a0d14,#0f1520)",borderRadius:14,border:`1px solid ${currentBlock.color||"#1e293b"}30`,padding:14,marginBottom:16}}>
-          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:4}}>BLOQUE ACTUAL — SEMANA {currentWeek}</div>
-          <div style={{fontWeight:700,fontSize:15,color:currentBlock.color||"#94a3b8"}}>{currentBlock.name}</div>
-          <div style={{fontSize:11,color:"#475569",marginTop:2}}>{currentBlock.rep_range} reps · {currentBlock.split_type}</div>
+        <div style={{background:"linear-gradient(135deg,#f1f4fa,#ffffff)",borderRadius:14,border:`1px solid ${currentBlock.color||"#cbd5e1"}30`,padding:14,marginBottom:16}}>
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:4}}>BLOQUE ACTUAL — SEMANA {currentWeek}</div>
+          <div style={{fontWeight:700,fontSize:15,color:currentBlock.color||"#64748b"}}>{currentBlock.name}</div>
+          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{currentBlock.rep_range} reps · {currentBlock.split_type}</div>
         </div>
       )}
       <div className="card" style={{textAlign:"center",padding:40}}>
         <div style={{fontSize:30,marginBottom:10}}>😴</div>
         <div style={{fontWeight:700,fontSize:15,marginBottom:6}}>Sin sesión programada hoy</div>
-        <div style={{fontSize:12,color:"#475569"}}>Tu trainer asignará tu próxima sesión</div>
+        <div style={{fontSize:12,color:"#64748b"}}>Tu trainer asignará tu próxima sesión</div>
       </div>
 
       {/* Next session */}
       {myAssignedSessions.filter(s=>s.date>TODAY_STR&&s.status==="pending").length>0&&(
         <div style={{marginTop:16}}>
-          <div style={{fontSize:10,color:"#334155",fontWeight:700,marginBottom:8}}>PRÓXIMA SESIÓN</div>
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>PRÓXIMA SESIÓN</div>
           {myAssignedSessions.filter(s=>s.date>TODAY_STR&&s.status==="pending").sort((a,b)=>a.date.localeCompare(b.date)).slice(0,1).map(sess=>{
             const sessExes = myAssignedExercises.filter(ae=>ae.session_id===sess.id);
             return(
-              <div key={sess.id} className="card" style={{border:"1px solid #1e3a5a"}}>
-                <div style={{fontWeight:700,fontSize:14,color:"#38bdf8",marginBottom:4}}>
+              <div key={sess.id} className="card" style={{border:"1px solid #bcd3ee"}}>
+                <div style={{fontWeight:700,fontSize:14,color:"#0284c7",marginBottom:4}}>
                   {new Date(sess.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"})}
                 </div>
                 {sessExes.map(ae=>(
-                  <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderTop:"1px solid #0d1520",color:"#64748b"}}>
+                  <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:12,padding:"5px 0",borderTop:"1px solid #e6ebf3",color:"#64748b"}}>
                     <span>{ae.exercise_name}</span>
                     <div style={{display:"flex",gap:8}}>
                       <span className="mono">{ae.sets}×{ae.reps}</span>
-                      {ae.prescribed_weight&&<span style={{color:"#facc15",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+                      {ae.prescribed_weight&&<span style={{color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
                     </div>
                   </div>
                 ))}
@@ -3791,10 +3793,10 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
   return(
     <div>
       {currentBlock&&(
-        <div style={{background:"linear-gradient(135deg,#0a0d14,#0f1520)",borderRadius:14,border:`1px solid ${currentBlock.color||"#1e293b"}30`,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
+        <div style={{background:"linear-gradient(135deg,#f1f4fa,#ffffff)",borderRadius:14,border:`1px solid ${currentBlock.color||"#cbd5e1"}30`,padding:14,marginBottom:16,display:"flex",justifyContent:"space-between",alignItems:"center"}}>
           <div>
-            <div style={{fontSize:10,color:"#334155",fontWeight:700}}>SEMANA {currentWeek}</div>
-            <div style={{fontWeight:700,fontSize:14,color:currentBlock.color||"#94a3b8",marginTop:2}}>{currentBlock.name}</div>
+            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>SEMANA {currentWeek}</div>
+            <div style={{fontWeight:700,fontSize:14,color:currentBlock.color||"#64748b",marginTop:2}}>{currentBlock.name}</div>
           </div>
           {completedAll&&<div style={{fontSize:24}}>🏆</div>}
         </div>
@@ -3810,13 +3812,13 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12}}>
               <div>
                 <div style={{fontWeight:800,fontSize:17}}>Sesión de hoy ⚡</div>
-                <div style={{fontSize:12,color:"#475569",marginTop:2}}>{completedCount}/{sessExes.length} ejercicios · {pct}%</div>
+                <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{completedCount}/{sessExes.length} ejercicios · {pct}%</div>
               </div>
-              {sess.status==="completed"&&<span style={{fontSize:13,color:"#4ade80",fontWeight:700}}>✓ Completada</span>}
+              {sess.status==="completed"&&<span style={{fontSize:13,color:"#16a34a",fontWeight:700}}>✓ Completada</span>}
             </div>
 
             <div className="pbar" style={{marginBottom:16,height:8}}>
-              <div className="pfill" style={{width:`${pct}%`,background:`linear-gradient(90deg,#0ea5e9,#4ade80)`}}/>
+              <div className="pfill" style={{width:`${pct}%`,background:`linear-gradient(90deg,#0284c7,#16a34a)`}}/>
             </div>
 
             {sessExes.map((ae,i)=>(
@@ -3824,7 +3826,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
             ))}
 
             {sess.notes&&(
-              <div style={{background:"#080d14",borderRadius:10,padding:"10px 12px",marginTop:10,fontSize:12,color:"#64748b",border:"1px solid #1e293b"}}>
+              <div style={{background:"#f1f4fa",borderRadius:10,padding:"10px 12px",marginTop:10,fontSize:12,color:"#64748b",border:"1px solid #cbd5e1"}}>
                 📝 {sess.notes}
               </div>
             )}
@@ -3843,12 +3845,12 @@ function ExerciseCard({ae, index, onComplete, saving}) {
   const [rpe,setRpe] = React.useState("");
 
   if(ae.completed) return(
-    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #0d1520",opacity:0.6}}>
+    <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3",opacity:0.6}}>
       <div style={{display:"flex",gap:10,alignItems:"center"}}>
-        <div style={{width:22,height:22,borderRadius:6,background:"#0a1e10",border:"1px solid #14532d",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✓</div>
+        <div style={{width:22,height:22,borderRadius:6,background:"#e2f4e8",border:"1px solid #14532d",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✓</div>
         <div>
-          <div style={{fontSize:13,fontWeight:600,color:"#4ade80"}}>{ae.exercise_name}</div>
-          <div style={{fontSize:11,color:"#334155"}}>{ae.actual_weight||ae.prescribed_weight}kg · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
+          <div style={{fontSize:13,fontWeight:600,color:"#16a34a"}}>{ae.exercise_name}</div>
+          <div style={{fontSize:11,color:"#94a3b8"}}>{ae.actual_weight||ae.prescribed_weight}kg · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
         </div>
       </div>
       <span style={{fontSize:16}}>✅</span>
@@ -3856,23 +3858,23 @@ function ExerciseCard({ae, index, onComplete, saving}) {
   );
 
   return(
-    <div style={{borderBottom:"1px solid #0d1520",paddingBottom:10,marginBottom:10}}>
+    <div style={{borderBottom:"1px solid #e6ebf3",paddingBottom:10,marginBottom:10}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setExpanded(!expanded)}>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
-          <div style={{width:22,height:22,borderRadius:6,background:"#0c1828",border:"1px solid #1e3a5a",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#38bdf8",flexShrink:0}}>{index+1}</div>
+          <div style={{width:22,height:22,borderRadius:6,background:"#e6f0fb",border:"1px solid #bcd3ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#0284c7",flexShrink:0}}>{index+1}</div>
           <div>
             <div style={{fontSize:13,fontWeight:600}}>{ae.exercise_name}</div>
             <div style={{display:"flex",gap:8,marginTop:2}}>
-              <span className="mono" style={{fontSize:12,color:"#38bdf8",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
-              {ae.prescribed_weight&&<span style={{fontSize:12,color:"#facc15",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
-              {ae.rest_seconds&&<span style={{fontSize:11,color:"#334155"}}>⏱{ae.rest_seconds}s</span>}
+              <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
+              {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+              {ae.rest_seconds&&<span style={{fontSize:11,color:"#94a3b8"}}>⏱{ae.rest_seconds}s</span>}
             </div>
           </div>
         </div>
-        <span style={{color:"#334155",fontSize:16}}>{expanded?"▲":"▼"}</span>
+        <span style={{color:"#94a3b8",fontSize:16}}>{expanded?"▲":"▼"}</span>
       </div>
 
-      {ae.notes&&<div style={{fontSize:11,color:"#334155",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
+      {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
 
       {expanded&&(
         <div style={{marginTop:10,paddingLeft:32,display:"flex",flexDirection:"column",gap:10}}>
