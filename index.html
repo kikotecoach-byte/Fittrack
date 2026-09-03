@@ -3282,6 +3282,41 @@ function PlanTab({client, plans, clientPlans, exercises}) {
 
 
 // ── PROGRAMMING ADMIN ──────────────────────────────────────────────────────
+// Macrociclo base: Recomposición / Salud (48 semanas). Cada bloque crea sus
+// plantillas de sesión (vacías, listas para rellenar ejercicios y asignar).
+const MACRO_RECOMP = [
+  {name:"Acondicionamiento · Volumen", type:"acondicionamiento", weeks:2, rep:"12-15",
+   note:"Fullbody. Subida gradual de VOLUMEN.", tpls:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]},
+  {name:"Acondicionamiento · Intensidad", type:"acondicionamiento", weeks:2, rep:"8-12",
+   note:"Fullbody. Subida gradual de INTENSIDAD.", tpls:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]},
+  {name:"Fuerza · Inespecífico", type:"fuerza", weeks:8, rep:"6-10",
+   note:"Torso/Piernas/Fullbody. Mucha inestabilidad en multiarticulares · intensidad supramáxima opcional (+%1RM) · singles en días secundarios.",
+   tpls:[["Torso","top_set_backoff"],["Piernas","top_set_backoff"],["Fullbody","series_planas"]]},
+  {name:"Fuerza · Específico", type:"fuerza", weeks:8, rep:"1-6",
+   note:"Aumento de intensidad (+%RM) · rango de reps menor · singles en días primarios.",
+   tpls:[["Torso","ramp_up"],["Piernas","ramp_up"],["Fullbody","top_set_backoff"]]},
+  {name:"Fuerza · Semana TEST", type:"fuerza", weeks:1, rep:"3-8",
+   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.", tpls:[["Test AMRAP básicos","amrap"]]},
+  {name:"Fuerza · Descarga", type:"descarga", weeks:1, rep:"6-8",
+   note:"Descarga: bajar volumen e intensidad.", tpls:[["Descarga Fullbody","series_planas"]]},
+  {name:"Híbrido / Comodín", type:"hibrido", weeks:4, rep:"var",
+   note:"Resensibilizar el sistema: ejercicios/planos menos usados (frontal, transversal) · protocolos inusuales (cluster, AMRAP, superserie antagonistas) · más densidad (menos descanso) · cardio/HIIT/EMOM/LEADER.",
+   tpls:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["Fuerza-densidad (superserie)","superset"]]},
+  {name:"Hipertrofia · Inespecífico", type:"hipertrofia", weeks:8, rep:"8-12",
+   note:"Push/Pull/Legs/Cadena post/Brazos. Mayor estabilidad en multiarticulares · rango de reps mayor.",
+   tpls:[["Push","series_planas"],["Pull","series_planas"],["Legs","series_planas"],["Cadena posterior","series_planas"],["Brazos","series_planas"]]},
+  {name:"Hipertrofia · Específico", type:"hipertrofia", weeks:8, rep:"6-10",
+   note:"Técnicas avanzadas al final de sesión · monoarticular al principio · rango de reps menor.",
+   tpls:[["Push","drop_set"],["Pull","drop_set"],["Legs","rest_pause"],["Cadena posterior","drop_set"],["Brazos","drop_set"]]},
+  {name:"Hipertrofia · Semana TEST", type:"hipertrofia", weeks:1, rep:"3-8",
+   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.", tpls:[["Test AMRAP básicos","amrap"]]},
+  {name:"Hipertrofia · Descarga", type:"descarga", weeks:1, rep:"8-10",
+   note:"Descarga: bajar volumen e intensidad.", tpls:[["Descarga Fullbody","series_planas"]]},
+  {name:"Híbrido / Comodín (2)", type:"hibrido", weeks:4, rep:"var",
+   note:"Resensibilizar el sistema: planos y ejercicios menos usados · protocolos inusuales · más densidad · cardio/HIIT/interválico.",
+   tpls:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["Fuerza-densidad (superserie)","superset"]]},
+];
+
 function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
   const [tab,setTab] = React.useState("macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
@@ -3291,6 +3326,29 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
   const [showWeightModal,setShowWeightModal] = React.useState(null); // client
   const [showTemplateModal,setShowTemplateModal] = React.useState(null); // block
   const [saving,setSaving] = React.useState(false);
+  const [genMacro,setGenMacro] = React.useState(false);
+
+  // Genera el macrociclo de Recomposición (48 semanas) con sus bloques y plantillas.
+  const generarMacro = async()=>{
+    if(annualBlocks.some(b=>String(b.name||"").startsWith("Acondicionamiento · Volumen"))){ notify("El macrociclo ya está generado","err"); return; }
+    if(annualBlocks.length && !window.confirm("Se añadirán 12 bloques (48 semanas) del macrociclo de Recomposición y sus plantillas al año. ¿Continuar?")) return;
+    setGenMacro(true);
+    let wk = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.end_week||0))+1 : 1;
+    let order = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.order_index||0)) : 0;
+    try{
+      for(const b of MACRO_RECOMP){
+        order++; const start=wk, end=wk+b.weeks-1; wk=end+1;
+        const {data:blk,error}=await sb.from("annual_blocks").insert({
+          name:b.name,type:b.type,start_week:start,end_week:end,week_count:b.weeks,
+          rep_range:b.rep,intensity_note:b.note,order_index:order}).select().single();
+        if(error){ notify("Error al crear bloque: "+error.message,"err"); setGenMacro(false); return; }
+        const tpls=b.tpls.map((t,i)=>({name:t[0],protocol:t[1],block_id:blk.id,order_index:i}));
+        if(tpls.length){ const {error:te}=await sb.from("session_templates").insert(tpls); if(te){ notify("Error en plantillas: "+te.message,"err"); setGenMacro(false); return; } }
+      }
+      await loadAll(); notify("Macrociclo generado ✓ (48 semanas)");
+    }catch(e){ notify("Error al generar el macrociclo","err"); }
+    setGenMacro(false);
+  };
 
   // Week number helpers
   const getWeekNumber = (date) => {
@@ -3423,7 +3481,18 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
       {/* ── MACROCICLO TAB ── */}
       {tab==="macrocycle"&&(
         <div>
-          <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:12}}>PROGRAMACIÓN ANUAL 2026 — {annualBlocks.reduce((a,b)=>a+b.week_count,0)} SEMANAS</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>PROGRAMACIÓN ANUAL — {annualBlocks.reduce((a,b)=>a+(b.week_count||0),0)} SEMANAS</div>
+            <button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} disabled={genMacro} onClick={generarMacro}>{genMacro?"Generando…":"🗓️ Generar macrociclo"}</button>
+          </div>
+          {annualBlocks.length===0&&(
+            <div className="card" style={{marginBottom:14,textAlign:"center",padding:20}}>
+              <div style={{fontSize:30,marginBottom:8}}>🗓️</div>
+              <div style={{fontWeight:700,marginBottom:4}}>Aún no tienes el año programado</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:14,lineHeight:1.5}}>Genera el macrociclo de <b>Recomposición / Salud</b> (48 semanas): Acondicionamiento → Fuerza → Híbrido → Hipertrofia → Híbrido, con sus plantillas de sesión listas para rellenar y asignar.</div>
+              <button className="btn sky" style={{padding:"10px 18px"}} disabled={genMacro} onClick={generarMacro}>{genMacro?"Generando…":"🗓️ Generar macrociclo Recomposición"}</button>
+            </div>
+          )}
 
           {/* Visual timeline */}
           <div style={{background:"#f1f4fa",borderRadius:12,padding:12,marginBottom:16,overflowX:"auto"}}>
