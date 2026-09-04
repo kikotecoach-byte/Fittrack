@@ -461,7 +461,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
-  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:""});
+  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud"});
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
   const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
   const [showSched,setShowSched] = React.useState(false);
@@ -520,9 +520,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(nc.code.length!==4) return notify("El código debe tener 4 dígitos","err");
     if(clients.find(c=>c.code===nc.code)) return notify("Ese código ya existe","err");
     const color=COLORS[clients.length%COLORS.length];
-    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes});
+    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal});
     if(error) return notify("Error: "+error.message,"err");
-    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:""});
+    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud"});
     notify("Cliente añadido ✓");
   });
 
@@ -1379,7 +1379,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
       {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
-      {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
+      {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
     </div>
   );
@@ -1454,6 +1454,11 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
           <div style={{flex:1,minWidth:0}}>
             <h2 className="mono" style={{fontSize:16,fontWeight:700}}>{client.name}</h2>
             <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {client.sessions_left}/{client.total_sessions} · {fmtDate(date)}</div>
+            <div style={{marginTop:4}}>
+              <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:client.goal==="estetica"?"#f3ecfb":"#e2f4e8",color:client.goal==="estetica"?"#7c3aed":"#059669",border:`1px solid ${client.goal==="estetica"?"#e0d2f5":"#c9e6d1"}`}}>
+                {client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1586,10 +1591,21 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
 }
 
 // ── ASIGNAR ENTRENO (elegir plantilla desde la agenda) ─────────────────────
-function AssignTrainingModal({client,date,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,loadAll,notify,onClose}) {
+function AssignTrainingModal({client,date,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,annualBlocks,loadAll,notify,onClose}) {
   const [saving,setSaving]=React.useState(false);
   const existing=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
-  const templates=(sessionTemplates||[]).slice().sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+  const goalTag=client.goal==="estetica"?"Masa":"Salud";
+  const blockName=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?b.name:"";};
+  const blockOrder=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?(b.order_index||0):999;};
+  const matchesGoal=(t)=>String(t.name||"").endsWith("· "+goalTag);
+  // Plantillas: primero las del objetivo del cliente, luego por bloque.
+  const templates=(sessionTemplates||[]).slice().sort((a,b)=>{
+    const am=matchesGoal(a)?0:1, bm=matchesGoal(b)?0:1;
+    if(am!==bm) return am-bm;
+    const ao=blockOrder(a.block_id), bo=blockOrder(b.block_id);
+    if(ao!==bo) return ao-bo;
+    return (a.order_index||0)-(b.order_index||0);
+  });
 
   const asignar=async(tmpl)=>{
     setSaving(true);
@@ -1616,20 +1632,22 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>Asignar entreno · {client.name}</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:16}}>{fmtDate(date)} · elige una plantilla{existing?" (reemplaza la actual)":""}.</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:6}}>{fmtDate(date)} · elige una plantilla{existing?" (reemplaza la actual)":""}.</p>
+        <div style={{fontSize:11,marginBottom:14}}><span style={{color:"#94a3b8"}}>Objetivo: </span><b style={{color:client.goal==="estetica"?"#0284c7":"#16a34a"}}>{client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}</b> <span style={{color:"#94a3b8"}}>· sus plantillas salen primero</span></div>
         {templates.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>No tienes plantillas. Créalas en <b>Programa</b>.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
             {templates.map(t=>{
               const n=(templateExercises||[]).filter(te=>te.template_id===t.id).length;
               const isCur=existing&&existing.template_id===t.id;
+              const fit=matchesGoal(t);
               return(
                 <button key={t.id} disabled={saving} onClick={()=>asignar(t)}
-                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"12px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
-                    background:isCur?"#eef8dd":"#f8fafc",border:`1px solid ${isCur?"#cbe8a4":"#e6ebf3"}`}}>
-                  <div>
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"11px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                    background:isCur?"#eef8dd":fit?"#f2f8ff":"#f8fafc",border:`1px solid ${isCur?"#cbe8a4":fit?"#bcd3ee":"#e6ebf3"}`}}>
+                  <div style={{minWidth:0}}>
                     <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>{t.name}{isCur&&<span style={{fontSize:10,color:"#16a34a"}}> · actual</span>}</div>
-                    <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{n} ejercicio{n===1?"":"s"}</div>
+                    <div style={{fontSize:11,color:"#64748b",marginTop:2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{blockName(t.block_id)} · {n} ejercicio{n===1?"":"s"}</div>
                   </div>
                   <span style={{fontSize:12,color:"#0284c7",fontWeight:700,whiteSpace:"nowrap"}}>Asignar →</span>
                 </button>
@@ -1883,6 +1901,12 @@ function ClientModal({nc,setNc,onSave,onClose}) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div><span className="lbl">SESIONES</span><input type="number" className="inp" value={nc.sessions} onChange={e=>setNc(c=>({...c,sessions:e.target.value}))}/></div>
             <div><span className="lbl">PRECIO (€)</span><input type="number" className="inp" value={nc.cost} onChange={e=>setNc(c=>({...c,cost:e.target.value}))}/></div>
+          </div>
+          <div><span className="lbl">OBJETIVO</span>
+            <select className="inp" style={{appearance:"none"}} value={nc.goal} onChange={e=>setNc(c=>({...c,goal:e.target.value}))}>
+              <option value="salud">🩺 Salud (concurrente: fuerza + cardio)</option>
+              <option value="estetica">💪 Estética / Masa (volumen y estabilidad)</option>
+            </select>
           </div>
           <div><span className="lbl">FECHA PRÓXIMO PAGO *</span><input type="date" className="inp" value={nc.nextPayment} onChange={e=>setNc(c=>({...c,nextPayment:e.target.value}))}/></div>
           <div><span className="lbl">MENSAJE DE BIENVENIDA (opcional)</span>
@@ -3282,39 +3306,57 @@ function PlanTab({client, plans, clientPlans, exercises}) {
 
 
 // ── PROGRAMMING ADMIN ──────────────────────────────────────────────────────
-// Macrociclo base: Recomposición / Salud (48 semanas). Cada bloque crea sus
-// plantillas de sesión (vacías, listas para rellenar ejercicios y asignar).
+// Macrociclo base: Recomposición / Salud (48 semanas). Los BLOQUES (esqueleto
+// del año) son comunes; las PLANTILLAS de sesión se adaptan al objetivo:
+//  · salud    → concurrente: fuerza + cardio/circuitos (menos días de aislamiento)
+//  · estetica → más volumen de fuerza/hipertrofia y estabilidad
+// Las plantillas se crean vacías (sin ejercicios), listas para rellenar y asignar.
+const GOAL_LABEL = {salud:"Salud", estetica:"Estética/Masa"};
 const MACRO_RECOMP = [
   {name:"Acondicionamiento · Volumen", type:"acondicionamiento", weeks:2, rep:"12-15",
-   note:"Fullbody. Subida gradual de VOLUMEN.", tpls:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]},
+   note:"Fullbody. Subida gradual de VOLUMEN.",
+   tpls:{salud:[["Fullbody A","series_planas"],["Fullbody B","series_planas"],["Cardio ligero","emom"]],
+         estetica:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]}},
   {name:"Acondicionamiento · Intensidad", type:"acondicionamiento", weeks:2, rep:"8-12",
-   note:"Fullbody. Subida gradual de INTENSIDAD.", tpls:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]},
+   note:"Fullbody. Subida gradual de INTENSIDAD.",
+   tpls:{salud:[["Fullbody A","series_planas"],["Fullbody B","series_planas"],["Cardio/Circuito","amrap"]],
+         estetica:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]}},
   {name:"Fuerza · Inespecífico", type:"fuerza", weeks:8, rep:"6-10",
-   note:"Torso/Piernas/Fullbody. Mucha inestabilidad en multiarticulares · intensidad supramáxima opcional (+%1RM) · singles en días secundarios.",
-   tpls:[["Torso","top_set_backoff"],["Piernas","top_set_backoff"],["Fullbody","series_planas"]]},
+   note:"Torso/Piernas/Fullbody. Inestabilidad en multiarticulares · intensidad supramáxima opcional (+%1RM) · singles en días secundarios.",
+   tpls:{salud:[["Torso","top_set_backoff"],["Piernas","top_set_backoff"],["Circuito concurrente","emom"]],
+         estetica:[["Torso","top_set_backoff"],["Piernas","top_set_backoff"],["Fullbody","series_planas"]]}},
   {name:"Fuerza · Específico", type:"fuerza", weeks:8, rep:"1-6",
    note:"Aumento de intensidad (+%RM) · rango de reps menor · singles en días primarios.",
-   tpls:[["Torso","ramp_up"],["Piernas","ramp_up"],["Fullbody","top_set_backoff"]]},
+   tpls:{salud:[["Torso","ramp_up"],["Piernas","ramp_up"],["Circuito concurrente","amrap"]],
+         estetica:[["Torso","ramp_up"],["Piernas","ramp_up"],["Fullbody","top_set_backoff"]]}},
   {name:"Fuerza · Semana TEST", type:"fuerza", weeks:1, rep:"3-8",
-   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.", tpls:[["Test AMRAP básicos","amrap"]]},
+   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.",
+   tpls:{salud:[["Test AMRAP básicos","amrap"]], estetica:[["Test AMRAP básicos","amrap"]]}},
   {name:"Fuerza · Descarga", type:"descarga", weeks:1, rep:"6-8",
-   note:"Descarga: bajar volumen e intensidad.", tpls:[["Descarga Fullbody","series_planas"]]},
+   note:"Descarga: bajar volumen e intensidad.",
+   tpls:{salud:[["Descarga Fullbody","series_planas"]], estetica:[["Descarga Fullbody","series_planas"]]}},
   {name:"Híbrido / Comodín", type:"hibrido", weeks:4, rep:"var",
-   note:"Resensibilizar el sistema: ejercicios/planos menos usados (frontal, transversal) · protocolos inusuales (cluster, AMRAP, superserie antagonistas) · más densidad (menos descanso) · cardio/HIIT/EMOM/LEADER.",
-   tpls:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["Fuerza-densidad (superserie)","superset"]]},
+   note:"Resensibilizar: planos/ejercicios menos usados (frontal, transversal) · protocolos inusuales (cluster, AMRAP, superserie antagonistas) · más densidad · cardio/HIIT/EMOM/LEADER.",
+   tpls:{salud:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["HIIT/Tabata","tabata"]],
+         estetica:[["Circuito EMOM","emom"],["Superserie antagonistas","superset"],["Cluster","cluster"]]}},
   {name:"Hipertrofia · Inespecífico", type:"hipertrofia", weeks:8, rep:"8-12",
    note:"Push/Pull/Legs/Cadena post/Brazos. Mayor estabilidad en multiarticulares · rango de reps mayor.",
-   tpls:[["Push","series_planas"],["Pull","series_planas"],["Legs","series_planas"],["Cadena posterior","series_planas"],["Brazos","series_planas"]]},
+   tpls:{salud:[["Push","series_planas"],["Pull","series_planas"],["Legs","series_planas"],["Circuito/cardio","emom"]],
+         estetica:[["Push","series_planas"],["Pull","series_planas"],["Legs","series_planas"],["Cadena posterior","series_planas"],["Brazos","series_planas"]]}},
   {name:"Hipertrofia · Específico", type:"hipertrofia", weeks:8, rep:"6-10",
-   note:"Técnicas avanzadas al final de sesión · monoarticular al principio · rango de reps menor.",
-   tpls:[["Push","drop_set"],["Pull","drop_set"],["Legs","rest_pause"],["Cadena posterior","drop_set"],["Brazos","drop_set"]]},
+   note:"Técnicas avanzadas al final · monoarticular al inicio · rango de reps menor.",
+   tpls:{salud:[["Push","drop_set"],["Pull","drop_set"],["Legs","rest_pause"],["Circuito/cardio","amrap"]],
+         estetica:[["Push","drop_set"],["Pull","drop_set"],["Legs","rest_pause"],["Cadena posterior","drop_set"],["Brazos","drop_set"]]}},
   {name:"Hipertrofia · Semana TEST", type:"hipertrofia", weeks:1, rep:"3-8",
-   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.", tpls:[["Test AMRAP básicos","amrap"]]},
+   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.",
+   tpls:{salud:[["Test AMRAP básicos","amrap"]], estetica:[["Test AMRAP básicos","amrap"]]}},
   {name:"Hipertrofia · Descarga", type:"descarga", weeks:1, rep:"8-10",
-   note:"Descarga: bajar volumen e intensidad.", tpls:[["Descarga Fullbody","series_planas"]]},
+   note:"Descarga: bajar volumen e intensidad.",
+   tpls:{salud:[["Descarga Fullbody","series_planas"]], estetica:[["Descarga Fullbody","series_planas"]]}},
   {name:"Híbrido / Comodín (2)", type:"hibrido", weeks:4, rep:"var",
-   note:"Resensibilizar el sistema: planos y ejercicios menos usados · protocolos inusuales · más densidad · cardio/HIIT/interválico.",
-   tpls:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["Fuerza-densidad (superserie)","superset"]]},
+   note:"Resensibilizar: planos/ejercicios menos usados · protocolos inusuales · más densidad · cardio/HIIT/interválico.",
+   tpls:{salud:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["HIIT/Tabata","tabata"]],
+         estetica:[["Circuito EMOM","emom"],["Superserie antagonistas","superset"],["Cluster","cluster"]]}},
 ];
 
 function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
@@ -3328,24 +3370,32 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
   const [saving,setSaving] = React.useState(false);
   const [genMacro,setGenMacro] = React.useState(false);
 
-  // Genera el macrociclo de Recomposición (48 semanas) con sus bloques y plantillas.
-  const generarMacro = async()=>{
-    if(annualBlocks.some(b=>String(b.name||"").startsWith("Acondicionamiento · Volumen"))){ notify("El macrociclo ya está generado","err"); return; }
-    if(annualBlocks.length && !window.confirm("Se añadirán 12 bloques (48 semanas) del macrociclo de Recomposición y sus plantillas al año. ¿Continuar?")) return;
+  // Genera el macrociclo (48 semanas) para un objetivo. Los bloques se crean una
+  // vez; las plantillas se añaden etiquetadas por objetivo (Salud / Masa).
+  const generarMacro = async(goal)=>{
+    const tag = goal==="salud"?"Salud":"Masa";
+    if(!window.confirm(`Se generará el macrociclo de Recomposición (48 semanas) con plantillas para ${GOAL_LABEL[goal]}. Los bloques se crean una vez; puedes generar también el otro objetivo. ¿Continuar?`)) return;
     setGenMacro(true);
     let wk = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.end_week||0))+1 : 1;
     let order = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.order_index||0)) : 0;
     try{
       for(const b of MACRO_RECOMP){
-        order++; const start=wk, end=wk+b.weeks-1; wk=end+1;
-        const {data:blk,error}=await sb.from("annual_blocks").insert({
-          name:b.name,type:b.type,start_week:start,end_week:end,week_count:b.weeks,
-          rep_range:b.rep,intensity_note:b.note,order_index:order}).select().single();
-        if(error){ notify("Error al crear bloque: "+error.message,"err"); setGenMacro(false); return; }
-        const tpls=b.tpls.map((t,i)=>({name:t[0],protocol:t[1],block_id:blk.id,order_index:i}));
-        if(tpls.length){ const {error:te}=await sb.from("session_templates").insert(tpls); if(te){ notify("Error en plantillas: "+te.message,"err"); setGenMacro(false); return; } }
+        let blk=annualBlocks.find(x=>x.name===b.name);
+        if(!blk){
+          order++; const start=wk, end=wk+b.weeks-1; wk=end+1;
+          const {data,error}=await sb.from("annual_blocks").insert({
+            name:b.name,type:b.type,start_week:start,end_week:end,week_count:b.weeks,
+            rep_range:b.rep,intensity_note:b.note,order_index:order}).select().single();
+          if(error){ notify("Error al crear bloque: "+error.message,"err"); setGenMacro(false); return; }
+          blk=data;
+        }
+        const existing=sessionTemplates.filter(t=>t.block_id===blk.id).map(t=>t.name);
+        const rows=(b.tpls[goal]||[]).map(t=>[`${t[0]} · ${tag}`,t[1]])
+          .filter(t=>!existing.includes(t[0]))
+          .map((t,i)=>({name:t[0],protocol:t[1],block_id:blk.id,order_index:i}));
+        if(rows.length){ const {error:te}=await sb.from("session_templates").insert(rows); if(te){ notify("Error en plantillas: "+te.message,"err"); setGenMacro(false); return; } }
       }
-      await loadAll(); notify("Macrociclo generado ✓ (48 semanas)");
+      await loadAll(); notify(`Macrociclo · ${GOAL_LABEL[goal]} generado ✓`);
     }catch(e){ notify("Error al generar el macrociclo","err"); }
     setGenMacro(false);
   };
@@ -3483,14 +3533,20 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
         <div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
             <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>PROGRAMACIÓN ANUAL — {annualBlocks.reduce((a,b)=>a+(b.week_count||0),0)} SEMANAS</div>
-            <button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} disabled={genMacro} onClick={generarMacro}>{genMacro?"Generando…":"🗓️ Generar macrociclo"}</button>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button className="btn grn" style={{fontSize:11,padding:"7px 11px"}} disabled={genMacro} onClick={()=>generarMacro("salud")}>{genMacro?"…":"🩺 Salud"}</button>
+              <button className="btn sky" style={{fontSize:11,padding:"7px 11px"}} disabled={genMacro} onClick={()=>generarMacro("estetica")}>{genMacro?"…":"💪 Estética/Masa"}</button>
+            </div>
           </div>
           {annualBlocks.length===0&&(
             <div className="card" style={{marginBottom:14,textAlign:"center",padding:20}}>
               <div style={{fontSize:30,marginBottom:8}}>🗓️</div>
               <div style={{fontWeight:700,marginBottom:4}}>Aún no tienes el año programado</div>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:14,lineHeight:1.5}}>Genera el macrociclo de <b>Recomposición / Salud</b> (48 semanas): Acondicionamiento → Fuerza → Híbrido → Hipertrofia → Híbrido, con sus plantillas de sesión listas para rellenar y asignar.</div>
-              <button className="btn sky" style={{padding:"10px 18px"}} disabled={genMacro} onClick={generarMacro}>{genMacro?"Generando…":"🗓️ Generar macrociclo Recomposición"}</button>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:14,lineHeight:1.5}}>Genera el macrociclo de <b>Recomposición</b> (48 semanas). Elige el objetivo — puedes generar los dos y luego asignar a cada cliente el que le toque:<br/><b style={{color:"#16a34a"}}>🩺 Salud</b> = concurrente (fuerza + cardio/circuitos) · <b style={{color:"#0284c7"}}>💪 Estética/Masa</b> = más volumen de fuerza/hipertrofia y estabilidad.</div>
+              <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+                <button className="btn grn" style={{padding:"10px 16px"}} disabled={genMacro} onClick={()=>generarMacro("salud")}>{genMacro?"Generando…":"🩺 Generar (Salud)"}</button>
+                <button className="btn sky" style={{padding:"10px 16px"}} disabled={genMacro} onClick={()=>generarMacro("estetica")}>{genMacro?"Generando…":"💪 Generar (Estética/Masa)"}</button>
+              </div>
             </div>
           )}
 
