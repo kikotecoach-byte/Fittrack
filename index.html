@@ -3995,10 +3995,106 @@ function AddWeightModal({clientId, clientWeights, onSave, onClose}) {
   );
 }
 
+// ── BIBLIOTECA DE EJERCICIOS (relleno rápido) ──────────────────────────────
+// Cada ejercicio: [nombre, series, reps, descanso(s), principal]. Al tocarlo
+// se añade a la plantilla con estos valores por defecto (editables después).
+const EXERCISE_LIBRARY = {
+  "Sentadilla / Cuádriceps": [
+    ["Sentadilla trasera",4,"5-8",150,true],
+    ["Sentadilla frontal",4,"6-8",150,true],
+    ["Prensa de piernas",4,"10-12",90,false],
+    ["Sentadilla búlgara",3,"8-10",90,false],
+    ["Zancadas",3,"10-12",75,false],
+    ["Extensión de cuádriceps",3,"12-15",60,false],
+    ["Hack squat",4,"8-10",120,false],
+    ["Sentadilla goblet",3,"10-12",75,false],
+  ],
+  "Bisagra / Posterior": [
+    ["Peso muerto",4,"4-6",180,true],
+    ["Peso muerto rumano",4,"8-10",120,true],
+    ["Hip thrust",4,"8-12",90,false],
+    ["Peso muerto piernas rígidas",3,"10-12",90,false],
+    ["Curl femoral tumbado",3,"12-15",60,false],
+    ["Curl femoral sentado",3,"12-15",60,false],
+    ["Buenos días",3,"8-10",90,false],
+    ["Extensión de cadera en polea",3,"12-15",60,false],
+  ],
+  "Empuje horizontal (pecho)": [
+    ["Press banca",4,"5-8",150,true],
+    ["Press banca inclinado",4,"6-10",120,true],
+    ["Press mancuernas plano",4,"8-12",90,false],
+    ["Press mancuernas inclinado",3,"8-12",90,false],
+    ["Aperturas con mancuernas",3,"12-15",60,false],
+    ["Cruce de poleas",3,"12-15",60,false],
+    ["Fondos en paralelas",3,"8-12",90,false],
+    ["Flexiones",3,"10-15",60,false],
+  ],
+  "Empuje vertical (hombro)": [
+    ["Press militar de pie",4,"5-8",120,true],
+    ["Press militar mancuernas",4,"8-10",90,false],
+    ["Press Arnold",3,"10-12",75,false],
+    ["Elevaciones laterales",4,"12-15",45,false],
+    ["Elevaciones frontales",3,"12-15",45,false],
+    ["Pájaros / Deltoides posterior",3,"12-15",45,false],
+    ["Face pull",3,"15-20",45,false],
+  ],
+  "Tracción vertical (dorsal)": [
+    ["Dominadas",4,"6-10",120,true],
+    ["Jalón al pecho",4,"8-12",90,false],
+    ["Jalón agarre neutro",3,"10-12",75,false],
+    ["Pullover en polea",3,"12-15",60,false],
+  ],
+  "Tracción horizontal (espalda)": [
+    ["Remo con barra",4,"6-10",120,true],
+    ["Remo con mancuerna",3,"8-12",90,false],
+    ["Remo en polea baja",3,"10-12",75,false],
+    ["Remo en máquina",3,"10-12",75,false],
+    ["Remo Pendlay",4,"6-8",120,false],
+    ["Encogimientos (trapecio)",3,"12-15",60,false],
+  ],
+  "Brazos": [
+    ["Curl con barra",3,"8-12",60,false],
+    ["Curl con mancuernas",3,"10-12",60,false],
+    ["Curl martillo",3,"10-12",60,false],
+    ["Curl en predicador",3,"10-12",60,false],
+    ["Extensión de tríceps en polea",3,"12-15",60,false],
+    ["Press francés",3,"10-12",60,false],
+    ["Fondos de tríceps",3,"10-15",60,false],
+    ["Patada de tríceps",3,"12-15",45,false],
+  ],
+  "Core / Estabilidad": [
+    ["Plancha frontal",3,"30-45s",45,false],
+    ["Plancha lateral",3,"30s/lado",45,false],
+    ["Rueda abdominal",3,"8-12",60,false],
+    ["Elevación de piernas",3,"12-15",45,false],
+    ["Pallof press",3,"12/lado",45,false],
+    ["Bird-dog",3,"10/lado",45,false],
+    ["Dead bug",3,"10/lado",45,false],
+    ["Paseo del granjero",3,"30-40m",60,false],
+    ["Face-down (Y-T-W)",3,"12-15",45,false],
+  ],
+  "Cardio / Metcon": [
+    ["AMRAP 12'",1,"12 min",0,false],
+    ["EMOM 10'",1,"10 min",0,false],
+    ["Tabata (8×20/10)",1,"4 min",0,false],
+    ["Circuito metabólico",3,"40s/20s",30,false],
+    ["Remo (máquina)",1,"10-15 min",0,false],
+    ["Bicicleta / Assault bike",1,"10-15 min",0,false],
+    ["Cinta / Carrera",1,"20-30 min",0,false],
+    ["Comba",4,"60s",30,false],
+    ["Burpees",4,"12-15",45,false],
+    ["Swing con kettlebell",4,"15-20",45,false],
+  ],
+};
+
 // ── TEMPLATE EDITOR MODAL ──────────────────────────────────────────────────
 function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
   const [saving,setSaving] = React.useState(false);
   const [newEx,setNewEx] = React.useState({exercise_name:"",sets:3,reps:"8-10",protocol:"",rest_seconds:90,notes:"",is_main:false});
+  const [showLib,setShowLib] = React.useState(false);
+  const [libSearch,setLibSearch] = React.useState("");
+  const [libCat,setLibCat] = React.useState("Todos");
+  const [picks,setPicks] = React.useState([]); // ejercicios en cola para añadir
 
   const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
 
@@ -4007,6 +4103,32 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
     await sb.from("template_exercises").insert({...newEx,template_id:template.id,order_index:exercises.length});
     setNewEx({exercise_name:"",sets:3,reps:"8-10",protocol:"",rest_seconds:90,notes:"",is_main:false});
     notify("Ejercicio añadido ✓");
+  });
+
+  // ── Relleno rápido desde biblioteca ──
+  const existingNames = new Set(exercises.map(e=>String(e.exercise_name||"").toLowerCase()));
+  const cats = ["Todos", ...Object.keys(EXERCISE_LIBRARY)];
+  const libItems = Object.entries(EXERCISE_LIBRARY)
+    .filter(([cat])=>libCat==="Todos"||cat===libCat)
+    .flatMap(([cat,list])=>list.map(x=>({cat,name:x[0],sets:x[1],reps:x[2],rest:x[3],main:x[4]})))
+    .filter(x=>!libSearch||x.name.toLowerCase().includes(libSearch.toLowerCase()));
+
+  const togglePick = (item)=>setPicks(p=>{
+    const k=item.name.toLowerCase();
+    return p.some(x=>x.name.toLowerCase()===k) ? p.filter(x=>x.name.toLowerCase()!==k) : [...p,item];
+  });
+
+  const addPicks = ()=>w(async()=>{
+    if(!picks.length) return notify("Toca ejercicios para añadirlos","err");
+    const rows = picks.map((x,i)=>({
+      template_id:template.id, exercise_name:x.name,
+      sets:x.sets, reps:x.reps, rest_seconds:x.rest,
+      protocol:template.protocol||"", is_main:!!x.main, notes:"",
+      order_index:exercises.length+i,
+    }));
+    await sb.from("template_exercises").insert(rows);
+    notify(`${picks.length} ejercicio(s) añadidos ✓`);
+    setPicks([]);
   });
 
   const deleteEx = (id)=>w(async()=>{
@@ -4045,8 +4167,62 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
           </div>
         ))}
 
+        {/* ── Relleno rápido: biblioteca de ejercicios ── */}
+        <button className="btn sky" style={{width:"100%",padding:10,marginTop:10,fontSize:13,fontWeight:700}}
+          onClick={()=>setShowLib(s=>!s)}>
+          {showLib?"▲ Cerrar biblioteca":"⚡ Relleno rápido — biblioteca de ejercicios"}
+        </button>
+
+        {showLib&&(
+          <div style={{background:"#eef4fc",borderRadius:12,padding:10,marginTop:8,border:"1px solid #bcd3ee"}}>
+            <input className="inp" placeholder="🔎 Buscar ejercicio..." value={libSearch}
+              onChange={e=>setLibSearch(e.target.value)} style={{marginBottom:8}}/>
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:8}}>
+              {cats.map(c=>(
+                <button key={c} onClick={()=>setLibCat(c)}
+                  style={{whiteSpace:"nowrap",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:20,cursor:"pointer",
+                    border:libCat===c?"1px solid #0284c7":"1px solid #cfd8e6",
+                    background:libCat===c?"#0284c7":"#ffffff",color:libCat===c?"#fff":"#64748b"}}>
+                  {c==="Todos"?"Todos":c.split(" ")[0]}
+                </button>
+              ))}
+            </div>
+            <div style={{maxHeight:230,overflowY:"auto",display:"flex",flexDirection:"column",gap:5}}>
+              {libItems.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:12}}>Sin resultados</div>}
+              {libItems.map((x,i)=>{
+                const picked=picks.some(p=>p.name.toLowerCase()===x.name.toLowerCase());
+                const already=existingNames.has(x.name.toLowerCase());
+                return(
+                  <button key={i} onClick={()=>togglePick(x)}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,textAlign:"left",cursor:"pointer",
+                      padding:"8px 10px",borderRadius:9,
+                      border:picked?"1px solid #16a34a":"1px solid #dbe2ec",
+                      background:picked?"#e2f4e8":"#ffffff"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:"#0f172a",display:"flex",alignItems:"center",gap:6}}>
+                        {x.main&&<span style={{color:"#ca8a04"}}>★</span>}
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.name}</span>
+                        {already&&<span style={{fontSize:9,color:"#94a3b8"}}>(ya está)</span>}
+                      </div>
+                      <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{x.sets}×{x.reps} · {x.rest}s desc.</div>
+                    </div>
+                    <span style={{fontSize:16,color:picked?"#16a34a":"#0284c7",fontWeight:700,flexShrink:0}}>{picked?"✓":"+"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button className="btn grn" style={{width:"100%",padding:10,marginTop:8,fontSize:13,fontWeight:700}}
+              onClick={addPicks} disabled={saving||!picks.length}>
+              {saving?"Guardando...":`Añadir ${picks.length||""} ejercicio${picks.length===1?"":"s"} a la plantilla`}
+            </button>
+            <div style={{fontSize:10,color:"#64748b",marginTop:6,textAlign:"center"}}>
+              Se añaden con el protocolo de la plantilla ({template.protocol||"sin protocolo"}). Ajusta series/reps después.
+            </div>
+          </div>
+        )}
+
         <div style={{background:"#f1f4fa",borderRadius:10,padding:10,marginTop:10,border:"1px dashed #cbd5e1"}}>
-          <div style={{fontSize:11,color:"#0284c7",fontWeight:700,marginBottom:8}}>+ Nuevo ejercicio</div>
+          <div style={{fontSize:11,color:"#0284c7",fontWeight:700,marginBottom:8}}>+ Nuevo ejercicio (manual)</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <input className="inp" placeholder="Nombre del ejercicio" value={newEx.exercise_name} onChange={e=>setNewEx(v=>({...v,exercise_name:e.target.value}))}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
