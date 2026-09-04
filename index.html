@@ -3444,6 +3444,35 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
     setGenMacro(false);
   };
 
+  // Rellena con ejercicios base las plantillas que YA existan pero estén vacías
+  // (p.ej. generadas antes de precargar ejercicios). No toca las que ya tienen.
+  const rellenarVacias = async()=>{
+    const base = n => String(n||"").replace(/ · (Salud|Masa)$/,"");
+    const vacias = sessionTemplates.filter(t=>
+      TEMPLATE_EXERCISES[base(t.name)] &&
+      !templateExercises.some(te=>te.template_id===t.id)
+    );
+    if(!vacias.length) return notify("No hay plantillas vacías que rellenar ✓");
+    if(!window.confirm(`Se rellenarán ${vacias.length} plantilla(s) vacía(s) con sus ejercicios base. Las que ya tienen ejercicios no se tocan. ¿Continuar?`)) return;
+    setGenMacro(true);
+    try{
+      const exRows=[];
+      vacias.forEach(t=>{
+        const blk=annualBlocks.find(b=>b.id===t.block_id);
+        const rep=blk?blk.rep_range:"var";
+        (TEMPLATE_EXERCISES[base(t.name)]||[]).forEach((e,i)=>exRows.push({
+          template_id:t.id, exercise_name:e[0], sets:e[1],
+          reps:(e[4]&&rep&&rep!=="var")?rep:e[2],
+          rest_seconds:e[3], protocol:t.protocol||"", is_main:!!e[4], notes:"", order_index:i,
+        }));
+      });
+      const {error}=await sb.from("template_exercises").insert(exRows);
+      if(error){ notify("Error al rellenar: "+error.message,"err"); setGenMacro(false); return; }
+      await loadAll(); notify(`${vacias.length} plantilla(s) rellenadas ✓`);
+    }catch(e){ notify("Error al rellenar plantillas","err"); }
+    setGenMacro(false);
+  };
+
   // Week number helpers
   const getWeekNumber = (date) => {
     const d = new Date(date+"T12:00:00");
@@ -3582,6 +3611,16 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
               <button className="btn sky" style={{fontSize:11,padding:"7px 11px"}} disabled={genMacro} onClick={()=>generarMacro("estetica")}>{genMacro?"…":"💪 Estética/Masa"}</button>
             </div>
           </div>
+          {(()=>{
+            const b=n=>String(n||"").replace(/ · (Salud|Masa)$/,"");
+            const nVacias=sessionTemplates.filter(t=>TEMPLATE_EXERCISES[b(t.name)]&&!templateExercises.some(te=>te.template_id===t.id)).length;
+            return nVacias>0?(
+              <button className="btn ghost" style={{width:"100%",padding:9,marginBottom:12,fontSize:12,fontWeight:700,border:"1px dashed #cbd5e1"}}
+                disabled={genMacro} onClick={rellenarVacias}>
+                {genMacro?"Rellenando…":`⚡ Rellenar ${nVacias} plantilla(s) vacía(s) con ejercicios`}
+              </button>
+            ):null;
+          })()}
           {annualBlocks.length===0&&(
             <div className="card" style={{marginBottom:14,textAlign:"center",padding:20}}>
               <div style={{fontSize:30,marginBottom:8}}>🗓️</div>
