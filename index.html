@@ -461,7 +461,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
-  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:""});
+  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud"});
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
   const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
   const [showSched,setShowSched] = React.useState(false);
@@ -520,9 +520,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(nc.code.length!==4) return notify("El código debe tener 4 dígitos","err");
     if(clients.find(c=>c.code===nc.code)) return notify("Ese código ya existe","err");
     const color=COLORS[clients.length%COLORS.length];
-    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes});
+    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal});
     if(error) return notify("Error: "+error.message,"err");
-    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:""});
+    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud"});
     notify("Cliente añadido ✓");
   });
 
@@ -1379,7 +1379,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
       {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
-      {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
+      {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
     </div>
   );
@@ -1454,6 +1454,11 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
           <div style={{flex:1,minWidth:0}}>
             <h2 className="mono" style={{fontSize:16,fontWeight:700}}>{client.name}</h2>
             <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {client.sessions_left}/{client.total_sessions} · {fmtDate(date)}</div>
+            <div style={{marginTop:4}}>
+              <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:client.goal==="estetica"?"#f3ecfb":"#e2f4e8",color:client.goal==="estetica"?"#7c3aed":"#059669",border:`1px solid ${client.goal==="estetica"?"#e0d2f5":"#c9e6d1"}`}}>
+                {client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}
+              </span>
+            </div>
           </div>
         </div>
 
@@ -1586,10 +1591,21 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
 }
 
 // ── ASIGNAR ENTRENO (elegir plantilla desde la agenda) ─────────────────────
-function AssignTrainingModal({client,date,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,loadAll,notify,onClose}) {
+function AssignTrainingModal({client,date,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,annualBlocks,loadAll,notify,onClose}) {
   const [saving,setSaving]=React.useState(false);
   const existing=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
-  const templates=(sessionTemplates||[]).slice().sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+  const goalTag=client.goal==="estetica"?"Masa":"Salud";
+  const blockName=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?b.name:"";};
+  const blockOrder=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?(b.order_index||0):999;};
+  const matchesGoal=(t)=>String(t.name||"").endsWith("· "+goalTag);
+  // Plantillas: primero las del objetivo del cliente, luego por bloque.
+  const templates=(sessionTemplates||[]).slice().sort((a,b)=>{
+    const am=matchesGoal(a)?0:1, bm=matchesGoal(b)?0:1;
+    if(am!==bm) return am-bm;
+    const ao=blockOrder(a.block_id), bo=blockOrder(b.block_id);
+    if(ao!==bo) return ao-bo;
+    return (a.order_index||0)-(b.order_index||0);
+  });
 
   const asignar=async(tmpl)=>{
     setSaving(true);
@@ -1616,20 +1632,22 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>Asignar entreno · {client.name}</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:16}}>{fmtDate(date)} · elige una plantilla{existing?" (reemplaza la actual)":""}.</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:6}}>{fmtDate(date)} · elige una plantilla{existing?" (reemplaza la actual)":""}.</p>
+        <div style={{fontSize:11,marginBottom:14}}><span style={{color:"#94a3b8"}}>Objetivo: </span><b style={{color:client.goal==="estetica"?"#0284c7":"#16a34a"}}>{client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}</b> <span style={{color:"#94a3b8"}}>· sus plantillas salen primero</span></div>
         {templates.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>No tienes plantillas. Créalas en <b>Programa</b>.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
             {templates.map(t=>{
               const n=(templateExercises||[]).filter(te=>te.template_id===t.id).length;
               const isCur=existing&&existing.template_id===t.id;
+              const fit=matchesGoal(t);
               return(
                 <button key={t.id} disabled={saving} onClick={()=>asignar(t)}
-                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"12px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
-                    background:isCur?"#eef8dd":"#f8fafc",border:`1px solid ${isCur?"#cbe8a4":"#e6ebf3"}`}}>
-                  <div>
+                  style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"11px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                    background:isCur?"#eef8dd":fit?"#f2f8ff":"#f8fafc",border:`1px solid ${isCur?"#cbe8a4":fit?"#bcd3ee":"#e6ebf3"}`}}>
+                  <div style={{minWidth:0}}>
                     <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>{t.name}{isCur&&<span style={{fontSize:10,color:"#16a34a"}}> · actual</span>}</div>
-                    <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{n} ejercicio{n===1?"":"s"}</div>
+                    <div style={{fontSize:11,color:"#64748b",marginTop:2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{blockName(t.block_id)} · {n} ejercicio{n===1?"":"s"}</div>
                   </div>
                   <span style={{fontSize:12,color:"#0284c7",fontWeight:700,whiteSpace:"nowrap"}}>Asignar →</span>
                 </button>
@@ -1883,6 +1901,12 @@ function ClientModal({nc,setNc,onSave,onClose}) {
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
             <div><span className="lbl">SESIONES</span><input type="number" className="inp" value={nc.sessions} onChange={e=>setNc(c=>({...c,sessions:e.target.value}))}/></div>
             <div><span className="lbl">PRECIO (€)</span><input type="number" className="inp" value={nc.cost} onChange={e=>setNc(c=>({...c,cost:e.target.value}))}/></div>
+          </div>
+          <div><span className="lbl">OBJETIVO</span>
+            <select className="inp" style={{appearance:"none"}} value={nc.goal} onChange={e=>setNc(c=>({...c,goal:e.target.value}))}>
+              <option value="salud">🩺 Salud (concurrente: fuerza + cardio)</option>
+              <option value="estetica">💪 Estética / Masa (volumen y estabilidad)</option>
+            </select>
           </div>
           <div><span className="lbl">FECHA PRÓXIMO PAGO *</span><input type="date" className="inp" value={nc.nextPayment} onChange={e=>setNc(c=>({...c,nextPayment:e.target.value}))}/></div>
           <div><span className="lbl">MENSAJE DE BIENVENIDA (opcional)</span>
@@ -3282,6 +3306,59 @@ function PlanTab({client, plans, clientPlans, exercises}) {
 
 
 // ── PROGRAMMING ADMIN ──────────────────────────────────────────────────────
+// Macrociclo base: Recomposición / Salud (48 semanas). Los BLOQUES (esqueleto
+// del año) son comunes; las PLANTILLAS de sesión se adaptan al objetivo:
+//  · salud    → concurrente: fuerza + cardio/circuitos (menos días de aislamiento)
+//  · estetica → más volumen de fuerza/hipertrofia y estabilidad
+// Las plantillas se crean vacías (sin ejercicios), listas para rellenar y asignar.
+const GOAL_LABEL = {salud:"Salud", estetica:"Estética/Masa"};
+const MACRO_RECOMP = [
+  {name:"Acondicionamiento · Volumen", type:"acondicionamiento", weeks:2, rep:"12-15",
+   note:"Fullbody. Subida gradual de VOLUMEN.",
+   tpls:{salud:[["Fullbody A","series_planas"],["Fullbody B","series_planas"],["Cardio ligero","emom"]],
+         estetica:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]}},
+  {name:"Acondicionamiento · Intensidad", type:"acondicionamiento", weeks:2, rep:"8-12",
+   note:"Fullbody. Subida gradual de INTENSIDAD.",
+   tpls:{salud:[["Fullbody A","series_planas"],["Fullbody B","series_planas"],["Cardio/Circuito","amrap"]],
+         estetica:[["Fullbody A","series_planas"],["Fullbody B","series_planas"]]}},
+  {name:"Fuerza · Inespecífico", type:"fuerza", weeks:8, rep:"6-10",
+   note:"Torso/Piernas/Fullbody. Inestabilidad en multiarticulares · intensidad supramáxima opcional (+%1RM) · singles en días secundarios.",
+   tpls:{salud:[["Torso","top_set_backoff"],["Piernas","top_set_backoff"],["Circuito concurrente","emom"]],
+         estetica:[["Torso","top_set_backoff"],["Piernas","top_set_backoff"],["Fullbody","series_planas"]]}},
+  {name:"Fuerza · Específico", type:"fuerza", weeks:8, rep:"1-6",
+   note:"Aumento de intensidad (+%RM) · rango de reps menor · singles en días primarios.",
+   tpls:{salud:[["Torso","ramp_up"],["Piernas","ramp_up"],["Circuito concurrente","amrap"]],
+         estetica:[["Torso","ramp_up"],["Piernas","ramp_up"],["Fullbody","top_set_backoff"]]}},
+  {name:"Fuerza · Semana TEST", type:"fuerza", weeks:1, rep:"3-8",
+   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.",
+   tpls:{salud:[["Test AMRAP básicos","amrap"]], estetica:[["Test AMRAP básicos","amrap"]]}},
+  {name:"Fuerza · Descarga", type:"descarga", weeks:1, rep:"6-8",
+   note:"Descarga: bajar volumen e intensidad.",
+   tpls:{salud:[["Descarga Fullbody","series_planas"]], estetica:[["Descarga Fullbody","series_planas"]]}},
+  {name:"Híbrido / Comodín", type:"hibrido", weeks:4, rep:"var",
+   note:"Resensibilizar: planos/ejercicios menos usados (frontal, transversal) · protocolos inusuales (cluster, AMRAP, superserie antagonistas) · más densidad · cardio/HIIT/EMOM/LEADER.",
+   tpls:{salud:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["HIIT/Tabata","tabata"]],
+         estetica:[["Circuito EMOM","emom"],["Superserie antagonistas","superset"],["Cluster","cluster"]]}},
+  {name:"Hipertrofia · Inespecífico", type:"hipertrofia", weeks:8, rep:"8-12",
+   note:"Push/Pull/Legs/Cadena post/Brazos. Mayor estabilidad en multiarticulares · rango de reps mayor.",
+   tpls:{salud:[["Push","series_planas"],["Pull","series_planas"],["Legs","series_planas"],["Circuito/cardio","emom"]],
+         estetica:[["Push","series_planas"],["Pull","series_planas"],["Legs","series_planas"],["Cadena posterior","series_planas"],["Brazos","series_planas"]]}},
+  {name:"Hipertrofia · Específico", type:"hipertrofia", weeks:8, rep:"6-10",
+   note:"Técnicas avanzadas al final · monoarticular al inicio · rango de reps menor.",
+   tpls:{salud:[["Push","drop_set"],["Pull","drop_set"],["Legs","rest_pause"],["Circuito/cardio","amrap"]],
+         estetica:[["Push","drop_set"],["Pull","drop_set"],["Legs","rest_pause"],["Cadena posterior","drop_set"],["Brazos","drop_set"]]}},
+  {name:"Hipertrofia · Semana TEST", type:"hipertrofia", weeks:1, rep:"3-8",
+   note:"AMRAP básicos: serie AMRAP para test entre 3-8 reps.",
+   tpls:{salud:[["Test AMRAP básicos","amrap"]], estetica:[["Test AMRAP básicos","amrap"]]}},
+  {name:"Hipertrofia · Descarga", type:"descarga", weeks:1, rep:"8-10",
+   note:"Descarga: bajar volumen e intensidad.",
+   tpls:{salud:[["Descarga Fullbody","series_planas"]], estetica:[["Descarga Fullbody","series_planas"]]}},
+  {name:"Híbrido / Comodín (2)", type:"hibrido", weeks:4, rep:"var",
+   note:"Resensibilizar: planos/ejercicios menos usados · protocolos inusuales · más densidad · cardio/HIIT/interválico.",
+   tpls:{salud:[["Circuito EMOM","emom"],["Circuito AMRAP","amrap"],["HIIT/Tabata","tabata"]],
+         estetica:[["Circuito EMOM","emom"],["Superserie antagonistas","superset"],["Cluster","cluster"]]}},
+];
+
 function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
   const [tab,setTab] = React.useState("macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
@@ -3291,6 +3368,37 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
   const [showWeightModal,setShowWeightModal] = React.useState(null); // client
   const [showTemplateModal,setShowTemplateModal] = React.useState(null); // block
   const [saving,setSaving] = React.useState(false);
+  const [genMacro,setGenMacro] = React.useState(false);
+
+  // Genera el macrociclo (48 semanas) para un objetivo. Los bloques se crean una
+  // vez; las plantillas se añaden etiquetadas por objetivo (Salud / Masa).
+  const generarMacro = async(goal)=>{
+    const tag = goal==="salud"?"Salud":"Masa";
+    if(!window.confirm(`Se generará el macrociclo de Recomposición (48 semanas) con plantillas para ${GOAL_LABEL[goal]}. Los bloques se crean una vez; puedes generar también el otro objetivo. ¿Continuar?`)) return;
+    setGenMacro(true);
+    let wk = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.end_week||0))+1 : 1;
+    let order = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.order_index||0)) : 0;
+    try{
+      for(const b of MACRO_RECOMP){
+        let blk=annualBlocks.find(x=>x.name===b.name);
+        if(!blk){
+          order++; const start=wk, end=wk+b.weeks-1; wk=end+1;
+          const {data,error}=await sb.from("annual_blocks").insert({
+            name:b.name,type:b.type,start_week:start,end_week:end,week_count:b.weeks,
+            rep_range:b.rep,intensity_note:b.note,order_index:order}).select().single();
+          if(error){ notify("Error al crear bloque: "+error.message,"err"); setGenMacro(false); return; }
+          blk=data;
+        }
+        const existing=sessionTemplates.filter(t=>t.block_id===blk.id).map(t=>t.name);
+        const rows=(b.tpls[goal]||[]).map(t=>[`${t[0]} · ${tag}`,t[1]])
+          .filter(t=>!existing.includes(t[0]))
+          .map((t,i)=>({name:t[0],protocol:t[1],block_id:blk.id,order_index:i}));
+        if(rows.length){ const {error:te}=await sb.from("session_templates").insert(rows); if(te){ notify("Error en plantillas: "+te.message,"err"); setGenMacro(false); return; } }
+      }
+      await loadAll(); notify(`Macrociclo · ${GOAL_LABEL[goal]} generado ✓`);
+    }catch(e){ notify("Error al generar el macrociclo","err"); }
+    setGenMacro(false);
+  };
 
   // Week number helpers
   const getWeekNumber = (date) => {
@@ -3423,7 +3531,24 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
       {/* ── MACROCICLO TAB ── */}
       {tab==="macrocycle"&&(
         <div>
-          <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:12}}>PROGRAMACIÓN ANUAL 2026 — {annualBlocks.reduce((a,b)=>a+b.week_count,0)} SEMANAS</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:12,gap:10,flexWrap:"wrap"}}>
+            <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>PROGRAMACIÓN ANUAL — {annualBlocks.reduce((a,b)=>a+(b.week_count||0),0)} SEMANAS</div>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+              <button className="btn grn" style={{fontSize:11,padding:"7px 11px"}} disabled={genMacro} onClick={()=>generarMacro("salud")}>{genMacro?"…":"🩺 Salud"}</button>
+              <button className="btn sky" style={{fontSize:11,padding:"7px 11px"}} disabled={genMacro} onClick={()=>generarMacro("estetica")}>{genMacro?"…":"💪 Estética/Masa"}</button>
+            </div>
+          </div>
+          {annualBlocks.length===0&&(
+            <div className="card" style={{marginBottom:14,textAlign:"center",padding:20}}>
+              <div style={{fontSize:30,marginBottom:8}}>🗓️</div>
+              <div style={{fontWeight:700,marginBottom:4}}>Aún no tienes el año programado</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:14,lineHeight:1.5}}>Genera el macrociclo de <b>Recomposición</b> (48 semanas). Elige el objetivo — puedes generar los dos y luego asignar a cada cliente el que le toque:<br/><b style={{color:"#16a34a"}}>🩺 Salud</b> = concurrente (fuerza + cardio/circuitos) · <b style={{color:"#0284c7"}}>💪 Estética/Masa</b> = más volumen de fuerza/hipertrofia y estabilidad.</div>
+              <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
+                <button className="btn grn" style={{padding:"10px 16px"}} disabled={genMacro} onClick={()=>generarMacro("salud")}>{genMacro?"Generando…":"🩺 Generar (Salud)"}</button>
+                <button className="btn sky" style={{padding:"10px 16px"}} disabled={genMacro} onClick={()=>generarMacro("estetica")}>{genMacro?"Generando…":"💪 Generar (Estética/Masa)"}</button>
+              </div>
+            </div>
+          )}
 
           {/* Visual timeline */}
           <div style={{background:"#f1f4fa",borderRadius:12,padding:12,marginBottom:16,overflowX:"auto"}}>
@@ -3870,10 +3995,106 @@ function AddWeightModal({clientId, clientWeights, onSave, onClose}) {
   );
 }
 
+// ── BIBLIOTECA DE EJERCICIOS (relleno rápido) ──────────────────────────────
+// Cada ejercicio: [nombre, series, reps, descanso(s), principal]. Al tocarlo
+// se añade a la plantilla con estos valores por defecto (editables después).
+const EXERCISE_LIBRARY = {
+  "Sentadilla / Cuádriceps": [
+    ["Sentadilla trasera",4,"5-8",150,true],
+    ["Sentadilla frontal",4,"6-8",150,true],
+    ["Prensa de piernas",4,"10-12",90,false],
+    ["Sentadilla búlgara",3,"8-10",90,false],
+    ["Zancadas",3,"10-12",75,false],
+    ["Extensión de cuádriceps",3,"12-15",60,false],
+    ["Hack squat",4,"8-10",120,false],
+    ["Sentadilla goblet",3,"10-12",75,false],
+  ],
+  "Bisagra / Posterior": [
+    ["Peso muerto",4,"4-6",180,true],
+    ["Peso muerto rumano",4,"8-10",120,true],
+    ["Hip thrust",4,"8-12",90,false],
+    ["Peso muerto piernas rígidas",3,"10-12",90,false],
+    ["Curl femoral tumbado",3,"12-15",60,false],
+    ["Curl femoral sentado",3,"12-15",60,false],
+    ["Buenos días",3,"8-10",90,false],
+    ["Extensión de cadera en polea",3,"12-15",60,false],
+  ],
+  "Empuje horizontal (pecho)": [
+    ["Press banca",4,"5-8",150,true],
+    ["Press banca inclinado",4,"6-10",120,true],
+    ["Press mancuernas plano",4,"8-12",90,false],
+    ["Press mancuernas inclinado",3,"8-12",90,false],
+    ["Aperturas con mancuernas",3,"12-15",60,false],
+    ["Cruce de poleas",3,"12-15",60,false],
+    ["Fondos en paralelas",3,"8-12",90,false],
+    ["Flexiones",3,"10-15",60,false],
+  ],
+  "Empuje vertical (hombro)": [
+    ["Press militar de pie",4,"5-8",120,true],
+    ["Press militar mancuernas",4,"8-10",90,false],
+    ["Press Arnold",3,"10-12",75,false],
+    ["Elevaciones laterales",4,"12-15",45,false],
+    ["Elevaciones frontales",3,"12-15",45,false],
+    ["Pájaros / Deltoides posterior",3,"12-15",45,false],
+    ["Face pull",3,"15-20",45,false],
+  ],
+  "Tracción vertical (dorsal)": [
+    ["Dominadas",4,"6-10",120,true],
+    ["Jalón al pecho",4,"8-12",90,false],
+    ["Jalón agarre neutro",3,"10-12",75,false],
+    ["Pullover en polea",3,"12-15",60,false],
+  ],
+  "Tracción horizontal (espalda)": [
+    ["Remo con barra",4,"6-10",120,true],
+    ["Remo con mancuerna",3,"8-12",90,false],
+    ["Remo en polea baja",3,"10-12",75,false],
+    ["Remo en máquina",3,"10-12",75,false],
+    ["Remo Pendlay",4,"6-8",120,false],
+    ["Encogimientos (trapecio)",3,"12-15",60,false],
+  ],
+  "Brazos": [
+    ["Curl con barra",3,"8-12",60,false],
+    ["Curl con mancuernas",3,"10-12",60,false],
+    ["Curl martillo",3,"10-12",60,false],
+    ["Curl en predicador",3,"10-12",60,false],
+    ["Extensión de tríceps en polea",3,"12-15",60,false],
+    ["Press francés",3,"10-12",60,false],
+    ["Fondos de tríceps",3,"10-15",60,false],
+    ["Patada de tríceps",3,"12-15",45,false],
+  ],
+  "Core / Estabilidad": [
+    ["Plancha frontal",3,"30-45s",45,false],
+    ["Plancha lateral",3,"30s/lado",45,false],
+    ["Rueda abdominal",3,"8-12",60,false],
+    ["Elevación de piernas",3,"12-15",45,false],
+    ["Pallof press",3,"12/lado",45,false],
+    ["Bird-dog",3,"10/lado",45,false],
+    ["Dead bug",3,"10/lado",45,false],
+    ["Paseo del granjero",3,"30-40m",60,false],
+    ["Face-down (Y-T-W)",3,"12-15",45,false],
+  ],
+  "Cardio / Metcon": [
+    ["AMRAP 12'",1,"12 min",0,false],
+    ["EMOM 10'",1,"10 min",0,false],
+    ["Tabata (8×20/10)",1,"4 min",0,false],
+    ["Circuito metabólico",3,"40s/20s",30,false],
+    ["Remo (máquina)",1,"10-15 min",0,false],
+    ["Bicicleta / Assault bike",1,"10-15 min",0,false],
+    ["Cinta / Carrera",1,"20-30 min",0,false],
+    ["Comba",4,"60s",30,false],
+    ["Burpees",4,"12-15",45,false],
+    ["Swing con kettlebell",4,"15-20",45,false],
+  ],
+};
+
 // ── TEMPLATE EDITOR MODAL ──────────────────────────────────────────────────
 function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
   const [saving,setSaving] = React.useState(false);
   const [newEx,setNewEx] = React.useState({exercise_name:"",sets:3,reps:"8-10",protocol:"",rest_seconds:90,notes:"",is_main:false});
+  const [showLib,setShowLib] = React.useState(false);
+  const [libSearch,setLibSearch] = React.useState("");
+  const [libCat,setLibCat] = React.useState("Todos");
+  const [picks,setPicks] = React.useState([]); // ejercicios en cola para añadir
 
   const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
 
@@ -3882,6 +4103,32 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
     await sb.from("template_exercises").insert({...newEx,template_id:template.id,order_index:exercises.length});
     setNewEx({exercise_name:"",sets:3,reps:"8-10",protocol:"",rest_seconds:90,notes:"",is_main:false});
     notify("Ejercicio añadido ✓");
+  });
+
+  // ── Relleno rápido desde biblioteca ──
+  const existingNames = new Set(exercises.map(e=>String(e.exercise_name||"").toLowerCase()));
+  const cats = ["Todos", ...Object.keys(EXERCISE_LIBRARY)];
+  const libItems = Object.entries(EXERCISE_LIBRARY)
+    .filter(([cat])=>libCat==="Todos"||cat===libCat)
+    .flatMap(([cat,list])=>list.map(x=>({cat,name:x[0],sets:x[1],reps:x[2],rest:x[3],main:x[4]})))
+    .filter(x=>!libSearch||x.name.toLowerCase().includes(libSearch.toLowerCase()));
+
+  const togglePick = (item)=>setPicks(p=>{
+    const k=item.name.toLowerCase();
+    return p.some(x=>x.name.toLowerCase()===k) ? p.filter(x=>x.name.toLowerCase()!==k) : [...p,item];
+  });
+
+  const addPicks = ()=>w(async()=>{
+    if(!picks.length) return notify("Toca ejercicios para añadirlos","err");
+    const rows = picks.map((x,i)=>({
+      template_id:template.id, exercise_name:x.name,
+      sets:x.sets, reps:x.reps, rest_seconds:x.rest,
+      protocol:template.protocol||"", is_main:!!x.main, notes:"",
+      order_index:exercises.length+i,
+    }));
+    await sb.from("template_exercises").insert(rows);
+    notify(`${picks.length} ejercicio(s) añadidos ✓`);
+    setPicks([]);
   });
 
   const deleteEx = (id)=>w(async()=>{
@@ -3920,8 +4167,62 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
           </div>
         ))}
 
+        {/* ── Relleno rápido: biblioteca de ejercicios ── */}
+        <button className="btn sky" style={{width:"100%",padding:10,marginTop:10,fontSize:13,fontWeight:700}}
+          onClick={()=>setShowLib(s=>!s)}>
+          {showLib?"▲ Cerrar biblioteca":"⚡ Relleno rápido — biblioteca de ejercicios"}
+        </button>
+
+        {showLib&&(
+          <div style={{background:"#eef4fc",borderRadius:12,padding:10,marginTop:8,border:"1px solid #bcd3ee"}}>
+            <input className="inp" placeholder="🔎 Buscar ejercicio..." value={libSearch}
+              onChange={e=>setLibSearch(e.target.value)} style={{marginBottom:8}}/>
+            <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:8}}>
+              {cats.map(c=>(
+                <button key={c} onClick={()=>setLibCat(c)}
+                  style={{whiteSpace:"nowrap",fontSize:11,fontWeight:600,padding:"5px 10px",borderRadius:20,cursor:"pointer",
+                    border:libCat===c?"1px solid #0284c7":"1px solid #cfd8e6",
+                    background:libCat===c?"#0284c7":"#ffffff",color:libCat===c?"#fff":"#64748b"}}>
+                  {c==="Todos"?"Todos":c.split(" ")[0]}
+                </button>
+              ))}
+            </div>
+            <div style={{maxHeight:230,overflowY:"auto",display:"flex",flexDirection:"column",gap:5}}>
+              {libItems.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:12}}>Sin resultados</div>}
+              {libItems.map((x,i)=>{
+                const picked=picks.some(p=>p.name.toLowerCase()===x.name.toLowerCase());
+                const already=existingNames.has(x.name.toLowerCase());
+                return(
+                  <button key={i} onClick={()=>togglePick(x)}
+                    style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,textAlign:"left",cursor:"pointer",
+                      padding:"8px 10px",borderRadius:9,
+                      border:picked?"1px solid #16a34a":"1px solid #dbe2ec",
+                      background:picked?"#e2f4e8":"#ffffff"}}>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:13,fontWeight:600,color:"#0f172a",display:"flex",alignItems:"center",gap:6}}>
+                        {x.main&&<span style={{color:"#ca8a04"}}>★</span>}
+                        <span style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.name}</span>
+                        {already&&<span style={{fontSize:9,color:"#94a3b8"}}>(ya está)</span>}
+                      </div>
+                      <div style={{fontSize:10,color:"#64748b",marginTop:1}}>{x.sets}×{x.reps} · {x.rest}s desc.</div>
+                    </div>
+                    <span style={{fontSize:16,color:picked?"#16a34a":"#0284c7",fontWeight:700,flexShrink:0}}>{picked?"✓":"+"}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button className="btn grn" style={{width:"100%",padding:10,marginTop:8,fontSize:13,fontWeight:700}}
+              onClick={addPicks} disabled={saving||!picks.length}>
+              {saving?"Guardando...":`Añadir ${picks.length||""} ejercicio${picks.length===1?"":"s"} a la plantilla`}
+            </button>
+            <div style={{fontSize:10,color:"#64748b",marginTop:6,textAlign:"center"}}>
+              Se añaden con el protocolo de la plantilla ({template.protocol||"sin protocolo"}). Ajusta series/reps después.
+            </div>
+          </div>
+        )}
+
         <div style={{background:"#f1f4fa",borderRadius:10,padding:10,marginTop:10,border:"1px dashed #cbd5e1"}}>
-          <div style={{fontSize:11,color:"#0284c7",fontWeight:700,marginBottom:8}}>+ Nuevo ejercicio</div>
+          <div style={{fontSize:11,color:"#0284c7",fontWeight:700,marginBottom:8}}>+ Nuevo ejercicio (manual)</div>
           <div style={{display:"flex",flexDirection:"column",gap:8}}>
             <input className="inp" placeholder="Nombre del ejercicio" value={newEx.exercise_name} onChange={e=>setNewEx(v=>({...v,exercise_name:e.target.value}))}/>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:6}}>
