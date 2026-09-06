@@ -3359,6 +3359,33 @@ const MACRO_RECOMP = [
          estetica:[["Circuito EMOM","emom"],["Superserie antagonistas","superset"],["Cluster","cluster"]]}},
 ];
 
+// Ejercicios precargados por tipo de sesión (según el nombre base de la plantilla).
+// Formato: [nombre, series, reps, descanso(s), principal]. En ejercicios principales
+// las reps se ajustan al rango del bloque al generar; los accesorios usan estas.
+const TEMPLATE_EXERCISES = {
+  "Fullbody A":[["Sentadilla trasera",4,"6-8",150,true],["Press banca",4,"6-8",150,true],["Remo con barra",4,"8-10",120,false],["Press militar mancuernas",3,"10-12",75,false],["Curl femoral tumbado",3,"12-15",60,false],["Plancha frontal",3,"30-45s",45,false]],
+  "Fullbody B":[["Peso muerto rumano",4,"6-8",150,true],["Press militar de pie",4,"6-8",120,true],["Dominadas",4,"8-10",120,false],["Prensa de piernas",3,"10-12",90,false],["Curl con barra",3,"10-12",60,false],["Rueda abdominal",3,"8-12",60,false]],
+  "Fullbody":[["Sentadilla trasera",4,"6-8",150,true],["Press banca",4,"6-8",150,true],["Remo con barra",3,"8-10",120,false],["Elevaciones laterales",3,"12-15",45,false],["Curl femoral sentado",3,"12-15",60,false],["Plancha frontal",3,"30-45s",45,false]],
+  "Descarga Fullbody":[["Sentadilla goblet",2,"10-12",75,false],["Press mancuernas plano",2,"10-12",75,false],["Remo en máquina",2,"10-12",75,false],["Jalón al pecho",2,"10-12",75,false],["Plancha frontal",2,"30s",45,false]],
+  "Torso":[["Press banca",4,"5-8",150,true],["Remo con barra",4,"6-10",120,true],["Press militar mancuernas",3,"8-10",90,false],["Jalón al pecho",3,"10-12",75,false],["Elevaciones laterales",3,"12-15",45,false],["Curl con barra",3,"10-12",60,false],["Extensión de tríceps en polea",3,"12-15",60,false]],
+  "Piernas":[["Sentadilla trasera",4,"5-8",150,true],["Peso muerto rumano",4,"6-10",120,true],["Prensa de piernas",3,"10-12",90,false],["Zancadas",3,"10-12",75,false],["Curl femoral tumbado",3,"12-15",60,false],["Extensión de cuádriceps",3,"12-15",60,false],["Elevación de gemelos",4,"12-15",45,false]],
+  "Push":[["Press banca inclinado",4,"6-10",120,true],["Press militar mancuernas",3,"8-10",90,false],["Press mancuernas plano",3,"10-12",75,false],["Elevaciones laterales",4,"12-15",45,false],["Extensión de tríceps en polea",3,"12-15",60,false],["Fondos en paralelas",3,"8-12",90,false]],
+  "Pull":[["Dominadas",4,"6-10",120,true],["Remo con barra",3,"8-10",120,false],["Jalón agarre neutro",3,"10-12",75,false],["Remo en polea baja",3,"10-12",75,false],["Face pull",3,"15-20",45,false],["Curl con barra",3,"10-12",60,false],["Curl martillo",3,"10-12",60,false]],
+  "Legs":[["Sentadilla trasera",4,"6-10",150,true],["Peso muerto rumano",3,"8-10",120,false],["Prensa de piernas",3,"10-12",90,false],["Sentadilla búlgara",3,"8-10",90,false],["Curl femoral sentado",3,"12-15",60,false],["Extensión de cuádriceps",3,"12-15",60,false]],
+  "Cadena posterior":[["Peso muerto",4,"5-8",180,true],["Hip thrust",4,"8-12",90,false],["Peso muerto piernas rígidas",3,"10-12",90,false],["Curl femoral tumbado",3,"12-15",60,false],["Extensión de cadera en polea",3,"12-15",60,false],["Buenos días",3,"8-10",90,false]],
+  "Brazos":[["Curl con barra",4,"8-12",60,false],["Curl martillo",3,"10-12",60,false],["Curl en predicador",3,"10-12",60,false],["Press francés",4,"8-12",60,false],["Extensión de tríceps en polea",3,"12-15",60,false],["Fondos de tríceps",3,"10-15",60,false]],
+  "Cardio ligero":[["Remo (máquina)",1,"10-15 min",0,false],["Bicicleta / Assault bike",1,"10-15 min",0,false]],
+  "Cardio/Circuito":[["Circuito metabólico",3,"40s/20s",30,false],["Swing con kettlebell",4,"15-20",45,false],["Burpees",4,"12-15",45,false]],
+  "Circuito concurrente":[["EMOM 10'",1,"10 min",0,false],["Swing con kettlebell",4,"15-20",45,false],["Comba",4,"60s",30,false]],
+  "Circuito/cardio":[["AMRAP 12'",1,"12 min",0,false],["Burpees",4,"12-15",45,false],["Comba",4,"60s",30,false]],
+  "Circuito EMOM":[["EMOM 10'",1,"10 min",0,false],["Swing con kettlebell",4,"15-20",45,false],["Burpees",4,"12-15",45,false]],
+  "Circuito AMRAP":[["AMRAP 12'",1,"12 min",0,false],["Comba",4,"60s",30,false],["Swing con kettlebell",4,"15-20",45,false]],
+  "HIIT/Tabata":[["Tabata (8×20/10)",1,"4 min",0,false],["Burpees",4,"12-15",45,false],["Comba",4,"60s",30,false]],
+  "Test AMRAP básicos":[["Sentadilla trasera",1,"AMRAP 3-8",180,true],["Press banca",1,"AMRAP 3-8",180,true],["Peso muerto",1,"AMRAP 3-8",180,true],["Dominadas",1,"AMRAP 3-8",180,true]],
+  "Superserie antagonistas":[["Press banca inclinado",4,"8-10",90,false],["Remo con mancuerna",4,"8-10",90,false],["Curl con barra",3,"10-12",60,false],["Extensión de tríceps en polea",3,"10-12",60,false],["Elevaciones laterales",3,"12-15",45,false],["Face pull",3,"15-20",45,false]],
+  "Cluster":[["Sentadilla trasera",5,"3 (cluster)",180,true],["Press banca",5,"3 (cluster)",180,true],["Peso muerto rumano",4,"3 (cluster)",150,true]],
+};
+
 function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
   const [tab,setTab] = React.useState("macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
@@ -3390,13 +3417,59 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
           blk=data;
         }
         const existing=sessionTemplates.filter(t=>t.block_id===blk.id).map(t=>t.name);
-        const rows=(b.tpls[goal]||[]).map(t=>[`${t[0]} · ${tag}`,t[1]])
-          .filter(t=>!existing.includes(t[0]))
-          .map((t,i)=>({name:t[0],protocol:t[1],block_id:blk.id,order_index:i}));
-        if(rows.length){ const {error:te}=await sb.from("session_templates").insert(rows); if(te){ notify("Error en plantillas: "+te.message,"err"); setGenMacro(false); return; } }
+        const wanted=(b.tpls[goal]||[])
+          .map(t=>({base:t[0], name:`${t[0]} · ${tag}`, protocol:t[1]}))
+          .filter(t=>!existing.includes(t.name));
+        if(wanted.length){
+          const {data:tpls,error:te}=await sb.from("session_templates")
+            .insert(wanted.map((t,i)=>({name:t.name,protocol:t.protocol,block_id:blk.id,order_index:i})))
+            .select();
+          if(te){ notify("Error en plantillas: "+te.message,"err"); setGenMacro(false); return; }
+          // Precargar ejercicios base según el tipo de sesión.
+          const exRows=[];
+          (tpls||[]).forEach(tp=>{
+            const base=(wanted.find(w=>w.name===tp.name)||{}).base;
+            const lib=TEMPLATE_EXERCISES[base];
+            if(lib) lib.forEach((e,i)=>exRows.push({
+              template_id:tp.id, exercise_name:e[0], sets:e[1],
+              reps:(e[4]&&b.rep!=="var")?b.rep:e[2],
+              rest_seconds:e[3], protocol:tp.protocol||"", is_main:!!e[4], notes:"", order_index:i,
+            }));
+          });
+          if(exRows.length){ const {error:ee}=await sb.from("template_exercises").insert(exRows); if(ee){ notify("Error en ejercicios: "+ee.message,"err"); setGenMacro(false); return; } }
+        }
       }
       await loadAll(); notify(`Macrociclo · ${GOAL_LABEL[goal]} generado ✓`);
     }catch(e){ notify("Error al generar el macrociclo","err"); }
+    setGenMacro(false);
+  };
+
+  // Rellena con ejercicios base las plantillas que YA existan pero estén vacías
+  // (p.ej. generadas antes de precargar ejercicios). No toca las que ya tienen.
+  const rellenarVacias = async()=>{
+    const base = n => String(n||"").replace(/ · (Salud|Masa)$/,"");
+    const vacias = sessionTemplates.filter(t=>
+      TEMPLATE_EXERCISES[base(t.name)] &&
+      !templateExercises.some(te=>te.template_id===t.id)
+    );
+    if(!vacias.length) return notify("No hay plantillas vacías que rellenar ✓");
+    if(!window.confirm(`Se rellenarán ${vacias.length} plantilla(s) vacía(s) con sus ejercicios base. Las que ya tienen ejercicios no se tocan. ¿Continuar?`)) return;
+    setGenMacro(true);
+    try{
+      const exRows=[];
+      vacias.forEach(t=>{
+        const blk=annualBlocks.find(b=>b.id===t.block_id);
+        const rep=blk?blk.rep_range:"var";
+        (TEMPLATE_EXERCISES[base(t.name)]||[]).forEach((e,i)=>exRows.push({
+          template_id:t.id, exercise_name:e[0], sets:e[1],
+          reps:(e[4]&&rep&&rep!=="var")?rep:e[2],
+          rest_seconds:e[3], protocol:t.protocol||"", is_main:!!e[4], notes:"", order_index:i,
+        }));
+      });
+      const {error}=await sb.from("template_exercises").insert(exRows);
+      if(error){ notify("Error al rellenar: "+error.message,"err"); setGenMacro(false); return; }
+      await loadAll(); notify(`${vacias.length} plantilla(s) rellenadas ✓`);
+    }catch(e){ notify("Error al rellenar plantillas","err"); }
     setGenMacro(false);
   };
 
@@ -3538,6 +3611,16 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
               <button className="btn sky" style={{fontSize:11,padding:"7px 11px"}} disabled={genMacro} onClick={()=>generarMacro("estetica")}>{genMacro?"…":"💪 Estética/Masa"}</button>
             </div>
           </div>
+          {(()=>{
+            const b=n=>String(n||"").replace(/ · (Salud|Masa)$/,"");
+            const nVacias=sessionTemplates.filter(t=>TEMPLATE_EXERCISES[b(t.name)]&&!templateExercises.some(te=>te.template_id===t.id)).length;
+            return nVacias>0?(
+              <button className="btn ghost" style={{width:"100%",padding:9,marginBottom:12,fontSize:12,fontWeight:700,border:"1px dashed #cbd5e1"}}
+                disabled={genMacro} onClick={rellenarVacias}>
+                {genMacro?"Rellenando…":`⚡ Rellenar ${nVacias} plantilla(s) vacía(s) con ejercicios`}
+              </button>
+            ):null;
+          })()}
           {annualBlocks.length===0&&(
             <div className="card" style={{marginBottom:14,textAlign:"center",padding:20}}>
               <div style={{fontSize:30,marginBottom:8}}>🗓️</div>
