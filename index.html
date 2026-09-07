@@ -497,7 +497,6 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(c.sessions_left<=2&&c.sessions_left>0) reminders.push({c,type:"sessions",urgent:c.sessions_left<=1});
     if(c.sessions_left===0) reminders.push({c,type:"expired",urgent:true});
   });
-  const requests = sessions.filter(s=>s.requested);
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
   // Lista de espera con hueco libre (para avisar al cliente).
   const freedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
@@ -506,7 +505,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     const c=clients.find(cl=>cl.id===x.client_id);
     return {wl:x,c,free:!blk&&taken<capOf(x.time)};
   }).filter(o=>o.c&&o.free);
-  const alertCount = reminders.filter(r=>r.urgent).length+requests.length+freedWaitlist.length;
+  const alertCount = reminders.filter(r=>r.urgent).length+freedWaitlist.length;
 
   // Income stats
   const thisMonth = new Date().toISOString().slice(0,7);
@@ -557,16 +556,6 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
 
   const deleteSession = (id) => w(async()=>{ await sb.from("sessions").delete().eq("id",id); notify("Sesión eliminada"); });
-
-  // Aprobar una solicitud avisa si la clase ya está completa (permite forzar).
-  const approveRequest = (id) => {
-    const req=sessions.find(s=>s.id===id); if(!req) return;
-    const confirmadas=sessions.filter(s=>s.date===req.date&&s.time===req.time&&!s.requested).length;
-    const cap=capOf(req.time);
-    if(confirmadas>=cap && !window.confirm(`⚠️ La clase de las ${req.time} ya está completa (${confirmadas}/${cap}).\n¿Aprobar de todos modos?`)) return;
-    w(async()=>{ await sb.from("sessions").update({requested:false,status:"confirmed"}).eq("id",id); notify("Solicitud aprobada ✓"); });
-  };
-  const denyRequest = (id) => w(async()=>{ await sb.from("sessions").delete().eq("id",id); notify("Solicitud rechazada"); });
 
   // Mover una sesión a otro día/hora (reprogramar).
   const rescheduleSession = (sess,date,time) => w(async()=>{
@@ -715,24 +704,21 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 }
               </div>
               <div className="card">
-                <h3 style={{fontSize:13,fontWeight:700,marginBottom:14}}>Solicitudes pendientes</h3>
-                {requests.length===0?<p style={{fontSize:12,color:"#cbd5e1"}}>Sin solicitudes ✓</p>
-                  :requests.map(r=>{
-                    const c=clients.find(x=>x.id===r.client_id); if(!c) return null;
-                    return(
-                      <div key={r.id} style={{background:"#eaf1fb",borderRadius:10,padding:10,marginBottom:8,border:"1px solid #bcd3ee"}}>
-                        <div style={{display:"flex",gap:10,alignItems:"center",marginBottom:8}}>
+                <h3 style={{fontSize:13,fontWeight:700,marginBottom:14}}>Próximas reservas</h3>
+                {(()=>{
+                  const upcoming=sessions.filter(s=>s.date>TODAY&&!s.requested).sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).slice(0,8);
+                  return upcoming.length===0?<p style={{fontSize:12,color:"#cbd5e1"}}>Sin reservas próximas</p>
+                    :upcoming.map(s=>{
+                      const c=clients.find(x=>x.id===s.client_id); if(!c) return null;
+                      return(
+                        <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 0",borderBottom:"1px solid #e6ebf3"}}>
                           <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
-                          <div><div style={{fontSize:12,fontWeight:700}}>{c.name}</div><div style={{fontSize:11,color:"#64748b"}}>{r.type} · {fmtDate(r.date)} {r.time}</div></div>
+                          <div style={{flex:1,minWidth:0}}><div style={{fontSize:12,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div><div style={{fontSize:11,color:"#64748b"}}>{fmtDate(s.date)}</div></div>
+                          <div className="mono" style={{fontSize:13,fontWeight:600,color:"#0284c7"}}>{s.time}</div>
                         </div>
-                        <div style={{display:"flex",gap:6}}>
-                          <button className="btn grn" style={{flex:1,fontSize:11,padding:"6px 8px"}} onClick={()=>approveRequest(r.id)}>✓ Aprobar</button>
-                          <button className="btn danger" style={{flex:1,fontSize:11,padding:"6px 8px"}} onClick={()=>denyRequest(r.id)}>✕ Rechazar</button>
-                        </div>
-                      </div>
-                    );
-                  })
-                }
+                      );
+                    });
+                })()}
               </div>
             </div>
           </div>
@@ -893,15 +879,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                             <div key={s.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"7px 0",borderBottom:"1px solid #f1f4fa"}}>
                               <div>
                                 <div style={{fontSize:12}}>{fmtDate(s.date)} · {s.time}</div>
-                                <div style={{fontSize:11,color:"#64748b"}}>{s.type}{s.requested&&<span style={{color:"#ea580c",marginLeft:6,fontWeight:700}}>· solicitud</span>}</div>
+                                <div style={{fontSize:11,color:"#64748b"}}>{s.type}</div>
                               </div>
                               <div style={{display:"flex",gap:5}}>
-                                {s.requested
-                                  ?<><button className="btn grn" style={{fontSize:10,padding:"4px 7px"}} onClick={()=>approveRequest(s.id)}>✓</button>
-                                    <button className="btn danger" style={{padding:"4px 7px"}} onClick={()=>denyRequest(s.id)}>✕</button></>
-                                  :<><button className="btn sky" style={{fontSize:10,padding:"4px 7px"}} onClick={()=>completeSession(s)}>✓ Hecha</button>
-                                    <button className="btn danger" style={{padding:"4px 7px"}} onClick={()=>deleteSession(s.id)}>✕</button></>
-                                }
+                                <button className="btn sky" style={{fontSize:10,padding:"4px 7px"}} onClick={()=>completeSession(s)}>✓ Hecha</button>
+                                <button className="btn danger" style={{padding:"4px 7px"}} onClick={()=>deleteSession(s.id)}>✕</button>
                               </div>
                             </div>
                           ))
@@ -1297,27 +1279,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 ))}
               </div>
             )}
-            {requests.length>0&&(
-              <div style={{marginBottom:20}}>
-                <div style={{fontSize:11,color:"#ea580c",fontWeight:700,letterSpacing:1,marginBottom:10}}>SOLICITUDES</div>
-                {requests.map(r=>{
-                  const c=clients.find(x=>x.id===r.client_id); if(!c) return null;
-                  return(
-                    <div key={r.id} className="card" style={{marginBottom:8,border:"1px solid #eed7bd"}}>
-                      <div style={{display:"flex",alignItems:"center",gap:12}}>
-                        <div className="ring" style={{width:40,height:40,background:c.color+"18",color:c.color,fontSize:12}}>{ini(c.name)}</div>
-                        <div style={{flex:1}}><div style={{fontWeight:700}}>{c.name}</div><div style={{fontSize:12,color:"#ea580c"}}>📅 {r.type} · {fmtDate(r.date)} a las {r.time}</div></div>
-                        <div style={{display:"flex",gap:6}}>
-                          <button className="btn grn" style={{fontSize:11,padding:"7px 11px"}} onClick={()=>approveRequest(r.id)}>✓</button>
-                          <button className="btn danger" onClick={()=>denyRequest(r.id)}>✕</button>
-                        </div>
-                      </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-            {reminders.length===0&&requests.length===0
+            {reminders.length===0
               ?<div className="card" style={{textAlign:"center",padding:48}}><div style={{fontSize:32,marginBottom:10}}>✓</div><div style={{color:"#16a34a",fontWeight:700}}>Todo al día</div></div>
               :reminders.map((r,i)=>(
                 <div key={i} className="card" style={{marginBottom:10,border:`1px solid ${r.urgent?"#f2cccc":"#e2f2e2"}`,background:r.urgent?"#fbecec":"#f1f4fa"}}>
@@ -2329,99 +2291,130 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
 // ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
 function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist, config, loadAll, notify, saving, setSaving}) {
-  const [date,setDate] = React.useState(TODAY);
-  const [type,setType] = React.useState("Fuerza");
-  const [picked,setPicked] = React.useState([]); // horas seleccionadas para esa fecha
+  const [view,setView] = React.useState("day"); // día | semana | mes
+  const [date,setDate] = React.useState(TODAY); // día ancla (también base de semana/mes)
+  const [picked,setPicked] = React.useState([]); // claves "YYYY-MM-DD|HH:MM" (multi-día)
 
   // Franjas y capacidad definidas por el coach.
   const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
   const capOf=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
-  const dayBlocked=isWeekend(date)||blocked.some(b=>b.date===date&&b.time==="ALL");
-  const slotBlocked=(t)=>dayBlocked||blocked.some(b=>b.date===date&&b.time===t);
-  const takenAt=(t)=>allSessions.filter(s=>s.date===date&&s.time===t).length; // reservadas (pendientes + confirmadas)
-  const freeAt=(t)=>Math.max(0,capOf(t)-takenAt(t));
+  const blockedDay=(d)=>isWeekend(d)||blocked.some(b=>b.date===d&&b.time==="ALL");
+  const slotBlocked=(d,t)=>blockedDay(d)||blocked.some(b=>b.date===d&&b.time===t);
+  const takenAt=(d,t)=>allSessions.filter(s=>s.date===d&&s.time===t).length; // reservadas
+  const freeAt=(d,t)=>Math.max(0,capOf(t)-takenAt(d,t));
   const nowHM=new Date().toTimeString().slice(0,5);
-  const isPast=(t)=>date<TODAY||(date===TODAY&&t<=nowHM);
-  const available=(t)=>!slotBlocked(t)&&freeAt(t)>0&&!isPast(t);
+  const isPast=(d,t)=>d<TODAY||(d===TODAY&&t<=nowHM);
+  const available=(d,t)=>!slotBlocked(d,t)&&freeAt(d,t)>0&&!isPast(d,t);
+  const key=(d,t)=>d+"|"+t;
+  const isPicked=(d,t)=>picked.includes(key(d,t));
 
   // Lista de espera para huecos completos.
-  const myWait=(t)=>waitlist.find(w=>w.client_id===client.id&&w.date===date&&w.time===t);
-  const joinWaitlist=async(t)=>{
-    if(myWait(t)) return;
-    const {error}=await sb.from("waitlist").insert({client_id:client.id,date,time:t});
+  const myWait=(d,t)=>waitlist.find(w=>w.client_id===client.id&&w.date===d&&w.time===t);
+  const joinWaitlist=async(d,t)=>{
+    if(myWait(d,t)) return;
+    const {error}=await sb.from("waitlist").insert({client_id:client.id,date:d,time:t});
     if(error) return notify("Necesitas crear la tabla waitlist (ver docs)","err");
     await loadAll(); notify("En lista de espera ⏳ Te avisaremos si se libera");
   };
-  const leaveWaitlist=async(t)=>{
-    const w=myWait(t); if(!w) return;
+  const leaveWaitlist=async(d,t)=>{
+    const w=myWait(d,t); if(!w) return;
     await sb.from("waitlist").delete().eq("id",w.id);
     await loadAll(); notify("Fuera de la lista de espera");
   };
 
-  // Al cambiar de fecha, limpiamos la selección (los huecos cambian).
-  const changeDate=(d)=>{ setDate(d); setPicked([]); };
-  const toggle=(t)=>{
-    if(!picked.includes(t)&&!available(t)) return;
-    if(!picked.includes(t)&&picked.length>=client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones`,"err");
-    setPicked(p=>p.includes(t)?p.filter(x=>x!==t):[...p,t]);
+  const toggle=(d,t)=>{
+    const k=key(d,t);
+    if(!picked.includes(k)&&!available(d,t)) return;
+    if(!picked.includes(k)&&picked.length>=client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones en tu bono`,"err");
+    setPicked(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k]);
   };
 
   const submit=async()=>{
     if(client.sessions_left===0) return notify("Sin sesiones. Contacta a tu trainer.","err");
     if(picked.length===0) return notify("Elige al menos una hora libre","err");
-    // Revalida por si alguna se llenó justo antes de enviar.
-    const lleno=picked.find(t=>freeAt(t)<=0||slotBlocked(t)||isPast(t));
-    if(lleno) return notify(`La ${lleno} ya no está disponible`,"err");
+    const bad=picked.map(k=>k.split("|")).find(([d,t])=>freeAt(d,t)<=0||slotBlocked(d,t)||isPast(d,t));
+    if(bad) return notify(`La clase ${bad[1]} del ${fmtDate(bad[0])} ya no está disponible`,"err");
     setSaving(true);
-    const inserts=picked.map(t=>({client_id:client.id,date,time:t,type,status:"confirmed",requested:false}));
+    const inserts=picked.map(k=>{const[d,t]=k.split("|");return{client_id:client.id,date:d,time:t,type:"Sesión",status:"confirmed",requested:false};});
     const {error}=await sb.from("sessions").insert(inserts);
     if(error){ notify("Error al reservar","err"); setSaving(false); return; }
     await loadAll(); setSaving(false); setPicked([]);
     notify(`✅ ${inserts.length} clase${inserts.length>1?"s":""} reservada${inserts.length>1?"s":""}! Nos vemos 💪`);
   };
 
+  // Navegación
+  const shiftDay=(n)=>{const x=new Date(date+"T12:00:00");x.setDate(x.getDate()+n);setDate(x.toISOString().split("T")[0]);};
+  const shiftMonth=(n)=>{const x=new Date(date+"T12:00:00");x.setDate(1);x.setMonth(x.getMonth()+n);setDate(x.toISOString().split("T")[0]);};
+  const mondayOf=(d)=>{const x=new Date(d+"T12:00:00");const g=x.getDay();x.setDate(x.getDate()+(g===0?-6:1-g));return x.toISOString().split("T")[0];};
+  const wkStart=mondayOf(date);
+  const weekDays=Array.from({length:5},(_,i)=>{const x=new Date(wkStart+"T12:00:00");x.setDate(x.getDate()+i);return x.toISOString().split("T")[0];});
+  const mDate=new Date(date+"T12:00:00"); const mY=mDate.getFullYear(), mM=mDate.getMonth();
+  const monthCells=getMonthDays(mY,mM).map(c=>({...c,date:c.cur?`${mY}-${String(mM+1).padStart(2,"0")}-${String(c.day).padStart(2,"0")}`:null}));
+
   return(
     <div className="card">
-      <div style={{background:"#eaf1fb",borderRadius:10,padding:"11px 13px",border:"1px solid #bcd3ee",fontSize:13,color:"#64748b",marginBottom:16}}>
-        💡 Elige un día y toca las horas libres que quieras reservar.
-        <div style={{marginTop:4,fontSize:12,color:"#94a3b8"}}>Sesiones en tu bono: <span style={{color:"#0284c7",fontWeight:700}}>{client.sessions_left}</span></div>
+      <div style={{background:"#eaf1fb",borderRadius:10,padding:"11px 13px",border:"1px solid #bcd3ee",fontSize:13,color:"#64748b",marginBottom:14}}>
+        💡 Planea tus clases: cambia entre <b>día</b>, <b>semana</b> y <b>mes</b>, y toca las horas libres para reservarlas al instante.
+        <div style={{marginTop:4,fontSize:12,color:"#94a3b8"}}>Clases en tu bono: <span style={{color:"#0284c7",fontWeight:700}}>{client.sessions_left}</span></div>
       </div>
 
-      <div style={{marginBottom:14}}><span className="lbl">DÍA</span>
-        <input type="date" className="inp" value={date} min={TODAY} onChange={e=>changeDate(e.target.value)}/>
-      </div>
-      <div style={{marginBottom:16}}><span className="lbl">TIPO DE SESIÓN</span>
-        <select className="inp" style={{appearance:"none"}} value={type} onChange={e=>setType(e.target.value)}>
-          {SESSION_TYPES.map(t=><option key={t} value={t}>{t}</option>)}
-        </select>
+      {/* Elegidas (multi-día) */}
+      {picked.length>0&&(
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
+            <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>ELEGIDAS ({picked.length})</span>
+            <button onClick={()=>setPicked([])} style={{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",fontWeight:700}}>Vaciar</button>
+          </div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {picked.slice().sort().map(k=>{const[d,t]=k.split("|");return(
+              <span key={k} onClick={()=>setPicked(p=>p.filter(x=>x!==k))} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#dff3e6",border:"1px solid #16a34a",color:"#16a34a",borderRadius:20,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
+                {fmtDate(d)} · {t} ✕
+              </span>
+            );})}
+          </div>
+        </div>
+      )}
+
+      {/* Conmutador de vista */}
+      <div style={{display:"flex",gap:6,marginBottom:12,background:"#eaf1fb",borderRadius:12,padding:4}}>
+        {[["day","Día"],["week","Semana"],["month","Mes"]].map(([id,label])=>(
+          <button key={id} onClick={()=>setView(id)} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",
+            background:view===id?"#fff":"transparent",color:view===id?"#0284c7":"#94a3b8",boxShadow:view===id?"0 1px 3px rgba(15,23,42,.08)":"none"}}>{label}</button>
+        ))}
       </div>
 
-      <span className="lbl">HORAS DEL DÍA</span>
-      {dayBlocked
+      {/* Navegación */}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+        <button className="btn ghost" style={{padding:"6px 13px",fontSize:16}} onClick={()=>view==="month"?shiftMonth(-1):view==="week"?shiftDay(-7):shiftDay(-1)}>‹</button>
+        <div style={{fontSize:13,fontWeight:700,textAlign:"center",textTransform:"capitalize"}}>
+          {view==="month"?fmtMonth(date):view==="week"?`${fmtDate(weekDays[0])} – ${fmtDate(weekDays[4])}`:fmtLong(date)}
+        </div>
+        <button className="btn ghost" style={{padding:"6px 13px",fontSize:16}} onClick={()=>view==="month"?shiftMonth(1):view==="week"?shiftDay(7):shiftDay(1)}>›</button>
+      </div>
+
+      {/* ── VISTA DÍA ── */}
+      {view==="day"&&(blockedDay(date)
         ?<div style={{background:isWeekend(date)?"#edf7ed":"#fbecec",border:`1px solid ${isWeekend(date)?"#c9e6d1":"#f2cccc"}`,borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:isWeekend(date)?"#16a34a":"#dc2626"}}>{isWeekend(date)?"🌴 Fin de semana — sin clases":"🚫 Día no disponible"}</div>
         :workSlots.length===0
           ?<div style={{fontSize:12,color:"#94a3b8"}}>No hay horario configurado.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {workSlots.map(t=>{
-              const sel=picked.includes(t), free=freeAt(t), ok=available(t), cap=capOf(t);
+              const sel=isPicked(date,t), free=freeAt(date,t), ok=available(date,t), cap=capOf(t);
               const enrolled=allSessions.filter(s=>s.date===date&&s.time===t)
                 .map(s=>({...s,c:allClients.find(x=>x.id===s.client_id)})).filter(s=>s.c);
-              const estado=isPast(t)?"Pasada":slotBlocked(t)?"🚫 Bloqueada":free<=0?"Completa":`${free} libre${free>1?"s":""}`;
-              const estCol=sel?"#16a34a":(free<=0||slotBlocked(t)||isPast(t))?"#dc2626":"#16a34a";
+              const estado=isPast(date,t)?"Pasada":slotBlocked(date,t)?"🚫 Bloqueada":free<=0?"Completa":`${free} libre${free>1?"s":""}`;
+              const estCol=sel?"#16a34a":(free<=0||slotBlocked(date,t)||isPast(date,t))?"#dc2626":"#16a34a";
               return(
-                <div key={t} onClick={()=>toggle(t)}
+                <div key={t} onClick={()=>toggle(date,t)}
                   style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,cursor:ok||sel?"pointer":"default",
-                    background:sel?"#dff3e6":ok?"#edf7ed":"#f1f4fa",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#e6ebf3"}`,opacity:(slotBlocked(t)||isPast(t))?0.55:1}}>
-                  {/* Hora */}
+                    background:sel?"#dff3e6":ok?"#edf7ed":"#f1f4fa",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#e6ebf3"}`,opacity:(slotBlocked(date,t)||isPast(date,t))?0.55:1}}>
                   <div style={{flexShrink:0,textAlign:"center",minWidth:44}}>
                     <div className="mono" style={{fontSize:15,fontWeight:700,color:sel?"#16a34a":ok?"#0f172a":"#64748b"}}>{t}</div>
                     <div style={{fontSize:9,fontWeight:700,marginTop:1,color:estCol}}>{sel?"✓ elegida":estado}</div>
                   </div>
-                  {/* Personas apuntadas + huecos libres */}
                   <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
                     {enrolled.map(s=>{
                       const yo=s.c.id===client.id;
-                      // Privacidad: solo el cliente ve su propia reserva; los demás son plazas ocupadas anónimas.
                       return yo
                         ?<div key={s.id} style={{display:"flex",alignItems:"center",gap:6,background:s.c.color+"18",border:`1px solid ${s.c.color}40`,borderRadius:20,padding:"3px 9px 3px 3px"}}>
                           {s.c.avatar_url
@@ -2431,27 +2424,95 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
                         </div>
                         :<div key={s.id} title="Plaza ocupada" style={{width:26,height:26,borderRadius:"50%",background:"#cbd5e1",border:"1.5px solid #cbd5e1",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:700}}>•</div>;
                     })}
-                    {/* Huecos libres como plazas vacías */}
-                    {!slotBlocked(t)&&!isPast(t)&&Array.from({length:free}).map((_,k)=>(
+                    {!slotBlocked(date,t)&&!isPast(date,t)&&Array.from({length:free}).map((_,k)=>(
                       <div key={"f"+k} style={{width:26,height:26,borderRadius:"50%",border:"1.5px dashed #c9e6d1",display:"flex",alignItems:"center",justifyContent:"center",color:"#c9e6d1",fontSize:13}}>+</div>
                     ))}
-                    {enrolled.length===0&&slotBlocked(t)&&<span style={{fontSize:11,color:"#b56b6b"}}>No disponible</span>}
+                    {enrolled.length===0&&slotBlocked(date,t)&&<span style={{fontSize:11,color:"#b56b6b"}}>No disponible</span>}
                   </div>
                   <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
                     <span className="mono" style={{fontSize:10,fontWeight:700,color:"#94a3b8"}}>{enrolled.length}/{cap}</span>
-                    {free<=0&&!slotBlocked(t)&&!isPast(t)&&(myWait(t)
-                      ?<button onClick={e=>{e.stopPropagation();leaveWaitlist(t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ En espera ✓</button>
-                      :<button onClick={e=>{e.stopPropagation();joinWaitlist(t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ Espera</button>
+                    {free<=0&&!slotBlocked(date,t)&&!isPast(date,t)&&(myWait(date,t)
+                      ?<button onClick={e=>{e.stopPropagation();leaveWaitlist(date,t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ En espera ✓</button>
+                      :<button onClick={e=>{e.stopPropagation();joinWaitlist(date,t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ Espera</button>
                     )}
                   </div>
                 </div>
               );
             })}
           </div>
-      }
+      )}
+
+      {/* ── VISTA SEMANA ── */}
+      {view==="week"&&(workSlots.length===0
+        ?<div style={{fontSize:12,color:"#94a3b8"}}>No hay horario configurado.</div>
+        :<div>
+          <div style={{overflowX:"auto"}}>
+            <div style={{minWidth:330}}>
+              <div style={{display:"grid",gridTemplateColumns:"40px repeat(5,1fr)",gap:4,marginBottom:4}}>
+                <div/>
+                {weekDays.map(d=>(
+                  <div key={d} style={{textAlign:"center"}}>
+                    <div style={{fontSize:10,fontWeight:700,color:d===TODAY?"#0284c7":"#94a3b8",textTransform:"capitalize"}}>{new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"})}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:d===TODAY?"#0284c7":"#0f172a"}}>{new Date(d+"T12:00:00").getDate()}</div>
+                  </div>
+                ))}
+              </div>
+              {workSlots.map(t=>(
+                <div key={t} style={{display:"grid",gridTemplateColumns:"40px repeat(5,1fr)",gap:4,marginBottom:4}}>
+                  <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",display:"flex",alignItems:"center"}}>{t}</div>
+                  {weekDays.map(d=>{
+                    const pk=isPicked(d,t), ok=available(d,t), free=freeAt(d,t);
+                    const full=!ok&&!slotBlocked(d,t)&&!isPast(d,t)&&free<=0;
+                    const bg=pk?"#16a34a":ok?"#edf7ed":full?"#fbecec":"#f1f4fa";
+                    const col=pk?"#fff":ok?"#16a34a":full?"#dc2626":"#cbd5e1";
+                    const bd=pk?"#16a34a":ok?"#c9e6d1":full?"#f2cccc":"#e6ebf3";
+                    return(
+                      <div key={d} onClick={()=>toggle(d,t)} style={{minHeight:36,borderRadius:8,background:bg,border:`1px solid ${bd}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:(ok||pk)?"pointer":"default",fontSize:13,fontWeight:700,color:col}}>
+                        {pk?"✓":slotBlocked(d,t)?"":isPast(d,t)?"·":full?"0":free}
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          </div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:8,lineHeight:1.5}}>Nº = plazas libres · <b style={{color:"#16a34a"}}>✓</b> elegida · <b style={{color:"#dc2626"}}>0</b> completa. Toca para reservar.</div>
+        </div>
+      )}
+
+      {/* ── VISTA MES ── */}
+      {view==="month"&&(
+        <div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:6}}>
+            {["L","M","X","J","V","S","D"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#94a3b8"}}>{d}</div>)}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
+            {monthCells.map((c,i)=>{
+              if(!c.cur) return <div key={i}/>;
+              const ds=c.date, we=isWeekend(ds), past=ds<TODAY;
+              const totalFree=(we||past)?0:workSlots.reduce((a,t)=>a+(available(ds,t)?freeAt(ds,t):0),0);
+              const mine=allSessions.some(s=>s.client_id===client.id&&s.date===ds)||picked.some(k=>k.startsWith(ds+"|"));
+              const clickable=!we&&!past;
+              return(
+                <div key={i} onClick={()=>{if(clickable){setDate(ds);setView("day");}}}
+                  style={{minHeight:52,borderRadius:8,padding:3,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,cursor:clickable?"pointer":"default",
+                    background:ds===TODAY?"#eaf1fb":we?"#f1f4fa":"#fff",border:`1px solid ${mine?"#16a34a":ds===TODAY?"#bcd3ee":"#e6ebf3"}`,opacity:past?0.4:1}}>
+                  <div style={{fontSize:12,fontWeight:700,color:ds===TODAY?"#0284c7":"#0f172a"}}>{c.day}</div>
+                  {we?<div style={{fontSize:10}}>🌴</div>
+                    :past?null
+                    :totalFree>0?<div style={{fontSize:8,fontWeight:700,color:"#16a34a"}}>{totalFree} lib</div>
+                    :<div style={{fontSize:8,fontWeight:700,color:"#dc2626"}}>lleno</div>}
+                  {mine&&<div style={{width:5,height:5,borderRadius:"50%",background:"#16a34a"}}/>}
+                </div>
+              );
+            })}
+          </div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Toca un día para ver sus horas y reservar. <b style={{color:"#16a34a"}}>●</b> = ya tienes clase ese día.</div>
+        </div>
+      )}
 
       <button className="btn sky" style={{width:"100%",padding:12,fontSize:13,marginTop:16,opacity:picked.length?1:0.5}} onClick={submit} disabled={saving||picked.length===0}>
-        {saving?"Reservando...":picked.length?`Reservar ${picked.length} clase${picked.length>1?"s":""} 🚀`:"Elige una hora libre"}
+        {saving?"Reservando...":picked.length?`Reservar ${picked.length} clase${picked.length>1?"s":""} 🚀`:"Elige horas libres"}
       </button>
     </div>
   );
