@@ -545,12 +545,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     notify("Sesión agendada ✓");
   });
 
+  // Marcar asistencia: la sesión se queda en la agenda (status "completed") para
+  // verla, se registra en el historial y se descuenta 1 del bono (una sola vez).
   const completeSession = (sess) => w(async()=>{
-    await sb.from("sessions").delete().eq("id",sess.id);
+    if(sess.status==="completed") return;
+    await sb.from("sessions").update({status:"completed"}).eq("id",sess.id);
     await sb.from("history").insert({client_id:sess.client_id,date:sess.date,time:sess.time,type:sess.type});
     const client=clients.find(c=>c.id===sess.client_id);
     if(client) await sb.from("clients").update({sessions_left:Math.max(0,client.sessions_left-1)}).eq("id",client.id);
-    notify("Sesión completada ✓");
+    notify("✓ Vino · sesión contada");
+  });
+  // Deshacer la asistencia: devuelve el bono y quita el registro del historial.
+  const uncompleteSession = (sess) => w(async()=>{
+    if(sess.status!=="completed") return;
+    await sb.from("sessions").update({status:"confirmed"}).eq("id",sess.id);
+    await sb.from("history").delete().eq("client_id",sess.client_id).eq("date",sess.date).eq("time",sess.time);
+    const client=clients.find(c=>c.id===sess.client_id);
+    if(client) await sb.from("clients").update({sessions_left:client.sessions_left+1}).eq("id",client.id);
+    notify("Asistencia deshecha");
   });
 
   // Cuenta una sesión suelta (cliente que entrena sin cita previa): la registra
@@ -703,7 +715,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         <div style={{flex:1}}><div style={{fontSize:13,fontWeight:600}}>{c.name}</div><div style={{fontSize:11,color:"#64748b"}}>{s.type}</div></div>
                         <div style={{textAlign:"right"}}>
                           <div className="mono" style={{fontSize:13,fontWeight:600,color:"#0284c7"}}>{s.time}</div>
-                          <button className="btn grn" style={{fontSize:10,padding:"3px 7px",marginTop:3}} onClick={()=>completeSession(s)}>✓ Hecha</button>
+                          {s.status==="completed"
+                            ?<div style={{fontSize:11,color:"#16a34a",fontWeight:700,marginTop:3}}>✅ Vino</div>
+                            :<button className="btn grn" style={{fontSize:10,padding:"3px 7px",marginTop:3}} onClick={()=>completeSession(s)}>✓ Hecha</button>}
                         </div>
                       </div>
                     );
@@ -713,7 +727,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               <div className="card">
                 <h3 style={{fontSize:13,fontWeight:700,marginBottom:14}}>Próximas reservas</h3>
                 {(()=>{
-                  const upcoming=sessions.filter(s=>s.date>TODAY&&!s.requested).sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).slice(0,8);
+                  const upcoming=sessions.filter(s=>s.date>TODAY&&!s.requested&&s.status!=="completed").sort((a,b)=>a.date.localeCompare(b.date)||a.time.localeCompare(b.time)).slice(0,8);
                   return upcoming.length===0?<p style={{fontSize:12,color:"#cbd5e1"}}>Sin reservas próximas</p>
                     :upcoming.map(s=>{
                       const c=clients.find(x=>x.id===s.client_id); if(!c) return null;
@@ -740,7 +754,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(300px,1fr))",gap:12}}>
               {clients.map(c=>{
-                const nextSess=sessions.filter(s=>s.client_id===c.id&&!s.requested&&s.date>=TODAY)
+                const nextSess=sessions.filter(s=>s.client_id===c.id&&!s.requested&&s.status!=="completed"&&s.date>=TODAY)
                   .sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
                 return {c,nextSess,today:!!nextSess&&nextSess.date===TODAY};
               }).sort((a,b)=>{
@@ -983,30 +997,42 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       return(
                         <div key={time} style={{flex:1,minHeight:0,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
                           <div className="mono" style={{width:48,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":"#bcd3ee",fontSize:11,fontWeight:700}}>{time}</div>
-                          <div style={{flex:1,minWidth:0,overflowY:"auto",padding:"6px 9px",display:"flex",flexWrap:"wrap",gap:5,alignItems:"center",alignContent:"center"}}>
+                          <div style={{flex:1,minWidth:0,overflowY:"auto",padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"flex-start"}}>
                             {slotBlocked
                               ?<span style={{fontSize:11,color:"#b56b6b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
                               :<>
-                                {slots.map(s=>(
-                                  <div key={s.id} style={{background:s.client.color+"18",border:`1px solid ${s.client.color}40`,borderRadius:10,padding:"4px 8px 4px 4px",fontSize:12,display:"flex",alignItems:"center",gap:6}}>
-                                    <div style={{display:"flex",alignItems:"center",gap:6,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
+                                {slots.map(s=>{
+                                  const done=s.status==="completed";
+                                  return(
+                                  <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:10,padding:"5px 6px"}}>
+                                    <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
                                       {s.client.avatar_url
-                                        ?<img src={s.client.avatar_url} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`}}/>
-                                        :<div className="ring" style={{width:24,height:24,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`}}>{ini(s.client.name)}</div>
+                                        ?<img src={s.client.avatar_url} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`,flexShrink:0}}/>
+                                        :<div className="ring" style={{width:26,height:26,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`,flexShrink:0}}>{ini(s.client.name)}</div>
                                       }
-                                      <span style={{color:s.client.color,fontWeight:700}}>{s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span></span>
+                                      <span style={{color:done?"#16a34a":s.client.color,fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span></span>
                                     </div>
-                                    <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#0284c7",fontSize:12,padding:0}} onClick={()=>setMoveSess(s)}>🕐</button>
-                                    <button title="Vino (cuenta en el bono)" style={{background:"none",border:"none",cursor:"pointer",color:"#16a34a",fontSize:13,padding:0}} onClick={()=>completeSession(s)}>✓</button>
-                                    <button title="No vino (no cuenta)" style={{background:"none",border:"none",cursor:"pointer",color:"#dc2626",fontSize:12,padding:0}} onClick={()=>deleteSession(s.id)}>✗</button>
+                                    {done
+                                      ?<>
+                                        <span style={{fontSize:12,fontWeight:700,color:"#16a34a",whiteSpace:"nowrap"}}>✓ Vino</span>
+                                        <button title="Deshacer asistencia" style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:15,padding:"2px 5px"}} onClick={()=>uncompleteSession(s)}>↺</button>
+                                      </>
+                                      :<>
+                                        <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#0284c7",fontSize:16,padding:"2px 5px"}} onClick={()=>setMoveSess(s)}>🕐</button>
+                                        <button className="btn grn" style={{fontSize:12,padding:"7px 14px",whiteSpace:"nowrap"}} onClick={()=>completeSession(s)}>✓ Vino</button>
+                                        <button title="No vino (no cuenta)" style={{background:"#fbe6e6",border:"1px solid #f2cccc",borderRadius:8,cursor:"pointer",color:"#dc2626",fontSize:13,fontWeight:700,padding:"7px 10px"}} onClick={()=>deleteSession(s.id)}>✗</button>
+                                      </>}
                                   </div>
-                                ))}
-                                {isWork&&Array.from({length:free}).map((_,k)=>(
-                                  <button key={"f"+k} title="Hueco libre · toca para agendar" onClick={()=>{setNs(v=>({...v,date:activeDay,time})); setShowNS(true);}}
-                                    style={{width:28,height:28,borderRadius:"50%",border:"1.5px dashed #c9e6d1",background:"none",color:"#5f9e77",fontSize:15,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center"}}>+</button>
-                                ))}
-                                {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
-                                {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
+                                  );
+                                })}
+                                <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                  {isWork&&Array.from({length:free}).map((_,k)=>(
+                                    <button key={"f"+k} title="Hueco libre · toca para agendar" onClick={()=>{setNs(v=>({...v,date:activeDay,time})); setShowNS(true);}}
+                                      style={{borderRadius:8,border:"1.5px dashed #c9e6d1",background:"none",color:"#5f9e77",fontSize:12,fontWeight:700,cursor:"pointer",padding:"6px 11px"}}>+ libre</button>
+                                  ))}
+                                  {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
+                                  {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
+                                </div>
                               </>
                             }
                           </div>
@@ -1015,7 +1041,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     })}
                   </div>
                   <div style={{flexShrink:0,borderTop:"1px solid #e6ebf3",padding:"6px 10px",fontSize:10,color:"#94a3b8"}}>
-                    <b style={{color:"#16a34a"}}>✓ Vino</b> · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b> · <b style={{color:"#5f9e77"}}>+ hueco libre</b>
+                    <b style={{color:"#16a34a"}}>✓ Vino</b> (queda marcado · ↺ deshacer) · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b>
                   </div>
                 </div>
               );
@@ -2072,7 +2098,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
     });
   },[]);
 
-  const mySessions=allSessions.filter(s=>s.client_id===client.id&&s.date>=TODAY).sort((a,b)=>a.date.localeCompare(b.date));
+  const mySessions=allSessions.filter(s=>s.client_id===client.id&&s.date>=TODAY&&s.status!=="completed").sort((a,b)=>a.date.localeCompare(b.date));
   const myHistory=allHistory.filter(s=>s.client_id===client.id).sort((a,b)=>b.date.localeCompare(a.date));
   const pct=Math.round(client.sessions_left/client.total_sessions*100);
   const pd=daysUntil(client.next_payment);
@@ -3764,20 +3790,30 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
             </div>
           )}
 
-          {/* Visual timeline */}
-          <div style={{background:"#f1f4fa",borderRadius:12,padding:12,marginBottom:16,overflowX:"auto"}}>
-            <div style={{display:"flex",gap:2,minWidth:480,height:32,alignItems:"center"}}>
+          {/* Momento actual — visible arriba del todo */}
+          {annualBlocks.length>0&&currentBlock&&(
+            <div className="card" style={{marginBottom:12,padding:14,borderLeft:`4px solid ${BLOCK_COLORS[currentBlock.type]||"#0284c7"}`}}>
+              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,marginBottom:2}}>AHORA · SEMANA {currentWeek}</div>
+              <div style={{fontSize:16,fontWeight:800,color:BLOCK_COLORS[currentBlock.type]||"#0284c7"}}>{currentBlock.name}</div>
+              <div style={{fontSize:12,color:"#64748b",marginTop:2}}>{currentBlock.rep_range} reps · sem {currentBlock.start_week}-{currentBlock.end_week}</div>
+              {currentBlock.intensity_note&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,lineHeight:1.45}}>{currentBlock.intensity_note}</div>}
+              <button className="btn ghost" style={{fontSize:11,padding:"6px 11px",marginTop:10}} onClick={()=>setSelBlock(selBlock?.id===currentBlock.id?null:currentBlock)}>Ver / editar este bloque</button>
+            </div>
+          )}
+
+          {/* Visual timeline (línea de tiempo compacta del año) */}
+          {annualBlocks.length>0&&(
+          <div style={{background:"#f1f4fa",borderRadius:12,padding:"8px 10px",marginBottom:14,overflowX:"auto"}}>
+            <div style={{display:"flex",gap:2,minWidth:420,height:22,alignItems:"center"}}>
               {annualBlocks.map(block=>{
-                const pct = (block.week_count / 46) * 100;
                 const isActive = currentBlock?.id === block.id;
                 return(
-                  <div key={block.id} style={{
-                    flex:block.week_count,height:isActive?32:24,borderRadius:6,
+                  <div key={block.id} title={block.name} style={{
+                    flex:block.week_count,height:isActive?22:16,borderRadius:5,
                     background:(BLOCK_COLORS[block.type]||"#94a3b8")+(isActive?"":"40"),
                     border:isActive?`2px solid ${BLOCK_COLORS[block.type]||"#94a3b8"}`:"none",
                     display:"flex",alignItems:"center",justifyContent:"center",
-                    cursor:"pointer",transition:"all .2s",position:"relative",
-                    minWidth:20,
+                    cursor:"pointer",transition:"all .2s",minWidth:16,
                   }} onClick={()=>setSelBlock(selBlock?.id===block.id?null:block)}>
                     <span style={{fontSize:8,fontWeight:700,color:"#fff",overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis",padding:"0 3px"}}>{block.week_count}s</span>
                   </div>
@@ -3785,6 +3821,7 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
               })}
             </div>
           </div>
+          )}
 
           {/* Block list */}
           {annualBlocks.map(block=>{
