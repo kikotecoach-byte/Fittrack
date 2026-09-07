@@ -2065,10 +2065,8 @@ function BulkWAModal({clients,onClose,notify}) {
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
 function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
-  const [tab,setTab]=React.useState("home");
-  const [reqDate,setReqDate]=React.useState(TODAY);
-  const [reqTime,setReqTime]=React.useState("07:00");
-  const [reqType,setReqType]=React.useState("Fuerza");
+  const [tab,setTab]=React.useState("clases");
+  const [ppView,setPpView]=React.useState("plan"); // sub-vista de "Plan y progreso"
   const [saving,setSaving]=React.useState(false);
   const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
 
@@ -2088,16 +2086,6 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
   const nextCountdown=nextSess?daysUntil(nextSess.date):null;
   const thisMonthSessions=myHistory.filter(h=>h.date&&h.date.startsWith(new Date().toISOString().slice(0,7))).length;
 
-  const submitRequest=async()=>{
-    if(client.sessions_left===0) return notify("Sin sesiones. Contacta a tu trainer.","err");
-    setSaving(true);
-    const {error}=await sb.from("sessions").insert({client_id:client.id,date:reqDate,time:reqTime,type:reqType,status:"pending",requested:true});
-    if(error){notify("Error al enviar","err");setSaving(false);return;}
-    await loadAll(); setSaving(false);
-    notify("¡Solicitud enviada! Tu trainer la confirmará pronto 🎯");
-    setTab("home");
-  };
-
   // Lista de espera: detecta si se ha liberado un hueco en una clase que el
   // cliente esperaba, para avisarle y dejar que lo reserve.
   const capOfC=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
@@ -2112,10 +2100,10 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
     const taken=allSessions.filter(s=>s.date===wtry.date&&s.time===wtry.time).length;
     if(taken>=capOfC(wtry.time)) return notify("El hueco se acaba de ocupar","err");
     setSaving(true);
-    await sb.from("sessions").insert({client_id:client.id,date:wtry.date,time:wtry.time,type:"Fuerza",status:"pending",requested:true});
+    await sb.from("sessions").insert({client_id:client.id,date:wtry.date,time:wtry.time,type:"Fuerza",status:"confirmed",requested:false});
     await sb.from("waitlist").delete().eq("id",wtry.id);
     await loadAll(); setSaving(false);
-    notify("¡Hueco reservado! Tu trainer lo confirmará 🎯");
+    notify("✅ ¡Hueco reservado! Nos vemos 💪");
   };
   const leaveWait=async(id)=>{ await sb.from("waitlist").delete().eq("id",id); await loadAll(); notify("Fuera de la lista de espera"); };
 
@@ -2221,34 +2209,34 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
-        {[["today","⚡ Hoy"],["home","📅 Sesiones"],["calendar","🗓 Clases"],["progress","📊 Progreso"],["plan","🏋️ Mi Plan"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
+        {[["clases","📅 Mis clases"],["planprog","📈 Plan y progreso"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
 
-      {tab==="today"&&(
-        <TodaySession
-          client={client}
-          myAssignedSessions={myAssignedSessions}
-          myAssignedExercises={myAssignedExercises}
-          clientWeights={clientWeights}
-          annualBlocks={annualBlocks}
-          loadAll={loadAll}
-          notify={notify}
-        />
-      )}
-
-      {tab==="home"&&(
+      {tab==="clases"&&(
         <div>
-          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>PRÓXIMAS SESIONES</div>
+          {/* HOY: entrenamiento del día */}
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>⚡ HOY</div>
+          <TodaySession
+            client={client}
+            myAssignedSessions={myAssignedSessions}
+            myAssignedExercises={myAssignedExercises}
+            clientWeights={clientWeights}
+            annualBlocks={annualBlocks}
+            loadAll={loadAll}
+            notify={notify}
+          />
+
+          {/* PRÓXIMAS CLASES reservadas */}
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,margin:"24px 0 10px"}}>📅 MIS PRÓXIMAS CLASES</div>
           {mySessions.length===0
-            ?<div className="card" style={{textAlign:"center",padding:34}}>
-              <div style={{fontSize:26,marginBottom:8}}>📅</div>
-              <div style={{color:"#64748b",fontSize:13}}>Sin sesiones agendadas</div>
-              <button className="btn sky" style={{marginTop:12,padding:"9px 18px"}} onClick={()=>setTab("request")}>Solicitar sesión</button>
+            ?<div className="card" style={{textAlign:"center",padding:24}}>
+              <div style={{fontSize:24,marginBottom:6}}>📅</div>
+              <div style={{color:"#64748b",fontSize:13}}>Sin clases reservadas. Reserva abajo 👇</div>
             </div>
             :mySessions.map(s=>(
-              <div key={s.id} className="card" style={{marginBottom:9,border:`1px solid ${s.requested?"#eed7bd":"var(--border)"}`}}>
+              <div key={s.id} className="card" style={{marginBottom:9}}>
                 <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                   <div>
                     <div style={{fontWeight:700,fontSize:14}}>{s.type}</div>
@@ -2256,10 +2244,8 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
                   </div>
                   <div style={{textAlign:"right"}}>
                     <div className="mono" style={{fontSize:17,fontWeight:700,color:"#0284c7"}}>{s.time}</div>
-                    <div style={{marginTop:4,fontSize:11,color:s.requested?"#ea580c":s.status==="confirmed"?"#16a34a":"#ca8a04"}}>
-                      {s.requested?"⏳ Pendiente":s.status==="confirmed"?"✓ Confirmada":"Por confirmar"}
-                    </div>
-                    {!s.requested&&daysUntil(s.date)<=1&&(
+                    <div style={{marginTop:4,fontSize:11,color:"#16a34a"}}>✓ Reservada</div>
+                    {daysUntil(s.date)<=1&&(
                       <div style={{fontSize:10,color:"#ca8a04",marginTop:2}}>{daysUntil(s.date)===0?"¡Hoy!":"¡Mañana!"}</div>
                     )}
                   </div>
@@ -2267,25 +2253,23 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
               </div>
             ))
           }
-          <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 👋`)} target="_blank" rel="noreferrer" style={{display:"block",marginTop:16}}>
-            <button className="btn wa" style={{width:"100%",padding:12,justifyContent:"center",fontSize:13}}>📱 Chatear con mi trainer</button>
-          </a>
-        </div>
-      )}
 
-      {tab==="request"&&(
-        <div>
-          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:12}}>SOLICITAR SESIONES</div>
+          {/* RESERVAR: selector de huecos (reserva directa) */}
+          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,margin:"24px 0 10px"}}>➕ RESERVAR CLASES</div>
           {client.sessions_left===0
-            ?<div className="card" style={{textAlign:"center",padding:34,border:"1px solid #f2cccc"}}>
-              <div style={{fontSize:26,marginBottom:8}}>🚫</div>
-              <div style={{color:"#dc2626",fontWeight:700,marginBottom:6}}>Sin sesiones disponibles</div>
+            ?<div className="card" style={{textAlign:"center",padding:28,border:"1px solid #f2cccc"}}>
+              <div style={{fontSize:24,marginBottom:8}}>🚫</div>
+              <div style={{color:"#dc2626",fontWeight:700,marginBottom:6}}>Sin sesiones en tu bono</div>
               <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quisiera renovar mi paquete 💪`)} target="_blank" rel="noreferrer">
                 <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
               </a>
             </div>
             :<MultiSessionRequest client={client} allSessions={allSessions} allClients={allClients} blocked={blocked} waitlist={waitlist} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
           }
+
+          <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 👋`)} target="_blank" rel="noreferrer" style={{display:"block",marginTop:16}}>
+            <button className="btn wa" style={{width:"100%",padding:12,justifyContent:"center",fontSize:13}}>📱 Chatear con mi trainer</button>
+          </a>
         </div>
       )}
 
@@ -2316,18 +2300,24 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
         </div>
       )}
 
-      {/* CALENDAR TAB - client sees full week schedule */}
-      {tab==="calendar"&&(
-        <ClientCalendar client={client} allSessions={allSessions} allClients={allClients} blocked={blocked}/>
-      )}
-
-      {/* FORUM TAB */}
-      {tab==="progress"&&(
-        <ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify}/>
-      )}
-
-      {tab==="plan"&&(
-        <PlanTab client={client} plans={plans} clientPlans={clientPlans} exercises={exercises}/>
+      {/* PLAN Y PROGRESO (unificados con sub-vista) */}
+      {tab==="planprog"&&(
+        <div>
+          <div style={{display:"flex",gap:6,marginBottom:16,background:"#eaf1fb",borderRadius:12,padding:4}}>
+            {[["plan","🏋️ Mi Plan"],["progress","📊 Progreso"]].map(([id,label])=>(
+              <button key={id} onClick={()=>setPpView(id)}
+                style={{flex:1,padding:"9px 0",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",
+                  background:ppView===id?"#ffffff":"transparent",color:ppView===id?"#0284c7":"#94a3b8",
+                  boxShadow:ppView===id?"0 1px 3px rgba(15,23,42,.08)":"none"}}>
+                {label}
+              </button>
+            ))}
+          </div>
+          {ppView==="plan"
+            ?<PlanTab client={client} plans={plans} clientPlans={clientPlans} exercises={exercises}/>
+            :<ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify}/>
+          }
+        </div>
       )}
 
       {tab==="forum"&&(
@@ -2383,11 +2373,11 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
     const lleno=picked.find(t=>freeAt(t)<=0||slotBlocked(t)||isPast(t));
     if(lleno) return notify(`La ${lleno} ya no está disponible`,"err");
     setSaving(true);
-    const inserts=picked.map(t=>({client_id:client.id,date,time:t,type,status:"pending",requested:true}));
+    const inserts=picked.map(t=>({client_id:client.id,date,time:t,type,status:"confirmed",requested:false}));
     const {error}=await sb.from("sessions").insert(inserts);
-    if(error){ notify("Error al enviar","err"); setSaving(false); return; }
+    if(error){ notify("Error al reservar","err"); setSaving(false); return; }
     await loadAll(); setSaving(false); setPicked([]);
-    notify(`✓ ${inserts.length} sesión${inserts.length>1?"es":""} solicitada${inserts.length>1?"s":""}! Tu trainer la${inserts.length>1?"s":""} confirmará 🎯`);
+    notify(`✅ ${inserts.length} clase${inserts.length>1?"s":""} reservada${inserts.length>1?"s":""}! Nos vemos 💪`);
   };
 
   return(
@@ -2461,7 +2451,7 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
       }
 
       <button className="btn sky" style={{width:"100%",padding:12,fontSize:13,marginTop:16,opacity:picked.length?1:0.5}} onClick={submit} disabled={saving||picked.length===0}>
-        {saving?"Enviando...":picked.length?`Reservar ${picked.length} sesión${picked.length>1?"es":""} 🚀`:"Elige una hora libre"}
+        {saving?"Reservando...":picked.length?`Reservar ${picked.length} clase${picked.length>1?"s":""} 🚀`:"Elige una hora libre"}
       </button>
     </div>
   );
