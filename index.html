@@ -239,6 +239,13 @@ const reminderWA = (r) => {
   return `Hola ${first}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪`;
 };
 const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
+// Semana del año (1..53) para situar una fecha dentro del macrociclo.
+const macroWeek = (date=TODAY) => {
+  const d=new Date(date+"T12:00:00"); const soy=new Date(d.getFullYear(),0,1);
+  return Math.ceil(((d - soy)/86400000 + soy.getDay()+1)/7);
+};
+// Bloque del macrociclo que corresponde a una fecha (según su semana del año).
+const blockForDate = (blocks,date=TODAY) => { const w=macroWeek(date); return (blocks||[]).find(b=>w>=b.start_week&&w<=b.end_week); };
 
 function getMonthDays(year, month) {
   const first = new Date(year, month, 1).getDay();
@@ -1339,7 +1346,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
@@ -1402,10 +1409,11 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,assignedSessions,assignedExercises,sessionTemplates,onExec,onAssign,onProgress,onClose}) {
+function ClientQuickView({client,date,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onExec,onAssign,onProgress,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const blk=blockForDate(annualBlocks,date); // momento del macrociclo para esta fecha
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
@@ -1430,6 +1438,16 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
             {client.notes||"Sin notas. Añádelas desde la ficha del cliente (Clientes → notas)."}
           </div>
         </div>
+
+        {blk&&(
+          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"9px 12px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO DEL MACROCICLO · SEMANA {macroWeek(date)}</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#0284c7",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{blk.name}</div>
+            </div>
+            <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",whiteSpace:"nowrap"}}>{blk.rep_range} reps</div>
+          </div>
+        )}
 
         <div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
@@ -1557,17 +1575,22 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
   const [saving,setSaving]=React.useState(false);
   const existing=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const goalTag=client.goal==="estetica"?"Masa":"Salud";
+  const blk=blockForDate(annualBlocks,date); // bloque del momento para esta fecha
   const blockName=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?b.name:"";};
   const blockOrder=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?(b.order_index||0):999;};
   const matchesGoal=(t)=>String(t.name||"").endsWith("· "+goalTag);
-  // Plantillas: primero las del objetivo del cliente, luego por bloque.
+  const inBlock=(t)=>blk&&t.block_id===blk.id;
+  // Rango: del momento+objetivo primero, luego del momento, luego del objetivo.
+  const rank=(t)=>(inBlock(t)&&matchesGoal(t))?0:inBlock(t)?1:matchesGoal(t)?2:3;
   const templates=(sessionTemplates||[]).slice().sort((a,b)=>{
-    const am=matchesGoal(a)?0:1, bm=matchesGoal(b)?0:1;
-    if(am!==bm) return am-bm;
+    const ra=rank(a), rb=rank(b);
+    if(ra!==rb) return ra-rb;
     const ao=blockOrder(a.block_id), bo=blockOrder(b.block_id);
     if(ao!==bo) return ao-bo;
     return (a.order_index||0)-(b.order_index||0);
   });
+  // Mejor candidato del momento para asignar de un toque.
+  const autoTmpl=templates.find(t=>inBlock(t)&&matchesGoal(t))||templates.find(t=>inBlock(t))||templates.find(t=>matchesGoal(t))||templates[0];
 
   const asignar=async(tmpl)=>{
     setSaving(true);
@@ -1595,7 +1618,16 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>Asignar entreno · {client.name}</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:6}}>{fmtDate(date)} · elige una plantilla{existing?" (reemplaza la actual)":""}.</p>
-        <div style={{fontSize:11,marginBottom:14}}><span style={{color:"#94a3b8"}}>Objetivo: </span><b style={{color:client.goal==="estetica"?"#0284c7":"#16a34a"}}>{client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}</b> <span style={{color:"#94a3b8"}}>· sus plantillas salen primero</span></div>
+        <div style={{fontSize:11,marginBottom:12}}><span style={{color:"#94a3b8"}}>Objetivo: </span><b style={{color:client.goal==="estetica"?"#0284c7":"#16a34a"}}>{client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}</b></div>
+
+        {/* Momento del macrociclo + asignación automática */}
+        {blk&&(
+          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"10px 12px",marginBottom:12}}>
+            <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO · SEMANA {macroWeek(date)}</div>
+            <div style={{fontSize:13,fontWeight:700,color:"#0284c7",marginBottom:autoTmpl?8:0}}>{blk.name} · {blk.rep_range} reps</div>
+            {autoTmpl&&<button className="btn grn" style={{width:"100%",padding:9,fontSize:12}} disabled={saving} onClick={()=>asignar(autoTmpl)}>⚡ Asignar automático — {autoTmpl.name}</button>}
+          </div>
+        )}
         {templates.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>No tienes plantillas. Créalas en <b>Programa</b>.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
@@ -1603,12 +1635,13 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
               const n=(templateExercises||[]).filter(te=>te.template_id===t.id).length;
               const isCur=existing&&existing.template_id===t.id;
               const fit=matchesGoal(t);
+              const now=inBlock(t);
               return(
                 <button key={t.id} disabled={saving} onClick={()=>asignar(t)}
                   style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"11px 14px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
-                    background:isCur?"#eef8dd":fit?"#f2f8ff":"#f8fafc",border:`1px solid ${isCur?"#cbe8a4":fit?"#bcd3ee":"#e6ebf3"}`}}>
+                    background:isCur?"#eef8dd":now?"#e6f0fb":fit?"#f2f8ff":"#f8fafc",border:`1px solid ${isCur?"#cbe8a4":now?"#9cc2ec":fit?"#bcd3ee":"#e6ebf3"}`}}>
                   <div style={{minWidth:0}}>
-                    <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>{t.name}{isCur&&<span style={{fontSize:10,color:"#16a34a"}}> · actual</span>}</div>
+                    <div style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>{t.name}{isCur&&<span style={{fontSize:10,color:"#16a34a"}}> · actual</span>}{now&&!isCur&&<span style={{fontSize:9,color:"#0284c7",fontWeight:700,marginLeft:6,background:"#dcebfb",padding:"1px 6px",borderRadius:8}}>del momento</span>}</div>
                     <div style={{fontSize:11,color:"#64748b",marginTop:2,overflow:"hidden",whiteSpace:"nowrap",textOverflow:"ellipsis"}}>{blockName(t.block_id)} · {n} ejercicio{n===1?"":"s"}</div>
                   </div>
                   <span style={{fontSize:12,color:"#0284c7",fontWeight:700,whiteSpace:"nowrap"}}>Asignar →</span>
@@ -3445,8 +3478,55 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
   const [showAssignModal,setShowAssignModal] = React.useState(null); // date
   const [showWeightModal,setShowWeightModal] = React.useState(null); // client
   const [showTemplateModal,setShowTemplateModal] = React.useState(null); // block
+  const [showBlockModal,setShowBlockModal] = React.useState(null); // bloque a editar/crear
   const [saving,setSaving] = React.useState(false);
   const [genMacro,setGenMacro] = React.useState(false);
+
+  // Recoloca las semanas de todos los bloques de forma contigua según su orden,
+  // para que start_week/end_week queden coherentes tras editar/mover/borrar.
+  const resequence = async(blocks)=>{
+    const ord=blocks.slice().sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+    let wk=1;
+    for(let i=0;i<ord.length;i++){
+      const b=ord[i], count=b.week_count||1, start=wk, end=wk+count-1; wk=end+1;
+      if(b.start_week!==start||b.end_week!==end||b.order_index!==i+1)
+        await sb.from("annual_blocks").update({start_week:start,end_week:end,order_index:i+1}).eq("id",b.id);
+    }
+  };
+  const moveBlock = (block,dir)=>w(async()=>{
+    const ord=annualBlocks.slice().sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+    const i=ord.findIndex(b=>b.id===block.id); const j=i+dir;
+    if(i<0||j<0||j>=ord.length) return;
+    [ord[i].order_index,ord[j].order_index]=[ord[j].order_index,ord[i].order_index];
+    await resequence(ord); notify("Orden actualizado ✓");
+  });
+  const deleteBlock = (block)=>{
+    if(!window.confirm(`¿Eliminar el bloque "${block.name}" y todas sus plantillas? Esta acción no se puede deshacer.`)) return;
+    w(async()=>{
+      const tpls=sessionTemplates.filter(t=>t.block_id===block.id).map(t=>t.id);
+      if(tpls.length){ await sb.from("template_exercises").delete().in("template_id",tpls); await sb.from("session_templates").delete().eq("block_id",block.id); }
+      await sb.from("annual_blocks").delete().eq("id",block.id);
+      await resequence(annualBlocks.filter(b=>b.id!==block.id));
+      notify("Bloque eliminado");
+    });
+  };
+  // Guarda un bloque (nuevo o editado) y recalcula las semanas.
+  const saveBlock = async(data)=>{
+    setSaving(true);
+    try{
+      if(data.id){
+        await sb.from("annual_blocks").update({name:data.name,type:data.type,week_count:data.week_count,rep_range:data.rep_range,intensity_note:data.intensity_note}).eq("id",data.id);
+        await resequence(annualBlocks.map(b=>b.id===data.id?{...b,...data}:b));
+      }else{
+        const order=(annualBlocks.length?Math.max(...annualBlocks.map(b=>b.order_index||0)):0)+1;
+        const {data:nb,error}=await sb.from("annual_blocks").insert({name:data.name,type:data.type,week_count:data.week_count,rep_range:data.rep_range,intensity_note:data.intensity_note,order_index:order,start_week:1,end_week:data.week_count}).select().single();
+        if(error){ notify("Error al crear bloque","err"); setSaving(false); return; }
+        await resequence([...annualBlocks,nb]);
+      }
+      await loadAll(); notify("Bloque guardado ✓"); setShowBlockModal(null);
+    }catch(e){ notify("Error al guardar el bloque","err"); }
+    setSaving(false);
+  };
 
   // Genera el macrociclo (48 semanas) para un objetivo. Los bloques se crean una
   // vez; las plantillas se añaden etiquetadas por objetivo (Salud / Masa).
@@ -3729,7 +3809,14 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
 
                 {open&&(
                   <div style={{marginTop:12,borderTop:"1px solid #e6ebf3",paddingTop:12}} onClick={e=>e.stopPropagation()}>
-                    <div style={{fontSize:11,color:"#94a3b8",marginBottom:8,lineHeight:1.5}}>{block.intensity_note}</div>
+                    {/* Controles de edición del bloque */}
+                    <div style={{display:"flex",gap:6,marginBottom:10,flexWrap:"wrap"}}>
+                      <button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowBlockModal(block)}>✏️ Editar bloque</button>
+                      <button className="btn ghost" style={{fontSize:11,padding:"6px 9px"}} disabled={saving} onClick={()=>moveBlock(block,-1)} title="Subir">↑</button>
+                      <button className="btn ghost" style={{fontSize:11,padding:"6px 9px"}} disabled={saving} onClick={()=>moveBlock(block,1)} title="Bajar">↓</button>
+                      <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} disabled={saving} onClick={()=>deleteBlock(block)}>🗑 Eliminar</button>
+                    </div>
+                    {block.intensity_note&&<div style={{fontSize:11,color:"#94a3b8",marginBottom:8,lineHeight:1.5}}>{block.intensity_note}</div>}
 
                     <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>PLANTILLAS DE SESIÓN</div>
                     {blockTemplates.map(t=>{
@@ -3761,6 +3848,13 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
               </div>
             );
           })}
+
+          {annualBlocks.length>0&&(
+            <button className="btn ghost" style={{width:"100%",padding:11,marginTop:6,fontSize:13,fontWeight:700,border:"1px dashed #cbd5e1"}}
+              onClick={()=>setShowBlockModal({name:"",type:"fuerza",week_count:4,rep_range:"8-12",intensity_note:""})}>
+              + Nuevo bloque
+            </button>
+          )}
         </div>
       )}
 
@@ -3996,6 +4090,58 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
           notify={notify}
         />
       )}
+
+      {showBlockModal&&(
+        <BlockEditModal block={showBlockModal} saving={saving} onSave={saveBlock} onClose={()=>setShowBlockModal(null)}/>
+      )}
+    </div>
+  );
+}
+
+// ── EDITOR DE BLOQUE DEL MACROCICLO ────────────────────────────────────────
+function BlockEditModal({block, saving, onSave, onClose}) {
+  const [f,setF] = React.useState({
+    id:block.id, name:block.name||"", type:block.type||"fuerza",
+    week_count:block.week_count||4, rep_range:block.rep_range||"8-12",
+    intensity_note:block.intensity_note||"",
+  });
+  const TYPES=[["acondicionamiento","Acondicionamiento"],["fuerza","Fuerza"],["hipertrofia","Hipertrofia"],["hibrido","Híbrido / Comodín"],["descarga","Descarga"]];
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  const save=()=>{
+    if(!f.name.trim()) return;
+    onSave({...f, week_count:Math.max(1,parseInt(f.week_count)||1)});
+  };
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:420}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:4}}>{block.id?"✏️ Editar bloque":"➕ Nuevo bloque"}</h2>
+        <p style={{fontSize:11,color:"#64748b",marginBottom:16}}>Las semanas del año se recalculan solas según el orden y la duración.</p>
+
+        <div style={{marginBottom:12}}><span className="lbl">NOMBRE</span>
+          <input className="inp" value={f.name} onChange={e=>set("name",e.target.value)} placeholder="p.ej. Fuerza · Específico"/>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginBottom:12}}>
+          <div><span className="lbl">TIPO</span>
+            <select className="inp" style={{appearance:"none"}} value={f.type} onChange={e=>set("type",e.target.value)}>
+              {TYPES.map(([v,l])=><option key={v} value={v}>{l}</option>)}
+            </select>
+          </div>
+          <div><span className="lbl">SEMANAS</span>
+            <input type="number" min="1" className="inp" value={f.week_count} onChange={e=>set("week_count",e.target.value)}/>
+          </div>
+        </div>
+        <div style={{marginBottom:12}}><span className="lbl">RANGO DE REPS</span>
+          <input className="inp" value={f.rep_range} onChange={e=>set("rep_range",e.target.value)} placeholder="p.ej. 6-10"/>
+        </div>
+        <div style={{marginBottom:16}}><span className="lbl">OBJETIVO / NOTAS DEL MOMENTO</span>
+          <textarea className="inp" style={{minHeight:70,resize:"vertical"}} value={f.intensity_note} onChange={e=>set("intensity_note",e.target.value)} placeholder="Qué se busca en este bloque, protocolos, intensidad…"/>
+        </div>
+
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+          <button className="btn sky" style={{flex:2,padding:11}} disabled={saving||!f.name.trim()} onClick={save}>{saving?"Guardando…":"Guardar bloque"}</button>
+        </div>
+      </div>
     </div>
   );
 }
