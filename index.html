@@ -465,6 +465,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showNC,setShowNC] = React.useState(false);
   const [showNS,setShowNS] = React.useState(false);
   const [showPay,setShowPay] = React.useState(null);
+  const [showEdit,setShowEdit] = React.useState(null); // cliente a editar bono/caducidad
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
@@ -592,6 +593,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
   const renewSessions = (client) => w(async()=>{ await sb.from("clients").update({sessions_left:client.total_sessions}).eq("id",client.id); notify("Sesiones renovadas ✓"); });
   const deleteClient = (id) => w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); });
+  // Editar bono (sesiones restantes/total), precio y caducidad en cualquier momento.
+  const saveBono = (client, data) => w(async()=>{
+    await sb.from("clients").update({
+      sessions_left:Math.max(0,parseInt(data.sessions_left)||0),
+      total_sessions:Math.max(1,parseInt(data.total_sessions)||1),
+      payment_amount:parseFloat(data.payment_amount)||0,
+      next_payment:data.next_payment,
+    }).eq("id",client.id);
+    setShowEdit(null); notify("Bono actualizado ✓");
+  });
 
   const toggleBlockDay = (date) => w(async()=>{
     const ex=blocked.find(b=>b.date===date&&b.time==="ALL");
@@ -891,6 +902,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     {open&&(
                       <div style={{marginTop:14,borderTop:"1px solid #e6ebf3",paddingTop:14}} onClick={e=>e.stopPropagation()}>
                         <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>
+                          <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowEdit(c)}>✏️ Bono/caducidad</button>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pago</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
@@ -1406,6 +1418,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNS&&<SessionModal clients={clients} ns={ns} setNs={setNs} onSave={addSession} onClose={()=>setShowNS(false)}/>}
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
+      {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -1896,6 +1909,50 @@ function PayModal({client,onSave,onClose}) {
           </div>
           <div style={{display:"flex",gap:8}}>
             <button className="btn grn" style={{flex:1,padding:11}} onClick={()=>onSave(parseFloat(amount))}>Confirmar pago</button>
+            <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── EDITAR BONO / CADUCIDAD ────────────────────────────────────────────────
+function EditBonoModal({client,saving,onSave,onClose}) {
+  const [f,setF] = React.useState({
+    sessions_left:client.sessions_left,
+    total_sessions:client.total_sessions,
+    payment_amount:client.payment_amount,
+    next_payment:client.next_payment||"",
+  });
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:380}}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>Editar bono — {client.name}</h2>
+        <p style={{fontSize:11,color:"#64748b",marginBottom:16}}>Ajusta las sesiones, el precio y la caducidad cuando quieras.</p>
+        <div style={{display:"flex",flexDirection:"column",gap:13}}>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+            <div><span className="lbl">SESIONES RESTANTES</span>
+              <input type="number" min="0" className="inp" value={f.sessions_left} onChange={e=>set("sessions_left",e.target.value)}/>
+            </div>
+            <div><span className="lbl">TOTAL DEL BONO</span>
+              <input type="number" min="1" className="inp" value={f.total_sessions} onChange={e=>set("total_sessions",e.target.value)}/>
+            </div>
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+            {[5,10,20].map(n=>(
+              <button key={n} className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setF(x=>({...x,sessions_left:n,total_sessions:n}))}>Bono de {n}</button>
+            ))}
+          </div>
+          <div><span className="lbl">PRECIO DEL BONO (€)</span>
+            <input type="number" className="inp" value={f.payment_amount} onChange={e=>set("payment_amount",e.target.value)}/>
+          </div>
+          <div><span className="lbl">CADUCIDAD / PRÓXIMO PAGO</span>
+            <input type="date" className="inp" value={f.next_payment} onChange={e=>set("next_payment",e.target.value)}/>
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:4}}>
+            <button className="btn sky" style={{flex:2,padding:11}} disabled={saving} onClick={()=>onSave(f)}>{saving?"Guardando…":"Guardar cambios"}</button>
             <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
           </div>
         </div>
