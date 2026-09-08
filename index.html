@@ -246,6 +246,21 @@ const macroWeek = (date=TODAY) => {
 };
 // Bloque del macrociclo que corresponde a una fecha (según su semana del año).
 const blockForDate = (blocks,date=TODAY) => { const w=macroWeek(date); return (blocks||[]).find(b=>w>=b.start_week&&w<=b.end_week); };
+// Lunes de la semana de una fecha.
+const mondayOfDate = (d) => { const x=new Date(d+"T12:00:00"); const g=x.getDay(); x.setDate(x.getDate()+(g===0?-6:1-g)); return x.toISOString().split("T")[0]; };
+// Microciclo semanal por defecto: 2 fuerza + analítico + fullbody metabólico.
+const WEEK_PLAN = ["fuerzaA","fuerzaB","small","fullbody"];
+const dayTypeLabel = (id) => (DAY_TYPES.find(d=>d[0]===id)||[,"Sesión"])[1];
+// Rutina automática de un día: elige el tipo de día según su posición dentro
+// de la semana del cliente y la construye según bloque, objetivo y semana.
+function autoRoutineFor(client, date, sessions, annualBlocks){
+  const blk = blockForDate(annualBlocks, date);
+  const wd = getWeekDays(mondayOfDate(date));
+  const days = [...new Set((sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date))].sort();
+  let idx = days.indexOf(date); if(idx<0) idx = days.length;
+  const dayType = WEEK_PLAN[idx % WEEK_PLAN.length];
+  return { dayType, label:dayTypeLabel(dayType), blk, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date)) };
+}
 
 function getMonthDays(year, month) {
   const first = new Date(year, month, 1).getDay();
@@ -604,6 +619,22 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     setShowEdit(null); notify("Bono actualizado ✓");
   });
 
+  // Materializa el entreno automático (según objetivo + momento + microciclo)
+  // creando la sesión asignada con cargas del cliente.
+  const materializeRoutine = (client, date) => w(async()=>{
+    const {routine}=autoRoutineFor(client, date, sessions, annualBlocks);
+    if(!routine.length) return notify("No hay bloque del macrociclo para esa fecha","err");
+    const existing=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
+    if(existing){ await sb.from("assigned_exercises").delete().eq("session_id",existing.id); await sb.from("assigned_sessions").delete().eq("id",existing.id); }
+    const {data:sess,error}=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending"}).select().single();
+    if(error){ notify("Error al asignar","err"); return; }
+    const wts=clientWeights.filter(x=>x.client_id===client.id);
+    const rows=routine.map((e,i)=>{ const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
+      return {session_id:sess.id,exercise_name:e[0],prescribed_weight:cw?cw.weight:null,sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i}; });
+    if(rows.length) await sb.from("assigned_exercises").insert(rows);
+    notify("Entreno automático asignado ✓");
+  });
+
   const toggleBlockDay = (date) => w(async()=>{
     const ex=blocked.find(b=>b.date===date&&b.time==="ALL");
     if(ex) await sb.from("blocked_slots").delete().eq("id",ex.id);
@@ -734,7 +765,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     const nEx=asig?assignedExercises.filter(e=>e.session_id===asig.id).length:0;
                     const blk=blockForDate(annualBlocks,TODAY);
                     const done=s.status==="completed";
-                    const quePlan = tmpl?`${tmpl.name}${nEx?` · ${nEx} ej.`:""}` : blk?`${blk.name} · sin asignar` : "Sin entreno asignado";
+                    const autoPlan = (!asig&&blk)?autoRoutineFor(c,TODAY,sessions,annualBlocks):null;
+                    const quePlan = tmpl?`${tmpl.name}${nEx?` · ${nEx} ej.`:""}` : autoPlan?`${autoPlan.label} · previsto` : blk?`${blk.name} · sin asignar` : "Sin entreno asignado";
                     return(
                       <div key={s.id} onClick={()=>setView("schedule")} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:i<todaySessions.length-1?"1px solid #f1f4fa":"none",cursor:"pointer",background:done?"#f4faf6":"transparent"}}>
                         <div style={{textAlign:"center",flexShrink:0,minWidth:46}}>
@@ -746,7 +778,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           :<div className="ring" style={{width:40,height:40,background:c.color+"20",color:c.color,fontSize:12,border:`2px solid ${c.color}40`,flexShrink:0}}>{ini(c.name)}</div>}
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
-                          <div style={{fontSize:12,color:tmpl?"#0284c7":"#94a3b8",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏋️ {quePlan}</div>
+                          <div style={{fontSize:12,color:tmpl?"#0284c7":autoPlan?"#65a30d":"#94a3b8",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏋️ {quePlan}</div>
                         </div>
                         <span style={{fontSize:18,color:"#cbd5e1",flexShrink:0}}>›</span>
                       </div>
@@ -1424,7 +1456,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
@@ -1487,11 +1519,14 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onExec,onAssign,onProgress,onClose}) {
+function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onExec,onAssign,onProgress,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
   const blk=blockForDate(annualBlocks,date); // momento del macrociclo para esta fecha
+  // Entreno previsto automático (si no hay uno asignado ya).
+  const auto = (!sess && blk) ? autoRoutineFor(client,date,sessions,annualBlocks) : null;
+  const cw = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id && (w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
@@ -1547,14 +1582,32 @@ function ClientQuickView({client,date,assignedSessions,assignedExercises,session
                 ))
               }
             </div>
-            :<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:12,color:"#64748b"}}>
-              Sin entrenamiento asignado. Toca <b style={{color:"#0284c7"}}>➕ Asignar</b> para ponerle una plantilla.
-            </div>
+            :auto
+              ?<div style={{background:"#f4faed",border:"1px solid #cbe8a4",borderRadius:10,padding:"11px 13px"}}>
+                <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
+                  <div style={{fontSize:13,fontWeight:700,color:"#65a30d"}}>{auto.label}</div>
+                  <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,background:"#fff",border:"1px solid #cbe8a4",borderRadius:20,padding:"2px 8px"}}>PREVISTO · AUTOMÁTICO</div>
+                </div>
+                {auto.routine.map((e,i)=>{
+                  const w=cw(e[0]);
+                  return(
+                    <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i>0?"1px solid #e2f2c9":"none"}}>
+                      <div style={{fontSize:12,color:"#0f172a",fontWeight:600}}>{e[5]?"★ ":""}{e[0]}</div>
+                      <div className="mono" style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap",textAlign:"right"}}>{e[1]}×{e[2]}{w?` · ${w}kg`:""}</div>
+                    </div>
+                  );
+                })}
+                <div style={{fontSize:10,color:"#6b7a3f",marginTop:8,lineHeight:1.4}}>Adaptado a <b>{blk.name}</b> y objetivo <b>{client.goal==="estetica"?"Estética/Masa":"Salud"}</b>{client.goal!=="estetica"?" · rota cada semana":""}. Toca “Usar este entreno” para fijarlo.</div>
+              </div>
+              :<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:12,color:"#64748b"}}>
+                Sin entrenamiento asignado. Toca <b style={{color:"#0284c7"}}>➕ Asignar</b> para ponerle una plantilla.
+              </div>
           }
         </div>
 
         <div style={{display:"flex",gap:8,marginTop:16}}>
           {sess&&onExec&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onExec}>▶ Ejecutar entreno</button>}
+          {!sess&&auto&&onUseAuto&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onUseAuto}>✓ Usar este entreno</button>}
           {onProgress&&<button className="btn ghost" style={{padding:"11px 14px"}} onClick={onProgress} title="Progresión de cargas">📈</button>}
           <button className="btn ghost" style={{padding:"11px 16px"}} onClick={onClose}>Cerrar</button>
         </div>
