@@ -1038,17 +1038,17 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 );
               }
               return(
-                <div className="card swipe" style={{padding:0,overflow:"hidden",display:"flex",flexDirection:"column",height:"calc(100dvh - 300px)",minHeight:300,maxHeight:660}}>
-                  <div style={{flex:1,display:"flex",flexDirection:"column",minHeight:0}}>
+                <div className="card swipe" style={{padding:0,overflow:"hidden"}}>
+                  <div>
                     {daySlots.map((time,i)=>{
                       const slotBlocked=isBlocked(activeDay,time);
                       const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
-                        <div key={time} style={{flex:1,minHeight:0,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
+                        <div key={time} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
                           <div className="mono" style={{width:48,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":"#bcd3ee",fontSize:11,fontWeight:700}}>{time}</div>
-                          <div style={{flex:1,minWidth:0,overflowY:"auto",padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"flex-start"}}>
+                          <div style={{flex:1,minWidth:0,padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"center"}}>
                             {slotBlocked
                               ?<span style={{fontSize:11,color:"#b56b6b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
                               :<>
@@ -1691,6 +1691,27 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     await loadAll(); setSaving(false); notify("Entreno asignado ✓"); onClose();
   };
 
+  // Genera la rutina del día según el bloque, objetivo y semana (rotación en salud).
+  const generarRutina=async(dayType)=>{
+    setSaving(true);
+    if(existing){
+      await sb.from("assigned_exercises").delete().eq("session_id",existing.id);
+      await sb.from("assigned_sessions").delete().eq("id",existing.id);
+    }
+    const {data:sess,error}=await sb.from("assigned_sessions")
+      .insert({client_id:client.id,date,status:"pending"}).select().single();
+    if(error){ notify("Error al generar","err"); setSaving(false); return; }
+    const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date));
+    const wts=(clientWeights||[]).filter(w=>w.client_id===client.id);
+    const rows=routine.map((e,i)=>{
+      const cw=wts.find(w=>(w.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
+      return {session_id:sess.id,exercise_name:e[0],prescribed_weight:cw?cw.weight:null,
+        sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i};
+    });
+    if(rows.length>0) await sb.from("assigned_exercises").insert(rows);
+    await loadAll(); setSaving(false); notify("Rutina del día generada ✓"); onClose();
+  };
+
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
@@ -1703,9 +1724,21 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
           <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"10px 12px",marginBottom:12}}>
             <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO · SEMANA {macroWeek(date)}</div>
             <div style={{fontSize:13,fontWeight:700,color:"#0284c7",marginBottom:autoTmpl?8:0}}>{blk.name} · {blk.rep_range} reps</div>
-            {autoTmpl&&<button className="btn grn" style={{width:"100%",padding:9,fontSize:12}} disabled={saving} onClick={()=>asignar(autoTmpl)}>⚡ Asignar automático — {autoTmpl.name}</button>}
+            {autoTmpl&&<button className="btn grn" style={{width:"100%",padding:9,fontSize:12}} disabled={saving} onClick={()=>asignar(autoTmpl)}>⚡ Asignar plantilla — {autoTmpl.name}</button>}
           </div>
         )}
+
+        {/* Generar rutina del día (según bloque, objetivo y semana) */}
+        <div style={{background:"#f4faed",border:"1px solid #cbe8a4",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#65a30d",marginBottom:2}}>⚡ Generar rutina del día</div>
+          <div style={{fontSize:11,color:"#6b7a3f",marginBottom:8}}>Se crea según el bloque {blk?`(${blk.name})`:"del momento"} y el objetivo{client.goal!=="estetica"?" · rota cada semana":""}. 3-4 ejercicios en fuerza.</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+            {DAY_TYPES.map(([id,label])=>(
+              <button key={id} className="btn ghost" style={{fontSize:11,padding:"8px 6px",fontWeight:700,border:"1px solid #cbe8a4",background:"#fff"}} disabled={saving} onClick={()=>generarRutina(id)}>{label}</button>
+            ))}
+          </div>
+        </div>
+
         {templates.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>No tienes plantillas. Créalas en <b>Programa</b>.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
@@ -3843,12 +3876,12 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
     <div>
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
 
-      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-        <h1 className="mono" style={{fontSize:18,fontWeight:700}}>📊 Programación</h1>
-        {currentBlock&&<span className="pill" style={{background:(BLOCK_COLORS[currentBlock.type]||"#94a3b8")+"20",color:BLOCK_COLORS[currentBlock.type]||"#64748b",border:`1px solid ${(BLOCK_COLORS[currentBlock.type]||"#94a3b8")}30`,fontSize:11}}>Semana {currentWeek} · {currentBlock.name}</span>}
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
+        <h1 className="mono" style={{fontSize:16,fontWeight:700}}>📊 Programación</h1>
+        {currentBlock&&<span className="pill" style={{background:(BLOCK_COLORS[currentBlock.type]||"#94a3b8")+"20",color:BLOCK_COLORS[currentBlock.type]||"#64748b",border:`1px solid ${(BLOCK_COLORS[currentBlock.type]||"#94a3b8")}30`,fontSize:11,whiteSpace:"nowrap"}}>Sem {currentWeek} · {currentBlock.name}</span>}
       </div>
 
-      <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
+      <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:12,paddingBottom:4}}>
         {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
@@ -4582,6 +4615,70 @@ const PROTOCOL_INFO = {
   leader:"Fase de acumulación: mucho volumen a intensidad submáxima (bloque 'leader').",
   tabata:"8 rondas de 20 s fuerte / 10 s descanso (4 min). Máxima intensidad.",
 };
+
+// ── GENERADOR DE RUTINA DIARIA ─────────────────────────────────────────────
+// Crea la rutina del día según el bloque del macrociclo, el objetivo y (en
+// salud) la semana, para rotar ejercicios. Nombres iguales a la biblioteca
+// para que enlacen con los pesos base del cliente.
+const EX_POOLS = {
+  squat:["Sentadilla trasera","Sentadilla frontal","Sentadilla con pausa","Prensa de piernas","Hack squat","Sentadilla goblet"],
+  hinge:["Peso muerto","Peso muerto rumano","Peso muerto sumo","Hip thrust","Peso muerto trap bar","Buenos días"],
+  hpush:["Press banca","Press banca inclinado","Press mancuernas plano","Press en máquina","Fondos en paralelas"],
+  vpush:["Press militar de pie","Press militar mancuernas","Press Arnold","Press en máquina hombro"],
+  vpull:["Dominadas","Jalón al pecho","Jalón agarre neutro","Dominadas supinas"],
+  hpull:["Remo con barra","Remo con mancuerna","Remo en polea baja","Remo en T","Remo Pendlay"],
+  lunge:["Sentadilla búlgara","Zancadas","Zancada caminando","Step-up al cajón"],
+  quadiso:["Extensión de cuádriceps","Sissy squat"],
+  hamiso:["Curl femoral tumbado","Curl femoral sentado","Nordic ham curl"],
+  lateral:["Elevaciones laterales","Elevaciones laterales en polea"],
+  biceps:["Curl con barra","Curl con mancuernas","Curl martillo","Curl en predicador","Curl concentrado"],
+  triceps:["Extensión de tríceps en polea","Press francés","Patada de tríceps","Fondos de tríceps (banco)","Extensión sobre cabeza (mancuerna)"],
+  reardelt:["Pájaros / Deltoides posterior","Face pull"],
+  calf:["Elevación de gemelos de pie","Elevación de gemelos sentado","Gemelo en prensa"],
+  core:["Plancha frontal","Rueda abdominal","Crunch en polea","Elevación de piernas colgado","Pallof press (anti-rotación)","Hollow hold"],
+  func:["Swing con kettlebell","Thrusters","Wall balls","Burpees","Sled push (empuje trineo)","Battle ropes","Salto al cajón (box jump)","Mountain climbers"],
+  carry:["Paseo del granjero","Farmer hold (agarre)"],
+};
+const DAY_TYPES = [["fuerzaA","💪 Fuerza A"],["fuerzaB","💪 Fuerza B"],["small","🎯 Small muscles"],["fullbody","🔥 Fullbody metabólico"]];
+function buildDayRoutine(dayType, block, goal, weekNo){
+  const bt = block?block.type:"fuerza";
+  const rep = block?block.rep_range:"6-10";
+  const salud = goal!=="estetica";
+  const wk = salud ? (weekNo||0) : 0; // rotación semanal solo en salud
+  const pick=(arr,base)=>arr[(((wk+base)%arr.length)+arr.length)%arr.length];
+  const mainProto = {acondicionamiento:"series_planas",fuerza:"ramp_up",hipertrofia:"series_planas",hibrido:"series_planas",descarga:"series_planas"}[bt]||"series_planas";
+  const acc="series_planas";
+  const mS = bt==="descarga"?2:4, aS = bt==="descarga"?2:3;
+  const estetica = goal==="estetica";
+  const r=[]; const add=(name,sets,reps,rest,proto,main)=>r.push([name,sets,reps,rest,proto,!!main]);
+  if(dayType==="fuerzaA"){
+    add(pick(EX_POOLS.squat,0),mS,rep,150,mainProto,true);
+    add(pick(EX_POOLS.hpush,1),mS,rep,120,mainProto,true);
+    add(pick(EX_POOLS.hpull,2),aS,"8-12",90,acc,false);
+    add(estetica?pick(EX_POOLS.quadiso,3):pick(EX_POOLS.core,3),aS,"12-15",estetica?60:45,acc,false);
+  } else if(dayType==="fuerzaB"){
+    add(pick(EX_POOLS.hinge,0),mS,rep,150,mainProto,true);
+    add(pick(EX_POOLS.vpush,1),mS,rep,120,mainProto,true);
+    add(pick(EX_POOLS.vpull,2),aS,"8-12",90,acc,false);
+    add(estetica?pick(EX_POOLS.lunge,3):pick(EX_POOLS.core,4),aS,estetica?"10-12":"12-15",estetica?75:45,acc,false);
+  } else if(dayType==="small"){
+    add(pick(EX_POOLS.lateral,0),aS,"12-15",45,acc,false);
+    add(pick(EX_POOLS.biceps,1),aS,"10-15",45,acc,false);
+    add(pick(EX_POOLS.triceps,2),aS,"10-15",45,acc,false);
+    add(pick(EX_POOLS.reardelt,3),aS,"15-20",45,acc,false);
+    add(pick(EX_POOLS.calf,4),aS,"12-20",45,acc,false);
+    add(pick(EX_POOLS.core,5),aS,"12-15",45,acc,false);
+    if(estetica) add(pick(EX_POOLS.hamiso,6),aS,"12-15",60,acc,false);
+  } else { // fullbody metabólico
+    const metaProto = ["amrap","emom","tabata","series_planas"][(salud?(weekNo||0):0)%4];
+    add(pick(EX_POOLS.func,0),4,"12-15",45,metaProto,false);
+    add(pick(EX_POOLS.hinge,1),4,"10-12",60,metaProto,false);
+    add(pick(EX_POOLS.squat,3),4,"10-12",60,metaProto,false);
+    add(pick(EX_POOLS.func,4),4,"12-15",45,metaProto,false);
+    add(pick(EX_POOLS.carry,0),3,"30-40m",45,metaProto,false);
+  }
+  return r;
+}
 
 // ── TEMPLATE EDITOR MODAL ──────────────────────────────────────────────────
 function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
