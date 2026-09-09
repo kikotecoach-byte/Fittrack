@@ -255,7 +255,7 @@ const dayTypeLabel = (id) => (DAY_LABEL&&DAY_LABEL[id]) || "Sesión";
 // la posición de la sesión dentro de la semana del cliente.
 function autoRoutineFor(client, date, sessions, annualBlocks){
   const blk = blockForDate(annualBlocks, date);
-  const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk) : WEEK_PLAN;
+  const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, client.days_week) : WEEK_PLAN;
   const wd = getWeekDays(mondayOfDate(date));
   const days = [...new Set((sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date))].sort();
   let idx = days.indexOf(date); if(idx<0) idx = days.length;
@@ -485,7 +485,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
-  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud"});
+  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud",daysWeek:4});
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
   const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
   const [showSched,setShowSched] = React.useState(false);
@@ -543,9 +543,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(nc.code.length!==4) return notify("El código debe tener 4 dígitos","err");
     if(clients.find(c=>c.code===nc.code)) return notify("Ese código ya existe","err");
     const color=COLORS[clients.length%COLORS.length];
-    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal});
+    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal,days_week:parseInt(nc.daysWeek)||4});
     if(error) return notify("Error: "+error.message,"err");
-    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud"});
+    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud",daysWeek:4});
     notify("Cliente añadido ✓");
   });
 
@@ -616,6 +616,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       total_sessions:Math.max(1,parseInt(data.total_sessions)||1),
       payment_amount:parseFloat(data.payment_amount)||0,
       next_payment:data.next_payment,
+      days_week:Math.max(2,Math.min(6,parseInt(data.days_week)||4)),
     }).eq("id",client.id);
     setShowEdit(null); notify("Bono actualizado ✓");
   });
@@ -912,6 +913,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
                           <div style={{display:"flex",gap:6,alignItems:"center",marginTop:2}}>
                             <div className="mono" style={{color:"#94a3b8",fontSize:11}}>#{c.code}</div>
+                            <span style={{fontSize:10,color:"#94a3b8"}}>· {c.days_week||4}d/sem</span>
+                            <span style={{fontSize:10}}>{c.goal==="estetica"?"💪":"🩺"}</span>
                             {streak>0&&<span style={{fontSize:10,color:"#ea580c"}}>🔥{streak}</span>}
                           </div>
                         </div>
@@ -2011,6 +2014,7 @@ function EditBonoModal({client,saving,onSave,onClose}) {
     total_sessions:client.total_sessions,
     payment_amount:client.payment_amount,
     next_payment:client.next_payment||"",
+    days_week:client.days_week||4,
   });
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
   return(
@@ -2035,9 +2039,17 @@ function EditBonoModal({client,saving,onSave,onClose}) {
           <div><span className="lbl">PRECIO DEL BONO (€)</span>
             <input type="number" className="inp" value={f.payment_amount} onChange={e=>set("payment_amount",e.target.value)}/>
           </div>
-          <div><span className="lbl">CADUCIDAD / PRÓXIMO PAGO</span>
-            <input type="date" className="inp" value={f.next_payment} onChange={e=>set("next_payment",e.target.value)}/>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
+            <div><span className="lbl">CADUCIDAD / PRÓXIMO PAGO</span>
+              <input type="date" className="inp" value={f.next_payment} onChange={e=>set("next_payment",e.target.value)}/>
+            </div>
+            <div><span className="lbl">DÍAS/SEM</span>
+              <select className="inp" style={{appearance:"none"}} value={f.days_week} onChange={e=>set("days_week",e.target.value)}>
+                {[2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
           </div>
+          <div style={{fontSize:11,color:"#64748b"}}>Los días/semana definen el microciclo automático del entreno (3=full/split corto, 5=split más específico).</div>
           <div style={{display:"flex",gap:8,marginTop:4}}>
             <button className="btn sky" style={{flex:2,padding:11}} disabled={saving} onClick={()=>onSave(f)}>{saving?"Guardando…":"Guardar cambios"}</button>
             <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
@@ -2106,11 +2118,18 @@ function ClientModal({nc,setNc,onSave,onClose}) {
             <div><span className="lbl">SESIONES</span><input type="number" className="inp" value={nc.sessions} onChange={e=>setNc(c=>({...c,sessions:e.target.value}))}/></div>
             <div><span className="lbl">PRECIO (€)</span><input type="number" className="inp" value={nc.cost} onChange={e=>setNc(c=>({...c,cost:e.target.value}))}/></div>
           </div>
-          <div><span className="lbl">OBJETIVO</span>
-            <select className="inp" style={{appearance:"none"}} value={nc.goal} onChange={e=>setNc(c=>({...c,goal:e.target.value}))}>
-              <option value="salud">🩺 Salud (concurrente: fuerza + cardio)</option>
-              <option value="estetica">💪 Estética / Masa (volumen y estabilidad)</option>
-            </select>
+          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
+            <div><span className="lbl">OBJETIVO</span>
+              <select className="inp" style={{appearance:"none"}} value={nc.goal} onChange={e=>setNc(c=>({...c,goal:e.target.value}))}>
+                <option value="salud">🩺 Salud (concurrente)</option>
+                <option value="estetica">💪 Estética / Masa</option>
+              </select>
+            </div>
+            <div><span className="lbl">DÍAS/SEM</span>
+              <select className="inp" style={{appearance:"none"}} value={nc.daysWeek} onChange={e=>setNc(c=>({...c,daysWeek:e.target.value}))}>
+                {[2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}
+              </select>
+            </div>
           </div>
           <div><span className="lbl">FECHA PRÓXIMO PAGO *</span><input type="date" className="inp" value={nc.nextPayment} onChange={e=>setNc(c=>({...c,nextPayment:e.target.value}))}/></div>
           <div><span className="lbl">MENSAJE DE BIENVENIDA (opcional)</span>
@@ -4717,15 +4736,21 @@ const DAY_TYPES = [
   ["hiit","⚡ HIIT / Cardio"],["mobility","🧘 Movilidad / Regeneración"],
 ];
 const DAY_LABEL = Object.fromEntries(DAY_TYPES);
-// Microciclo semanal según la fase del bloque (respeta el momento del macrociclo).
-function weekPlanFor(block){
+// Microciclo semanal según la fase del bloque y los días/semana del cliente.
+function weekPlanFor(block, days){
+  const n = Math.max(2, Math.min(6, parseInt(days)||4));
   const t = block?block.type:"fuerza";
-  if(t==="acondicionamiento") return ["fullbody","upper","lower","hiit"];
-  if(t==="fuerza")            return ["fuerzaA","fuerzaB","small","fullbody"];
-  if(t==="hipertrofia")       return ["push","pull","legs","small","fullbody"];
-  if(t==="hibrido")           return ["fullbody","hiit","upper","small"];
-  if(t==="descarga")          return ["mobility","fullbody"];
-  return WEEK_PLAN;
+  const plans = {
+    acondicionamiento:{3:["fullbody","upper","lower"],4:["fullbody","upper","lower","hiit"],5:["fullbody","upper","lower","hiit","mobility"]},
+    fuerza:{3:["fuerzaA","fuerzaB","fullbody"],4:["fuerzaA","fuerzaB","small","fullbody"],5:["fuerzaA","fuerzaB","upper","lower","small"]},
+    hipertrofia:{3:["push","pull","legs"],4:["push","pull","legs","small"],5:["push","pull","legs","small","fullbody"]},
+    hibrido:{3:["fullbody","hiit","small"],4:["fullbody","hiit","upper","small"],5:["fullbody","hiit","upper","lower","small"]},
+    descarga:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]},
+  };
+  const byType = plans[t] || plans.fuerza;
+  const base = byType[n] || byType[4] || byType[3] || WEEK_PLAN;
+  const out=[]; for(let i=0;i<n;i++) out.push(base[i%base.length]);
+  return out;
 }
 // Reps para principales según fase del bloque (usa el rango del bloque si existe).
 function buildDayRoutine(dayType, block, goal, weekNo){
