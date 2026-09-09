@@ -248,6 +248,11 @@ const macroWeek = (date=TODAY) => {
 const blockForDate = (blocks,date=TODAY) => { const w=macroWeek(date); return (blocks||[]).find(b=>w>=b.start_week&&w<=b.end_week); };
 // Lunes de la semana de una fecha.
 const mondayOfDate = (d) => { const x=new Date(d+"T12:00:00"); const g=x.getDay(); x.setDate(x.getDate()+(g===0?-6:1-g)); return x.toISOString().split("T")[0]; };
+// Días de la semana (getDay: 0=Dom..6=Sáb) en orden Lun→Dom para la interfaz.
+const WEEKDAYS = [[1,"L"],[2,"M"],[3,"X"],[4,"J"],[5,"V"],[6,"S"],[0,"D"]];
+const parseDays = (s) => Array.isArray(s)?s:String(s||"").split(",").map(x=>parseInt(x,10)).filter(x=>!isNaN(x));
+const weekdayOf = (d) => new Date(d+"T12:00:00").getDay();
+const orderDow = (a) => a===0?7:a; // Lun primero, Dom último
 // Microciclo semanal por defecto (fallback si no hay bloque).
 const WEEK_PLAN = ["fuerzaA","fuerzaB","small","fullbody"];
 const dayTypeLabel = (id) => (DAY_LABEL&&DAY_LABEL[id]) || "Sesión";
@@ -255,10 +260,19 @@ const dayTypeLabel = (id) => (DAY_LABEL&&DAY_LABEL[id]) || "Sesión";
 // la posición de la sesión dentro de la semana del cliente.
 function autoRoutineFor(client, date, sessions, annualBlocks){
   const blk = blockForDate(annualBlocks, date);
-  const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, client.days_week) : WEEK_PLAN;
-  const wd = getWeekDays(mondayOfDate(date));
-  const days = [...new Set((sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date))].sort();
-  let idx = days.indexOf(date); if(idx<0) idx = days.length;
+  const td = parseDays(client.train_days);
+  const nDays = td.length || client.days_week || 4;
+  const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, nDays) : WEEK_PLAN;
+  let idx = -1;
+  if(td.length){ // ordenar por el día de la semana concreto que entrena
+    const order = td.slice().sort((a,b)=>orderDow(a)-orderDow(b));
+    idx = order.indexOf(weekdayOf(date));
+  }
+  if(idx<0){ // fallback: orden por posición entre sus sesiones de la semana
+    const wd = getWeekDays(mondayOfDate(date));
+    const days = [...new Set((sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date))].sort();
+    idx = days.indexOf(date); if(idx<0) idx = days.length;
+  }
   const dayType = plan[idx % plan.length];
   return { dayType, label:dayTypeLabel(dayType), blk, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date)) };
 }
@@ -485,7 +499,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
-  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud",daysWeek:4});
+  const [nc,setNc] = React.useState({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud",trainDays:[1,3,5]});
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
   const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
   const [showSched,setShowSched] = React.useState(false);
@@ -543,9 +557,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(nc.code.length!==4) return notify("El código debe tener 4 dígitos","err");
     if(clients.find(c=>c.code===nc.code)) return notify("Ese código ya existe","err");
     const color=COLORS[clients.length%COLORS.length];
-    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal,days_week:parseInt(nc.daysWeek)||4});
+    const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal,days_week:(nc.trainDays&&nc.trainDays.length)||4,train_days:(nc.trainDays||[]).join(",")});
     if(error) return notify("Error: "+error.message,"err");
-    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud",daysWeek:4});
+    setShowNC(false); setNc({name:"",code:"",phone:"",email:"",sessions:10,cost:100,nextPayment:"",welcome:"",notes:"",goal:"salud",trainDays:[1,3,5]});
     notify("Cliente añadido ✓");
   });
 
@@ -616,7 +630,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       total_sessions:Math.max(1,parseInt(data.total_sessions)||1),
       payment_amount:parseFloat(data.payment_amount)||0,
       next_payment:data.next_payment,
-      days_week:Math.max(2,Math.min(6,parseInt(data.days_week)||4)),
+      train_days:(data.train_days||[]).join(","),
+      days_week:(data.train_days&&data.train_days.length)||4,
     }).eq("id",client.id);
     setShowEdit(null); notify("Bono actualizado ✓");
   });
@@ -1566,6 +1581,43 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
           </div>
         )}
 
+        {/* Esta semana: qué le toca y qué ha hecho */}
+        {(()=>{
+          const week=getWeekDays(mondayOfDate(date));
+          const td=parseDays(client.train_days);
+          const rows=week.filter(d=>td.includes(weekdayOf(d))||(sessions||[]).some(s=>s.client_id===client.id&&s.date===d));
+          if(!rows.length) return null;
+          const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+          const doneN=rows.filter(d=>(sessions||[]).some(s=>s.client_id===client.id&&s.date===d&&s.status==="completed")).length;
+          return(
+            <div style={{marginBottom:14}}>
+              <span className="lbl">🗓️ ESTA SEMANA · {doneN}/{rows.length} hechas</span>
+              <div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+                {rows.map((d,i)=>{
+                  const booking=(sessions||[]).find(s=>s.client_id===client.id&&s.date===d);
+                  const asig=(assignedSessions||[]).find(a=>a.client_id===client.id&&a.date===d);
+                  const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
+                  const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
+                  const label=tmpl?tmpl.name:(au?au.label:"—");
+                  const done=booking&&booking.status==="completed";
+                  const nd=new Date(d+"T12:00:00");
+                  const isTodayRow=d===date;
+                  return(
+                    <div key={d} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderTop:i>0?"1px solid #eef1f7":"none",background:isTodayRow?"#eef4fc":done?"#f4faf6":"#fff"}}>
+                      <div style={{width:38,flexShrink:0,textAlign:"center"}}>
+                        <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{dow[nd.getDay()]}</div>
+                        <div className="mono" style={{fontSize:13,fontWeight:700,color:isTodayRow?"#0284c7":"#0f172a"}}>{nd.getDate()}</div>
+                      </div>
+                      <div style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+                      <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#cbd5e1"}}>{done?"✓ hecho":booking?"reservado":"previsto"}</div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          );
+        })()}
+
         <div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
             <span className="lbl" style={{marginBottom:0}}>🏋️ ENTRENAMIENTO DE HOY</span>
@@ -2007,6 +2059,20 @@ function PayModal({client,onSave,onClose}) {
   );
 }
 
+// ── SELECTOR DE DÍAS DE ENTRENO (L M X J V S D) ────────────────────────────
+function WeekdayPicker({value, onChange}) {
+  const sel = parseDays(value);
+  const toggle=(d)=>{ const next = sel.includes(d)?sel.filter(x=>x!==d):[...sel,d]; onChange(next.sort((a,b)=>orderDow(a)-orderDow(b))); };
+  return(
+    <div style={{display:"flex",gap:5}}>
+      {WEEKDAYS.map(([d,l])=>{ const on=sel.includes(d); return(
+        <button key={d} type="button" onClick={()=>toggle(d)} style={{flex:1,padding:"9px 0",borderRadius:8,fontSize:13,fontWeight:700,cursor:"pointer",
+          border:on?"1px solid #0284c7":"1px solid #cfd8e6",background:on?"#0284c7":"#fff",color:on?"#fff":"#94a3b8"}}>{l}</button>
+      );})}
+    </div>
+  );
+}
+
 // ── EDITAR BONO / CADUCIDAD ────────────────────────────────────────────────
 function EditBonoModal({client,saving,onSave,onClose}) {
   const [f,setF] = React.useState({
@@ -2014,7 +2080,7 @@ function EditBonoModal({client,saving,onSave,onClose}) {
     total_sessions:client.total_sessions,
     payment_amount:client.payment_amount,
     next_payment:client.next_payment||"",
-    days_week:client.days_week||4,
+    train_days:parseDays(client.train_days).length?parseDays(client.train_days):[1,3,5],
   });
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
   return(
@@ -2039,17 +2105,13 @@ function EditBonoModal({client,saving,onSave,onClose}) {
           <div><span className="lbl">PRECIO DEL BONO (€)</span>
             <input type="number" className="inp" value={f.payment_amount} onChange={e=>set("payment_amount",e.target.value)}/>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
-            <div><span className="lbl">CADUCIDAD / PRÓXIMO PAGO</span>
-              <input type="date" className="inp" value={f.next_payment} onChange={e=>set("next_payment",e.target.value)}/>
-            </div>
-            <div><span className="lbl">DÍAS/SEM</span>
-              <select className="inp" style={{appearance:"none"}} value={f.days_week} onChange={e=>set("days_week",e.target.value)}>
-                {[2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
+          <div><span className="lbl">CADUCIDAD / PRÓXIMO PAGO</span>
+            <input type="date" className="inp" value={f.next_payment} onChange={e=>set("next_payment",e.target.value)}/>
           </div>
-          <div style={{fontSize:11,color:"#64748b"}}>Los días/semana definen el microciclo automático del entreno (3=full/split corto, 5=split más específico).</div>
+          <div><span className="lbl">DÍAS DE ENTRENO ({(f.train_days||[]).length}/sem)</span>
+            <WeekdayPicker value={f.train_days} onChange={(d)=>set("train_days",d)}/>
+          </div>
+          <div style={{fontSize:11,color:"#64748b"}}>Los días marcados ordenan el microciclo automático (3=split corto/full, 5=split más específico). Cámbialos si esta semana entrena otros días.</div>
           <div style={{display:"flex",gap:8,marginTop:4}}>
             <button className="btn sky" style={{flex:2,padding:11}} disabled={saving} onClick={()=>onSave(f)}>{saving?"Guardando…":"Guardar cambios"}</button>
             <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
@@ -2118,18 +2180,14 @@ function ClientModal({nc,setNc,onSave,onClose}) {
             <div><span className="lbl">SESIONES</span><input type="number" className="inp" value={nc.sessions} onChange={e=>setNc(c=>({...c,sessions:e.target.value}))}/></div>
             <div><span className="lbl">PRECIO (€)</span><input type="number" className="inp" value={nc.cost} onChange={e=>setNc(c=>({...c,cost:e.target.value}))}/></div>
           </div>
-          <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:10}}>
-            <div><span className="lbl">OBJETIVO</span>
-              <select className="inp" style={{appearance:"none"}} value={nc.goal} onChange={e=>setNc(c=>({...c,goal:e.target.value}))}>
-                <option value="salud">🩺 Salud (concurrente)</option>
-                <option value="estetica">💪 Estética / Masa</option>
-              </select>
-            </div>
-            <div><span className="lbl">DÍAS/SEM</span>
-              <select className="inp" style={{appearance:"none"}} value={nc.daysWeek} onChange={e=>setNc(c=>({...c,daysWeek:e.target.value}))}>
-                {[2,3,4,5,6].map(n=><option key={n} value={n}>{n}</option>)}
-              </select>
-            </div>
+          <div><span className="lbl">OBJETIVO</span>
+            <select className="inp" style={{appearance:"none"}} value={nc.goal} onChange={e=>setNc(c=>({...c,goal:e.target.value}))}>
+              <option value="salud">🩺 Salud (concurrente: fuerza + cardio)</option>
+              <option value="estetica">💪 Estética / Masa (volumen y estabilidad)</option>
+            </select>
+          </div>
+          <div><span className="lbl">DÍAS DE ENTRENO ({(nc.trainDays||[]).length}/sem)</span>
+            <WeekdayPicker value={nc.trainDays} onChange={(d)=>setNc(c=>({...c,trainDays:d}))}/>
           </div>
           <div><span className="lbl">FECHA PRÓXIMO PAGO *</span><input type="date" className="inp" value={nc.nextPayment} onChange={e=>setNc(c=>({...c,nextPayment:e.target.value}))}/></div>
           <div><span className="lbl">MENSAJE DE BIENVENIDA (opcional)</span>
