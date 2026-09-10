@@ -1573,8 +1573,11 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
   };
   const rutinas=slot.map(s=>({s, r:rutinaDe(s.client)}));
   const allEx=[...new Set(rutinas.flatMap(x=>x.r.exs.map(e=>e.name)))];
-  // Agrupado por material/equipo para montar la sala más rápido.
-  const byEquip=(()=>{ const g={}; allEx.forEach(n=>{ const k=equipmentOf(n); (g[k]=g[k]||[]).push(n); }); return Object.entries(g).sort((a,b)=>b[1].length-a[1].length); })();
+  // Agrupado por material/equipo, con nº de personas que lo usan (cuellos de botella).
+  const byEquip=(()=>{ const g={};
+    rutinas.forEach(({s,r})=>{ r.exs.forEach(e=>{ const k=equipmentOf(e.name); (g[k]=g[k]||{ex:new Set(),cl:new Set()}); g[k].ex.add(e.name); g[k].cl.add(s.client_id); }); });
+    return Object.entries(g).map(([k,v])=>[k,[...v.ex],v.cl.size]).sort((a,b)=> b[2]-a[2] || b[1].length-a[1].length);
+  })();
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
@@ -1586,15 +1589,23 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
           <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
             <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>🧰 MATERIAL DE LA SALA · {byEquip.length} tipo{byEquip.length===1?"":"s"} · {allEx.length} ejercicios</div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {byEquip.map(([equip,list])=>(
+              {byEquip.map(([equip,list,people])=>{
+                const jam=people>=3; // posible cuello de botella
+                return(
                 <div key={equip}>
-                  <div style={{fontSize:11,fontWeight:700,color:"#0f172a",marginBottom:4}}>{equip} <span style={{color:"#94a3b8",fontWeight:600}}>({list.length})</span></div>
+                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
+                    <span style={{fontSize:11,fontWeight:700,color:"#0f172a"}}>{equip}</span>
+                    <span style={{fontSize:10,fontWeight:700,color:jam?"#dc2626":"#16a34a",background:(jam?"#dc2626":"#16a34a")+"14",border:`1px solid ${(jam?"#dc2626":"#16a34a")}30`,borderRadius:20,padding:"1px 8px"}}>{people} pers{jam?" ⚠️":""}</span>
+                    <span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>{list.length} ej.</span>
+                  </div>
                   <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
                     {list.map((n,i)=><span key={i} style={{fontSize:11,fontWeight:600,color:"#0284c7",background:"#fff",border:"1px solid #bcd3ee",borderRadius:20,padding:"3px 9px"}}>{n}</span>)}
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
+            <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>⚠️ = 3+ personas usan ese material a la vez (posible cuello de botella).</div>
           </div>
         )}
 
