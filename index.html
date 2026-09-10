@@ -5035,9 +5035,6 @@ function buildDayRoutine(dayType, block, goal, weekNo){
   const estetica = goal==="estetica";
   const salud = !estetica;
   const wk = salud ? (weekNo||0) : 0; // rotación semanal solo en salud
-  // Elige respetando el material disponible del gimnasio; si ninguno del pool
-  // está disponible, usa el pool completo (para no dejar el hueco vacío).
-  const pick=(arr,base)=>{ const av=arr.filter(equipOk); const a=av.length?av:arr; return a[(((wk+base)%a.length)+a.length)%a.length]; };
   // Protocolo del ejercicio principal según fase.
   const isEspecifico = /específico|especifico/i.test(block?(block.name||""):"");
   const mainProto = bt==="fuerza" ? (isEspecifico?"ramp_up":"top_set_backoff")
@@ -5048,6 +5045,10 @@ function buildDayRoutine(dayType, block, goal, weekNo){
   const mS = bt==="descarga"?2:4, aS = bt==="descarga"?2:3;
   const volBoost = estetica?1:0; // más volumen en estética
   const r=[]; const add=(name,sets,reps,rest,proto,main)=>{ if(name) r.push([name,sets,reps,rest,proto,!!main]); };
+  // Elige respetando el material disponible y SIN repetir ejercicios ya añadidos;
+  // si no queda ninguno disponible para ese patrón, omite el hueco (no fuerza
+  // material que no tienes).
+  const pick=(arr,base)=>{ const av=arr.filter(n=>equipOk(n)&&!r.some(x=>x[0]===n)); if(!av.length) return null; return av[(((wk+base)%av.length)+av.length)%av.length]; };
   const metaProto = ["amrap","emom","tabata","series_planas"][(salud?(weekNo||0):0)%4];
 
   if(dayType==="fuerzaA"){ // tren inferior fuerza
