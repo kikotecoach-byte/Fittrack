@@ -209,6 +209,13 @@ const DEFAULT_SCHEDULE = {
   morningFrom:"10:00", morningTo:"13:00",
   afternoonFrom:"17:00", afternoonTo:"20:00",
   defaultCapacity:1, capacity:{},
+  // Material disponible del gimnasio (para que el generador solo use lo que hay).
+  // Por defecto: sala de barra (racks + multipower), leg extension/curl femoral,
+  // mancuernas, dominadas/peso corporal, cajón, banda. Ajustable en ⚙️ Horario.
+  equip:{ barra:true, multipower:true, rackpines:true, mancuernas:true, legmachine:true,
+    legpress:false, machine:false, poleas:false, pesocorporal:true, kettlebell:false,
+    cajon:true, banda:true, comba:true, cardio:false, cuerdas:false, trineo:false,
+    balon:false, rueda:true, antebrazo:true, movilidad:true },
 };
 // Genera las horas de una franja [from, to) en pasos de 1h. Ej: 10:00→13:00 = [10:00,11:00,12:00].
 const genSlots = (from,to) => {
@@ -518,15 +525,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
   // Carga la configuración de horario (si la tabla existe; si no, usa los valores por defecto).
   React.useEffect(()=>{
+    setGymEquip(DEFAULT_SCHEDULE);
     sb.from("app_settings").select("config").eq("id",1).then(({data})=>{
-      if(data&&data[0]&&data[0].config) setConfig({...DEFAULT_SCHEDULE,...data[0].config});
+      if(data&&data[0]&&data[0].config){ const c={...DEFAULT_SCHEDULE,...data[0].config}; setConfig(c); setGymEquip(c); }
     });
   },[]);
   const saveConfig = (cfg) => w(async()=>{
-    setConfig(cfg);
+    setConfig(cfg); setGymEquip(cfg);
     const {error}=await sb.from("app_settings").upsert({id:1,config:cfg});
     if(error) return notify("Guarda la tabla app_settings (ver docs)","err");
-    notify("Horario guardado ✓");
+    notify("Configuración guardada ✓");
   });
 
   // Franjas de trabajo derivadas de la config y capacidad (atletas) por hora.
@@ -1594,7 +1602,7 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
                 return(
                 <div key={equip}>
                   <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
-                    <span style={{fontSize:11,fontWeight:700,color:"#0f172a"}}>{equip}</span>
+                    <span style={{fontSize:11,fontWeight:700,color:"#0f172a"}}>{EQUIP_LABEL[equip]||equip}</span>
                     <span style={{fontSize:10,fontWeight:700,color:jam?"#dc2626":"#16a34a",background:(jam?"#dc2626":"#16a34a")+"14",border:`1px solid ${(jam?"#dc2626":"#16a34a")}30`,borderRadius:20,padding:"1px 8px"}}>{people} pers{jam?" ⚠️":""}</span>
                     <span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>{list.length} ej.</span>
                   </div>
@@ -2093,7 +2101,8 @@ function ProgressionModal({client,clientWeights,weightHistory,records,onClose}) 
 // ── SCHEDULE / HORARIO MODAL ───────────────────────────────────────────────
 // Configura las franjas de mañana y tarde (sesiones de 1h) y los atletas por hora.
 function ScheduleModal({config,onSave,onClose}) {
-  const [cfg,setCfg] = React.useState({...DEFAULT_SCHEDULE,...config,capacity:{...(config.capacity||{})}});
+  const [cfg,setCfg] = React.useState({...DEFAULT_SCHEDULE,...config,capacity:{...(config.capacity||{})},equip:{...DEFAULT_SCHEDULE.equip,...(config.equip||{})}});
+  const toggleEquip = (k) => setCfg(c=>({...c,equip:{...c.equip,[k]:!(c.equip&&c.equip[k])}}));
   const slots = [...genSlots(cfg.morningFrom,cfg.morningTo),...genSlots(cfg.afternoonFrom,cfg.afternoonTo)];
   // Capacidad entre 1 y 5 atletas por hora.
   const capOf = (t) => cfg.capacity[t]!=null?cfg.capacity[t]:cfg.defaultCapacity;
@@ -2145,8 +2154,23 @@ function ScheduleModal({config,onSave,onClose}) {
           }
         </div>
 
+        {/* Material del gimnasio: el generador solo usará lo que marques */}
+        <div style={{marginTop:18,marginBottom:4}}>
+          <span className="lbl">🧰 MATERIAL DISPONIBLE (el entreno se adapta a esto)</span>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+            {EQUIP_KEYS.map(k=>{ const on=!!(cfg.equip&&cfg.equip[k]); return(
+              <button key={k} type="button" onClick={()=>toggleEquip(k)}
+                style={{fontSize:11,fontWeight:700,padding:"6px 10px",borderRadius:20,cursor:"pointer",
+                  border:on?"1px solid #16a34a":"1px solid #cfd8e6",background:on?"#e2f4e8":"#fff",color:on?"#16a34a":"#94a3b8"}}>
+                {on?"✓ ":""}{EQUIP_LABEL[k]||k}
+              </button>
+            );})}
+          </div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Marca solo lo que tienes. Las rutinas automáticas evitarán el material no disponible.</div>
+        </div>
+
         <div style={{display:"flex",gap:8,marginTop:18}}>
-          <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>{onSave(cfg);onClose();}}>Guardar horario</button>
+          <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>{onSave(cfg);onClose();}}>Guardar</button>
           <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
         </div>
       </div>
@@ -2486,7 +2510,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
   // Carga el horario/capacidad definidos por el coach (para mostrar los huecos).
   React.useEffect(()=>{
     sb.from("app_settings").select("config").eq("id",1).then(({data})=>{
-      if(data&&data[0]&&data[0].config) setConfig({...DEFAULT_SCHEDULE,...data[0].config});
+      if(data&&data[0]&&data[0].config){ const c={...DEFAULT_SCHEDULE,...data[0].config}; setConfig(c); setGymEquip(c); }
     });
   },[]);
 
@@ -4870,6 +4894,17 @@ const EXERCISE_LIBRARY = {
     ["Burpees",4,"12-15",45,false],
     ["Swing con kettlebell",4,"15-20",45,false],
   ],
+  "Rack / Multipower / Pines": [
+    ["Sentadilla en multipower",4,"6-10",120,true],
+    ["Sentadilla desde pines",4,"3-5",180,true],
+    ["Peso muerto desde pines (rack pull)",4,"3-6",180,true],
+    ["Press banca en multipower",4,"6-10",120,true],
+    ["Press desde pines (multipower)",4,"3-5",180,false],
+    ["Press militar en multipower",4,"6-10",120,false],
+    ["Remo en multipower",4,"8-12",90,false],
+    ["Hip thrust en multipower",4,"8-12",90,false],
+    ["Curl femoral de pie",3,"12-15",60,false],
+  ],
 };
 
 // Cómo se ejecuta cada protocolo (guía rápida para preparar y ejecutar).
@@ -4892,16 +4927,16 @@ const PROTOCOL_INFO = {
 // salud) la semana, para rotar ejercicios. Nombres iguales a la biblioteca
 // para que enlacen con los pesos base del cliente.
 const EX_POOLS = {
-  squat:["Sentadilla trasera","Sentadilla frontal","Sentadilla con pausa","Sentadilla al cajón (box squat)","Prensa de piernas","Hack squat","Sentadilla goblet"],
-  hinge:["Peso muerto","Peso muerto rumano","Peso muerto sumo","Hip thrust","Peso muerto trap bar","Buenos días","Peso muerto piernas rígidas"],
-  hthrust:["Hip thrust","Hip thrust a una pierna","Puente de glúteo","Extensión de cadera en polea"],
-  hpush:["Press banca","Press banca inclinado","Press banca declinado","Press mancuernas plano","Press mancuernas inclinado","Press en máquina","Fondos en paralelas"],
-  vpush:["Press militar de pie","Press militar mancuernas","Press Arnold","Press en máquina hombro"],
+  squat:["Sentadilla trasera","Sentadilla frontal","Sentadilla con pausa","Sentadilla en multipower","Sentadilla desde pines","Sentadilla al cajón (box squat)","Prensa de piernas","Hack squat","Sentadilla goblet"],
+  hinge:["Peso muerto","Peso muerto rumano","Peso muerto sumo","Peso muerto desde pines (rack pull)","Hip thrust","Peso muerto trap bar","Buenos días","Peso muerto piernas rígidas"],
+  hthrust:["Hip thrust","Hip thrust en multipower","Hip thrust a una pierna","Puente de glúteo","Extensión de cadera en polea"],
+  hpush:["Press banca","Press banca inclinado","Press banca en multipower","Press desde pines (multipower)","Press banca declinado","Press mancuernas plano","Press mancuernas inclinado","Press en máquina","Fondos en paralelas"],
+  vpush:["Press militar de pie","Press militar en multipower","Press militar mancuernas","Press Arnold","Press en máquina hombro"],
   vpull:["Dominadas","Dominadas supinas","Jalón al pecho","Jalón agarre neutro","Jalón unilateral en polea","Pullover en polea"],
-  hpull:["Remo con barra","Remo Pendlay","Remo Yates (supino)","Remo con mancuerna","Remo mancuerna apoyo pecho","Remo en T","Remo en polea baja","Remo en máquina"],
+  hpull:["Remo con barra","Remo Pendlay","Remo en multipower","Remo Yates (supino)","Remo con mancuerna","Remo mancuerna apoyo pecho","Remo en T","Remo en polea baja","Remo en máquina"],
   lunge:["Sentadilla búlgara","Zancadas","Zancada caminando","Step-up al cajón","Pistol squat (asistida)"],
   quadiso:["Extensión de cuádriceps","Sissy squat"],
-  hamiso:["Curl femoral tumbado","Curl femoral sentado","Nordic ham curl"],
+  hamiso:["Curl femoral tumbado","Curl femoral sentado","Curl femoral de pie","Nordic ham curl"],
   chestiso:["Aperturas con mancuernas","Aperturas en máquina (peck deck)","Cruce de poleas"],
   backiso:["Pullover en polea","Encogimientos (trapecio)","Remo invertido (peso corporal)"],
   lateral:["Elevaciones laterales","Elevaciones laterales en polea","Remo al mentón (upright row)","Elevaciones frontales"],
@@ -4919,25 +4954,47 @@ const EX_POOLS = {
   mobility:["Movilidad de cadera","Movilidad torácica","Círculos de hombro (banda)","Gato-camello","90/90 cadera","World's greatest stretch","Activación de glúteo (banda)","Sentadilla profunda (holds)"],
 };
 // Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
+// Devuelve una CLAVE de equipo; la etiqueta visible está en EQUIP_LABEL.
 const EQUIP = [
-  [/kettlebell|swing|goblet|turkish/i,"🔔 Kettlebell"],
-  [/polea|jalón|jalon|face pull|cruce de poleas|pull-?over en polea/i,"🪢 Poleas / cable"],
-  [/prensa|hack|máquina|maquina|peck deck|curl femoral|extensión de cuádriceps|extension de cuadriceps/i,"🏗️ Máquinas"],
-  [/mancuerna|arnold|elevaciones|pájaros|pajaros|patada|concentrado|martillo|sobre cabeza \(mancuerna\)/i,"🏋️ Mancuernas"],
-  [/barra|peso muerto|press banca|press militar de pie|sentadilla|remo con barra|remo pendlay|remo yates|buenos días|buenos dias|hip thrust|encogimientos|cargada|arrancada|push press|push jerk|clean|snatch|cluster|tirón alto|tiron alto|remo al mentón|remo al menton/i,"🟦 Barra"],
-  [/dominadas|fondos|flexiones|plancha|burpees|mountain climbers|hollow|bird-dog|dead bug|copenhagen|pistol|remo invertido|sissy|elevación de piernas colgado/i,"🤸 Peso corporal"],
-  [/comba/i,"🪀 Comba"],
-  [/battle ropes|cuerdas/i,"🪢 Cuerdas de batalla"],
-  [/sled|trineo/i,"🛷 Trineo"],
-  [/wall ball|balón|balon|thrusters/i,"⚽ Balón medicinal"],
-  [/cajón|cajon|box jump|step-?up|salto/i,"📦 Cajón / pliometría"],
-  [/banda|activación de glúteo|activacion de gluteo/i,"🎗️ Banda elástica"],
-  [/rueda abdominal/i,"☸️ Rueda abdominal"],
-  [/remo \(máquina\)|remo \(maquina\)|bicicleta|assault bike|cinta|carrera|sprints|intervalos/i,"🚴 Cardio (máquina)"],
-  [/curl de muñeca|curl de muneca|farmer|granjero/i,"🤏 Antebrazo / agarre"],
-  [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|sentadilla profunda \(holds\)|círculos de hombro|circulos de hombro/i,"🧘 Movilidad / suelo"],
+  [/multipower|smith|jaula/i,"multipower"],
+  [/desde pines|rack pull|pin press|press desde pines|tirón desde pines|tiron desde pines/i,"rackpines"],
+  [/kettlebell|swing|goblet|turkish/i,"kettlebell"],
+  [/prensa|hack squat/i,"legpress"],
+  [/leg extension|extensión de cuádriceps|extension de cuadriceps|curl femoral/i,"legmachine"],
+  [/peck deck|press en máquina|press en maquina|remo en máquina|remo en maquina|máquina|maquina/i,"machine"],
+  [/polea|jalón|jalon|face pull|cruce de poleas|pull-?over en polea/i,"poleas"],
+  [/mancuerna|arnold|elevaciones|pájaros|pajaros|patada|concentrado|martillo|sobre cabeza \(mancuerna\)/i,"mancuernas"],
+  [/barra|peso muerto|press banca|press militar de pie|sentadilla|remo con barra|remo pendlay|remo yates|buenos días|buenos dias|hip thrust|encogimientos|cargada|arrancada|push press|push jerk|clean|snatch|cluster|tirón alto|tiron alto|remo al mentón|remo al menton/i,"barra"],
+  [/dominadas|fondos|flexiones|plancha|burpees|mountain climbers|hollow|bird-dog|dead bug|copenhagen|pistol|remo invertido|sissy|elevación de piernas colgado/i,"pesocorporal"],
+  [/comba/i,"comba"],
+  [/battle ropes|cuerdas/i,"cuerdas"],
+  [/sled|trineo/i,"trineo"],
+  [/wall ball|balón|balon|thrusters/i,"balon"],
+  [/cajón|cajon|box jump|step-?up|salto/i,"cajon"],
+  [/banda|activación de glúteo|activacion de gluteo/i,"banda"],
+  [/rueda abdominal/i,"rueda"],
+  [/remo \(máquina\)|remo \(maquina\)|bicicleta|assault bike|cinta|carrera|sprints|intervalos/i,"cardio"],
+  [/curl de muñeca|curl de muneca|farmer|granjero/i,"antebrazo"],
+  [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|sentadilla profunda \(holds\)|círculos de hombro|circulos de hombro/i,"movilidad"],
 ];
-const equipmentOf = (name) => { for(const [re,lab] of EQUIP){ if(re.test(name)) return lab; } return "🎯 Otros / analítico"; };
+const EQUIP_LABEL = {
+  multipower:"🔩 Multipower / Smith", rackpines:"🏗️ Rack / pines", kettlebell:"🔔 Kettlebell",
+  legpress:"🦵 Prensa / Hack", legmachine:"🦿 Máquina piernas (ext/curl)", machine:"🏭 Máquinas",
+  poleas:"🪢 Poleas / cable", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barra / rack",
+  pesocorporal:"🤸 Peso corporal", comba:"🪀 Comba", cuerdas:"🪢 Cuerdas de batalla",
+  trineo:"🛷 Trineo", balon:"⚽ Balón medicinal", cajon:"📦 Cajón / pliometría",
+  banda:"🎗️ Banda elástica", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (máquina)",
+  antebrazo:"🤏 Antebrazo / agarre", movilidad:"🧘 Movilidad / suelo", otros:"🎯 Otros / analítico",
+};
+// Orden y etiquetas para el editor de material.
+const EQUIP_KEYS = ["barra","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
+const equipmentOf = (name) => { for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
+const equipmentLabel = (name) => EQUIP_LABEL[equipmentOf(name)] || EQUIP_LABEL.otros;
+
+// Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
+let GYM_EQUIP = null;
+const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; };
+const equipOk = (name) => { if(!GYM_EQUIP) return true; const v=GYM_EQUIP[equipmentOf(name)]; return v===undefined?true:!!v; };
 
 const DAY_TYPES = [
   ["fuerzaA","💪 Fuerza · Tren inferior"],["fuerzaB","💪 Fuerza · Tren superior"],
@@ -4970,7 +5027,9 @@ function buildDayRoutine(dayType, block, goal, weekNo){
   const estetica = goal==="estetica";
   const salud = !estetica;
   const wk = salud ? (weekNo||0) : 0; // rotación semanal solo en salud
-  const pick=(arr,base)=>arr[(((wk+base)%arr.length)+arr.length)%arr.length];
+  // Elige respetando el material disponible del gimnasio; si ninguno del pool
+  // está disponible, usa el pool completo (para no dejar el hueco vacío).
+  const pick=(arr,base)=>{ const av=arr.filter(equipOk); const a=av.length?av:arr; return a[(((wk+base)%a.length)+a.length)%a.length]; };
   // Protocolo del ejercicio principal según fase.
   const isEspecifico = /específico|especifico/i.test(block?(block.name||""):"");
   const mainProto = bt==="fuerza" ? (isEspecifico?"ramp_up":"top_set_backoff")
