@@ -1573,18 +1573,27 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
   };
   const rutinas=slot.map(s=>({s, r:rutinaDe(s.client)}));
   const allEx=[...new Set(rutinas.flatMap(x=>x.r.exs.map(e=>e.name)))];
+  // Agrupado por material/equipo para montar la sala más rápido.
+  const byEquip=(()=>{ const g={}; allEx.forEach(n=>{ const k=equipmentOf(n); (g[k]=g[k]||[]).push(n); }); return Object.entries(g).sort((a,b)=>b[1].length-a[1].length); })();
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:12,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{blk?` · ${blk.name}`:""}</p>
 
-        {/* Material / ejercicios de la clase (para organizar sala y espacio) */}
+        {/* Material agrupado por equipo (para montar la sala rápido) */}
         {allEx.length>0&&(
           <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
-            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:6}}>🧰 MATERIAL / EJERCICIOS EN SALA ({allEx.length})</div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-              {allEx.map((n,i)=><span key={i} style={{fontSize:11,fontWeight:600,color:"#0284c7",background:"#fff",border:"1px solid #bcd3ee",borderRadius:20,padding:"3px 9px"}}>{n}</span>)}
+            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>🧰 MATERIAL DE LA SALA · {byEquip.length} tipo{byEquip.length===1?"":"s"} · {allEx.length} ejercicios</div>
+            <div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {byEquip.map(([equip,list])=>(
+                <div key={equip}>
+                  <div style={{fontSize:11,fontWeight:700,color:"#0f172a",marginBottom:4}}>{equip} <span style={{color:"#94a3b8",fontWeight:600}}>({list.length})</span></div>
+                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+                    {list.map((n,i)=><span key={i} style={{fontSize:11,fontWeight:600,color:"#0284c7",background:"#fff",border:"1px solid #bcd3ee",borderRadius:20,padding:"3px 9px"}}>{n}</span>)}
+                  </div>
+                </div>
+              ))}
             </div>
           </div>
         )}
@@ -4898,6 +4907,27 @@ const EX_POOLS = {
   carry:["Paseo del granjero","Farmer hold (agarre)","Sled push (empuje trineo)"],
   mobility:["Movilidad de cadera","Movilidad torácica","Círculos de hombro (banda)","Gato-camello","90/90 cadera","World's greatest stretch","Activación de glúteo (banda)","Sentadilla profunda (holds)"],
 };
+// Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
+const EQUIP = [
+  [/kettlebell|swing|goblet|turkish/i,"🔔 Kettlebell"],
+  [/polea|jalón|jalon|face pull|cruce de poleas|pull-?over en polea/i,"🪢 Poleas / cable"],
+  [/prensa|hack|máquina|maquina|peck deck|curl femoral|extensión de cuádriceps|extension de cuadriceps/i,"🏗️ Máquinas"],
+  [/mancuerna|arnold|elevaciones|pájaros|pajaros|patada|concentrado|martillo|sobre cabeza \(mancuerna\)/i,"🏋️ Mancuernas"],
+  [/barra|peso muerto|press banca|press militar de pie|sentadilla|remo con barra|remo pendlay|remo yates|buenos días|buenos dias|hip thrust|encogimientos|cargada|arrancada|push press|push jerk|clean|snatch|cluster|tirón alto|tiron alto|remo al mentón|remo al menton/i,"🟦 Barra"],
+  [/dominadas|fondos|flexiones|plancha|burpees|mountain climbers|hollow|bird-dog|dead bug|copenhagen|pistol|remo invertido|sissy|elevación de piernas colgado/i,"🤸 Peso corporal"],
+  [/comba/i,"🪀 Comba"],
+  [/battle ropes|cuerdas/i,"🪢 Cuerdas de batalla"],
+  [/sled|trineo/i,"🛷 Trineo"],
+  [/wall ball|balón|balon|thrusters/i,"⚽ Balón medicinal"],
+  [/cajón|cajon|box jump|step-?up|salto/i,"📦 Cajón / pliometría"],
+  [/banda|activación de glúteo|activacion de gluteo/i,"🎗️ Banda elástica"],
+  [/rueda abdominal/i,"☸️ Rueda abdominal"],
+  [/remo \(máquina\)|remo \(maquina\)|bicicleta|assault bike|cinta|carrera|sprints|intervalos/i,"🚴 Cardio (máquina)"],
+  [/curl de muñeca|curl de muneca|farmer|granjero/i,"🤏 Antebrazo / agarre"],
+  [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|sentadilla profunda \(holds\)|círculos de hombro|circulos de hombro/i,"🧘 Movilidad / suelo"],
+];
+const equipmentOf = (name) => { for(const [re,lab] of EQUIP){ if(re.test(name)) return lab; } return "🎯 Otros / analítico"; };
+
 const DAY_TYPES = [
   ["fuerzaA","💪 Fuerza · Tren inferior"],["fuerzaB","💪 Fuerza · Tren superior"],
   ["push","🟦 Push (empuje)"],["pull","🟩 Pull (tracción)"],["legs","🦵 Legs (pierna)"],
