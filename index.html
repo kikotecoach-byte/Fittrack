@@ -488,6 +488,12 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
+  // Swipe para cambiar entre día / semana / mes en la agenda.
+  const swipeRef = React.useRef({x:0,y:0});
+  const VIEWS_ORDER = ["day","week","month"];
+  const cycleView = (dir)=>setSchedView(v=>{const i=VIEWS_ORDER.indexOf(v);const n=i+dir;return (n<0||n>=VIEWS_ORDER.length)?v:VIEWS_ORDER[n];});
+  const onSchedTouchStart = (e)=>{ const t=e.touches[0]; swipeRef.current={x:t.clientX,y:t.clientY}; };
+  const onSchedTouchEnd = (e)=>{ const t=e.changedTouches[0]; const dx=t.clientX-swipeRef.current.x, dy=t.clientY-swipeRef.current.y; if(Math.abs(dx)>70 && Math.abs(dx)>Math.abs(dy)*1.8) cycleView(dx<0?1:-1); };
   const [showVacation,setShowVacation] = React.useState(false);
   const [expanded,setExpanded] = React.useState(null);
   const [waClient,setWaClient] = React.useState(null);
@@ -1022,7 +1028,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
         {/* SCHEDULE */}
         {view==="schedule"&&(
-          <div>
+          <div onTouchStart={onSchedTouchStart} onTouchEnd={onSchedTouchEnd}>
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <h1 className="mono" style={{fontSize:18,fontWeight:700}}>Agenda</h1>
@@ -1033,11 +1039,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
 
             {/* View switcher */}
-            <div className="seg" style={{marginBottom:14}}>
+            <div className="seg" style={{marginBottom:6}}>
               {[["day","Día"],["week","Semana"],["month","Mes"]].map(([id,label])=>(
                 <button key={id} className={"sb"+(schedView===id?" on":"")} onClick={()=>setSchedView(id)}>{label}</button>
               ))}
             </div>
+            <div style={{fontSize:10,color:"#cbd5e1",textAlign:"center",marginBottom:10}}>← desliza para cambiar de vista →</div>
 
             {/* Day nav */}
             {(schedView==="day"||schedView==="week")&&(
@@ -1105,14 +1112,18 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                               :<>
                                 {slots.map(s=>{
                                   const done=s.status==="completed";
+                                  const sNum=sessions.filter(x=>x.client_id===s.client_id && (x.date<s.date||(x.date===s.date&&x.time<=s.time))).length;
                                   return(
-                                  <div key={s.id} style={{display:"flex",alignItems:"center",gap:8,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:10,padding:"5px 6px"}}>
-                                    <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:7,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
+                                  <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:12,padding:"8px 9px"}}>
+                                    <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
                                       {s.client.avatar_url
-                                        ?<img src={s.client.avatar_url} style={{width:26,height:26,borderRadius:"50%",objectFit:"cover",border:`1.5px solid ${s.client.color}55`,flexShrink:0}}/>
-                                        :<div className="ring" style={{width:26,height:26,background:s.client.color+"30",color:s.client.color,fontSize:9,border:`1.5px solid ${s.client.color}55`,flexShrink:0}}>{ini(s.client.name)}</div>
+                                        ?<img src={s.client.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${s.client.color}55`,flexShrink:0}}/>
+                                        :<div className="ring" style={{width:36,height:36,background:s.client.color+"30",color:s.client.color,fontSize:12,border:`2px solid ${s.client.color}55`,flexShrink:0}}>{ini(s.client.name)}</div>
                                       }
-                                      <span style={{color:done?"#16a34a":s.client.color,fontWeight:700,fontSize:13,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span></span>
+                                      <div style={{minWidth:0}}>
+                                        <span style={{color:done?"#16a34a":s.client.color,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>{s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span></span>
+                                        <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>Sesión nº{sNum} · bono {s.client.sessions_left}/{s.client.total_sessions}</span>
+                                      </div>
                                     </div>
                                     {done
                                       ?<>
@@ -1546,6 +1557,7 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
   // Entreno previsto automático (si no hay uno asignado ya).
   const auto = (!sess && blk) ? autoRoutineFor(client,date,sessions,annualBlocks) : null;
   const cw = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id && (w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const [wkOff,setWkOff] = React.useState(0); // navegación de semanas en "ESTA SEMANA"
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
@@ -1581,18 +1593,28 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
           </div>
         )}
 
-        {/* Esta semana: qué le toca y qué ha hecho */}
+        {/* Esta semana: qué le toca y qué ha hecho (con navegación de semanas) */}
         {(()=>{
-          const week=getWeekDays(mondayOfDate(date));
+          const anchor=(()=>{const x=new Date(mondayOfDate(date)+"T12:00:00");x.setDate(x.getDate()+wkOff*7);return x.toISOString().split("T")[0];})();
+          const week=getWeekDays(anchor);
           const td=parseDays(client.train_days);
           const rows=week.filter(d=>td.includes(weekdayOf(d))||(sessions||[]).some(s=>s.client_id===client.id&&s.date===d));
-          if(!rows.length) return null;
           const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
           const doneN=rows.filter(d=>(sessions||[]).some(s=>s.client_id===client.id&&s.date===d&&s.status==="completed")).length;
+          const wLabel=wkOff===0?"Esta semana":wkOff===1?"Semana +1":wkOff===-1?"Semana -1":(wkOff>0?`+${wkOff} sem`:`${wkOff} sem`);
           return(
             <div style={{marginBottom:14}}>
-              <span className="lbl">🗓️ ESTA SEMANA · {doneN}/{rows.length} hechas</span>
-              <div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+                <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()} · {doneN}/{rows.length} hechas</span>
+                <div style={{display:"flex",gap:4}}>
+                  <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>setWkOff(w=>w-1)}>‹</button>
+                  {wkOff!==0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>setWkOff(0)}>Hoy</button>}
+                  <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>setWkOff(w=>w+1)}>›</button>
+                </div>
+              </div>
+              {rows.length===0
+                ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>Sin días de entreno esta semana.</div>
+                :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
                 {rows.map((d,i)=>{
                   const booking=(sessions||[]).find(s=>s.client_id===client.id&&s.date===d);
                   const asig=(assignedSessions||[]).find(a=>a.client_id===client.id&&a.date===d);
@@ -1614,6 +1636,7 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
                   );
                 })}
               </div>
+              }
             </div>
           );
         })()}
