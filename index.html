@@ -210,12 +210,14 @@ const DEFAULT_SCHEDULE = {
   afternoonFrom:"17:00", afternoonTo:"20:00",
   defaultCapacity:1, capacity:{},
   // Material disponible del gimnasio (para que el generador solo use lo que hay).
-  // Por defecto: sala de barra (racks + multipower), leg extension/curl femoral,
-  // mancuernas, dominadas/peso corporal, cajón, banda. Ajustable en ⚙️ Horario.
+  // Ajustado al material real: racks + multipower (R7 Saber) + pines, discos,
+  // barras (power/SSB/Z), mancuernas 2.5-35kg, leg extension/curl femoral dual,
+  // doble polea + jalón de placas, dominadas y fondera. Sin prensa/hack,
+  // kettlebell, cardio, cajón, bandas, comba, trineo, cuerdas, balón ni rueda.
   equip:{ barra:true, multipower:true, rackpines:true, mancuernas:true, legmachine:true,
-    legpress:false, machine:false, poleas:false, pesocorporal:true, kettlebell:false,
-    cajon:true, banda:true, comba:true, cardio:false, cuerdas:false, trineo:false,
-    balon:false, rueda:true, antebrazo:true, movilidad:true },
+    poleas:true, pesocorporal:true, legpress:false, machine:false, kettlebell:false,
+    cajon:false, banda:false, comba:false, cardio:false, cuerdas:false, trineo:false,
+    balon:false, rueda:false, antebrazo:true, movilidad:true },
 };
 // Genera las horas de una franja [from, to) en pasos de 1h. Ej: 10:00→13:00 = [10:00,11:00,12:00].
 const genSlots = (from,to) => {
@@ -4744,6 +4746,7 @@ const EXERCISE_LIBRARY = {
     ["Sentadilla trasera",4,"5-8",150,true],
     ["Sentadilla frontal",4,"6-8",150,true],
     ["Sentadilla con pausa",4,"4-6",150,true],
+    ["Sentadilla con safety bar (SSB)",4,"5-8",150,true],
     ["Sentadilla al cajón (box squat)",4,"5-6",150,false],
     ["Prensa de piernas",4,"10-12",90,false],
     ["Hack squat",4,"8-10",120,false],
@@ -4927,7 +4930,7 @@ const PROTOCOL_INFO = {
 // salud) la semana, para rotar ejercicios. Nombres iguales a la biblioteca
 // para que enlacen con los pesos base del cliente.
 const EX_POOLS = {
-  squat:["Sentadilla trasera","Sentadilla frontal","Sentadilla con pausa","Sentadilla en multipower","Sentadilla desde pines","Sentadilla al cajón (box squat)","Prensa de piernas","Hack squat","Sentadilla goblet"],
+  squat:["Sentadilla trasera","Sentadilla frontal","Sentadilla con pausa","Sentadilla con safety bar (SSB)","Sentadilla en multipower","Sentadilla desde pines","Sentadilla al cajón (box squat)","Prensa de piernas","Hack squat","Sentadilla goblet"],
   hinge:["Peso muerto","Peso muerto rumano","Peso muerto sumo","Peso muerto desde pines (rack pull)","Hip thrust","Peso muerto trap bar","Buenos días","Peso muerto piernas rígidas"],
   hthrust:["Hip thrust","Hip thrust en multipower","Hip thrust a una pierna","Puente de glúteo","Extensión de cadera en polea"],
   hpush:["Press banca","Press banca inclinado","Press banca en multipower","Press desde pines (multipower)","Press banca declinado","Press mancuernas plano","Press mancuernas inclinado","Press en máquina","Fondos en paralelas"],
@@ -4969,7 +4972,7 @@ const EQUIP = [
   [/comba/i,"comba"],
   [/battle ropes|cuerdas/i,"cuerdas"],
   [/sled|trineo/i,"trineo"],
-  [/wall ball|balón|balon|thrusters/i,"balon"],
+  [/wall ball|balón medicinal|medicine ball/i,"balon"],
   [/cajón|cajon|box jump|step-?up|salto/i,"cajon"],
   [/banda|activación de glúteo|activacion de gluteo/i,"banda"],
   [/rueda abdominal/i,"rueda"],
