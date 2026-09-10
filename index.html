@@ -502,6 +502,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showNS,setShowNS] = React.useState(false);
   const [showPay,setShowPay] = React.useState(null);
   const [showEdit,setShowEdit] = React.useState(null); // cliente a editar bono/caducidad
+  const [classView,setClassView] = React.useState(null); // {date,time} para ver la clase desglosada
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
@@ -642,10 +643,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     setShowEdit(null); notify("Bono actualizado ✓");
   });
 
-  // Materializa el entreno automático (según objetivo + momento + microciclo)
-  // creando la sesión asignada con cargas del cliente.
-  const materializeRoutine = (client, date) => w(async()=>{
-    const {routine}=autoRoutineFor(client, date, sessions, annualBlocks);
+  // Materializa el entreno (automático o del tipo elegido) creando la sesión
+  // asignada con las cargas base del cliente. Si se pasa dayType, usa ese tipo.
+  const materializeRoutine = (client, date, dayType) => w(async()=>{
+    const blk=blockForDate(annualBlocks,date);
+    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date))
+                            : autoRoutineFor(client, date, sessions, annualBlocks).routine;
     if(!routine.length) return notify("No hay bloque del macrociclo para esa fecha","err");
     const existing=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
     if(existing){ await sb.from("assigned_exercises").delete().eq("session_id",existing.id); await sb.from("assigned_sessions").delete().eq("id",existing.id); }
@@ -1105,7 +1108,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
-                          <div className="mono" style={{width:48,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":"#bcd3ee",fontSize:11,fontWeight:700}}>{time}</div>
+                          <div className="mono" onClick={()=>{ if(!slotBlocked&&slots.length>0) setClassView({date:activeDay,time}); }}
+                            style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#bcd3ee",fontSize:11,fontWeight:700,cursor:(!slotBlocked&&slots.length>0)?"pointer":"default"}}>
+                            {time}{!slotBlocked&&slots.length>0&&<span style={{fontSize:13}}>👁</span>}
+                          </div>
                           <div style={{flex:1,minWidth:0,padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"center"}}>
                             {slotBlocked
                               ?<span style={{fontSize:11,color:"#b56b6b",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>🚫 Bloqueado · toca para desbloquear</span>
@@ -1481,6 +1487,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
+      {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -1542,6 +1549,88 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
         </div>
 
         <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── VISTA DE CLASE (todas las personas de una hora, desglosado) ────────────
+// Muestra el entreno de cada atleta para organizar material/espacio y permite
+// cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
+function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onExec,onClose}) {
+  const blk=blockForDate(annualBlocks,date);
+  const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+  const idOfLabel=(label)=>{ const e=DAY_TYPES.find(d=>d[1]===label); return e?e[0]:""; };
+  const rutinaDe=(client)=>{
+    const asig=(assignedSessions||[]).find(a=>a.client_id===client.id&&a.date===date);
+    if(asig){
+      const exs=(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+      const tmpl=(sessionTemplates||[]).find(t=>t.id===asig.template_id);
+      return {label:tmpl?tmpl.name:"Entreno asignado", exs:exs.map(e=>({name:e.exercise_name,sets:e.sets,reps:e.reps,proto:e.protocol,w:e.prescribed_weight})), assigned:true};
+    }
+    const au=blk?autoRoutineFor(client,date,sessions,annualBlocks):null;
+    return au?{label:au.label, exs:au.routine.map(e=>({name:e[0],sets:e[1],reps:e[2],proto:e[4],w:null})), assigned:false}:{label:"—",exs:[],assigned:false};
+  };
+  const rutinas=slot.map(s=>({s, r:rutinaDe(s.client)}));
+  const allEx=[...new Set(rutinas.flatMap(x=>x.r.exs.map(e=>e.name)))];
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:12,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{blk?` · ${blk.name}`:""}</p>
+
+        {/* Material / ejercicios de la clase (para organizar sala y espacio) */}
+        {allEx.length>0&&(
+          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
+            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:6}}>🧰 MATERIAL / EJERCICIOS EN SALA ({allEx.length})</div>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+              {allEx.map((n,i)=><span key={i} style={{fontSize:11,fontWeight:600,color:"#0284c7",background:"#fff",border:"1px solid #bcd3ee",borderRadius:20,padding:"3px 9px"}}>{n}</span>)}
+            </div>
+          </div>
+        )}
+
+        {rutinas.map(({s,r})=>{
+          const c=s.client, done=s.status==="completed", curId=r.assigned?"":idOfLabel(r.label);
+          return(
+            <div key={s.id} style={{border:`1px solid ${done?"#16a34a":"#e6ebf3"}`,borderRadius:12,padding:12,marginBottom:10,background:done?"#f4faf6":"#fff"}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+                {c.avatar_url
+                  ?<img src={c.avatar_url} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color}55`}}/>
+                  :<div className="ring" style={{width:38,height:38,background:c.color+"20",color:c.color,fontSize:12,border:`2px solid ${c.color}55`}}>{ini(c.name)}</div>}
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name} {done&&<span style={{fontSize:11,color:"#16a34a"}}>✓</span>}</div>
+                  <div style={{fontSize:11,color:c.goal==="estetica"?"#7c3aed":"#059669",fontWeight:700}}>{r.label}{r.assigned?"":" · previsto"}</div>
+                </div>
+                {onExec&&<button className="btn ghost" style={{fontSize:10,padding:"5px 9px"}} onClick={()=>onExec(c)}>▶</button>}
+              </div>
+
+              {/* Ejercicios desglosados */}
+              {r.exs.length===0
+                ?<div style={{fontSize:12,color:"#94a3b8"}}>Sin ejercicios (genera o asigna un tipo abajo).</div>
+                :<div style={{display:"flex",flexDirection:"column",gap:3}}>
+                  {r.exs.map((e,i)=>(
+                    <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12}}>
+                      <span style={{color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</span>
+                      <span className="mono" style={{color:"#64748b",whiteSpace:"nowrap"}}>{e.sets}×{e.reps}{e.w?` · ${e.w}kg`:""}</span>
+                    </div>
+                  ))}
+                </div>
+              }
+
+              {/* Cambiar tipo de sesión para adaptar a la sala */}
+              <div style={{marginTop:10,display:"flex",alignItems:"center",gap:8}}>
+                <span style={{fontSize:11,color:"#94a3b8",fontWeight:700,whiteSpace:"nowrap"}}>Cambiar tipo:</span>
+                <select className="inp" style={{appearance:"none",fontSize:12,padding:"7px 9px"}} value={curId}
+                  onChange={e=>{ if(e.target.value) onSetType(c,e.target.value); }}>
+                  <option value="">{r.assigned?"(reasignar)":"elegir…"}</option>
+                  {DAY_TYPES.map(([id,label])=><option key={id} value={id}>{label}</option>)}
+                </select>
+              </div>
+            </div>
+          );
+        })}
+
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:4}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
   );
