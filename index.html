@@ -512,6 +512,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showPay,setShowPay] = React.useState(null);
   const [showEdit,setShowEdit] = React.useState(null); // cliente a editar bono/caducidad
   const [classView,setClassView] = React.useState(null); // {date,time} para ver la clase desglosada
+  const [sessionEdit,setSessionEdit] = React.useState(null); // {client,date} para editar ejercicios de la sesión
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
@@ -1510,7 +1511,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={()=>{setSessionEdit({client:quickView,date:activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
@@ -1679,9 +1681,71 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
   );
 }
 
+// ── EDITAR EJERCICIOS DE LA SESIÓN (imprevistos / molestias) ───────────────
+// Permite cambiar, quitar, añadir y ajustar los ejercicios del entreno de una
+// persona en un día concreto (p. ej. si tiene una molestia se sustituye el
+// ejercicio que le duele). Respeta el material disponible del gimnasio.
+function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
+  const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
+  const [saving,setSaving]=React.useState(false);
+  const [addName,setAddName]=React.useState("");
+  const exs = sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const libItems = Object.entries(EXERCISE_LIBRARY).map(([cat,list])=>[cat,list.filter(x=>equipOk(x[0]))]).filter(([c,l])=>l.length);
+  const inLib = (name)=>Object.values(EXERCISE_LIBRARY).some(list=>list.some(x=>x[0]===name));
+  const wOf = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
+  const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
+  const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
+  const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
+  const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>✏️ Editar sesión · {client.name}</h2>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:14}}>{fmtDate(date)} · cambia, quita o añade ejercicios (p. ej. si tiene una molestia). Solo material disponible.</p>
+        {!sess
+          ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>No hay entreno asignado ese día. Asígnalo o genéralo primero.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+            {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
+            {exs.map(ex=>(
+              <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,border:"1px solid #dbe2ec"}}>
+                <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+                  <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={ex.exercise_name} onChange={e=>swap(ex,e.target.value)}>
+                    {!inLib(ex.exercise_name)&&<option value={ex.exercise_name}>{ex.exercise_name}</option>}
+                    {libItems.map(([cat,list])=>(
+                      <optgroup key={cat} label={cat}>{list.map(x=><option key={x[0]} value={x[0]}>{x[0]}</option>)}</optgroup>
+                    ))}
+                  </select>
+                  <button className="btn danger" style={{padding:"6px 9px"}} disabled={saving} onClick={()=>remove(ex)}>✕</button>
+                </div>
+                <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                  <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.sets} onBlur={e=>setField(ex,"sets",parseInt(e.target.value)||null)}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>REPS</span><input className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
+                </div>
+                <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota / adaptación (p. ej. molestia rodilla → rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
+              </div>
+            ))}
+            {/* Añadir ejercicio */}
+            <div style={{background:"#eef4fc",border:"1px dashed #bcd3ee",borderRadius:10,padding:10,display:"flex",gap:6,alignItems:"center"}}>
+              <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={addName} onChange={e=>setAddName(e.target.value)}>
+                <option value="">+ Añadir ejercicio…</option>
+                {libItems.map(([cat,list])=>(
+                  <optgroup key={cat} label={cat}>{list.map(x=><option key={x[0]} value={x[0]}>{x[0]}</option>)}</optgroup>
+                ))}
+              </select>
+              <button className="btn sky" style={{padding:"7px 12px",fontSize:12}} disabled={saving||!addName} onClick={add}>Añadir</button>
+            </div>
+          </div>
+        }
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:14}} onClick={onClose}>Listo</button>
+      </div>
+    </div>
+  );
+}
+
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onExec,onAssign,onProgress,onClose}) {
+function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -1816,7 +1880,14 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
           }
         </div>
 
-        <div style={{display:"flex",gap:8,marginTop:16}}>
+        {sess&&(onEditSession||onMove)&&(
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            {onEditSession&&<button className="btn ghost" style={{flex:1,padding:10,justifyContent:"center",fontSize:12}} onClick={onEditSession}>✏️ Editar ejercicios (molestia)</button>}
+            {onMove&&<button className="btn ghost" style={{flex:1,padding:10,justifyContent:"center",fontSize:12}} onClick={onMove}>🕐 Mover día/hora</button>}
+          </div>
+        )}
+
+        <div style={{display:"flex",gap:8,marginTop:12}}>
           {sess&&onExec&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onExec}>▶ Ejecutar entreno</button>}
           {!sess&&auto&&onUseAuto&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onUseAuto}>✓ Usar este entreno</button>}
           {onProgress&&<button className="btn ghost" style={{padding:"11px 14px"}} onClick={onProgress} title="Progresión de cargas">📈</button>}
