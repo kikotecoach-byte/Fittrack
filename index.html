@@ -1593,20 +1593,33 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
   const rutinas=slot.map(s=>({s, r:rutinaDe(s.client)}));
   const allEx=[...new Set(rutinas.flatMap(x=>x.r.exs.map(e=>e.name)))];
   // Agrupado por material/equipo, con nº de personas que lo usan (cuellos de botella).
+  const RANK_KEY = (k)=>{ const i=EQUIP_ORDER.indexOf(k); return i<0?99:i; };
   const byEquip=(()=>{ const g={};
     rutinas.forEach(({s,r})=>{ r.exs.forEach(e=>{ const k=equipmentOf(e.name); (g[k]=g[k]||{ex:new Set(),cl:new Set()}); g[k].ex.add(e.name); g[k].cl.add(s.client_id); }); });
-    return Object.entries(g).map(([k,v])=>[k,[...v.ex],v.cl.size]).sort((a,b)=> b[2]-a[2] || b[1].length-a[1].length);
+    // Orden: por prioridad de material (barra primero, es el cuello de botella).
+    return Object.entries(g).map(([k,v])=>[k,[...v.ex],v.cl.size]).sort((a,b)=> RANK_KEY(a[0])-RANK_KEY(b[0]));
   })();
+  // Barra: nº de personas y de ejercicios de barra DISTINTOS (el cuello de botella
+  // real; coincidir en el mismo ejercicio de barra no es problema, se comparte).
+  const barra=byEquip.find(x=>x[0]==="barra");
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:12,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{blk?` · ${blk.name}`:""}</p>
 
+        {/* Aviso de barra: el cuello de botella real */}
+        {barra&&(
+          <div style={{background:barra[1].length>3?"#fbe6e6":"#eef8dd",border:`1px solid ${barra[1].length>3?"#f2cccc":"#cbe8a4"}`,borderRadius:10,padding:"10px 12px",marginBottom:12}}>
+            <div style={{fontSize:12,fontWeight:700,color:barra[1].length>3?"#dc2626":"#65a30d"}}>🟦 Barra: {barra[2]} persona{barra[2]===1?"":"s"} · {barra[1].length} ejercicio{barra[1].length===1?"":"s"} distinto{barra[1].length===1?"":"s"}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:3,lineHeight:1.4}}>Coincidir en el <b>mismo</b> ejercicio de barra no es problema (se comparte el rack). El cuello de botella son los <b>ejercicios de barra distintos</b> a la vez{barra[1].length>3?" — hay bastantes, valora escalonar o cambiar el tipo de alguno.":"."}</div>
+          </div>
+        )}
+
         {/* Material agrupado por equipo (para montar la sala rápido) */}
         {allEx.length>0&&(
           <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
-            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>🧰 MATERIAL DE LA SALA · {byEquip.length} tipo{byEquip.length===1?"":"s"} · {allEx.length} ejercicios</div>
+            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>🧰 MATERIAL DE LA SALA (barra primero) · {byEquip.length} tipo{byEquip.length===1?"":"s"} · {allEx.length} ejercicios</div>
             <div style={{display:"flex",flexDirection:"column",gap:8}}>
               {byEquip.map(([equip,list,people])=>{
                 const jam=people>=3; // posible cuello de botella
@@ -5101,6 +5114,10 @@ const EQUIP_LABEL = {
 const EQUIP_KEYS = ["barra","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
 const equipmentOf = (name) => { for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
 const equipmentLabel = (name) => EQUIP_LABEL[equipmentOf(name)] || EQUIP_LABEL.otros;
+// Prioridad de material: barra/rack/multipower PRIMERO (es el cuello de botella),
+// luego máquinas de pierna, mancuernas, poleas y por último peso corporal/cardio.
+const EQUIP_ORDER = ["barra","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
+const equipRank = (name) => { const i=EQUIP_ORDER.indexOf(equipmentOf(name)); return i<0?99:i; };
 
 // Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
 let GYM_EQUIP = null;
@@ -5225,7 +5242,13 @@ function buildDayRoutine(dayType, block, goal, weekNo){
     add(pick(EX_POOLS.carry,0),3,"30-40m",45,metaProto,false);
     add(pick(EX_POOLS.core,3),3,"30-45s",30,metaProto,false);
   }
-  return r;
+  // Orden final: primero los principales, luego por prioridad de material
+  // (barra/rack/multipower primero) para descongestionar los racks al inicio.
+  return r.map((e,i)=>({e,i})).sort((a,b)=>{
+    const ma=a.e[5]?0:1, mb=b.e[5]?0:1; if(ma!==mb) return ma-mb;
+    const ra=equipRank(a.e[0]), rb=equipRank(b.e[0]); if(ra!==rb) return ra-rb;
+    return a.i-b.i;
+  }).map(x=>x.e);
 }
 
 // ── TEMPLATE EDITOR MODAL ──────────────────────────────────────────────────
