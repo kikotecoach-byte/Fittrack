@@ -614,6 +614,31 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     notify("Asistencia deshecha");
   });
 
+  // Registro EXPRÉS: marca asistencia (bono) y da por hechos los ejercicios del
+  // entreno con las cargas previstas, para resguardar la sesión en un toque.
+  const _quickRecord = async(client,date)=>{
+    const bk=sessions.find(s=>s.client_id===client.id&&s.date===date&&s.status!=="completed");
+    if(bk){
+      await sb.from("sessions").update({status:"completed"}).eq("id",bk.id);
+      await sb.from("history").insert({client_id:client.id,date,time:bk.time,type:bk.type});
+      const c=clients.find(x=>x.id===client.id);
+      if(c) await sb.from("clients").update({sessions_left:Math.max(0,c.sessions_left-1)}).eq("id",c.id);
+    }
+    const asig=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
+    if(asig){
+      const exs=assignedExercises.filter(e=>e.session_id===asig.id);
+      for(const e of exs){ if(!e.done) await sb.from("assigned_exercises").update({done:true,actual_weight:e.prescribed_weight!=null?e.prescribed_weight:null,actual_reps:e.reps!=null?e.reps:null,done_at:new Date().toISOString()}).eq("id",e.id); }
+      await sb.from("assigned_sessions").update({status:"done"}).eq("id",asig.id);
+    }
+    return !!(bk||asig);
+  };
+  const quickRecord = (client,date) => w(async()=>{ const ok=await _quickRecord(client,date); if(ok) notify(`${client.name.split(" ")[0]}: registrado ✓`); else notify("Nada que registrar","err"); });
+  const quickRecordClass = (date,time) => w(async()=>{
+    const ids=[...new Set(sessions.filter(s=>s.date===date&&s.time===time).map(s=>s.client_id))];
+    let n=0; for(const id of ids){ const c=clients.find(x=>x.id===id); if(c && await _quickRecord(c,date)) n++; }
+    notify(`Clase registrada: ${n} sesión(es) ✓`);
+  });
+
   // Cuenta una sesión suelta (cliente que entrena sin cita previa): la registra
   // hoy en el historial y descuenta 1 del bono.
   const countWalkin = (client) => w(async()=>{
@@ -1505,7 +1530,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -1576,7 +1601,7 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
 // ── VISTA DE CLASE (todas las personas de una hora, desglosado) ────────────
 // Muestra el entreno de cada atleta para organizar material/espacio y permite
 // cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
-function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onExec,onClose}) {
+function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExec,onClose}) {
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
   const idOfLabel=(label)=>{ const e=DAY_TYPES.find(d=>d[1]===label); return e?e[0]:""; };
@@ -1606,7 +1631,13 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:12,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{blk?` · ${blk.name}`:""}</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{blk?` · ${blk.name}`:""}</p>
+
+        {onQuickAll&&slot.length>0&&(
+          <button className="btn grn" style={{width:"100%",padding:11,marginBottom:12,fontSize:13,fontWeight:700}} onClick={onQuickAll}>
+            ✅ Registrar toda la clase (asistencia + cargas previstas)
+          </button>
+        )}
 
         {/* Aviso de barra: el cuello de botella real */}
         {barra&&(
@@ -1659,7 +1690,9 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
                   </div>
                   <div style={{fontSize:11,color:c.goal==="estetica"?"#7c3aed":"#059669",fontWeight:700}}>{r.label}{r.assigned?"":" · previsto"} · bono {c.sessions_left}/{c.total_sessions}</div>
                 </div>
-                {onExec&&<button className="btn ghost" style={{fontSize:10,padding:"5px 9px"}} onClick={()=>onExec(c)}>▶</button>}
+                {onQuick&&!done&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px",whiteSpace:"nowrap"}} onClick={()=>onQuick(c)} title="Registrar rápido (asistencia + cargas previstas)">✓ Hecho</button>}
+                {done&&<span style={{fontSize:11,fontWeight:700,color:"#16a34a",whiteSpace:"nowrap"}}>✓ Registrado</span>}
+                {onExec&&<button className="btn ghost" style={{fontSize:12,padding:"6px 9px"}} onClick={()=>onExec(c)} title="Ejecutar con cargas exactas">▶</button>}
               </div>
 
               {/* Ejercicios desglosados */}
