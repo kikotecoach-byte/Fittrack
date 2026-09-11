@@ -683,13 +683,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   // asignada con las cargas base del cliente. Si se pasa dayType, usa ese tipo.
   const materializeRoutine = (client, date, dayType) => w(async()=>{
     const blk=blockForDate(annualBlocks,date);
-    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date))
-                            : autoRoutineFor(client, date, sessions, annualBlocks).routine;
+    const auto = autoRoutineFor(client, date, sessions, annualBlocks);
+    const resolvedType = dayType || auto.dayType;
+    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date)) : auto.routine;
     if(!routine.length) return notify("No hay bloque del macrociclo para esa fecha","err");
     const existing=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
     if(existing){ await sb.from("assigned_exercises").delete().eq("session_id",existing.id); await sb.from("assigned_sessions").delete().eq("id",existing.id); }
     const {data:sess,error}=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending"}).select().single();
     if(error){ notify("Error al asignar","err"); return; }
+    if(resolvedType) await sb.from("assigned_sessions").update({day_type:resolvedType}).eq("id",sess.id); // guarda el tipo (si existe la columna)
     const wts=clientWeights.filter(x=>x.client_id===client.id);
     const rows=routine.map((e,i)=>{ const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
       return {session_id:sess.id,exercise_name:e[0],prescribed_weight:cw?cw.weight:null,sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i}; });
@@ -1610,7 +1612,8 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
     if(asig){
       const exs=(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
       const tmpl=(sessionTemplates||[]).find(t=>t.id===asig.template_id);
-      return {label:tmpl?tmpl.name:"Entreno asignado", exs:exs.map(e=>({name:e.exercise_name,sets:e.sets,reps:e.reps,proto:e.protocol,w:e.prescribed_weight})), assigned:true};
+      const label = asig.day_type&&DAY_LABEL[asig.day_type] ? DAY_LABEL[asig.day_type] : (tmpl?tmpl.name:"Entreno asignado");
+      return {label, dayType:asig.day_type||"", exs:exs.map(e=>({name:e.exercise_name,sets:e.sets,reps:e.reps,proto:e.protocol,w:e.prescribed_weight})), assigned:true};
     }
     const au=blk?autoRoutineFor(client,date,sessions,annualBlocks):null;
     return au?{label:au.label, exs:au.routine.map(e=>({name:e[0],sets:e[1],reps:e[2],proto:e[4],w:null})), assigned:false}:{label:"—",exs:[],assigned:false};
@@ -1673,7 +1676,7 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
         )}
 
         {rutinas.map(({s,r})=>{
-          const c=s.client, done=s.status==="completed", curId=r.assigned?"":idOfLabel(r.label);
+          const c=s.client, done=s.status==="completed", curId=r.dayType||(r.assigned?"":idOfLabel(r.label));
           const sNum=(sessions||[]).filter(x=>x.client_id===c.id && (x.date<s.date||(x.date===s.date&&x.time<=s.time))).length;
           const esPrimera=sNum===1, esUltima=(c.sessions_left||0)<=1, sinBono=(c.sessions_left||0)<=0;
           return(
@@ -2082,6 +2085,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     const {data:sess,error}=await sb.from("assigned_sessions")
       .insert({client_id:client.id,date,status:"pending"}).select().single();
     if(error){ notify("Error al generar","err"); setSaving(false); return; }
+    if(dayType) await sb.from("assigned_sessions").update({day_type:dayType}).eq("id",sess.id); // guarda el tipo (si existe la columna)
     const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date));
     const wts=(clientWeights||[]).filter(w=>w.client_id===client.id);
     const rows=routine.map((e,i)=>{
