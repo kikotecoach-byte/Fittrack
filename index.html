@@ -503,6 +503,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify,onLogout}) {
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
+  const [weekBig,setWeekBig] = React.useState(false); // vista de semana ampliada (más espacio para arrastrar)
   // Swipe para cambiar entre día / semana / mes en la agenda.
   const swipeRef = React.useRef({x:0,y:0});
   const VIEWS_ORDER = ["day","week","month"];
@@ -1258,9 +1259,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               const weekDays=getWeekDays(activeDay).slice(0,5);
               const weekSlots=Array.from(new Set([...workSlots,...sessions.filter(s=>weekDays.includes(s.date)).map(s=>s.time)])).sort();
               return(
-                <div className="swipe" style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
+                <div className="swipe" style={weekBig?{display:"flex",flexDirection:"column"}:{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
+                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
+                    <button className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setWeekBig(v=>!v)}>{weekBig?"🔽 Vista compacta":"⛶ Vista amplia"}</button>
+                    <span style={{fontSize:10,color:"#94a3b8"}}>🔄 Gira el móvil para verla más ancha</span>
+                  </div>
                   {/* Header row - days */}
-                  <div style={{display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2}}>
+                  <div style={{display:"grid",gridTemplateColumns:weekBig?"44px repeat(5,1fr)":"38px repeat(5,1fr)",gap:2}}>
                     <div/>
                     {weekDays.map(day=>{
                       const isToday=day===TODAY;
@@ -1280,10 +1285,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     })}
                   </div>
                   {/* Time rows - fill available height */}
-                  <div style={{flex:1,display:"flex",flexDirection:"column",gap:2,marginTop:3,minHeight:0}}>
+                  <div style={weekBig?{display:"flex",flexDirection:"column",gap:3,marginTop:3}:{flex:1,display:"flex",flexDirection:"column",gap:2,marginTop:3,minHeight:0}}>
                     {weekSlots.map(time=>(
-                      <div key={time} style={{flex:1,display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2,minHeight:0}}>
-                        <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:9,color:"#bcd3ee",fontWeight:700}}>{time}</div>
+                      <div key={time} style={weekBig?{minHeight:70,display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",gap:3}:{flex:1,display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2,minHeight:0}}>
+                        <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:weekBig?12:9,color:"#bcd3ee",fontWeight:700}}>{time}</div>
                         {weekDays.map(day=>{
                           const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
                           const slotBlocked=isBlkDay||isBlocked(day,time);
@@ -1295,13 +1300,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                               border:dropKey===(day+"|"+time)?"1px solid #0284c7":slotBlocked?"1px solid #f2cccc":daySessions.length>0?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
                               onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
                               {slotBlocked&&<div style={{fontSize:9,color:"#b56b6b",textAlign:"center"}}>🚫</div>}
-                              {daySessions.slice(0,4).map(s=>(
+                              {daySessions.slice(0,weekBig?8:4).map(s=>(
                                 <div key={s.id} className={dragId===s.id?"drag-src":""} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
-                                  style={{background:s.client.color+"25",borderRadius:3,padding:"1px 4px",fontSize:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",touchAction:"none",cursor:"grab"}}>
+                                  style={{background:s.client.color+"25",borderRadius:weekBig?6:3,padding:weekBig?"4px 8px":"1px 4px",fontSize:weekBig?12:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",touchAction:"none",cursor:"grab"}}>
                                   {s.client.name.split(" ")[0]}
                                 </div>
                               ))}
-                              {daySessions.length>4&&<div style={{fontSize:8,color:"#64748b",paddingLeft:2}}>+{daySessions.length-4}</div>}
+                              {daySessions.length>(weekBig?8:4)&&<div style={{fontSize:weekBig?10:8,color:"#64748b",paddingLeft:2}}>+{daySessions.length-(weekBig?8:4)}</div>}
                             </div>
                           );
                         })}
