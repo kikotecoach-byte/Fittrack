@@ -1170,7 +1170,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
-                        <div key={time} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
+                        <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
                           <div className="mono" onClick={()=>{ if(!slotBlocked&&slots.length>0) setClassView({date:activeDay,time}); }}
                             style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#bcd3ee",fontSize:11,fontWeight:700,cursor:(!slotBlocked&&slots.length>0)?"pointer":"default"}}>
                             {time}{!slotBlocked&&slots.length>0&&<span style={{fontSize:13}}>👁</span>}
@@ -1187,7 +1187,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   const sinBono=(s.client.sessions_left||0)<=0;
                                   return(
                                   <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:12,padding:"8px 9px"}}>
-                                    <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"pointer"}} onClick={()=>setQuickView(s.client)} title="Ver ficha (objetivos, lesiones, entreno)">
+                                    <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"none"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Arrastra para mover de hora · toca para ver ficha">
                                       {s.client.avatar_url
                                         ?<img src={s.client.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${s.client.color}55`,flexShrink:0}}/>
                                         :<div className="ring" style={{width:36,height:36,background:s.client.color+"30",color:s.client.color,fontSize:12,border:`2px solid ${s.client.color}55`,flexShrink:0}}>{ini(s.client.name)}</div>
@@ -1230,7 +1230,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     })}
                   </div>
                   <div style={{flexShrink:0,borderTop:"1px solid #e6ebf3",padding:"6px 10px",fontSize:10,color:"#94a3b8"}}>
-                    <b style={{color:"#16a34a"}}>✓ Vino</b> (queda marcado · ↺ deshacer) · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b>
+                    <b style={{color:"#16a34a"}}>✓ Vino</b> (queda marcado · ↺ deshacer) · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b> · arrastra el nombre para cambiar de hora
                   </div>
                 </div>
               );
