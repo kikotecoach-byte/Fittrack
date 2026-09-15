@@ -502,7 +502,33 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const VIEWS_ORDER = ["day","week","month"];
   const cycleView = (dir)=>setSchedView(v=>{const i=VIEWS_ORDER.indexOf(v);const n=i+dir;return (n<0||n>=VIEWS_ORDER.length)?v:VIEWS_ORDER[n];});
   const onSchedTouchStart = (e)=>{ const t=e.touches[0]; swipeRef.current={x:t.clientX,y:t.clientY}; };
-  const onSchedTouchEnd = (e)=>{ const t=e.changedTouches[0]; const dx=t.clientX-swipeRef.current.x, dy=t.clientY-swipeRef.current.y; if(Math.abs(dx)>70 && Math.abs(dx)>Math.abs(dy)*1.8) cycleView(dx<0?1:-1); };
+  const onSchedTouchEnd = (e)=>{ if(dragRef.current||justDragged.current) return; const t=e.changedTouches[0]; const dx=t.clientX-swipeRef.current.x, dy=t.clientY-swipeRef.current.y; if(Math.abs(dx)>70 && Math.abs(dx)>Math.abs(dy)*1.8) cycleView(dx<0?1:-1); };
+  // Arrastrar sesiones en la vista de semana (pointer events, táctil + ratón).
+  const dragRef = React.useRef(null);
+  const justDragged = React.useRef(false);
+  const [dragGhost,setDragGhost] = React.useState(null);
+  const onSessMove = (e)=>{
+    const d=dragRef.current; if(!d) return;
+    const dx=e.clientX-d.startX, dy=e.clientY-d.startY;
+    if(!d.moved && Math.hypot(dx,dy)>8) d.moved=true;
+    if(d.moved){ if(e.cancelable)e.preventDefault(); setDragGhost({name:d.name,color:d.color,x:e.clientX,y:e.clientY}); }
+  };
+  const onSessUp = (e)=>{
+    window.removeEventListener("pointermove",onSessMove); window.removeEventListener("pointerup",onSessUp);
+    const d=dragRef.current; dragRef.current=null; setDragGhost(null);
+    if(!d||!d.moved) return;
+    justDragged.current=true; setTimeout(()=>{justDragged.current=false;},300);
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const cell=el&&el.closest?el.closest("[data-slot]"):null;
+    if(!cell) return;
+    const day=cell.getAttribute("data-day"), time=cell.getAttribute("data-time");
+    if(cell.getAttribute("data-blocked")==="1"){ notify("Ese hueco está bloqueado","err"); return; }
+    if(day&&time&&(day!==d.sess.date||time!==d.sess.time)) rescheduleSession(d.sess,day,time);
+  };
+  const startSessDrag = (e,s)=>{
+    dragRef.current={sess:s,name:(s.client?s.client.name.split(" ")[0]:""),color:s.client?s.client.color:"#0284c7",startX:e.clientX,startY:e.clientY,moved:false};
+    window.addEventListener("pointermove",onSessMove,{passive:false}); window.addEventListener("pointerup",onSessUp);
+  };
   const [showVacation,setShowVacation] = React.useState(false);
   const [expanded,setExpanded] = React.useState(null);
   const [waClient,setWaClient] = React.useState(null);
@@ -778,6 +804,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
+      {dragGhost&&<div style={{position:"fixed",left:dragGhost.x+12,top:dragGhost.y-14,zIndex:900,pointerEvents:"none",background:dragGhost.color,color:"#fff",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:700,boxShadow:"0 4px 14px rgba(15,23,42,.3)"}}>{dragGhost.name} 🔀</div>}
 
 
       {/* Content */}
@@ -1246,14 +1273,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
                             .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                           return(
-                            <div key={day} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
+                            <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
                               background:slotBlocked?"#fbecec":daySessions.length>0?"#f1f4fa":"#f1f4fa",
                               border:slotBlocked?"1px solid #f2cccc":daySessions.length>0?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
                               onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
                               {slotBlocked&&<div style={{fontSize:9,color:"#b56b6b",textAlign:"center"}}>🚫</div>}
                               {daySessions.slice(0,4).map(s=>(
-                                <div key={s.id} onClick={e=>{e.stopPropagation();setQuickView(s.client);}}
-                                  style={{background:s.client.color+"25",borderRadius:3,padding:"1px 4px",fontSize:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>
+                                <div key={s.id} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
+                                  style={{background:s.client.color+"25",borderRadius:3,padding:"1px 4px",fontSize:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",touchAction:"none",cursor:"grab"}}>
                                   {s.client.name.split(" ")[0]}
                                 </div>
                               ))}
@@ -1264,7 +1291,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       </div>
                     ))}
                   </div>
-                  <p style={{fontSize:10,color:"#94a3b8",marginTop:6,paddingLeft:40}}>💡 Toca un nombre para su ficha · celda vacía para bloquear</p>
+                  <p style={{fontSize:10,color:"#94a3b8",marginTop:6,paddingLeft:40}}>💡 Arrastra un nombre a otro día/hora para moverlo · toca para su ficha · celda vacía para bloquear</p>
                 </div>
               );
             })()}
