@@ -169,6 +169,12 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .cal-day.other-month{opacity:.25;}
 .streak-fire{animation:pulse 2s ease-in-out infinite;}
 @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+/* Drag & drop de sesiones */
+.drag-ghost{animation:dragpop .14s ease both;transform-origin:left center;}
+@keyframes dragpop{from{opacity:0;transform:scale(.8) rotate(-4deg)}to{opacity:1;transform:scale(1.05) rotate(-3deg)}}
+.drag-src{opacity:.35 !important;outline:2px dashed #0284c7;outline-offset:1px;}
+.drag-target{animation:dragtarget .9s ease-in-out infinite;}
+@keyframes dragtarget{0%,100%{box-shadow:0 0 0 0 rgba(2,132,199,.35)}50%{box-shadow:0 0 0 4px rgba(2,132,199,.35)}}
 </style>
 </head>
 <body>
@@ -507,15 +513,26 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const dragRef = React.useRef(null);
   const justDragged = React.useRef(false);
   const [dragGhost,setDragGhost] = React.useState(null);
+  const [dragId,setDragId] = React.useState(null);   // id de la sesión que se arrastra
+  const [dropKey,setDropKey] = React.useState(null); // "día|hora" bajo el dedo
   const onSessMove = (e)=>{
     const d=dragRef.current; if(!d) return;
     const dx=e.clientX-d.startX, dy=e.clientY-d.startY;
-    if(!d.moved && Math.hypot(dx,dy)>8) d.moved=true;
-    if(d.moved){ if(e.cancelable)e.preventDefault(); setDragGhost({name:d.name,color:d.color,x:e.clientX,y:e.clientY}); }
+    if(!d.moved && Math.hypot(dx,dy)>8){ d.moved=true; setDragId(d.sess.id); }
+    if(d.moved){
+      if(e.cancelable)e.preventDefault();
+      setDragGhost({name:d.name,color:d.color,x:e.clientX,y:e.clientY});
+      const el=document.elementFromPoint(e.clientX,e.clientY);
+      const cell=el&&el.closest?el.closest("[data-slot]"):null;
+      if(cell&&cell.getAttribute("data-blocked")!=="1"){
+        const k=cell.getAttribute("data-day")+"|"+cell.getAttribute("data-time");
+        setDropKey(prev=>prev===k?prev:k);
+      } else setDropKey(null);
+    }
   };
   const onSessUp = (e)=>{
     window.removeEventListener("pointermove",onSessMove); window.removeEventListener("pointerup",onSessUp);
-    const d=dragRef.current; dragRef.current=null; setDragGhost(null);
+    const d=dragRef.current; dragRef.current=null; setDragGhost(null); setDragId(null); setDropKey(null);
     if(!d||!d.moved) return;
     justDragged.current=true; setTimeout(()=>{justDragged.current=false;},300);
     const el=document.elementFromPoint(e.clientX,e.clientY);
@@ -804,7 +821,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
-      {dragGhost&&<div style={{position:"fixed",left:dragGhost.x+12,top:dragGhost.y-14,zIndex:900,pointerEvents:"none",background:dragGhost.color,color:"#fff",borderRadius:8,padding:"4px 10px",fontSize:12,fontWeight:700,boxShadow:"0 4px 14px rgba(15,23,42,.3)"}}>{dragGhost.name} 🔀</div>}
+      {dragGhost&&<div className="drag-ghost" style={{position:"fixed",left:dragGhost.x+12,top:dragGhost.y-14,zIndex:900,pointerEvents:"none",background:dragGhost.color,color:"#fff",borderRadius:8,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:"0 8px 20px rgba(15,23,42,.35)"}}>{dragGhost.name} 🔀</div>}
 
 
       {/* Content */}
@@ -1170,7 +1187,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
-                        <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
+                        <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
                           <div className="mono" onClick={()=>{ if(!slotBlocked&&slots.length>0) setClassView({date:activeDay,time}); }}
                             style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#bcd3ee",fontSize:11,fontWeight:700,cursor:(!slotBlocked&&slots.length>0)?"pointer":"default"}}>
                             {time}{!slotBlocked&&slots.length>0&&<span style={{fontSize:13}}>👁</span>}
@@ -1187,7 +1204,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   const sinBono=(s.client.sessions_left||0)<=0;
                                   return(
                                   <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:12,padding:"8px 9px"}}>
-                                    <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"none"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Arrastra para mover de hora · toca para ver ficha">
+                                    <div className={dragId===s.id?"drag-src":""} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"none"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Arrastra para mover de hora · toca para ver ficha">
                                       {s.client.avatar_url
                                         ?<img src={s.client.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${s.client.color}55`,flexShrink:0}}/>
                                         :<div className="ring" style={{width:36,height:36,background:s.client.color+"30",color:s.client.color,fontSize:12,border:`2px solid ${s.client.color}55`,flexShrink:0}}>{ini(s.client.name)}</div>
@@ -1273,13 +1290,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
                             .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                           return(
-                            <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
-                              background:slotBlocked?"#fbecec":daySessions.length>0?"#f1f4fa":"#f1f4fa",
-                              border:slotBlocked?"1px solid #f2cccc":daySessions.length>0?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
+                            <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(day+"|"+time)?"drag-target":""} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
+                              background:dropKey===(day+"|"+time)?"#dcebfb":slotBlocked?"#fbecec":daySessions.length>0?"#f1f4fa":"#f1f4fa",
+                              border:dropKey===(day+"|"+time)?"1px solid #0284c7":slotBlocked?"1px solid #f2cccc":daySessions.length>0?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
                               onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
                               {slotBlocked&&<div style={{fontSize:9,color:"#b56b6b",textAlign:"center"}}>🚫</div>}
                               {daySessions.slice(0,4).map(s=>(
-                                <div key={s.id} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
+                                <div key={s.id} className={dragId===s.id?"drag-src":""} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
                                   style={{background:s.client.color+"25",borderRadius:3,padding:"1px 4px",fontSize:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",touchAction:"none",cursor:"grab"}}>
                                   {s.client.name.split(" ")[0]}
                                 </div>
