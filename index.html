@@ -1203,6 +1203,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   const esPrimera=sNum===1;
                                   const esUltima=(s.client.sessions_left||0)<=1; // última del bono (o sin bono)
                                   const sinBono=(s.client.sessions_left||0)<=0;
+                                  // Resumen de lo que le toca (asignado o previsto automático).
+                                  const asig=assignedSessions.find(a=>a.client_id===s.client_id&&a.date===activeDay);
+                                  const tmpl=asig&&sessionTemplates.find(t=>t.id===asig.template_id);
+                                  const nEx=asig?assignedExercises.filter(e=>e.session_id===asig.id).length:0;
+                                  const au=(!asig&&blockForDate(annualBlocks,activeDay))?autoRoutineFor(s.client,activeDay,sessions,annualBlocks):null;
+                                  const planLbl=asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")+(nEx?` · ${nEx} ej`:"")):(au?`${au.label} · previsto`:"Sin plan");
                                   return(
                                   <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:12,padding:"8px 9px"}}>
                                     <div className={dragId===s.id?"drag-src":""} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"none"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Arrastra para mover de hora · toca para ver ficha">
@@ -1217,6 +1223,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                           {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?"⚠️ sin bono":"⏳ última"}</span>}
                                         </span>
                                         <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>Sesión nº{sNum} · bono {s.client.sessions_left}/{s.client.total_sessions}</span>
+                                        <span style={{fontSize:11,color:asig?"#0284c7":"#65a30d",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>🏋️ {planLbl}</span>
                                       </div>
                                     </div>
                                     {done
@@ -1585,7 +1592,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={()=>{setSessionEdit({client:quickView,date:activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
@@ -1912,17 +1919,17 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
                   const asig=(assignedSessions||[]).find(a=>a.client_id===client.id&&a.date===d);
                   const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
                   const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
-                  const label=tmpl?tmpl.name:(au?au.label:"—");
+                  const label=asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—");
                   const done=booking&&booking.status==="completed";
                   const nd=new Date(d+"T12:00:00");
                   const isTodayRow=d===date;
                   return(
-                    <div key={d} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderTop:i>0?"1px solid #eef1f7":"none",background:isTodayRow?"#eef4fc":done?"#f4faf6":"#fff"}}>
+                    <div key={d} onClick={()=>{ if(asig&&onEditSession) onEditSession(d); }} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderTop:i>0?"1px solid #eef1f7":"none",background:isTodayRow?"#eef4fc":done?"#f4faf6":"#fff",cursor:(asig&&onEditSession)?"pointer":"default"}}>
                       <div style={{width:38,flexShrink:0,textAlign:"center"}}>
                         <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{dow[nd.getDay()]}</div>
                         <div className="mono" style={{fontSize:13,fontWeight:700,color:isTodayRow?"#0284c7":"#0f172a"}}>{nd.getDate()}</div>
                       </div>
-                      <div style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+                      <div style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}{asig&&onEditSession&&<span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}> · ✏️ editar</span>}</div>
                       <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#cbd5e1"}}>{done?"✓ hecho":booking?"reservado":"previsto"}</div>
                     </div>
                   );
