@@ -1255,12 +1255,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   );
                                 })}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                                  {isWork&&Array.from({length:free}).map((_,k)=>(
-                                    <button key={"f"+k} title="Hueco libre · añadir cliente rápido" onClick={()=>setQuickAdd({date:activeDay,time})}
-                                      style={{borderRadius:8,border:"1.5px dashed #c9e6d1",background:"none",color:"#5f9e77",fontSize:12,fontWeight:700,cursor:"pointer",padding:"6px 11px"}}>+ añadir</button>
-                                  ))}
+                                  {isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
                                   {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
-                                  {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
+                                  <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
+                                    {!slotBlocked&&<button title="Añadir un cliente a esta hora" onClick={()=>setQuickAdd({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #bcd3ee",background:"#eef4fc",color:"#0284c7",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>➕ Añadir</button>}
+                                    {isWork&&<span style={{fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
+                                  </div>
                                 </div>
                               </>
                             }
