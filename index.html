@@ -559,6 +559,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [classView,setClassView] = React.useState(null); // {date,time} para ver la clase desglosada
   const [sessionEdit,setSessionEdit] = React.useState(null); // {client,date} para editar ejercicios de la sesión
   const [quickAdd,setQuickAdd] = React.useState(null); // {date,time} añadido rápido de clientes
+  const [openHour,setOpenHour] = React.useState(null); // fecha para abrir una hora extra
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
@@ -589,8 +590,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   // Franjas de trabajo derivadas de la config y capacidad (atletas) por hora.
   const workSlots = [...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
   const capOf = (t) => (config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
-  // Franjas visibles del día: las de trabajo + cualquier hora con sesión (para no ocultar nada).
-  const daySlots = Array.from(new Set([...workSlots,...sessions.filter(s=>s.date===activeDay).map(s=>s.time)])).sort();
+  // Horas extra abiertas para un día concreto (además del horario fijo).
+  const extraOf = (date) => (config.extraSlots&&config.extraSlots[date])||[];
+  const isWorkSlot = (date,t) => workSlots.includes(t) || extraOf(date).includes(t);
+  // Abrir/cerrar una hora extra en un día (se guarda en la config; sin BBDD).
+  const openExtraHour = (date,time) => { const ex={...(config.extraSlots||{})}; const set=new Set(ex[date]||[]); set.add(time); ex[date]=[...set].sort(); saveConfig({...config,extraSlots:ex}); };
+  const closeExtraHour = (date,time) => { const ex={...(config.extraSlots||{})}; ex[date]=(ex[date]||[]).filter(t=>t!==time); if(!ex[date].length) delete ex[date]; saveConfig({...config,extraSlots:ex}); };
+  // Franjas visibles del día: horario fijo (salvo finde/bloqueado) + horas extra + cualquier hora con sesión.
+  const dayIsOff = isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
+  const daySlots = Array.from(new Set([...(dayIsOff?[]:workSlots),...extraOf(activeDay),...sessions.filter(s=>s.date===activeDay).map(s=>s.time)])).sort();
 
   const reminders = [];
   clients.forEach(c=>{
@@ -1178,11 +1186,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               </button>
               <button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#ca8a04"}}
                 onClick={()=>setShowVacation(true)}>🏖 Vacaciones</button>
+              {schedView==="day"&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#0284c7"}}
+                onClick={()=>setOpenHour(activeDay)}>➕ Abrir hora</button>}
             </div>
 
             {/* DAY VIEW */}
             {schedView==="day"&&(()=>{
-              const dayOff=isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
+              const dayOff=(isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL"))&&extraOf(activeDay).length===0;
               if(dayOff){
                 const wknd=isWeekend(activeDay);
                 return(
@@ -1201,7 +1211,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const slotBlocked=isBlocked(activeDay,time);
                       const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
-                      const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
+                      const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
                           <div className="mono" onClick={()=>{ if(slotBlocked)return; if(slots.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
@@ -1255,6 +1265,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   );
                                 })}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                  {isExtra&&<span style={{fontSize:9,fontWeight:700,color:"#65a30d",background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:20,padding:"1px 7px"}}>⏱ extra</span>}
+                                  {isExtra&&slots.length===0&&<button title="Cerrar esta hora extra" onClick={()=>closeExtraHour(activeDay,time)} style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"none",border:"1px solid #f2cccc",borderRadius:20,padding:"1px 8px",cursor:"pointer"}}>✕ cerrar</button>}
                                   {isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
                                   {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
                                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
@@ -1628,6 +1640,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
+      {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
@@ -1683,6 +1696,48 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
         </div>
 
         <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── ABRIR HORA EXTRA EN UN DÍA ─────────────────────────────────────────────
+function OpenHourModal({date,daySlots,openSet,onOpen,onCloseHour,onClose}) {
+  const already=new Set(daySlots);
+  const openS=new Set(openSet);
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:420,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>➕ Abrir hora</h2>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:12,textTransform:"capitalize"}}>{fmtLong(date)} · añade horas puntuales sin cambiar tu horario fijo.</p>
+        {openSet.length>0&&(
+          <div style={{marginBottom:12}}>
+            <span className="lbl">HORAS EXTRA ABIERTAS HOY</span>
+            <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+              {openSet.map(t=>(
+                <span key={t} style={{display:"inline-flex",alignItems:"center",gap:6,background:"#eef8dd",border:"1px solid #cbe8a4",color:"#65a30d",borderRadius:20,padding:"4px 6px 4px 10px",fontSize:12,fontWeight:700}}>
+                  {t}<button onClick={()=>onCloseHour(t)} style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:14,padding:"0 3px"}} title="Cerrar esta hora">✕</button>
+                </span>
+              ))}
+            </div>
+          </div>
+        )}
+        <span className="lbl">ELIGE UNA HORA PARA ABRIR</span>
+        <div style={{flex:1,overflowY:"auto",display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:6,minHeight:0}}>
+          {HOURS.map(t=>{
+            const on=already.has(t), extra=openS.has(t);
+            return(
+              <button key={t} disabled={on&&!extra} onClick={()=>{ if(!on) onOpen(t); }}
+                style={{padding:"9px 0",borderRadius:9,fontSize:13,fontWeight:700,cursor:(on&&!extra)?"default":"pointer",
+                  border:extra?"1px solid #16a34a":on?"1px solid #e6ebf3":"1px solid #bcd3ee",
+                  background:extra?"#e2f4e8":on?"#f1f4fa":"#fff",color:extra?"#16a34a":on?"#cbd5e1":"#0284c7"}}>
+                {t}{extra?" ✓":on?"":""}
+              </button>
+            );
+          })}
+        </div>
+        <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Las horas de tu horario fijo salen en gris (ya abiertas). Las verdes son extra que has abierto.</div>
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:10,flexShrink:0}} onClick={onClose}>Listo</button>
       </div>
     </div>
   );
