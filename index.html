@@ -251,6 +251,7 @@ const reminderWA = (r) => {
   const first = r.c.name.split(" ")[0];
   if(r.type==="payment") return `Hola ${first}! 👋 Te recuerdo que tu pago de ${r.c.payment_amount}€ vence ${r.days===0?"hoy":r.days<0?`hace ${Math.abs(r.days)} días`:`en ${r.days} días`}. ¡Cualquier duda aquí estoy! 💪`;
   if(r.type==="sessions") return `Hola ${first}! Te quedan ${r.c.sessions_left} sesión(es). ¿Renovamos el paquete para no interrumpir tu progreso? 🔥💪`;
+  if(r.type==="session") return `Hola ${first}! 👋 Te recuerdo tu sesión de ${r.days===0?"hoy":"mañana"}${r.time?` a las ${r.time}`:""}. ¡Nos vemos! 💪`;
   return `Hola ${first}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪`;
 };
 const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
@@ -557,6 +558,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showEdit,setShowEdit] = React.useState(null); // cliente a editar bono/caducidad
   const [classView,setClassView] = React.useState(null); // {date,time} para ver la clase desglosada
   const [sessionEdit,setSessionEdit] = React.useState(null); // {client,date} para editar ejercicios de la sesión
+  const [quickAdd,setQuickAdd] = React.useState(null); // {date,time} añadido rápido de clientes
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
@@ -597,6 +599,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(c.sessions_left<=2&&c.sessions_left>0) reminders.push({c,type:"sessions",urgent:c.sessions_left<=1});
     if(c.sessions_left===0) reminders.push({c,type:"expired",urgent:true});
   });
+  // Recordatorios de sesión: sesiones confirmadas de hoy y mañana (lista aparte
+  // para no saturar las alertas de pago/bono).
+  const TOMORROW = (()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return x.toISOString().split("T")[0];})();
+  const sessionReminders = sessions.filter(s=>(s.date===TODAY||s.date===TOMORROW)&&s.status!=="completed"&&!s.requested)
+    .map(s=>{const c=clients.find(cl=>cl.id===s.client_id); return c?{c,type:"session",days:s.date===TODAY?0:1,time:s.time,date:s.date}:null;})
+    .filter(Boolean)
+    .sort((a,b)=>a.days-b.days || String(a.time).localeCompare(String(b.time)));
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
   // Lista de espera con hueco libre (para avisar al cliente).
   const freedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
@@ -636,6 +645,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(error) return notify("Error: "+error.message,"err");
     setShowNS(false); setNs({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
     notify("Sesión agendada ✓");
+  });
+  // Añadido rápido: agrega un cliente a un hueco (confirmado) sin cerrar el modal.
+  const quickAddSession = (clientId,date,time) => w(async()=>{
+    const {error}=await sb.from("sessions").insert({client_id:clientId,date,time,type:"Sesión",status:"confirmed",requested:false});
+    if(error) return notify("Error al añadir","err");
+    notify("Añadido ✓");
   });
 
   // Marcar asistencia: la sesión se queda en la agenda (status "completed") para
@@ -1241,8 +1256,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                 })}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                   {isWork&&Array.from({length:free}).map((_,k)=>(
-                                    <button key={"f"+k} title="Hueco libre · toca para agendar" onClick={()=>{setNs(v=>({...v,date:activeDay,time})); setShowNS(true);}}
-                                      style={{borderRadius:8,border:"1.5px dashed #c9e6d1",background:"none",color:"#5f9e77",fontSize:12,fontWeight:700,cursor:"pointer",padding:"6px 11px"}}>+ libre</button>
+                                    <button key={"f"+k} title="Hueco libre · añadir cliente rápido" onClick={()=>setQuickAdd({date:activeDay,time})}
+                                      style={{borderRadius:8,border:"1.5px dashed #c9e6d1",background:"none",color:"#5f9e77",fontSize:12,fontWeight:700,cursor:"pointer",padding:"6px 11px"}}>+ añadir</button>
                                   ))}
                                   {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
                                   {isWork&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
@@ -1530,7 +1545,25 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 ))}
               </div>
             )}
-            {reminders.length===0
+            {sessionReminders.length>0&&(
+              <div style={{marginBottom:20}}>
+                <div style={{fontSize:11,color:"#0284c7",fontWeight:700,letterSpacing:1,marginBottom:10}}>🔔 RECORDAR SESIÓN (HOY / MAÑANA)</div>
+                {sessionReminders.map((r,i)=>(
+                  <div key={i} className="card" style={{marginBottom:8,border:"1px solid #bcd3ee"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:12}}>
+                      {r.c.avatar_url
+                        ?<img src={r.c.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover"}}/>
+                        :<div className="ring" style={{width:40,height:40,background:r.c.color+"18",color:r.c.color,fontSize:12}}>{ini(r.c.name)}</div>}
+                      <div style={{flex:1,minWidth:0}}><div style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.c.name}</div><div style={{fontSize:12,color:"#0284c7"}}>📅 Sesión {r.days===0?"hoy":"mañana"} a las {r.time}</div></div>
+                      <a href={waLink(r.c.phone||TRAINER_PHONE,reminderWA(r))} target="_blank" rel="noreferrer" onClick={()=>notify("Abriendo WhatsApp...","wa")}>
+                        <button className="btn wa" style={{fontSize:11,padding:"7px 10px"}}>📱 Recordar</button>
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            {reminders.length===0&&sessionReminders.length===0
               ?<div className="card" style={{textAlign:"center",padding:48}}><div style={{fontSize:32,marginBottom:10}}>✓</div><div style={{color:"#16a34a",fontWeight:700}}>Todo al día</div></div>
               :reminders.map((r,i)=>(
                 <div key={i} className="card" style={{marginBottom:10,border:`1px solid ${r.urgent?"#f2cccc":"#e2f2e2"}`,background:r.urgent?"#fbecec":"#f1f4fa"}}>
@@ -1594,6 +1627,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
       {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
+      {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
@@ -1649,6 +1683,41 @@ function MoveSessionModal({sess,sessions,clients,config,onMove,onClose}) {
         </div>
 
         <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cancelar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── AÑADIDO RÁPIDO DE CLIENTES A UN HUECO ──────────────────────────────────
+function QuickAddModal({date,time,sessions,clients,cap,onAdd,onClose}) {
+  const [q,setQ]=React.useState("");
+  const here=new Set((sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>s.client_id));
+  const list=(clients||[]).filter(c=>c.name.toLowerCase().includes(q.toLowerCase()))
+    .sort((a,b)=>{const ah=here.has(a.id)?1:0,bh=here.has(b.id)?1:0; return ah-bh || a.name.localeCompare(b.name);});
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:420,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>➕ Añadir a las {time}</h2>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {here.size}/{cap} en esta hora</p>
+        <input className="inp" placeholder="🔎 Buscar cliente…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:10}} autoFocus/>
+        <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:6,minHeight:0}}>
+          {list.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:16}}>Sin clientes.</div>}
+          {list.map(c=>{const added=here.has(c.id); return(
+            <button key={c.id} disabled={added} onClick={()=>onAdd(c.id)}
+              style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderRadius:10,cursor:added?"default":"pointer",textAlign:"left",fontFamily:"inherit",
+                background:added?"#e2f4e8":"#f8fafc",border:`1px solid ${added?"#c9e6d1":"#e6ebf3"}`,opacity:added?0.8:1}}>
+              {c.avatar_url
+                ?<img src={c.avatar_url} style={{width:34,height:34,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+                :<div className="ring" style={{width:34,height:34,background:c.color+"20",color:c.color,fontSize:11,flexShrink:0}}>{ini(c.name)}</div>}
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{fontSize:14,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
+                <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>bono {c.sessions_left}/{c.total_sessions}</div>
+              </div>
+              <span style={{fontSize:13,fontWeight:700,color:added?"#16a34a":"#0284c7",flexShrink:0}}>{added?"✓ añadido":"+ añadir"}</span>
+            </button>
+          );})}
+        </div>
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:12,flexShrink:0}} onClick={onClose}>Listo</button>
       </div>
     </div>
   );
