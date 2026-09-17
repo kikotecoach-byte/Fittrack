@@ -1622,7 +1622,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
-      {showBulkWA&&<BulkWAModal clients={clients} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
+      {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
       {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
@@ -2679,10 +2679,11 @@ const WA_TEMPLATES = {
   pay: "Hola {nombre}! 👋 Te recuerdo que tu cuota de {importe}€ vence {vence}. ¡Cualquier duda aquí estoy! 💪",
   low: "Hola {nombre}! Te quedan {sesiones} sesión(es). ¿Renovamos el paquete para no interrumpir tu progreso? 🔥💪",
   expired: "Hola {nombre}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪",
+  tomorrow: "Hola {nombre}! 👋 Te recuerdo tu sesión de mañana a las {hora}. ¡Nos vemos! 💪",
   all: "Hola {nombre}! 👋 Te escribo desde Kikote Gym. ",
 };
 // Rellena una plantilla con los datos reales de un cliente.
-const fillWA = (tpl,c) => {
+const fillWA = (tpl,c,extra) => {
   const pd = daysUntil(c.next_payment);
   const abs = Math.abs(pd);
   const vence = isNaN(pd) ? "pronto" : pd===0 ? "hoy" : pd<0 ? `hace ${abs} día${abs===1?"":"s"}` : `en ${pd} día${pd===1?"":"s"}`;
@@ -2690,12 +2691,19 @@ const fillWA = (tpl,c) => {
     .split("{nombre}").join(c.name.split(" ")[0])
     .split("{sesiones}").join(c.sessions_left)
     .split("{importe}").join(c.payment_amount??"")
-    .split("{vence}").join(vence);
+    .split("{vence}").join(vence)
+    .split("{hora}").join((extra&&extra.hora)||"");
 };
 
-function BulkWAModal({clients,onClose,notify}) {
+function BulkWAModal({clients,sessions,onClose,notify}) {
   const [selected,setSelected]=React.useState("pay");
   const [msg,setMsg]=React.useState(WA_TEMPLATES.pay);
+  // Sesiones de mañana por cliente (para el recordatorio de sesión).
+  const TOMORROW=(()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return x.toISOString().split("T")[0];})();
+  const tomorrowMap={};
+  (sessions||[]).filter(s=>s.date===TOMORROW&&s.status!=="completed"&&!s.requested).forEach(s=>{
+    if(!tomorrowMap[s.client_id]||s.time<tomorrowMap[s.client_id]) tomorrowMap[s.client_id]=s.time;
+  });
 
   // "Ya avisados hoy" se guarda en el móvil (no repites a nadie ni al recargar).
   const doneKey = `kikote_wa_${TODAY}`;
@@ -2713,6 +2721,7 @@ function BulkWAModal({clients,onClose,notify}) {
     pay: clients.filter(c=>daysUntil(c.next_payment)<=5),
     low: clients.filter(c=>c.sessions_left<=2&&c.sessions_left>0),
     expired: clients.filter(c=>c.sessions_left===0),
+    tomorrow: clients.filter(c=>tomorrowMap[c.id]),
     all: clients,
   };
   const targets = grupos[selected]||clients;
@@ -2731,6 +2740,7 @@ function BulkWAModal({clients,onClose,notify}) {
           <button className={`sb ${selected==="pay"?"on":""}`} onClick={()=>cambiarGrupo("pay")}>💳 Pago ({grupos.pay.length})</button>
           <button className={`sb ${selected==="low"?"on":""}`} onClick={()=>cambiarGrupo("low")}>⚡ Pocas ({grupos.low.length})</button>
           <button className={`sb ${selected==="expired"?"on":""}`} onClick={()=>cambiarGrupo("expired")}>🚫 Sin sesiones ({grupos.expired.length})</button>
+          <button className={`sb ${selected==="tomorrow"?"on":""}`} onClick={()=>cambiarGrupo("tomorrow")}>🔔 Sesión mañana ({grupos.tomorrow.length})</button>
           <button className={`sb ${selected==="all"?"on":""}`} onClick={()=>cambiarGrupo("all")}>Todos ({grupos.all.length})</button>
         </div>
         <div>
@@ -2748,12 +2758,12 @@ function BulkWAModal({clients,onClose,notify}) {
               {ordenados.map(c=>{
                 const ok=done.has(c.id);
                 return(
-                  <a key={c.id} href={msg?waLink(c.phone||TRAINER_PHONE,fillWA(msg,c)):"#"} target="_blank" rel="noreferrer"
+                  <a key={c.id} href={msg?waLink(c.phone||TRAINER_PHONE,fillWA(msg,c,{hora:tomorrowMap[c.id]})):"#"} target="_blank" rel="noreferrer"
                     style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",background:ok?"#f2f5f2":"#edf7ed",
                       border:`1px solid ${ok?"#c9e6d1":"#14532d"}`,borderRadius:10,textDecoration:"none",opacity:ok?0.55:1}}
                     onClick={()=>{marcar(c.id);notify(`Abriendo WA de ${c.name}...`,"wa");}}>
                     <div className="ring" style={{width:30,height:30,background:c.color+"20",color:c.color,fontSize:10}}>{ini(c.name)}</div>
-                    <div style={{flex:1,fontSize:13,fontWeight:600,color:ok?"#64748b":"#16a34a"}}>{c.name}</div>
+                    <div style={{flex:1,fontSize:13,fontWeight:600,color:ok?"#64748b":"#16a34a"}}>{c.name}{selected==="tomorrow"&&tomorrowMap[c.id]&&<span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}> · {tomorrowMap[c.id]}</span>}</div>
                     <span style={{fontSize:11,color:ok?"#16a34a":"#64748b"}}>{ok?"✓ avisado":"📱 Abrir"}</span>
                   </a>
                 );
