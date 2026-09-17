@@ -255,6 +255,52 @@ const reminderWA = (r) => {
   return `Hola ${first}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪`;
 };
 const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
+// ── NUTRICIÓN: objetivos, plantillas y cálculo individualizado ─────────────
+const DIET_OBJETIVOS = [
+  ["deficit","🔥 Pérdida de grasa","Déficit ~20% · proteína alta"],
+  ["recomp","🔁 Recomposición","Mantenimiento · proteína alta"],
+  ["mantenimiento","⚖️ Mantenimiento / Salud","Equilibrado"],
+  ["volumen","💪 Volumen (masa)","Superávit ~12% · carbos altos"],
+];
+const OBJ_LABEL = Object.fromEntries(DIET_OBJETIVOS.map(o=>[o[0],o[1]]));
+const OBJ_ADJUST = {deficit:-0.20, recomp:0, mantenimiento:0, volumen:0.12};
+const OBJ_DEFAULTS = { // proteína y grasa por kg por objetivo
+  deficit:{p:2.2,f:0.8}, recomp:{p:2.2,f:0.9}, mantenimiento:{p:1.8,f:1.0}, volumen:{p:2.0,f:1.0},
+};
+// kcal/kg de mantenimiento aproximado según días de entreno/semana.
+const activityKcal = (days)=> days>=6?34:days>=5?33:days>=4?31:days>=3?30:28;
+function nutritionFor(weight, days, objetivo, pPerKg, fPerKg){
+  const w=Math.max(30,parseFloat(weight)||70);
+  const maint=Math.round(w*activityKcal(days||4));
+  const kcal=Math.round(maint*(1+(OBJ_ADJUST[objetivo]||0)));
+  const prot=Math.round(w*(pPerKg||2));
+  const fat=Math.round(w*(fPerKg||0.9));
+  const carbs=Math.max(0,Math.round((kcal-prot*4-fat*9)/4));
+  return {maint,kcal,prot,fat,carbs};
+}
+// Reparto de comidas y ejemplos de alimentos por objetivo (guía, se escala por kcal).
+const DIET_TEMPLATES = {
+  deficit:{ meals:[["Desayuno",0.25],["Comida",0.30],["Post-entreno / merienda",0.15],["Cena",0.30]],
+    nota:"Proteína en cada comida, mucha verdura, el carbohidrato principal alrededor del entreno. Grasas justas.",
+    prot:"pollo, pavo, claras/huevos, pescado blanco, atún, yogur griego 0%",
+    carb:"arroz, patata, avena, fruta, pan integral (sobre todo pre/post entreno)",
+    fat:"aceite de oliva (medido), frutos secos, aguacate" },
+  recomp:{ meals:[["Desayuno",0.25],["Comida",0.30],["Pre/Post entreno",0.20],["Cena",0.25]],
+    nota:"Mantenimiento con proteína alta. Carbohidrato en torno al entreno para rendir y recomponer.",
+    prot:"pollo, ternera magra, huevos, pescado, lácteos",
+    carb:"arroz, patata, pasta, avena, fruta",
+    fat:"aceite de oliva, frutos secos, aguacate, huevo entero" },
+  mantenimiento:{ meals:[["Desayuno",0.25],["Comida",0.35],["Merienda",0.15],["Cena",0.25]],
+    nota:"Dieta equilibrada y sostenible. Prioriza comida real, variedad y saciedad.",
+    prot:"carne, pescado, huevos, legumbre, lácteos",
+    carb:"cereales integrales, patata, fruta, legumbre",
+    fat:"aceite de oliva, frutos secos, aguacate, pescado azul" },
+  volumen:{ meals:[["Desayuno",0.20],["Comida",0.30],["Pre entreno",0.10],["Post entreno",0.15],["Cena",0.25]],
+    nota:"Superávit calórico con carbohidrato alto para ganar masa. 4-5 comidas para llegar a las kcal.",
+    prot:"pollo, ternera, huevos, pescado, batido de proteína",
+    carb:"arroz, pasta, patata, avena, pan, fruta",
+    fat:"aceite de oliva, frutos secos, mantequilla de cacahuete, aguacate" },
+};
 // Semana del año (1..53) para situar una fecha dentro del macrociclo.
 const macroWeek = (date=TODAY) => {
   const d=new Date(date+"T12:00:00"); const soy=new Date(d.getFullYear(),0,1);
@@ -556,6 +602,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showNS,setShowNS] = React.useState(false);
   const [showPay,setShowPay] = React.useState(null);
   const [showEdit,setShowEdit] = React.useState(null); // cliente a editar bono/caducidad
+  const [showNutri,setShowNutri] = React.useState(null); // cliente para plan de nutrición
   const [classView,setClassView] = React.useState(null); // {date,time} para ver la clase desglosada
   const [sessionEdit,setSessionEdit] = React.useState(null); // {client,date} para editar ejercicios de la sesión
   const [quickAdd,setQuickAdd] = React.useState(null); // {date,time} añadido rápido de clientes
@@ -744,6 +791,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       days_week:(data.train_days&&data.train_days.length)||4,
     }).eq("id",client.id);
     setShowEdit(null); notify("Bono actualizado ✓");
+  });
+  const saveNutrition = (client,data) => w(async()=>{
+    const {error}=await sb.from("clients").update({nutrition:data}).eq("id",client.id);
+    setShowNutri(null);
+    if(error) notify("Ejecuta el SQL de nutrición (docs/nutricion.sql) para guardar","err"); else notify("Plan de nutrición guardado ✓");
   });
 
   // Materializa el entreno (automático o del tipo elegido) creando la sesión
@@ -1067,6 +1119,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       <div style={{marginTop:14,borderTop:"1px solid #e6ebf3",paddingTop:14}} onClick={e=>e.stopPropagation()}>
                         <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowEdit(c)}>✏️ Bono/caducidad</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#16a34a",border:"1px solid #c9e6d1"}} onClick={()=>setShowNutri(c)}>🥗 Nutrición</button>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pago</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
@@ -1631,6 +1684,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
+      {showNutri&&<NutritionModal client={showNutri} progress={progress} saving={saving} onSave={saveNutrition} onClose={()=>setShowNutri(null)}/>}
       {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
@@ -2614,6 +2668,89 @@ function EditBonoModal({client,saving,onSave,onClose}) {
             <button className="btn sky" style={{flex:2,padding:11}} disabled={saving} onClick={()=>onSave(f)}>{saving?"Guardando…":"Guardar cambios"}</button>
             <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
           </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── NUTRICIÓN INDIVIDUALIZADA ──────────────────────────────────────────────
+function NutritionModal({client,progress,saving,onSave,onClose}) {
+  const stored = client.nutrition && typeof client.nutrition==="object" ? client.nutrition : {};
+  const lastW = (()=>{ const p=(progress||[]).filter(x=>x.client_id===client.id&&x.weight!=null).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||""))); return p[0]?p[0].weight:null; })();
+  const defObj = stored.objetivo || (client.goal==="estetica"?"recomp":"mantenimiento");
+  const [f,setF]=React.useState({
+    weight: stored.weight ?? lastW ?? 70,
+    objetivo: defObj,
+    p: stored.p ?? OBJ_DEFAULTS[defObj].p,
+    fat: stored.fat ?? OBJ_DEFAULTS[defObj].f,
+  });
+  const days = client.days_week || parseDays(client.train_days).length || 4;
+  const n = nutritionFor(f.weight, days, f.objetivo, f.p, f.fat);
+  const tpl = DIET_TEMPLATES[f.objetivo]||DIET_TEMPLATES.mantenimiento;
+  const setObj = (o)=>setF(x=>({...x,objetivo:o,p:OBJ_DEFAULTS[o].p,fat:OBJ_DEFAULTS[o].f}));
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:460,maxHeight:"92vh",overflowY:"auto"}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>🥗 Nutrición · {client.name}</h2>
+        <p style={{fontSize:11,color:"#64748b",marginBottom:12}}>Objetivo {client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"} · {days} días/sem{lastW?` · último peso ${lastW}kg`:""}</p>
+
+        {/* Objetivo nutricional */}
+        <span className="lbl">OBJETIVO DE LA DIETA</span>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:12}}>
+          {DIET_OBJETIVOS.map(([id,label,desc])=>(
+            <button key={id} onClick={()=>setObj(id)} style={{textAlign:"left",padding:"8px 10px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",
+              border:f.objetivo===id?"1px solid #16a34a":"1px solid #e6ebf3",background:f.objetivo===id?"#e2f4e8":"#f8fafc"}}>
+              <div style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{label}</div>
+              <div style={{fontSize:10,color:"#94a3b8"}}>{desc}</div>
+            </button>
+          ))}
+        </div>
+
+        {/* Datos ajustables */}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:12}}>
+          <div><span className="lbl" style={{fontSize:9}}>PESO (kg)</span><input type="number" className="inp" style={{padding:"7px 8px",fontSize:13}} value={f.weight} onChange={e=>setF(x=>({...x,weight:e.target.value}))}/></div>
+          <div><span className="lbl" style={{fontSize:9}}>PROT g/kg</span><input type="number" step="0.1" className="inp" style={{padding:"7px 8px",fontSize:13}} value={f.p} onChange={e=>setF(x=>({...x,p:e.target.value}))}/></div>
+          <div><span className="lbl" style={{fontSize:9}}>GRASA g/kg</span><input type="number" step="0.1" className="inp" style={{padding:"7px 8px",fontSize:13}} value={f.fat} onChange={e=>setF(x=>({...x,fat:e.target.value}))}/></div>
+        </div>
+
+        {/* Objetivos calculados */}
+        <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:12,padding:"12px 14px",marginBottom:12}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+            <span style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>OBJETIVO DIARIO</span>
+            <span className="mono" style={{fontSize:22,fontWeight:800,color:"#0284c7"}}>{n.kcal}<span style={{fontSize:12,color:"#64748b"}}> kcal</span></span>
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
+            {[["Proteína",n.prot,"#16a34a"],["Carbohidr.",n.carbs,"#ca8a04"],["Grasa",n.fat,"#dc2626"]].map(([l,g,c])=>(
+              <div key={l} style={{background:"#fff",borderRadius:9,padding:"8px 6px",textAlign:"center",border:"1px solid #e6ebf3"}}>
+                <div className="mono" style={{fontSize:16,fontWeight:700,color:c}}>{g}g</div>
+                <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>{l.toUpperCase()}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Mantenimiento estimado ≈ {n.maint} kcal ({activityKcal(days)} kcal/kg · {days}d).</div>
+        </div>
+
+        {/* Plantilla de comidas */}
+        <span className="lbl">PLANTILLA DE COMIDAS</span>
+        <div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden",marginBottom:10}}>
+          {tpl.meals.map(([name,pct],i)=>(
+            <div key={i} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 11px",borderTop:i>0?"1px solid #eef1f7":"none"}}>
+              <span style={{fontSize:13,fontWeight:600,color:"#0f172a"}}>{name}</span>
+              <span className="mono" style={{fontSize:12,color:"#64748b"}}>{Math.round(n.kcal*pct)} kcal · {Math.round(pct*100)}%</span>
+            </div>
+          ))}
+        </div>
+        <div style={{fontSize:11,color:"#64748b",lineHeight:1.5,marginBottom:14}}>
+          <div style={{marginBottom:4}}>💡 {tpl.nota}</div>
+          <div><b style={{color:"#16a34a"}}>Proteína:</b> {tpl.prot}</div>
+          <div><b style={{color:"#ca8a04"}}>Carbohidratos:</b> {tpl.carb}</div>
+          <div><b style={{color:"#dc2626"}}>Grasas:</b> {tpl.fat}</div>
+        </div>
+
+        <div style={{display:"flex",gap:8}}>
+          <button className="btn sky" style={{flex:2,padding:11}} disabled={saving} onClick={()=>onSave(client,{objetivo:f.objetivo,weight:parseFloat(f.weight)||null,p:parseFloat(f.p)||null,fat:parseFloat(f.fat)||null,kcal:n.kcal,prot:n.prot,carbs:n.carbs,fat_g:n.fat})}>{saving?"Guardando…":"Guardar plan"}</button>
+          <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cerrar</button>
         </div>
       </div>
     </div>
