@@ -1204,9 +1204,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const cap=capOf(time), isWork=workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
-                          <div className="mono" onClick={()=>{ if(!slotBlocked&&slots.length>0) setClassView({date:activeDay,time}); }}
-                            style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#bcd3ee",fontSize:11,fontWeight:700,cursor:(!slotBlocked&&slots.length>0)?"pointer":"default"}}>
-                            {time}{!slotBlocked&&slots.length>0&&<span style={{fontSize:13}}>👁</span>}
+                          <div className="mono" onClick={()=>{ if(slotBlocked)return; if(slots.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
+                            style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#16a34a",fontSize:11,fontWeight:700,cursor:slotBlocked?"default":"pointer"}}>
+                            {time}{!slotBlocked&&<span style={{fontSize:13}}>{slots.length>0?"👁":"➕"}</span>}
                           </div>
                           <div style={{flex:1,minWidth:0,padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"center"}}>
                             {slotBlocked
