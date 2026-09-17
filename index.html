@@ -1626,7 +1626,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
       {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
-      {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
+      {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
@@ -1857,11 +1857,12 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
 // Permite cambiar, quitar, añadir y ajustar los ejercicios del entreno de una
 // persona en un día concreto (p. ej. si tiene una molestia se sustituye el
 // ejercicio que le duele). Respeta el material disponible del gimnasio.
-function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
+function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,sessions,annualBlocks,onGenerate,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const [saving,setSaving]=React.useState(false);
   const [addName,setAddName]=React.useState("");
   const exs = sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const auto = (!sess&&blockForDate(annualBlocks,date))?autoRoutineFor(client,date,sessions,annualBlocks):null;
   const libItems = Object.entries(EXERCISE_LIBRARY).map(([cat,list])=>[cat,list.filter(x=>equipOk(x[0]))]).filter(([c,l])=>l.length);
   const inLib = (name)=>Object.values(EXERCISE_LIBRARY).some(list=>list.some(x=>x[0]===name));
   const wOf = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
@@ -1876,7 +1877,24 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>✏️ Editar sesión · {client.name}</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:14}}>{fmtDate(date)} · cambia, quita o añade ejercicios (p. ej. si tiene una molestia). Solo material disponible.</p>
         {!sess
-          ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>No hay entreno asignado ese día. Asígnalo o genéralo primero.</div>
+          ?<div>
+            <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"12px 14px",fontSize:13,color:"#64748b",marginBottom:12}}>
+              Este día <b>aún no tiene entreno creado</b> (solo estaba el previsto). Genéralo aquí y podrás cambiar/quitar/añadir ejercicios.
+            </div>
+            {auto&&(
+              <div style={{background:"#f4faed",border:"1px solid #cbe8a4",borderRadius:10,padding:"11px 13px",marginBottom:12}}>
+                <div style={{fontSize:13,fontWeight:700,color:"#65a30d",marginBottom:6}}>Previsto: {auto.label}</div>
+                {auto.routine.slice(0,6).map((e,i)=><div key={i} style={{fontSize:12,color:"#0f172a"}}>• {e[0]} <span className="mono" style={{color:"#94a3b8"}}>{e[1]}×{e[2]}</span></div>)}
+                {auto.routine.length>6&&<div style={{fontSize:11,color:"#94a3b8"}}>+{auto.routine.length-6} más…</div>}
+              </div>
+            )}
+            {onGenerate&&<button className="btn grn" style={{width:"100%",padding:12,fontSize:13,fontWeight:700,marginBottom:8}} disabled={saving} onClick={()=>onGenerate()}>⚡ Generar entreno automático y editar</button>}
+            {onGenerate&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+              {DAY_TYPES.map(([id,label])=>(
+                <button key={id} className="btn ghost" style={{fontSize:11,padding:"8px 6px",fontWeight:700,border:"1px solid #cbe8a4",background:"#fff"}} disabled={saving} onClick={()=>onGenerate(id)}>{label}</button>
+              ))}
+            </div>}
+          </div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
             {exs.map(ex=>(
