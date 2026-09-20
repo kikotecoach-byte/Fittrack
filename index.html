@@ -662,12 +662,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     notify("Añadido ✓");
   });
 
+  // Nombre real del entreno de un cliente en una fecha (para guardarlo en el
+  // historial): tipo de día / plantilla asignada; si no, el tipo de la reserva.
+  const trainingName = (clientId,date,fallback) => {
+    const a=(assignedSessions||[]).find(s=>s.client_id===clientId&&s.date===date);
+    if(a){
+      if(a.day_type&&DAY_LABEL[a.day_type]) return DAY_LABEL[a.day_type];
+      const t=(sessionTemplates||[]).find(x=>x.id===a.template_id);
+      if(t&&t.name) return t.name;
+    }
+    return fallback||"Sesión";
+  };
+
   // Marcar asistencia: la sesión se queda en la agenda (status "completed") para
   // verla, se registra en el historial y se descuenta 1 del bono (una sola vez).
   const completeSession = (sess) => w(async()=>{
     if(sess.status==="completed") return;
     await sb.from("sessions").update({status:"completed"}).eq("id",sess.id);
-    await sb.from("history").insert({client_id:sess.client_id,date:sess.date,time:sess.time,type:sess.type});
+    await sb.from("history").insert({client_id:sess.client_id,date:sess.date,time:sess.time,type:trainingName(sess.client_id,sess.date,sess.type)});
     const client=clients.find(c=>c.id===sess.client_id);
     if(client) await sb.from("clients").update({sessions_left:Math.max(0,client.sessions_left-1)}).eq("id",client.id);
     notify("✓ Vino · sesión contada");
@@ -688,7 +700,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     const bk=sessions.find(s=>s.client_id===client.id&&s.date===date&&s.status!=="completed");
     if(bk){
       await sb.from("sessions").update({status:"completed"}).eq("id",bk.id);
-      await sb.from("history").insert({client_id:client.id,date,time:bk.time,type:bk.type});
+      await sb.from("history").insert({client_id:client.id,date,time:bk.time,type:trainingName(client.id,date,bk.type)});
       const c=clients.find(x=>x.id===client.id);
       if(c) await sb.from("clients").update({sessions_left:Math.max(0,c.sessions_left-1)}).eq("id",c.id);
     }
@@ -1638,7 +1650,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
@@ -2091,7 +2103,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -2162,8 +2174,9 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
                   const asig=(assignedSessions||[]).find(a=>a.client_id===client.id&&a.date===d);
                   const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
                   const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
-                  const label=asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—");
                   const done=booking&&booking.status==="completed";
+                  const hist=(history||[]).find(h=>h.client_id===client.id&&h.date===d);
+                  const label=done?(hist&&hist.type?hist.type:"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
                   const nd=new Date(d+"T12:00:00");
                   const isTodayRow=d===date;
                   return(
@@ -2179,6 +2192,25 @@ function ClientQuickView({client,date,sessions,clientWeights,assignedSessions,as
                 })}
               </div>
               }
+            </div>
+          );
+        })()}
+
+        {/* Últimas sesiones realizadas (resumen del historial) */}
+        {(()=>{
+          const hist=(history||[]).filter(h=>h.client_id===client.id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")||"")||String(b.time||"").localeCompare(String(a.time||""))).slice(0,6);
+          if(!hist.length) return null;
+          return(
+            <div style={{marginBottom:14}}>
+              <span className="lbl">✅ ÚLTIMAS SESIONES HECHAS</span>
+              <div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+                {hist.map((h,i)=>(
+                  <div key={i} style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,padding:"7px 11px",borderTop:i>0?"1px solid #eef1f7":"none"}}>
+                    <span style={{fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{h.type||"Sesión"}</span>
+                    <span style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap"}}>{fmtDate(h.date)}{h.time?` · ${h.time}`:""}</span>
+                  </div>
+                ))}
+              </div>
             </div>
           );
         })()}
