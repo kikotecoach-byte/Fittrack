@@ -1079,9 +1079,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="clients"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <div><h1 className="mono" style={{fontSize:20,fontWeight:700}}>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados{leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones`:""}</p></div>
+              <div><h1 className="mono" style={{fontSize:20,fontWeight:700}}>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones${pend?` · ${pend} pendientes`:""}`:"";})()}</p></div>
               <div style={{display:"flex",gap:8}}>
-                <button className="btn ghost" style={{fontWeight:700}} onClick={()=>setShowLeads(true)}>📋 Valoraciones</button>
+                <button className="btn ghost" style={{fontWeight:700,position:"relative"}} onClick={()=>setShowLeads(true)}>📋 Valoraciones{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return pend?<span style={{position:"absolute",top:-6,right:-6,minWidth:18,height:18,borderRadius:9,background:"#dc2626",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{pend}</span>:null;})()}</button>
                 <button className="btn sky" onClick={()=>setShowNC(true)}>+ Nuevo</button>
               </div>
             </div>
@@ -1251,6 +1251,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 onClick={()=>setOpenHour(activeDay)}>➕ Abrir hora</button>}
               {schedView==="day"&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#7c3aed"}}
                 onClick={()=>setShowValoracion({date:activeDay})}>📋 + Valoración</button>}
+              {(schedView==="day"||schedView==="week")&&(()=>{
+                const days=schedView==="week"?getWeekDays(activeDay).slice(0,5):[activeDay];
+                const pend=(leads||[]).filter(l=>days.includes(l.date)&&l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length;
+                return pend?<span style={{fontSize:11,fontWeight:800,color:"#b45309",background:"#fbf1d8",border:"1px solid #e4cd8c",borderRadius:20,padding:"6px 11px",whiteSpace:"nowrap"}}>📋 {pend} valorac. pendiente{pend>1?"s":""} {schedView==="week"?"esta semana":"hoy"}</span>:null;
+              })()}
             </div>
 
             {/* Valoraciones del día sin hora concreta (las que tienen hora salen en su fila) */}
