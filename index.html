@@ -760,7 +760,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     setShowValoracion(null); notify("Valoración guardada ✓");
   });
   const deleteLead = (id) => w(async()=>{ await sb.from("leads").delete().eq("id",id); notify("Valoración eliminada"); });
-  const convertLead = (lead) => w(async()=>{
+  const convertLead = (lead,bono) => w(async()=>{
+    bono=bono||{};
     const code=String(Math.floor(1000+Math.random()*9000));
     const color=COLORS[Math.floor(Math.random()*COLORS.length)];
     const parts=[];
@@ -772,10 +773,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(lead.availability) parts.push(`Disponibilidad: ${lead.availability}`);
     if(lead.weight) parts.push(`Peso valoración: ${lead.weight}kg`);
     const notes="📋 Valoración inicial\n"+parts.join("\n");
-    const {data:cli,error}=await sb.from("clients").insert({name:lead.name||"Nuevo cliente",code,color,sessions_left:10,total_sessions:10,next_payment:TODAY,payment_amount:0,notes,goal:"salud",days_week:3}).select().single();
+    const total=Math.max(1,parseInt(bono.sessions)||10);
+    const price=parseFloat(bono.price)||0;
+    const goal=bono.goal||"salud";
+    const dw=Math.max(1,parseInt(bono.days_week)||3);
+    const {data:cli,error}=await sb.from("clients").insert({name:lead.name||"Nuevo cliente",code,color,sessions_left:total,total_sessions:total,next_payment:bono.next_payment||TODAY,payment_amount:price,notes,goal,days_week:dw}).select().single();
     if(error){ notify("Error al crear cliente","err"); return; }
     await sb.from("leads").update({status:"cliente",converted_client_id:cli.id}).eq("id",lead.id);
-    setShowValoracion(null); notify(`✅ ${lead.name||"Cliente"} añadido a Clientes (revisa bono y código)`);
+    setShowValoracion(null); notify(`✅ ${lead.name||"Cliente"} añadido · bono ${total} sesiones · ${price}€ · código ${code}`);
   });
   // Editar bono (sesiones restantes/total), precio y caducidad en cualquier momento.
   const saveBono = (client, data) => w(async()=>{
@@ -1796,6 +1801,9 @@ function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
   const setTest=(k,field,v)=>setF(x=>({...x,tests:{...x.tests,[k]:{...(x.tests[k]||{}),[field]:v}}}));
   const build=()=>({...f, age:f.age?parseInt(f.age):null, weight:f.weight?parseFloat(f.weight):null});
   const yaCliente=f.status==="cliente";
+  const [showBono,setShowBono]=React.useState(false);
+  const [bono,setBono]=React.useState({sessions:10,price:100,goal:"salud",days_week:3,next_payment:TODAY});
+  const setB=(k,v)=>setBono(x=>({...x,[k]:v}));
   const F=({label,k,area})=>(
     <div style={{marginBottom:10}}><span className="lbl">{label}</span>
       {area
@@ -1843,9 +1851,33 @@ function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
 
         <div style={{marginTop:10}}>{F({label:"NOTAS / CONCLUSIONES",k:"notes",area:true})}</div>
 
+        {f.id&&!yaCliente&&showBono&&(
+          <div style={{marginTop:12,border:"1px solid #c9e6d1",background:"#f4faf6",borderRadius:10,padding:12}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#16a34a",marginBottom:8}}>BONO AL CONVERTIR EN CLIENTE</div>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:8}}>
+              <div><span className="lbl">SESIONES DEL BONO</span><input type="number" className="inp" value={bono.sessions} onChange={e=>setB("sessions",e.target.value)}/></div>
+              <div><span className="lbl">PRECIO (€)</span><input type="number" step="0.01" className="inp" value={bono.price} onChange={e=>setB("price",e.target.value)}/></div>
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"2fr 1fr",gap:8,marginBottom:8}}>
+              <div><span className="lbl">OBJETIVO</span>
+                <select className="inp" style={{appearance:"none"}} value={bono.goal} onChange={e=>setB("goal",e.target.value)}>
+                  <option value="salud">🩺 Salud</option>
+                  <option value="estetica">💪 Estética / Masa</option>
+                </select>
+              </div>
+              <div><span className="lbl">DÍAS/SEM</span><input type="number" className="inp" value={bono.days_week} onChange={e=>setB("days_week",e.target.value)}/></div>
+            </div>
+            <div style={{marginBottom:10}}><span className="lbl">PRÓXIMO PAGO</span><input type="date" className="inp" value={bono.next_payment} onChange={e=>setB("next_payment",e.target.value)}/></div>
+            <div style={{display:"flex",gap:8}}>
+              <button className="btn grn" style={{flex:1,padding:11}} disabled={saving} onClick={()=>onConvert({...build(),id:f.id},bono)}>{saving?"Añadiendo…":"✅ Confirmar y añadir a Clientes"}</button>
+              <button className="btn ghost" style={{padding:"9px 12px"}} onClick={()=>setShowBono(false)}>Cancelar</button>
+            </div>
+          </div>
+        )}
+
         <div style={{display:"flex",gap:8,flexWrap:"wrap",marginTop:6}}>
           <button className="btn sky" style={{flex:1,padding:11,minWidth:120}} disabled={saving} onClick={()=>onSave(build())}>{saving?"Guardando…":"Guardar valoración"}</button>
-          {f.id&&!yaCliente&&<button className="btn grn" style={{flex:1,padding:11,minWidth:140}} disabled={saving} onClick={()=>onConvert({...build(),id:f.id})}>✅ Convertir en cliente</button>}
+          {f.id&&!yaCliente&&!showBono&&<button className="btn grn" style={{flex:1,padding:11,minWidth:140}} disabled={saving} onClick={()=>setShowBono(true)}>✅ Convertir en cliente</button>}
         </div>
         <div style={{display:"flex",gap:8,marginTop:8}}>
           {f.id&&<button className="btn danger" style={{padding:"9px 12px"}} disabled={saving} onClick={()=>{if(window.confirm("¿Eliminar esta valoración?"))onDelete(f.id);}}>🗑</button>}
