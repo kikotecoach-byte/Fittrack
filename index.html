@@ -565,6 +565,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [openHour,setOpenHour] = React.useState(null); // fecha para abrir una hora extra
   const [showValoracion,setShowValoracion] = React.useState(null); // valoración/lead a crear o editar
   const [showLeads,setShowLeads] = React.useState(false); // lista de valoraciones/leads
+  const [leadsClient,setLeadsClient] = React.useState(null); // filtra valoraciones de un cliente
+  const [showPhotos,setShowPhotos] = React.useState(null); // cliente para galería de fotos
   const [saving,setSaving] = React.useState(false);
   const [calDate,setCalDate] = React.useState(new Date());
   const [activeDay,setActiveDay] = React.useState(TODAY);
@@ -1112,6 +1114,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       <div style={{marginTop:14,borderTop:"1px solid #e6ebf3",paddingTop:14}} onClick={e=>e.stopPropagation()}>
                         <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowEdit(c)}>✏️ Bono/caducidad</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={()=>{setLeadsClient(c);setShowLeads(true);}}>📋 Valoración</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowPhotos(c)}>📸 Fotos</button>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pago</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
@@ -1702,7 +1706,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
-      {showLeads&&<LeadsModal leads={leads} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion({date:activeDay});}} onClose={()=>setShowLeads(false)}/>}
+      {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
+      {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
@@ -1822,13 +1827,16 @@ function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
 
         <div style={{fontSize:11,fontWeight:700,color:"#0284c7",margin:"14px 0 8px"}}>PARTE PRÁCTICA · TESTS DE MOVILIDAD Y ESTABILIDAD</div>
         <div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
-          {MOB_TESTS.map(([k,label],i)=>{ const t=f.tests[k]||{}; return(
-            <div key={k} style={{padding:"8px 10px",borderTop:i>0?"1px solid #eef1f7":"none",background:t.done?"#f4faf6":"#fff"}}>
-              <label style={{display:"flex",alignItems:"center",gap:8,cursor:"pointer"}}>
-                <input type="checkbox" checked={!!t.done} onChange={e=>setTest(k,"done",e.target.checked)} style={{accentColor:"#16a34a",width:18,height:18}}/>
-                <span style={{fontSize:12,fontWeight:600,color:"#0f172a"}}>{label}</span>
-              </label>
-              <input className="inp" style={{marginTop:6,padding:"6px 9px",fontSize:12}} placeholder="Observaciones (hallazgos, lado, dolor…)" value={t.obs||""} onChange={e=>setTest(k,"obs",e.target.value)}/>
+          {MOB_TESTS.map(([k,label],i)=>{ const t=f.tests[k]||{}; const RT=[["bien","🟢 Bien","#16a34a","#e2f4e8","#c9e6d1"],["regular","🟡 Regular","#ca8a04","#fbf1d8","#e4cd8c"],["mal","🔴 Mal","#dc2626","#fbe6e6","#f2cccc"]]; const rbg=t.rating==="bien"?"#f4faf6":t.rating==="regular"?"#fdfaf0":t.rating==="mal"?"#fdf3f3":"#fff"; return(
+            <div key={k} style={{padding:"9px 10px",borderTop:i>0?"1px solid #eef1f7":"none",background:rbg}}>
+              <div style={{fontSize:12,fontWeight:600,color:"#0f172a",marginBottom:6}}>{label}</div>
+              <div style={{display:"flex",gap:5,marginBottom:6}}>
+                {RT.map(([val,txt,col,bg,bd])=>{ const on=t.rating===val; return(
+                  <button key={val} onClick={()=>setTest(k,"rating",on?null:val)} style={{flex:1,padding:"6px 4px",borderRadius:8,fontSize:11,fontWeight:700,cursor:"pointer",
+                    border:`1px solid ${on?bd:"#e6ebf3"}`,background:on?bg:"#fff",color:on?col:"#94a3b8"}}>{txt}</button>
+                );})}
+              </div>
+              <input className="inp" style={{padding:"6px 9px",fontSize:12}} placeholder="Observaciones (hallazgos, lado, dolor…)" value={t.obs||""} onChange={e=>setTest(k,"obs",e.target.value)}/>
             </div>
           );})}
         </div>
@@ -1847,13 +1855,13 @@ function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
     </div>
   );
 }
-function LeadsModal({leads,onOpen,onNew,onClose}) {
+function LeadsModal({leads,client,onOpen,onNew,onClose}) {
   const list=(leads||[]).slice().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
         <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:10}}>
-          <h2 className="mono" style={{fontSize:16,fontWeight:700}}>📋 Valoraciones ({list.length})</h2>
+          <h2 className="mono" style={{fontSize:16,fontWeight:700}}>📋 {client?`Valoraciones · ${client.name.split(" ")[0]}`:`Valoraciones (${list.length})`}</h2>
           <button className="btn sky" style={{fontSize:12,padding:"7px 12px"}} onClick={onNew}>+ Nueva</button>
         </div>
         <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:6,minHeight:0}}>
@@ -1868,6 +1876,62 @@ function LeadsModal({leads,onOpen,onNew,onClose}) {
               <span style={{fontSize:10,fontWeight:700,color:l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7",background:(l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7")+"14",borderRadius:20,padding:"2px 9px",flexShrink:0}}>{l.status==="cliente"?"✅ Cliente":l.status==="descartado"?"Descartado":"Lead"}</span>
             </button>
           ))}
+        </div>
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:10,flexShrink:0}} onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  );
+}
+
+// ── FOTOS DEL CLIENTE (antes / después) ────────────────────────────────────
+function PhotosModal({client,loadAll,notify,onClose}) {
+  const [photos,setPhotos]=React.useState([]);
+  const [busy,setBusy]=React.useState(false);
+  const load=React.useCallback(async()=>{ const {data,error}=await sb.from("client_photos").select("*").eq("client_id",client.id).order("taken_on",{ascending:true}); if(!error) setPhotos(data||[]); },[client.id]);
+  React.useEffect(()=>{ load(); },[load]);
+  const upload=async(file)=>{ if(!file) return; setBusy(true);
+    const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
+    const path=`fotos/${client.id}/${Date.now()}.${ext}`;
+    const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
+    if(upErr){ notify("Error subiendo foto","err"); setBusy(false); return; }
+    const {data}=sb.storage.from("avatars").getPublicUrl(path);
+    const {error}=await sb.from("client_photos").insert({client_id:client.id,url:data.publicUrl,taken_on:TODAY,note:""});
+    if(error){ notify("Crea la tabla client_photos (docs/fotos.sql)","err"); setBusy(false); return; }
+    await load(); setBusy(false); notify("Foto guardada ✓");
+  };
+  const saveNote=(p,note)=>{ sb.from("client_photos").update({note}).eq("id",p.id); };
+  const saveDate=(p,d)=>{ sb.from("client_photos").update({taken_on:d}).eq("id",p.id).then(load); };
+  const del=async(p)=>{ if(!window.confirm("¿Eliminar esta foto?"))return; await sb.from("client_photos").delete().eq("id",p.id); await load(); };
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
+          <h2 className="mono" style={{fontSize:16,fontWeight:700}}>📸 Fotos · {client.name.split(" ")[0]}</h2>
+          <label className="btn sky" style={{fontSize:12,padding:"7px 12px",cursor:"pointer"}}>
+            {busy?"Subiendo…":"+ Añadir"}
+            <input type="file" accept="image/*" style={{display:"none"}} disabled={busy} onChange={e=>{upload(e.target.files[0]);e.target.value="";}}/>
+          </label>
+        </div>
+        <p style={{fontSize:11,color:"#64748b",marginBottom:10}}>Ordenadas por fecha (antes → después). Toca la fecha para ajustarla y añade una nota.</p>
+        <div style={{flex:1,overflowY:"auto",minHeight:0}}>
+          {photos.length===0
+            ?<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:24}}>Sin fotos aún. Sube la primera para el "antes".</div>
+            :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+              {photos.map((p,i)=>(
+                <div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
+                  <div style={{position:"relative"}}>
+                    <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
+                    <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:700,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{i===0?"ANTES":i===photos.length-1?"ACTUAL":`#${i+1}`}</span>
+                    <button onClick={()=>del(p)} style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
+                  </div>
+                  <div style={{padding:"6px 8px"}}>
+                    <input type="date" className="inp" style={{padding:"4px 6px",fontSize:11}} defaultValue={p.taken_on||TODAY} onChange={e=>saveDate(p,e.target.value)}/>
+                    <input className="inp" style={{padding:"4px 6px",fontSize:11,marginTop:4}} placeholder="Nota (peso, test, semana…)" defaultValue={p.note||""} onBlur={e=>saveNote(p,e.target.value)}/>
+                  </div>
+                </div>
+              ))}
+            </div>
+          }
         </div>
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:10,flexShrink:0}} onClick={onClose}>Cerrar</button>
       </div>
