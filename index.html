@@ -259,6 +259,8 @@ const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Da
 const VAL_STY = (status) => status==="descartado"
   ? {tag:"descartado",fg:"#64748b",bg:"#f1f5f9",bd:"#dbe2ec",chip:"#e2e8f0"}
   : {tag:"lead",fg:"#7c3aed",bg:"#f3ecfb",bd:"#e0d2f5",chip:"#e7d8f7"};
+// Una valoración está "realizada" cuando ya tiene pesaje o algún test puntuado.
+const valDone = (l) => !!(l && ((l.weight!=null&&l.weight!=="") || (l.tests&&typeof l.tests==="object"&&Object.values(l.tests).some(t=>t&&t.rating))));
 // Semana del año (1..53) para situar una fecha dentro del macrociclo.
 const macroWeek = (date=TODAY) => {
   const d=new Date(date+"T12:00:00"); const soy=new Date(d.getFullYear(),0,1);
@@ -1254,11 +1256,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             {/* Valoraciones del día sin hora concreta (las que tienen hora salen en su fila) */}
             {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente"&&!l.time).length>0&&(
               <div style={{marginBottom:12,display:"flex",flexDirection:"column",gap:6}}>
-                {(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente"&&!l.time).map(l=>{ const vc=VAL_STY(l.status); return(
-                  <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:10,background:vc.bg,border:`1px solid ${vc.bd}`,borderRadius:10,padding:"9px 12px",cursor:"pointer"}}>
-                    <span style={{fontSize:16}}>📋</span>
-                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:vc.fg}}>Valoración · {l.name||"(sin nombre)"}</div><div style={{fontSize:11,color:"#94a3b8"}}><span style={{color:vc.fg}}>●</span> {vc.tag} · sin hora · toca para abrir</div></div>
-                    <span style={{fontSize:16,color:vc.bd}}>›</span>
+                {(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente"&&!l.time).map(l=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
+                  <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":vc.bg,border:`1px solid ${done?"#c9e6d1":vc.bd}`,borderRadius:10,padding:"9px 12px",cursor:"pointer"}}>
+                    <span style={{fontSize:16}}>{done?"✅":"📋"}</span>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:done?"#16a34a":vc.fg}}>Valoración · {l.name||"(sin nombre)"}</div><div style={{fontSize:11,color:"#94a3b8"}}>{done?<><span style={{color:"#16a34a"}}>✓ realizada</span> · sin hora</>:<><span style={{color:vc.fg}}>●</span> {vc.tag} · sin hora · pendiente</>}</div></div>
+                    <span style={{fontSize:16,color:done?"#9ed3b0":vc.bd}}>›</span>
                   </div>
                 );})}
               </div>
@@ -1339,14 +1341,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   </div>
                                   );
                                 })}
-                                {slotVals.map(l=>{ const vc=VAL_STY(l.status); return(
-                                  <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:9,background:vc.bg,border:`1px solid ${vc.bd}`,borderRadius:12,padding:"8px 9px",cursor:"pointer"}}>
-                                    <span style={{fontSize:18}}>📋</span>
+                                {slotVals.map(l=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
+                                  <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:9,background:done?"#e2f4e8":vc.bg,border:`1px solid ${done?"#c9e6d1":vc.bd}`,borderRadius:12,padding:"8px 9px",cursor:"pointer"}}>
+                                    <span style={{fontSize:18}}>{done?"✅":"📋"}</span>
                                     <div style={{flex:1,minWidth:0}}>
-                                      <span style={{color:vc.fg,fontWeight:700,fontSize:14,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.time?`${l.time} · `:""}Valoración · {l.name||"(sin nombre)"}</span>
-                                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}><span style={{color:vc.fg}}>●</span> {vc.tag} · toca para abrir la ficha</span>
+                                      <span style={{color:done?"#16a34a":vc.fg,fontWeight:700,fontSize:14,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.time?`${l.time} · `:""}Valoración · {l.name||"(sin nombre)"}</span>
+                                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>{done?<><span style={{color:"#16a34a"}}>✓ realizada</span> · toca para verla</>:<><span style={{color:vc.fg}}>●</span> {vc.tag} · pendiente de realizar</>}</span>
                                     </div>
-                                    <span style={{fontSize:16,color:vc.bd}}>›</span>
+                                    <span style={{fontSize:16,color:done?"#9ed3b0":vc.bd}}>›</span>
                                   </div>
                                 );})}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
@@ -1430,10 +1432,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   {s.client.name.split(" ")[0]}
                                 </div>
                               ))}
-                              {dayVals.slice(0,weekBig?4:2).map(l=>{ const vc=VAL_STY(l.status); return(
+                              {dayVals.slice(0,weekBig?4:2).map(l=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
                                 <div key={l.id} onClick={e=>{e.stopPropagation();setShowValoracion(l);}}
-                                  style={{background:vc.chip,borderRadius:weekBig?6:3,padding:weekBig?"4px 8px":"1px 4px",fontSize:weekBig?12:9,fontWeight:700,color:vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
-                                  📋 {l.time?`${l.time} `:""}{(l.name||"valorac.").split(" ")[0]}
+                                  style={{background:done?"#cdeed8":vc.chip,borderRadius:weekBig?6:3,padding:weekBig?"4px 8px":"1px 4px",fontSize:weekBig?12:9,fontWeight:700,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
+                                  {done?"✅":"📋"} {l.time?`${l.time} `:""}{(l.name||"valorac.").split(" ")[0]}
                                 </div>
                               );})}
                               {(daySessions.length-shownS.length)>0&&<div style={{fontSize:weekBig?10:8,color:"#64748b",paddingLeft:2}}>+{daySessions.length-shownS.length}</div>}
