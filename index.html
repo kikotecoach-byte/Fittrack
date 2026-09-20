@@ -562,6 +562,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [classView,setClassView] = React.useState(null); // {date,time} para ver la clase desglosada
   const [sessionEdit,setSessionEdit] = React.useState(null); // {client,date} para editar ejercicios de la sesión
   const [quickAdd,setQuickAdd] = React.useState(null); // {date,time} añadido rápido de clientes
+  const [slotMenu,setSlotMenu] = React.useState(null); // {date,time} elegir qué agendar en esa celda
   const [openHour,setOpenHour] = React.useState(null); // fecha para abrir una hora extra
   const [showValoracion,setShowValoracion] = React.useState(null); // valoración/lead a crear o editar
   const [showLeads,setShowLeads] = React.useState(false); // lista de valoraciones/leads
@@ -1246,13 +1247,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 onClick={()=>setShowValoracion({date:activeDay})}>📋 + Valoración</button>}
             </div>
 
-            {/* Valoraciones del día */}
-            {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente").length>0&&(
+            {/* Valoraciones del día sin hora concreta (las que tienen hora salen en su fila) */}
+            {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente"&&!l.time).length>0&&(
               <div style={{marginBottom:12,display:"flex",flexDirection:"column",gap:6}}>
-                {(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente").map(l=>(
+                {(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente"&&!l.time).map(l=>(
                   <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:10,background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:10,padding:"9px 12px",cursor:"pointer"}}>
                     <span style={{fontSize:16}}>📋</span>
-                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#7c3aed"}}>Valoración · {l.name||"(sin nombre)"}</div><div style={{fontSize:11,color:"#94a3b8"}}>{l.time?`${l.time} · `:""}toca para abrir la ficha</div></div>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#7c3aed"}}>Valoración · {l.name||"(sin nombre)"}</div><div style={{fontSize:11,color:"#94a3b8"}}>sin hora · toca para abrir la ficha</div></div>
                     <span style={{fontSize:16,color:"#c4b0e8"}}>›</span>
                   </div>
                 ))}
@@ -1280,6 +1281,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const slotBlocked=isBlocked(activeDay,time);
                       const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
+                      const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time&&l.status!=="cliente");
                       const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
@@ -1333,13 +1335,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   </div>
                                   );
                                 })}
+                                {slotVals.map(l=>(
+                                  <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:9,background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:12,padding:"8px 9px",cursor:"pointer"}}>
+                                    <span style={{fontSize:18}}>📋</span>
+                                    <div style={{flex:1,minWidth:0}}>
+                                      <span style={{color:"#7c3aed",fontWeight:700,fontSize:14,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Valoración · {l.name||"(sin nombre)"}</span>
+                                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>{l.status==="descartado"?"descartado":"lead"} · toca para abrir la ficha</span>
+                                    </div>
+                                    <span style={{fontSize:16,color:"#c4b0e8"}}>›</span>
+                                  </div>
+                                ))}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                   {isExtra&&<span style={{fontSize:9,fontWeight:700,color:"#65a30d",background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:20,padding:"1px 7px"}}>⏱ extra</span>}
                                   {isExtra&&slots.length===0&&<button title="Cerrar esta hora extra" onClick={()=>closeExtraHour(activeDay,time)} style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"none",border:"1px solid #f2cccc",borderRadius:20,padding:"1px 8px",cursor:"pointer"}}>✕ cerrar</button>}
                                   {isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
-                                  {!isWork&&slots.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
+                                  {!isWork&&slots.length===0&&slotVals.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>toggleBlock(activeDay,time)}>Fuera de horario · 🔒</span>}
                                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
-                                    {!slotBlocked&&<button title="Añadir un cliente a esta hora" onClick={()=>setQuickAdd({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #bcd3ee",background:"#eef4fc",color:"#0284c7",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>➕ Añadir</button>}
+                                    {!slotBlocked&&<button title="Añadir un cliente a esta hora" onClick={()=>setQuickAdd({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #bcd3ee",background:"#eef4fc",color:"#0284c7",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>➕ Entreno</button>}
+                                    {!slotBlocked&&<button title="Agendar una valoración a esta hora" onClick={()=>setShowValoracion({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #e0d2f5",background:"#f3ecfb",color:"#7c3aed",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>📋 Valoración</button>}
                                     {isWork&&<span style={{fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
                                   </div>
                                 </div>
@@ -1398,26 +1411,35 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           const slotBlocked=isBlkDay||isBlocked(day,time);
                           const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
                             .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                          const dayVals=(leads||[]).filter(l=>l.date===day&&l.time===time&&l.status!=="cliente");
+                          const hasStuff=daySessions.length>0||dayVals.length>0;
+                          const shownS=daySessions.slice(0,weekBig?8:4);
                           return(
                             <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(day+"|"+time)?"drag-target":""} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
-                              background:dropKey===(day+"|"+time)?"#dcebfb":slotBlocked?"#fbecec":daySessions.length>0?"#f1f4fa":"#f1f4fa",
-                              border:dropKey===(day+"|"+time)?"1px solid #0284c7":slotBlocked?"1px solid #f2cccc":daySessions.length>0?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
-                              onClick={()=>{if(!slotBlocked)toggleBlock(day,time);}}>
+                              background:dropKey===(day+"|"+time)?"#dcebfb":slotBlocked?"#fbecec":"#f1f4fa",
+                              border:dropKey===(day+"|"+time)?"1px solid #0284c7":slotBlocked?"1px solid #f2cccc":hasStuff?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
+                              onClick={()=>{if(!isBlkDay)setSlotMenu({date:day,time});}}>
                               {slotBlocked&&<div style={{fontSize:9,color:"#b56b6b",textAlign:"center"}}>🚫</div>}
-                              {daySessions.slice(0,weekBig?8:4).map(s=>(
+                              {shownS.map(s=>(
                                 <div key={s.id} className={dragId===s.id?"drag-src":""} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
                                   style={{background:s.client.color+"25",borderRadius:weekBig?6:3,padding:weekBig?"4px 8px":"1px 4px",fontSize:weekBig?12:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",touchAction:"none",cursor:"grab"}}>
                                   {s.client.name.split(" ")[0]}
                                 </div>
                               ))}
-                              {daySessions.length>(weekBig?8:4)&&<div style={{fontSize:weekBig?10:8,color:"#64748b",paddingLeft:2}}>+{daySessions.length-(weekBig?8:4)}</div>}
+                              {dayVals.slice(0,weekBig?4:2).map(l=>(
+                                <div key={l.id} onClick={e=>{e.stopPropagation();setShowValoracion(l);}}
+                                  style={{background:"#e7d8f7",borderRadius:weekBig?6:3,padding:weekBig?"4px 8px":"1px 4px",fontSize:weekBig?12:9,fontWeight:700,color:"#7c3aed",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
+                                  📋 {(l.name||"valorac.").split(" ")[0]}
+                                </div>
+                              ))}
+                              {(daySessions.length-shownS.length)>0&&<div style={{fontSize:weekBig?10:8,color:"#64748b",paddingLeft:2}}>+{daySessions.length-shownS.length}</div>}
                             </div>
                           );
                         })}
                       </div>
                     ))}
                   </div>
-                  <p style={{fontSize:10,color:"#94a3b8",marginTop:6,paddingLeft:40}}>💡 Arrastra un nombre a otro día/hora para moverlo · toca para su ficha · celda vacía para bloquear</p>
+                  <p style={{fontSize:10,color:"#94a3b8",marginTop:6,paddingLeft:40}}>💡 Arrastra un nombre para moverlo · toca una celda para añadir entreno o valoración · 🚫 bloquear</p>
                 </div>
               );
             })()}
@@ -1480,7 +1502,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 </div>
               </div>
             )}
-            {schedView==="week"&&<p style={{fontSize:11,color:"#94a3b8",marginTop:10}}>💡 Toca una celda vacía para bloquear una hora</p>}
+            {schedView==="week"&&<p style={{fontSize:11,color:"#94a3b8",marginTop:10}}>💡 Toca una celda para añadir un entreno, una valoración o bloquear la hora</p>}
           </div>
         )}
 
@@ -1710,6 +1732,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
+      {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
+        onTraining={()=>{const s=slotMenu;setSlotMenu(null);setQuickAdd(s);}}
+        onValoracion={()=>{const s=slotMenu;setSlotMenu(null);setShowValoracion({date:s.date,time:s.time});}}
+        onBlock={()=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time);}}
+        onClose={()=>setSlotMenu(null)}/>}
       {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
@@ -2014,6 +2041,24 @@ function OpenHourModal({date,daySlots,openSet,onOpen,onCloseHour,onClose}) {
 }
 
 // ── AÑADIDO RÁPIDO DE CLIENTES A UN HUECO ──────────────────────────────────
+function SlotActionModal({date,time,blocked,onTraining,onValoracion,onBlock,onClose}) {
+  const d=new Date(date+"T12:00:00");
+  const dstr=d.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
+  return(
+    <div className="ovl" onClick={onClose}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:360}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>🗓 {time}</h2>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:14,textTransform:"capitalize"}}>{dstr}</p>
+        <div style={{display:"flex",flexDirection:"column",gap:9}}>
+          <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#eef4fc",color:"#0284c7",border:"1px solid #bcd3ee",textAlign:"left"}} onClick={onTraining}>➕ Añadir entreno<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Reservar la clase de un cliente a esta hora</div></button>
+          <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#f3ecfb",color:"#7c3aed",border:"1px solid #e0d2f5",textAlign:"left"}} onClick={onValoracion}>📋 Agendar valoración<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Cita de valoración inicial (lead) a esta hora</div></button>
+          <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:blocked?"#e2f4e8":"#fbecec",color:blocked?"#16a34a":"#dc2626",border:`1px solid ${blocked?"#c9e6d1":"#f2cccc"}`,textAlign:"left"}} onClick={onBlock}>{blocked?"✓ Desbloquear hora":"🚫 Bloquear hora"}<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>{blocked?"Volver a dejar la hora disponible":"Marcar esta hora como no disponible"}</div></button>
+        </div>
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:12}} onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  );
+}
 function QuickAddModal({date,time,sessions,clients,cap,onAdd,onClose}) {
   const [q,setQ]=React.useState("");
   const here=new Set((sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>s.client_id));
