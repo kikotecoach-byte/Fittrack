@@ -1956,6 +1956,70 @@ function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
 }
 function LeadsModal({leads,client,onOpen,onNew,onClose}) {
   const list=(leads||[]).slice().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
+  const [sel,setSel]=React.useState(null); // valoración en vista previa resumida
+  const statusPill=(l)=><span style={{fontSize:10,fontWeight:700,color:l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7",background:(l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7")+"14",borderRadius:20,padding:"2px 9px",flexShrink:0}}>{l.status==="cliente"?"✅ Cliente":l.status==="descartado"?"Descartado":"Lead"}</span>;
+  // ── Vista previa resumida de una valoración ──
+  if(sel){
+    const l=sel;
+    const tests=(l.tests&&typeof l.tests==="object")?l.tests:{};
+    const cnt={bien:0,regular:0,mal:0}; Object.values(tests).forEach(t=>{ if(t&&t.rating&&cnt[t.rating]!=null) cnt[t.rating]++; });
+    const rated=MOB_TESTS.filter(([k])=>tests[k]&&tests[k].rating);
+    const RC={bien:["🟢","#16a34a","#e2f4e8"],regular:["🟡","#ca8a04","#fbf1d8"],mal:["🔴","#dc2626","#fbe6e6"]};
+    const done=valDone(l);
+    const datos=[["Edad",l.age],["Trabajo",l.job],["Experiencia",l.experience],["Hábitos",l.diet],["Lesiones",l.injuries],["Disponibilidad",l.availability]].filter(([,v])=>v!=null&&String(v).trim()!=="");
+    return(
+      <div className="ovl" onClick={onClose}>
+        <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+            <button className="btn ghost" style={{fontSize:13,padding:"5px 9px"}} onClick={()=>setSel(null)}>‹</button>
+            <h2 className="mono" style={{fontSize:15,fontWeight:700,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name||"(sin nombre)"}</h2>
+            {statusPill(l)}
+          </div>
+          <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>{l.date?fmtDate(l.date):"sin fecha"}{l.time?` · ${l.time}`:""} · {done?<span style={{color:"#16a34a",fontWeight:700}}>✓ realizada</span>:<span style={{color:"#7c3aed",fontWeight:700}}>pendiente de realizar</span>}</div>
+          <div style={{flex:1,overflowY:"auto",minHeight:0,display:"flex",flexDirection:"column",gap:12}}>
+            {(l.weight||datos.length>0)&&(
+              <div>
+                <span className="lbl">DATOS</span>
+                <div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+                  {l.weight&&<div style={{display:"flex",justifyContent:"space-between",gap:10,padding:"7px 11px",fontSize:12}}><span style={{color:"#94a3b8",fontWeight:700}}>Pesaje</span><span style={{color:"#0f172a",fontWeight:700}}>{l.weight} kg</span></div>}
+                  {datos.map(([k,v],i)=>(
+                    <div key={k} style={{display:"flex",justifyContent:"space-between",gap:12,padding:"7px 11px",fontSize:12,borderTop:(i>0||l.weight)?"1px solid #eef1f7":"none"}}>
+                      <span style={{color:"#94a3b8",fontWeight:700,flexShrink:0}}>{k}</span>
+                      <span style={{color:"#0f172a",textAlign:"right",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+            <div>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+                <span className="lbl" style={{marginBottom:0}}>TESTS</span>
+                <span style={{fontSize:12,fontWeight:700}}>🟢 {cnt.bien} · 🟡 {cnt.regular} · 🔴 {cnt.mal}</span>
+              </div>
+              {rated.length===0
+                ?<div style={{fontSize:12,color:"#94a3b8",padding:"4px 2px"}}>Sin tests puntuados todavía.</div>
+                :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+                  {rated.map(([k,label],i)=>{ const t=tests[k]; const rc=RC[t.rating]; return(
+                    <div key={k} style={{padding:"7px 11px",borderTop:i>0?"1px solid #eef1f7":"none",background:rc[2]+"66"}}>
+                      <div style={{display:"flex",justifyContent:"space-between",gap:10,alignItems:"center"}}>
+                        <span style={{fontSize:12,fontWeight:600,color:"#0f172a"}}>{label}</span>
+                        <span style={{fontSize:11,fontWeight:800,color:rc[1],whiteSpace:"nowrap"}}>{rc[0]} {t.rating}</span>
+                      </div>
+                      {t.obs&&<div style={{fontSize:11,color:"#64748b",marginTop:3}}>{t.obs}</div>}
+                    </div>
+                  );})}
+                </div>}
+            </div>
+            {l.notes&&<div><span className="lbl">NOTAS</span><div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"9px 11px",fontSize:12,color:"#64748b",whiteSpace:"pre-wrap",lineHeight:1.45}}>{l.notes}</div></div>}
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:12,flexShrink:0}}>
+            <button className="btn sky" style={{flex:1,padding:11}} onClick={()=>onOpen(l)}>{done?"✏️ Abrir ficha completa":"▶ Realizar / editar"}</button>
+            <button className="btn ghost" style={{padding:"11px 14px"}} onClick={()=>setSel(null)}>Volver</button>
+          </div>
+        </div>
+      </div>
+    );
+  }
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
@@ -1965,16 +2029,17 @@ function LeadsModal({leads,client,onOpen,onNew,onClose}) {
         </div>
         <div style={{flex:1,overflowY:"auto",display:"flex",flexDirection:"column",gap:6,minHeight:0}}>
           {list.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:16}}>Sin valoraciones. Crea una con "+ Nueva".</div>}
-          {list.map(l=>(
-            <button key={l.id} onClick={()=>onOpen(l)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,cursor:"pointer",textAlign:"left",fontFamily:"inherit",
+          {list.map(l=>{ const done=valDone(l); const tests=(l.tests&&typeof l.tests==="object")?l.tests:{}; let b=0,r=0,m=0; Object.values(tests).forEach(t=>{ if(t&&t.rating==="bien")b++; else if(t&&t.rating==="regular")r++; else if(t&&t.rating==="mal")m++; }); return(
+            <button key={l.id} onClick={()=>setSel(l)} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderRadius:10,cursor:"pointer",textAlign:"left",fontFamily:"inherit",
               background:l.status==="cliente"?"#e2f4e8":"#f8fafc",border:`1px solid ${l.status==="cliente"?"#c9e6d1":"#e6ebf3"}`}}>
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.name||"(sin nombre)"}</div>
-                <div style={{fontSize:11,color:"#94a3b8"}}>{l.date?fmtDate(l.date):"sin fecha"}{l.time?` · ${l.time}`:""}</div>
+                <div style={{fontSize:11,color:"#94a3b8"}}>{l.date?fmtDate(l.date):"sin fecha"}{l.time?` · ${l.time}`:""} · {done?<span style={{color:"#16a34a",fontWeight:700}}>✓ {b}·{r}·{m}</span>:"pendiente"}</div>
               </div>
-              <span style={{fontSize:10,fontWeight:700,color:l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7",background:(l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7")+"14",borderRadius:20,padding:"2px 9px",flexShrink:0}}>{l.status==="cliente"?"✅ Cliente":l.status==="descartado"?"Descartado":"Lead"}</span>
+              {statusPill(l)}
+              <span style={{fontSize:15,color:"#c4b0e8",flexShrink:0}}>›</span>
             </button>
-          ))}
+          );})}
         </div>
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:10,flexShrink:0}} onClick={onClose}>Cerrar</button>
       </div>
