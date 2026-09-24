@@ -272,7 +272,10 @@ const BANDS = [
   ["verde","🟢","Verde","#16a34a","#e2f4e8"],
 ];
 const bandOf = (key) => BANDS.find(b=>b[0]===key);
-const bandLabel = (key) => { const b=bandOf(key); return b?`${b[1]} ${b[2]}`:""; };
+// Se pueden combinar varias gomas a la vez: se guardan separadas por comas.
+const bandKeys = (s) => String(s||"").split(",").map(x=>x.trim()).filter(Boolean);
+const bandLabel = (s) => { const ks=bandKeys(s); if(!ks.length) return ""; return ks.map(k=>{const b=bandOf(k); return b?b[1]:"";}).join("")+" "+ks.map(k=>{const b=bandOf(k); return b?b[2]:k;}).join(" + "); };
+const toggleBandKey = (s,key) => { const ks=bandKeys(s); const i=ks.indexOf(key); if(i>=0)ks.splice(i,1); else ks.push(key); return BANDS.filter(b=>ks.includes(b[0])).map(b=>b[0]).join(","); };
 // Ejercicios sin carga externa (peso corporal) → por defecto se registran con goma.
 const isBodyweight = (name) => /domin|fondo|flexion|flexión|plancha|burpee|mountain climber|escalador|comba|salto a la|box jump|salto al caj|hollow|l-?sit|muscle ?up|remo invertido|sprint|pistol|zancada salt|abdominal|crunch|rueda abdominal|puente|elevaci[oó]n de pierna|superman|bird ?dog|monta[ñn]ista|jumping jack|sentadilla a una pierna/i.test(String(name||""));
 // Semana del año (1..53) para situar una fecha dentro del macrociclo.
@@ -2219,7 +2222,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   // Autoguardado: al salir del campo se guarda la carga/reps aunque no marques hecho.
   const saveW=(ex)=>{ sb.from("assigned_exercises").update({actual_weight:numW(valOf(ex,"w"))}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta el SQL de entrenamiento (docs)","err"); }); };
   const saveR=(ex)=>{ sb.from("assigned_exercises").update({actual_reps:valOf(ex,"r")||null}).eq("id",ex.id); };
-  const setBand=(ex,band)=>{ const cur=valOf(ex,"band"); const v=cur===band?"":band; setVal(ex,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta docs/gomas.sql","err"); }); };
+  const setBand=(ex,band)=>{ const v=toggleBandKey(valOf(ex,"band"),band); setVal(ex,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta docs/gomas.sql","err"); }); };
   const setMode=(ex,mode)=>{ setVal(ex,"mode",mode); if(mode==="kg"){ setVal(ex,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ex.id); } };
   const toggleDone=async(ex)=>{
     const nowDone=!valOf(ex,"done"); setVal(ex,"done",nowDone);
@@ -2279,8 +2282,8 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
                       </div>
                       {valOf(ex,"mode")==="goma"
                         ?<div style={{display:"flex",gap:4}}>
-                          {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=valOf(ex,"band")===k; return(
-                            <button key={k} title={lbl} onClick={()=>setBand(ex,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1}}>{emo}</button>
+                          {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(valOf(ex,"band")).includes(k); return(
+                            <button key={k} title={lbl} onClick={()=>setBand(ex,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
                           );})}
                         </div>
                         :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={valOf(ex,"w")} onChange={e=>setVal(ex,"w",e.target.value)} onBlur={()=>saveW(ex)}/>}
@@ -2718,7 +2721,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   })));
   const [saving,setSaving]=React.useState(false);
   const setField=(id,k,v)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x));
-  const setBand=(row,band)=>{ const v=row.band===band?"":band; setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id); };
+  const setBand=(row,band)=>{ const v=toggleBandKey(row.band,band); setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id); };
   const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id); } };
 
   const toggleDone=async(row)=>{
@@ -2777,8 +2780,8 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
                     </div>
                     {row.mode==="goma"
                       ?<div style={{display:"flex",gap:4}}>
-                        {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=row.band===k; return(
-                          <button key={k} title={lbl} onClick={()=>setBand(row,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1}}>{emo}</button>
+                        {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(row.band).includes(k); return(
+                          <button key={k} title={lbl} onClick={()=>setBand(row,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
                         );})}
                       </div>
                       :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id);}}/>}
