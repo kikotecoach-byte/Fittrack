@@ -261,6 +261,20 @@ const VAL_STY = (status) => status==="descartado"
   : {tag:"lead",fg:"#7c3aed",bg:"#f3ecfb",bd:"#e0d2f5",chip:"#e7d8f7"};
 // Una valoración está "realizada" cuando ya tiene pesaje o algún test puntuado.
 const valDone = (l) => !!(l && ((l.weight!=null&&l.weight!=="") || (l.tests&&typeof l.tests==="object"&&Object.values(l.tests).some(t=>t&&t.rating))));
+
+// Gomas elásticas (bandas) por color, ordenadas de más suave a más fuerte.
+// Para ejercicios de peso corporal se registra la goma en vez de kg.
+const BANDS = [
+  ["amarilla","🟡","Amarilla","#eab308","#fbf1d8"],
+  ["roja","🔴","Roja","#dc2626","#fbe6e6"],
+  ["negra","⚫","Negra","#334155","#e5e9f0"],
+  ["morada","🟣","Morada","#7c3aed","#f3ecfb"],
+  ["verde","🟢","Verde","#16a34a","#e2f4e8"],
+];
+const bandOf = (key) => BANDS.find(b=>b[0]===key);
+const bandLabel = (key) => { const b=bandOf(key); return b?`${b[1]} ${b[2]}`:""; };
+// Ejercicios sin carga externa (peso corporal) → por defecto se registran con goma.
+const isBodyweight = (name) => /domin|fondo|flexion|flexión|plancha|burpee|mountain climber|escalador|comba|salto a la|box jump|salto al caj|hollow|l-?sit|muscle ?up|remo invertido|sprint|pistol|zancada salt|abdominal|crunch|rueda abdominal|puente|elevaci[oó]n de pierna|superman|bird ?dog|monta[ñn]ista|jumping jack|sentadilla a una pierna/i.test(String(name||""));
 // Semana del año (1..53) para situar una fecha dentro del macrociclo.
 const macroWeek = (date=TODAY) => {
   const d=new Date(date+"T12:00:00"); const soy=new Date(d.getFullYear(),0,1);
@@ -806,12 +820,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   // asignada con las cargas base del cliente. Si se pasa dayType, usa ese tipo.
   const materializeRoutine = (client, date, dayType) => w(async()=>{
     const blk=blockForDate(annualBlocks,date);
-    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date))
-                            : autoRoutineFor(client, date, sessions, annualBlocks).routine;
+    const auto = dayType ? null : autoRoutineFor(client, date, sessions, annualBlocks);
+    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date)) : (auto?auto.routine:[]);
+    const dt = dayType || (auto&&auto.dayType) || null;
     if(!routine.length) return notify("No hay bloque del macrociclo para esa fecha","err");
     const existing=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
     if(existing){ await sb.from("assigned_exercises").delete().eq("session_id",existing.id); await sb.from("assigned_sessions").delete().eq("id",existing.id); }
-    const {data:sess,error}=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending"}).select().single();
+    let ins=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending",day_type:dt}).select().single();
+    if(ins.error){ ins=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending"}).select().single(); } // sin columna day_type
+    const {data:sess,error}=ins;
     if(error){ notify("Error al asignar","err"); return; }
     const wts=clientWeights.filter(x=>x.client_id===client.id);
     const rows=routine.map((e,i)=>{ const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
@@ -1740,7 +1757,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
@@ -2129,17 +2146,22 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const valOf=(ex,k)=>{ const e=edited[ex.id]; if(e&&e[k]!==undefined) return e[k];
     if(k==="w") return ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:"");
     if(k==="r") return ex.actual_reps!=null?ex.actual_reps:(ex.reps!=null?ex.reps:"");
+    if(k==="band") return ex.load_band||"";
+    if(k==="mode") return ex.load_band?"goma":(isBodyweight(ex.exercise_name)&&ex.prescribed_weight==null?"goma":"kg");
     return !!ex.done; };
   const setVal=(ex,k,v)=>setEdited(m=>({...m,[ex.id]:{...m[ex.id],[k]:v}}));
   const numW=(raw)=> raw===""||raw==null?null:parseFloat(String(raw).replace(",","."));
   // Autoguardado: al salir del campo se guarda la carga/reps aunque no marques hecho.
   const saveW=(ex)=>{ sb.from("assigned_exercises").update({actual_weight:numW(valOf(ex,"w"))}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta el SQL de entrenamiento (docs)","err"); }); };
   const saveR=(ex)=>{ sb.from("assigned_exercises").update({actual_reps:valOf(ex,"r")||null}).eq("id",ex.id); };
+  const setBand=(ex,band)=>{ const cur=valOf(ex,"band"); const v=cur===band?"":band; setVal(ex,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta docs/gomas.sql","err"); }); };
+  const setMode=(ex,mode)=>{ setVal(ex,"mode",mode); if(mode==="kg"){ setVal(ex,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ex.id); } };
   const toggleDone=async(ex)=>{
     const nowDone=!valOf(ex,"done"); setVal(ex,"done",nowDone);
-    const w=numW(valOf(ex,"w"));
-    const {error}=await sb.from("assigned_exercises").update({done:nowDone,actual_weight:nowDone?w:numW(valOf(ex,"w")),actual_reps:valOf(ex,"r")||null,done_at:nowDone?new Date().toISOString():null}).eq("id",ex.id);
-    if(error){ notify("Ejecuta el SQL de entrenamiento (docs)","err"); return; }
+    const goma=valOf(ex,"mode")==="goma";
+    const w=goma?null:numW(valOf(ex,"w"));
+    const {error}=await sb.from("assigned_exercises").update({done:nowDone,actual_weight:w,load_band:goma?(valOf(ex,"band")||null):null,actual_reps:valOf(ex,"r")||null,done_at:nowDone?new Date().toISOString():null}).eq("id",ex.id);
+    if(error){ notify("Ejecuta el SQL de gomas y entrenamiento (docs)","err"); return; }
     if(nowDone&&w!=null){
       const cw=(clientWeights||[]).find(x=>x.client_id===sel&&(x.exercise_name||"").toLowerCase()===String(ex.exercise_name).toLowerCase());
       const oldW=cw?cw.weight:null;
@@ -2185,9 +2207,18 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
                     <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {ex.sets&&ex.reps?`${ex.sets}×${ex.reps}`:"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
-                    <div style={{flex:1}}>
-                      <span className="lbl" style={{marginBottom:3}}>PESO (kg)</span>
-                      <input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={valOf(ex,"w")} onChange={e=>setVal(ex,"w",e.target.value)} onBlur={()=>saveW(ex)}/>
+                    <div style={{flex:1.4,minWidth:0}}>
+                      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                        <span className="lbl" style={{marginBottom:0}}>{valOf(ex,"mode")==="goma"?"GOMA":"PESO (kg)"}</span>
+                        <button onClick={()=>setMode(ex,valOf(ex,"mode")==="goma"?"kg":"goma")} style={{fontSize:9,fontWeight:700,color:"#0284c7",background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px",cursor:"pointer"}}>{valOf(ex,"mode")==="goma"?"⇄ kg":"⇄ goma"}</button>
+                      </div>
+                      {valOf(ex,"mode")==="goma"
+                        ?<div style={{display:"flex",gap:4}}>
+                          {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=valOf(ex,"band")===k; return(
+                            <button key={k} title={lbl} onClick={()=>setBand(ex,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1}}>{emo}</button>
+                          );})}
+                        </div>
+                        :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={valOf(ex,"w")} onChange={e=>setVal(ex,"w",e.target.value)} onBlur={()=>saveW(ex)}/>}
                     </div>
                     <div style={{flex:1}}>
                       <span className="lbl" style={{marginBottom:3}}>REPS</span>
@@ -2427,7 +2458,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onSetType,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -2501,16 +2532,24 @@ function ClientQuickView({client,date,sessions,history,clientWeights,assignedSes
                   const done=booking&&booking.status==="completed";
                   const hist=(history||[]).find(h=>h.client_id===client.id&&h.date===d);
                   const label=done?(hist&&hist.type?hist.type:"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
+                  const curType=asig?(asig.day_type||""):(au?au.dayType:"");
                   const nd=new Date(d+"T12:00:00");
                   const isTodayRow=d===date;
                   return(
-                    <div key={d} onClick={()=>{ if(asig&&onEditSession) onEditSession(d); }} style={{display:"flex",alignItems:"center",gap:10,padding:"8px 10px",borderTop:i>0?"1px solid #eef1f7":"none",background:isTodayRow?"#eef4fc":done?"#f4faf6":"#fff",cursor:(asig&&onEditSession)?"pointer":"default"}}>
-                      <div style={{width:38,flexShrink:0,textAlign:"center"}}>
+                    <div key={d} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",borderTop:i>0?"1px solid #eef1f7":"none",background:isTodayRow?"#eef4fc":done?"#f4faf6":"#fff"}}>
+                      <div style={{width:34,flexShrink:0,textAlign:"center"}}>
                         <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{dow[nd.getDay()]}</div>
                         <div className="mono" style={{fontSize:13,fontWeight:700,color:isTodayRow?"#0284c7":"#0f172a"}}>{nd.getDate()}</div>
                       </div>
-                      <div style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}{asig&&onEditSession&&<span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}> · ✏️ editar</span>}</div>
-                      <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#cbd5e1"}}>{done?"✓ hecho":booking?"reservado":"previsto"}</div>
+                      {done
+                        ?<div style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+                        :<select value={curType||""} onChange={e=>{const v=e.target.value; if(onSetType) onSetType(d,v||undefined);}} onClick={e=>e.stopPropagation()}
+                            style={{flex:1,minWidth:0,appearance:"none",fontSize:12,fontWeight:700,color:asig?"#0284c7":"#65a30d",border:"1px solid #dbe2ec",borderRadius:8,padding:"6px 8px",background:"#fff",cursor:"pointer"}}>
+                            {!curType&&<option value="">— elegir tipo —</option>}
+                            {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
+                          </select>}
+                      {!done&&asig&&onEditSession&&<button className="btn ghost" style={{flexShrink:0,fontSize:11,padding:"5px 8px"}} onClick={()=>onEditSession(d)} title="Editar ejercicios">✏️</button>}
+                      <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#cbd5e1",width:56,textAlign:"right"}}>{done?"✓ hecho":booking?"reservado":"previsto"}</div>
                     </div>
                   );
                 })}
@@ -2553,7 +2592,7 @@ function ClientQuickView({client,date,sessions,history,clientWeights,assignedSes
                   <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i>0?"1px solid #e6ebf3":"none"}}>
                     <div style={{fontSize:12,color:"#0f172a",fontWeight:600}}>{e.exercise_name}</div>
                     <div className="mono" style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap",textAlign:"right"}}>
-                      {e.sets&&e.reps?`${e.sets}×${e.reps}`:""}{e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}{e.protocol?` · ${e.protocol}`:""}
+                      {e.sets&&e.reps?`${e.sets}×${e.reps}`:""}{e.load_band?` · ${bandLabel(e.load_band)}`:e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}{e.protocol?` · ${e.protocol}`:""}
                     </div>
                   </div>
                 ))
@@ -2608,19 +2647,24 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
     id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
     w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
     r:(e.actual_reps!=null?e.actual_reps:(e.reps!=null?e.reps:"")),
+    band:e.load_band||"",
+    mode:(e.load_band?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
     done:!!e.done,
   })));
   const [saving,setSaving]=React.useState(false);
   const setField=(id,k,v)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x));
+  const setBand=(row,band)=>{ const v=row.band===band?"":band; setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id); };
+  const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id); } };
 
   const toggleDone=async(row)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
-    const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));
+    const goma=row.mode==="goma";
+    const w=goma?null:(row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",",".")));
     const {error}=await sb.from("assigned_exercises").update({
-      done:nowDone, actual_weight:nowDone?w:null, actual_reps:nowDone?(row.r||null):null, done_at:nowDone?new Date().toISOString():null,
+      done:nowDone, actual_weight:nowDone?w:null, load_band:nowDone?(goma?(row.band||null):null):(goma?(row.band||null):null), actual_reps:nowDone?(row.r||null):null, done_at:nowDone?new Date().toISOString():null,
     }).eq("id",row.id);
-    if(error){ notify("Ejecuta el SQL de entrenamiento (docs)","err"); setField(row.id,"done",!nowDone); setSaving(false); return; }
+    if(error){ notify("Ejecuta el SQL de gomas y entrenamiento (docs)","err"); setField(row.id,"done",!nowDone); setSaving(false); return; }
     // Progresión: al marcar hecho con carga, actualizar la carga del cliente y guardar historial.
     if(nowDone && w!=null){
       const cw=(clientWeights||[]).find(x=>x.client_id===client.id && (x.exercise_name||"").toLowerCase()===row.name.toLowerCase());
@@ -2660,16 +2704,25 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
                   <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{row.name}</div>
                   <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}</div>
                 </div>
-                <div style={{display:"flex",alignItems:"center",gap:8}}>
-                  <div style={{flex:1}}>
-                    <span className="lbl" style={{marginBottom:3}}>PESO (kg)</span>
-                    <input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id);}}/>
+                <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
+                  <div style={{flex:1.4,minWidth:0}}>
+                    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
+                      <span className="lbl" style={{marginBottom:0}}>{row.mode==="goma"?"GOMA":"PESO (kg)"}</span>
+                      <button onClick={()=>setMode(row,row.mode==="goma"?"kg":"goma")} style={{fontSize:9,fontWeight:700,color:"#0284c7",background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px",cursor:"pointer"}}>{row.mode==="goma"?"⇄ kg":"⇄ goma"}</button>
+                    </div>
+                    {row.mode==="goma"
+                      ?<div style={{display:"flex",gap:4}}>
+                        {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=row.band===k; return(
+                          <button key={k} title={lbl} onClick={()=>setBand(row,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1}}>{emo}</button>
+                        );})}
+                      </div>
+                      :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id);}}/>}
                   </div>
                   <div style={{flex:1}}>
                     <span className="lbl" style={{marginBottom:3}}>REPS</span>
                     <input type="text" className="inp" style={{padding:"8px 10px"}} value={row.r} onChange={e=>setField(row.id,"r",e.target.value)} onBlur={()=>{sb.from("assigned_exercises").update({actual_reps:row.r||null}).eq("id",row.id);}}/>
                   </div>
-                  <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",alignSelf:"flex-end",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
+                  <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
                 </div>
               </div>
             ))}
@@ -5204,7 +5257,7 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
                               <span>{ae.exercise_name}</span>
                               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                                 <span className="mono" style={{color:"#0284c7"}}>{ae.sets}×{ae.reps}</span>
-                                {ae.prescribed_weight&&<span style={{color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+                                {ae.load_band?<span style={{fontWeight:700}}>{bandLabel(ae.load_band)}</span>:ae.prescribed_weight?<span style={{color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>:null}
                                 {ae.completed&&<span style={{color:"#16a34a",fontSize:10}}>✓</span>}
                               </div>
                             </div>
