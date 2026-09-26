@@ -307,7 +307,7 @@ function autoRoutineFor(client, date, sessions, annualBlocks){
   if(!days.includes(date)) days.push(date);
   days.sort();
   const nDays = Math.max(days.length, td.length || client.days_week || 0) || 4;
-  const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, nDays) : WEEK_PLAN;
+  const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, nDays, macroWeek(date), client.goal) : WEEK_PLAN;
   const idx = days.indexOf(date);
   const dayType = plan[idx % plan.length];
   return { dayType, label:dayTypeLabel(dayType), blk, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date)) };
@@ -835,7 +835,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(error) return "err";
     const wts=clientWeights.filter(x=>x.client_id===client.id);
     const rows=routine.map((e,i)=>{ const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
-      return {session_id:sess.id,exercise_name:e[0],prescribed_weight:cw?cw.weight:null,sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i}; });
+      return {session_id:sess.id,exercise_name:e[0],prescribed_weight:suggestLoad(cw,e[5],blk,date),sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i}; });
     if(rows.length) await sb.from("assigned_exercises").insert(rows);
     return "ok";
   };
@@ -2677,7 +2677,7 @@ function ClientQuickView({client,date,sessions,history,clientWeights,assignedSes
         {blk&&(
           <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"9px 12px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
             <div style={{minWidth:0}}>
-              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO DEL MACROCICLO · SEMANA {macroWeek(date)}</div>
+              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO DEL MACROCICLO · SEMANA {macroWeek(date)}{(()=>{const wv=waveOf(blk,macroWeek(date)); return isTestBlock(blk)?" · TEST":` · SEMANA ${wv.ab} · CICLO ${wv.step+1}/${wv.cycles||1}`;})()}</div>
               <div style={{fontSize:13,fontWeight:700,color:"#0284c7",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{blk.name}</div>
             </div>
             <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",whiteSpace:"nowrap"}}>{blk.rep_range} reps</div>
@@ -2706,8 +2706,8 @@ function ClientQuickView({client,date,sessions,history,clientWeights,assignedSes
           const exsOf=(a)=>a?(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0)):[];
           const loadTxt=(e,done)=>e.load_band?bandLabel(e.load_band):(done&&e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
           // Organizar los días pendientes con un split.
-          const SPLITS=[["auto","⚡ Automático"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"]];
-          const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"]};
+          const SPLITS=[["auto","⚡ Automático (A/B)"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
+          const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
           const okReplace=()=>!pending.some(hasAsig)||window.confirm("Se reemplazarán los entrenos ya generados de los días pendientes. ¿Continuar?");
           const applySplit=(key)=>{
             if(!pending.length||!onPlanWeek||!okReplace()) return;
@@ -2723,7 +2723,7 @@ function ClientQuickView({client,date,sessions,history,clientWeights,assignedSes
           return(
             <div style={{marginBottom:14}}>
               <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-                <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
+                <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()}{(()=>{const b=blockForDate(annualBlocks,anchor); return b&&!isTestBlock(b)?` (${waveOf(b,macroWeek(anchor)).ab})`:"";})()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
                 <div style={{display:"flex",gap:4}}>
                   <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w-1);setOpenDay(null);}}>‹</button>
                   {wkOff!==0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>{setWkOff(0);setOpenDay(null);}}>Hoy</button>}
@@ -3042,7 +3042,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     const wts=(clientWeights||[]).filter(w=>w.client_id===client.id);
     const rows=routine.map((e,i)=>{
       const cw=wts.find(w=>(w.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
-      return {session_id:sess.id,exercise_name:e[0],prescribed_weight:cw?cw.weight:null,
+      return {session_id:sess.id,exercise_name:e[0],prescribed_weight:suggestLoad(cw,e[5],blk,date),
         sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i};
     });
     if(rows.length>0) await sb.from("assigned_exercises").insert(rows);
@@ -6120,6 +6120,9 @@ const PROTOCOL_INFO = {
   emom:"Cada minuto en punto haces las reps marcadas; descansas lo que sobre del minuto.",
   leader:"Fase de acumulación: mucho volumen a intensidad submáxima (bloque 'leader').",
   tabata:"8 rondas de 20 s fuerte / 10 s descanso (4 min). Máxima intensidad.",
+  for_time:"Completar todo el trabajo lo más rápido posible, con tiempo límite (cap).",
+  chipper:"Lista larga de ejercicios que se hace una sola vez, de arriba abajo, 'picando' las reps.",
+  intervalos:"Bloques de trabajo continuo (p. ej. 1 km de carrera + estación) a ritmo de competición.",
 };
 
 // ── GENERADOR DE RUTINA DIARIA ─────────────────────────────────────────────
@@ -6152,10 +6155,20 @@ const EX_POOLS = {
   hiit:["Sprints / Intervalos","Tabata (8×20/10)","AMRAP 12'","EMOM 10'","Assault bike (intervalos)"],
   carry:["Paseo del granjero","Farmer hold (agarre)","Sled push (empuje trineo)"],
   mobility:["Movilidad de cadera","Movilidad torácica","Círculos de hombro (banda)","Gato-camello","90/90 cadera","World's greatest stretch","Activación de glúteo (banda)","Sentadilla profunda (holds)"],
+  // ── Metabólico estilo CrossFit / Hyrox ──
+  cfLift:["Cargada de potencia (power clean)","Push press","Sentadilla frontal","Thrusters","Peso muerto","Snatch con mancuerna"],
+  cfWeight:["Thrusters","Swing con kettlebell","Wall balls","Snatch con mancuerna","Cargada con mancuernas","Sentadilla goblet","Peso muerto"],
+  cfGym:["Burpees","Flexiones","Dominadas","Toes to bar","Sentadilla al aire (air squat)","Salto al cajón (box jump)","Comba (dobles)","Mountain climbers"],
+  cfMono:["Remo (máquina)","Assault bike (calorías)","SkiErg","Carrera","Comba"],
+  cfMeta:["Burpees","Swing con kettlebell","Wall balls","Assault bike (calorías)","Thrusters","Mountain climbers"],
+  hyrox:["SkiErg","Sled push (empuje trineo)","Sled pull (arrastre trineo)","Burpee broad jumps","Remo (máquina)","Paseo del granjero","Zancadas con saco (sandbag)","Wall balls"],
 };
+// Distancias/reps de referencia de las estaciones Hyrox.
+const HYROX_REPS = {"SkiErg":"500 m","Sled push (empuje trineo)":"25-50 m","Sled pull (arrastre trineo)":"25-50 m","Burpee broad jumps":"20-40 m","Remo (máquina)":"500 m","Paseo del granjero":"100 m","Zancadas con saco (sandbag)":"50 m","Wall balls":"30-50"};
 // Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
 // Devuelve una CLAVE de equipo; la etiqueta visible está en EQUIP_LABEL.
 const EQUIP = [
+  [/air squat|al aire|toes to bar|burpee broad/i,"pesocorporal"],
   [/multipower|smith|jaula/i,"multipower"],
   [/desde pines|rack pull|pin press|press desde pines|tirón desde pines|tiron desde pines/i,"rackpines"],
   [/kettlebell|swing|goblet|turkish/i,"kettlebell"],
@@ -6173,7 +6186,7 @@ const EQUIP = [
   [/cajón|cajon|box jump|step-?up|salto/i,"cajon"],
   [/banda|activación de glúteo|activacion de gluteo/i,"banda"],
   [/rueda abdominal/i,"rueda"],
-  [/remo \(máquina\)|remo \(maquina\)|bicicleta|assault bike|cinta|carrera|sprints|intervalos/i,"cardio"],
+  [/remo \(máquina\)|remo \(maquina\)|bicicleta|assault bike|cinta|carrera|sprints|intervalos|skierg/i,"cardio"],
   [/curl de muñeca|curl de muneca|farmer|granjero/i,"antebrazo"],
   [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|sentadilla profunda \(holds\)|círculos de hombro|circulos de hombro/i,"movilidad"],
 ];
@@ -6205,32 +6218,82 @@ const DAY_TYPES = [
   ["push","🟦 Push (empuje)"],["pull","🟩 Pull (tracción)"],["legs","🦵 Legs (pierna)"],
   ["upper","⬆️ Torso completo"],["lower","⬇️ Pierna completa"],
   ["small","🎯 Small muscles"],["fullbody","🔥 Fullbody metabólico"],
-  ["hiit","⚡ HIIT / Cardio"],["mobility","🧘 Movilidad / Regeneración"],
+  ["hiit","⚡ HIIT / Cardio"],["crossfit","🏋️ WOD CrossFit (metabólico)"],["hyrox","🏃 Hyrox (carrera + estaciones)"],
+  ["mobility","🧘 Movilidad / Regeneración"],
 ];
 const DAY_LABEL = Object.fromEntries(DAY_TYPES);
-// Microciclo semanal según la fase del bloque y los días/semana del cliente.
-function weekPlanFor(block, days){
+// ── PROGRAMACIÓN ONDULANTE (A/B) Y PROGRESIÓN ──────────────────────────────
+// Dentro de cada bloque del macrociclo las semanas alternan A y B: el split de
+// A se repite cada dos semanas, igual que el de B. Cada par A+B es un "ciclo";
+// en cada ciclo nuevo sube la carga de los básicos (sobrecarga progresiva).
+const isTestBlock = (b) => !!(b && /test/i.test(b.name||""));
+const waveOf = (block, weekNo) => {
+  const w = parseInt(weekNo)||0;
+  const idx = block ? Math.max(0, w-(block.start_week||w)) : Math.max(0, w-1);
+  const total = block ? Math.max(1,(block.end_week||0)-(block.start_week||0)+1) : 0;
+  return { ab: idx%2===0?"A":"B", step: Math.floor(idx/2), weekInBlock: idx+1, weeksInBlock: total, cycles: total?Math.ceil(total/2):0 };
+};
+const roundLoad = (x) => Math.round(x/1.25)*1.25;
+// Carga sugerida para un ejercicio a partir de la última registrada del cliente:
+// básicos +2,5 % (mín. +1,25 kg) si el último registro es de un ciclo anterior;
+// en descarga ~60 %; en semana test se mantiene.
+function suggestLoad(cw, main, block, date){
+  if(!cw||cw.weight==null) return null;
+  const w=Number(cw.weight); if(!w) return cw.weight;
+  if(block&&block.type==="descarga") return roundLoad(w*0.6);
+  if(!main||isTestBlock(block)) return w;
+  const wv=waveOf(block, macroWeek(date));
+  const cycleStart=new Date(mondayOfDate(date)+"T00:00:00"); if(wv.ab==="B") cycleStart.setDate(cycleStart.getDate()-7);
+  const upd=cw.updated_at?new Date(cw.updated_at):null;
+  if(upd && upd<cycleStart) return Math.max(roundLoad(w*1.025), w+1.25);
+  return w;
+}
+// Microciclo semanal según la fase del bloque, los días/semana, la semana A/B y el objetivo.
+function weekPlanFor(block, days, weekNo, goal){
   const n = Math.max(2, Math.min(6, parseInt(days)||4));
   const t = block?block.type:"fuerza";
+  const ab = isTestBlock(block) ? "A" : waveOf(block, weekNo).ab;
   const plans = {
-    acondicionamiento:{3:["fullbody","upper","lower"],4:["fullbody","upper","lower","hiit"],5:["fullbody","upper","lower","hiit","mobility"]},
-    fuerza:{3:["fuerzaA","fuerzaB","fullbody"],4:["fuerzaA","fuerzaB","small","fullbody"],5:["fuerzaA","fuerzaB","upper","lower","small"]},
-    hipertrofia:{3:["push","pull","legs"],4:["push","pull","legs","small"],5:["push","pull","legs","small","fullbody"]},
-    hibrido:{3:["fullbody","hiit","small"],4:["fullbody","hiit","upper","small"],5:["fullbody","hiit","upper","lower","small"]},
-    descarga:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]},
+    acondicionamiento:{
+      A:{3:["fullbody","upper","lower"],4:["fullbody","upper","lower","crossfit"],5:["fullbody","upper","lower","crossfit","mobility"]},
+      B:{3:["upper","crossfit","lower"],4:["upper","lower","hyrox","fullbody"],5:["upper","lower","hyrox","fullbody","mobility"]}},
+    fuerza:{
+      A:{3:["fuerzaA","fuerzaB","fullbody"],4:["fuerzaA","fuerzaB","small","crossfit"],5:["fuerzaA","fuerzaB","upper","lower","small"]},
+      B:{3:["lower","upper","crossfit"],4:["lower","upper","fullbody","hyrox"],5:["lower","upper","fuerzaA","fuerzaB","crossfit"]}},
+    hipertrofia:{
+      A:{3:["push","pull","legs"],4:["push","pull","legs","small"],5:["push","pull","legs","small","crossfit"]},
+      B:{3:["upper","lower","fullbody"],4:["upper","lower","small","crossfit"],5:["upper","lower","push","pull","hyrox"]}},
+    hibrido:{
+      A:{3:["fullbody","crossfit","small"],4:["fullbody","crossfit","upper","lower"],5:["fullbody","crossfit","upper","lower","hyrox"]},
+      B:{3:["upper","hyrox","lower"],4:["upper","hyrox","lower","crossfit"],5:["upper","hyrox","lower","crossfit","mobility"]}},
+    descarga:{
+      A:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]},
+      B:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]}},
   };
-  const byType = plans[t] || plans.fuerza;
-  const base = byType[n] || byType[4] || byType[3] || WEEK_PLAN;
+  const byType = (plans[t] || plans.fuerza)[ab];
+  let base = byType[n] || byType[4] || byType[3] || WEEK_PLAN;
+  // Estética en hipertrofia: el metabólico pesa menos (prioriza volumen).
+  if(goal==="estetica" && t==="hipertrofia"){
+    const alt=["push","pull","small","legs","upper","lower"];
+    base = base.slice(); base.forEach((x,i)=>{ if(x==="crossfit"||x==="hyrox") base[i]=alt.find(a=>!base.includes(a))||"small"; });
+  }
   const out=[]; for(let i=0;i<n;i++) out.push(base[i%base.length]);
   return out;
 }
 // Reps para principales según fase del bloque (usa el rango del bloque si existe).
 function buildDayRoutine(dayType, block, goal, weekNo){
   const bt = block?block.type:"fuerza";
-  const rep = (block&&block.rep_range&&block.rep_range!=="var")?block.rep_range:"6-10";
+  const wv = waveOf(block, weekNo); // semana A/B y ciclo dentro del bloque
+  const test = isTestBlock(block);
+  const shiftRange=(r,d)=>{ const m=String(r).match(/^(\d+)\s*-\s*(\d+)$/); return m?`${+m[1]+d}-${+m[2]+d}`:r; };
+  const baseRep = (block&&block.rep_range&&block.rep_range!=="var")?block.rep_range:"6-10";
+  // Ondulación: la semana B trabaja más reps (volumen) que la A (intensidad).
+  const rep = (wv.ab==="B" && bt!=="descarga" && !test) ? shiftRange(baseRep,2) : baseRep;
   const estetica = goal==="estetica";
   const salud = !estetica;
-  const wk = salud ? (weekNo||0) : 0; // rotación semanal solo en salud
+  // Ejercicios fijos dentro del bloque para cada split A/B (se repiten cada dos
+  // semanas y así se puede progresar la carga); cambian al cambiar de bloque.
+  const wk = (block?(block.start_week||0):Math.floor((weekNo||0)/8)) + (wv.ab==="B"?3:0);
   // Protocolo del ejercicio principal según fase.
   const isEspecifico = /específico|especifico/i.test(block?(block.name||""):"");
   const mainProto = bt==="fuerza" ? (isEspecifico?"ramp_up":"top_set_backoff")
@@ -6238,7 +6301,9 @@ function buildDayRoutine(dayType, block, goal, weekNo){
                   : "series_planas";
   const accProto = bt==="hipertrofia"&&isEspecifico ? "drop_set" : "series_planas";
   const accReps = bt==="hipertrofia" ? "10-15" : "8-12";
-  const mS = bt==="descarga"?2:4, aS = bt==="descarga"?2:3;
+  // Progresión de volumen: +1 serie de accesorios desde el 2º ciclo (hipertrofia/acondicionamiento).
+  const volUp = ((bt==="hipertrofia"||bt==="acondicionamiento")&&wv.step>=1&&!test)?1:0;
+  const mS = bt==="descarga"?2:4, aS = bt==="descarga"?2:3+volUp;
   const volBoost = estetica?1:0; // más volumen en estética
   const r=[]; const add=(name,sets,reps,rest,proto,main)=>{ if(name) r.push([name,sets,reps,rest,proto,!!main]); };
   // Elige respetando el material disponible y SIN repetir ejercicios ya añadidos;
@@ -6305,6 +6370,30 @@ function buildDayRoutine(dayType, block, goal, weekNo){
     add(pick(EX_POOLS.plyo,1),4,"30s",30,"tabata",false);
     add(pick(EX_POOLS.func,2),4,"12-15",40,"emom",false);
     add(pick(EX_POOLS.core,3),3,"30-45s",30,"series_planas",false);
+  } else if(dayType==="crossfit"){ // WOD estilo CrossFit: fuerza/técnica + metcon
+    const fmt=["amrap","for_time","emom","chipper"][(weekNo||0)%4];
+    const head={amrap:["WOD AMRAP 14'","14 min"],for_time:["WOD For Time · 5 rondas","cap 15 min"],emom:["WOD EMOM 15' (rotando 3 ejercicios)","15 min"],chipper:["WOD Chipper","cap 20 min"]}[fmt];
+    const rounds=bt==="descarga"?2:(fmt==="chipper"?1:5);
+    const rr=fmt==="chipper"?"30-50":fmt==="emom"?"8-12":"10-15";
+    const firstWord=(n)=>String(n||"").split(/[ (]/)[0].toLowerCase();
+    // Evita repetir el mismo patrón en el WOD (p. ej. dos sentadillas).
+    const pickDiff=(arr,base)=>{ const used=r.map(x=>firstWord(x[0])); const av=arr.filter(n=>equipOk(n)&&!r.some(x=>x[0]===n)&&!used.includes(firstWord(n))); if(!av.length) return pick(arr,base); return av[(((wk+base)%av.length)+av.length)%av.length]; };
+    const monoReps=(n)=>{ const c=fmt==="chipper"; if(/^carrera/i.test(n||"")) return c?"1 km":"400 m"; if(/^comba/i.test(n||"")) return c?"100 dobles":"50 dobles / 100 simples"; return c?"1000 m / 50 cal":"250 m / 12-15 cal"; };
+    add(pick(EX_POOLS.cfLift,0),bt==="descarga"?3:5,"3-5",120,"ramp_up",true);
+    add(head[0],1,head[1],0,fmt,false);
+    add(pickDiff(EX_POOLS.cfWeight,1),rounds,rr,0,fmt,false);
+    add(pickDiff(EX_POOLS.cfGym,2),rounds,rr,0,fmt,false);
+    const mono=pickDiff(EX_POOLS.cfMono,3); add(mono,rounds,monoReps(mono),0,fmt,false);
+    if(fmt==="chipper") add(pickDiff(EX_POOLS.cfGym,5),1,"30-50",0,fmt,false);
+    add(pick(EX_POOLS.core,4),3,"30-45s",30,"series_planas",false);
+    return r; // orden del WOD tal cual
+  } else if(dayType==="hyrox"){ // resistencia tipo Hyrox: carrera + estaciones
+    const rounds=bt==="descarga"?2:(test?4:3+Math.min(wv.step,2)); // +1 ronda por ciclo
+    add(`Hyrox · ${rounds} rondas (1 km + 3 estaciones)`,1,`${rounds} rondas`,0,"intervalos",false);
+    add(equipOk("Carrera 1 km")?"Carrera 1 km":pick(EX_POOLS.cfMono,0),rounds,"1 km",0,"intervalos",false);
+    for(let k=0;k<3;k++){ const n=pick(EX_POOLS.hyrox,k*2); if(n) add(n,rounds,HYROX_REPS[n]||"1 estación",0,"intervalos",false); }
+    add(pick(EX_POOLS.core,3),3,"30-45s",30,"series_planas",false);
+    return r;
   } else if(dayType==="mobility"){ // movilidad / regeneración
     add(pick(EX_POOLS.mobility,0),2,"8-10",0,"series_planas",false);
     add(pick(EX_POOLS.mobility,2),2,"8-10",0,"series_planas",false);
@@ -6320,11 +6409,17 @@ function buildDayRoutine(dayType, block, goal, weekNo){
   }
   // Orden final: primero los principales, luego por prioridad de material
   // (barra/rack/multipower primero) para descongestionar los racks al inicio.
-  return r.map((e,i)=>({e,i})).sort((a,b)=>{
+  const out = r.map((e,i)=>({e,i})).sort((a,b)=>{
     const ma=a.e[5]?0:1, mb=b.e[5]?0:1; if(ma!==mb) return ma-mb;
     const ra=equipRank(a.e[0]), rb=equipRank(b.e[0]); if(ra!==rb) return ra-rb;
     return a.i-b.i;
   }).map(x=>x.e);
+  // Salud (concurrente): finisher metabólico en las semanas B de los días de fuerza.
+  if(salud && wv.ab==="B" && bt!=="descarga" && !test && ["fuerzaA","fuerzaB","push","pull","legs","upper","lower"].includes(dayType)){
+    const av=EX_POOLS.cfMeta.filter(n=>equipOk(n)&&!out.some(x=>x[0]===n));
+    if(av.length) out.push([av[(weekNo||0)%av.length],1,"EMOM 8' · 10-12/min",0,"emom",false]);
+  }
+  return out;
 }
 
 // ── TEMPLATE EDITOR MODAL ──────────────────────────────────────────────────
