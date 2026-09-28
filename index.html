@@ -242,9 +242,13 @@ const isWeekend = d => { const g=new Date(d+"T12:00:00").getDay(); return g===0|
 const fmtDate = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"});
 const fmtLong = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
 const fmtMonth = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"});
-const statusOf = c => c.sessions_left===0?"expired":c.sessions_left<=2?"alert":"active";
-const statusColor = s => s==="active"?"#16a34a":s==="alert"?"#ca8a04":"#dc2626";
-const statusLabel = s => s==="active"?"Activo":s==="alert"?"Pocas sesiones":"Sin sesiones";
+// El saldo del bono puede quedar en negativo: son sesiones hechas sin bono
+// pagado, que se descuentan automáticamente del siguiente bono al renovar.
+const owedOf = c => Math.max(0, -(parseInt(c&&c.sessions_left)||0));
+const bonoTxt = c => owedOf(c) ? `debe ${owedOf(c)}` : `${c.sessions_left}/${c.total_sessions}`;
+const statusOf = c => c.sessions_left<0?"owed":c.sessions_left<=0?"expired":c.sessions_left<=2?"alert":"active";
+const statusColor = s => s==="active"?"#16a34a":s==="alert"?"#ca8a04":s==="owed"?"#be123c":"#dc2626";
+const statusLabel = s => s==="active"?"Activo":s==="alert"?"Pocas sesiones":s==="owed"?"Debe sesiones":"Sin sesiones";
 const waLink = (phone,msg) => `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
 // Mensaje de recordatorio ya escrito según el tipo de alerta (para envío de 1 clic).
 const reminderWA = (r) => {
@@ -252,6 +256,7 @@ const reminderWA = (r) => {
   if(r.type==="payment") return `Hola ${first}! 👋 Te recuerdo que tu pago de ${r.c.payment_amount}€ vence ${r.days===0?"hoy":r.days<0?`hace ${Math.abs(r.days)} días`:`en ${r.days} días`}. ¡Cualquier duda aquí estoy! 💪`;
   if(r.type==="sessions") return `Hola ${first}! Te quedan ${r.c.sessions_left} sesión(es). ¿Renovamos el paquete para no interrumpir tu progreso? 🔥💪`;
   if(r.type==="session") return `Hola ${first}! 👋 Te recuerdo tu sesión de ${r.days===0?"hoy":"mañana"}${r.time?` a las ${r.time}`:""}. ¡Nos vemos! 💪`;
+  if(owedOf(r.c)) return `Hola ${first}! Llevas ${owedOf(r.c)} sesión(es) fuera del bono. ¿Renovamos? Te las descuento del siguiente bono 💪`;
   return `Hola ${first}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪`;
 };
 const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
@@ -635,7 +640,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     const d=daysUntil(c.next_payment);
     if(d<=5) reminders.push({c,type:"payment",days:d,urgent:d<=2});
     if(c.sessions_left<=2&&c.sessions_left>0) reminders.push({c,type:"sessions",urgent:c.sessions_left<=1});
-    if(c.sessions_left===0) reminders.push({c,type:"expired",urgent:true});
+    if(c.sessions_left<=0) reminders.push({c,type:"expired",urgent:true});
   });
   // Recordatorios de sesión: sesiones confirmadas de hoy y mañana (lista aparte
   // para no saturar las alertas de pago/bono).
@@ -710,7 +715,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     await sb.from("sessions").update({status:"completed"}).eq("id",sess.id);
     await sb.from("history").insert({client_id:sess.client_id,date:sess.date,time:sess.time,type:trainingName(sess.client_id,sess.date,sess.type)});
     const client=clients.find(c=>c.id===sess.client_id);
-    if(client) await sb.from("clients").update({sessions_left:Math.max(0,client.sessions_left-1)}).eq("id",client.id);
+    if(client) await sb.from("clients").update({sessions_left:(parseInt(client.sessions_left)||0)-1}).eq("id",client.id); // puede quedar en negativo (debe sesiones)
     notify("✓ Vino · sesión contada");
   });
   // Deshacer la asistencia: devuelve el bono y quita el registro del historial.
@@ -731,7 +736,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       await sb.from("sessions").update({status:"completed"}).eq("id",bk.id);
       await sb.from("history").insert({client_id:client.id,date,time:bk.time,type:trainingName(client.id,date,bk.type)});
       const c=clients.find(x=>x.id===client.id);
-      if(c) await sb.from("clients").update({sessions_left:Math.max(0,c.sessions_left-1)}).eq("id",c.id);
+      if(c) await sb.from("clients").update({sessions_left:(parseInt(c.sessions_left)||0)-1}).eq("id",c.id);
     }
     const asig=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
     if(asig){
@@ -753,7 +758,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const countWalkin = (client) => w(async()=>{
     const now=new Date().toTimeString().slice(0,5);
     await sb.from("history").insert({client_id:client.id,date:TODAY,time:now,type:"Sesión"});
-    await sb.from("clients").update({sessions_left:Math.max(0,client.sessions_left-1)}).eq("id",client.id);
+    await sb.from("clients").update({sessions_left:(parseInt(client.sessions_left)||0)-1}).eq("id",client.id);
     notify("Sesión contada ✓");
   });
 
@@ -773,7 +778,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     setShowPay(null); notify("Pago registrado ✓");
   });
 
-  const renewSessions = (client) => w(async()=>{ await sb.from("clients").update({sessions_left:client.total_sessions}).eq("id",client.id); notify("Sesiones renovadas ✓"); });
+  const renewSessions = (client) => w(async()=>{
+    const owed=owedOf(client), tot=parseInt(client.total_sessions)||0;
+    await sb.from("clients").update({sessions_left:tot-owed}).eq("id",client.id);
+    notify(owed?`Bono renovado ✓ · descontadas ${owed} sesión(es) que debía`:"Sesiones renovadas ✓");
+  });
   const deleteClient = (id) => w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); });
   // ── Valoraciones / Leads ──
   const saveLead = (data) => w(async()=>{
@@ -807,7 +816,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   // Editar bono (sesiones restantes/total), precio y caducidad en cualquier momento.
   const saveBono = (client, data) => w(async()=>{
     await sb.from("clients").update({
-      sessions_left:Math.max(0,parseInt(data.sessions_left)||0),
+      sessions_left:parseInt(data.sessions_left)||0, // negativo = sesiones debidas
       total_sessions:Math.max(1,parseInt(data.total_sessions)||1),
       payment_amount:parseFloat(data.payment_amount)||0,
       next_payment:data.next_payment,
@@ -1052,7 +1061,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       ? `💳 Pago ${r.c.payment_amount}€ · ${r.days<0?`vencido hace ${Math.abs(r.days)}d`:r.days===0?"vence hoy":`en ${r.days}d`}`
                       : r.type==="sessions"
                       ? `⚡ Le quedan ${r.c.sessions_left} sesión(es) — conviene renovar`
-                      : `🚫 Sin sesiones — necesita renovar el bono`;
+                      : owedOf(r.c)?`🧾 Debe ${owedOf(r.c)} sesión(es) — se descuentan del próximo bono`:`🚫 Sin sesiones — necesita renovar el bono`;
                     return(
                       <div key={i} onClick={()=>setView("reminders")} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderBottom:i<Math.min(6,reminders.length)-1?"1px solid #f1f4fa":"none",cursor:"pointer",background:r.urgent?"#fdf3f3":"transparent"}}>
                         <div className="ring" style={{width:34,height:34,background:r.c.color+"20",color:r.c.color,fontSize:11,flexShrink:0}}>{ini(r.c.name)}</div>
@@ -1110,7 +1119,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         </div>
                         <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {c.total_sessions} · {c.payment_amount}€</div>
                       </div>
-                      <span className="pill" style={{background:statusColor(st)+"18",color:statusColor(st),border:`1px solid ${statusColor(st)}30`,whiteSpace:"nowrap"}}>{c.sessions_left}/{c.total_sessions}</span>
+                      <span className="pill" style={{background:statusColor(st)+"18",color:statusColor(st),border:`1px solid ${statusColor(st)}30`,whiteSpace:"nowrap"}}>{bonoTxt(c)}</span>
                     </div>
                     <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
                       <div style={{background:"#f1f4fa",borderRadius:9,padding:"8px 10px"}}>
@@ -1150,7 +1159,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
               {clients.map(c=>{
-                const st=statusOf(c),pct=Math.round(c.sessions_left/c.total_sessions*100),pd=daysUntil(c.next_payment),open=expanded===c.id;
+                const st=statusOf(c),pct=Math.max(0,Math.round(c.sessions_left/c.total_sessions*100)),pd=daysUntil(c.next_payment),open=expanded===c.id;
                 const cSess=sessions.filter(s=>s.client_id===c.id&&s.date>=TODAY);
                 const cHist=history.filter(h=>h.client_id===c.id);
                 const streak=calcStreak(cHist);
@@ -1174,7 +1183,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     <div style={{marginBottom:11}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                         <span style={{fontSize:10,color:"#64748b",fontWeight:700}}>SESIONES</span>
-                        <span className="mono" style={{fontSize:11,fontWeight:700}}>{c.sessions_left}/{c.total_sessions}</span>
+                        <span className="mono" style={{fontSize:11,fontWeight:700,color:owedOf(c)?"#be123c":undefined}}>{bonoTxt(c)}</span>
                       </div>
                       <div className="pbar"><div className="pfill" style={{width:`${pct}%`,background:pct>40?"#16a34a":pct>20?"#ca8a04":"#dc2626"}}/></div>
                     </div>
@@ -1395,9 +1404,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                         <span style={{color:done?"#16a34a":s.client.color,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>
                                           {s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span>
                                           {esPrimera&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 6px",marginLeft:6}}>🎉 1ª</span>}
-                                          {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?"⚠️ sin bono":"⏳ última"}</span>}
+                                          {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?(owedOf(s.client)?`🧾 debe ${owedOf(s.client)}`:"⚠️ sin bono"):"⏳ última"}</span>}
                                         </span>
-                                        <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>Sesión nº{sNum} · bono {s.client.sessions_left}/{s.client.total_sessions}</span>
+                                        <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>Sesión nº{sNum} · bono {bonoTxt(s.client)}</span>
                                         <span style={{fontSize:11,color:asig?"#0284c7":"#65a30d",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>🏋️ {planLbl}</span>
                                       </div>
                                     </div>
@@ -1757,7 +1766,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       <div style={{fontSize:12,color:r.urgent?"#dc2626":"#ca8a04",marginTop:2}}>
                         {r.type==="payment"&&`💳 ${r.c.payment_amount}€ — ${r.days<0?`vencido hace ${Math.abs(r.days)}d`:r.days===0?"vence hoy":`en ${r.days}d`}`}
                         {r.type==="sessions"&&`⚡ ${r.c.sessions_left} sesión(es) restante(s)`}
-                        {r.type==="expired"&&"🚫 Sin sesiones — necesita renovación"}
+                        {r.type==="expired"&&(owedOf(r.c)?`🧾 Debe ${owedOf(r.c)} sesión(es) — se descuentan al renovar`:"🚫 Sin sesiones — necesita renovación")}
                       </div>
                     </div>
                     <div style={{display:"flex",flexDirection:"column",gap:5}}>
@@ -2238,7 +2247,7 @@ function QuickAddModal({date,time,sessions,clients,cap,onAdd,onClose}) {
                 :<div className="ring" style={{width:34,height:34,background:c.color+"20",color:c.color,fontSize:11,flexShrink:0}}>{ini(c.name)}</div>}
               <div style={{flex:1,minWidth:0}}>
                 <div style={{fontSize:14,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
-                <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>bono {c.sessions_left}/{c.total_sessions}</div>
+                <div style={{fontSize:10,color:owedOf(c)?"#be123c":"#94a3b8",fontWeight:700}}>bono {bonoTxt(c)}</div>
               </div>
               <span style={{fontSize:13,fontWeight:700,color:added?"#16a34a":"#0284c7",flexShrink:0}}>{added?"✓ añadido":"+ añadir"}</span>
             </button>
@@ -2568,9 +2577,9 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
                   <div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {c.name} {done&&<span style={{fontSize:11,color:"#16a34a"}}>✓</span>}
                     {esPrimera&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 6px",marginLeft:6}}>🎉 1ª sesión</span>}
-                    {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?"⚠️ sin bono":"⏳ última del bono"}</span>}
+                    {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?(owedOf(c)?`🧾 debe ${owedOf(c)}`:"⚠️ sin bono"):"⏳ última del bono"}</span>}
                   </div>
-                  <div style={{fontSize:11,color:c.goal==="estetica"?"#7c3aed":"#059669",fontWeight:700}}>{r.label}{r.assigned?"":" · previsto"} · bono {c.sessions_left}/{c.total_sessions}</div>
+                  <div style={{fontSize:11,color:c.goal==="estetica"?"#7c3aed":"#059669",fontWeight:700}}>{r.label}{r.assigned?"":" · previsto"} · bono {bonoTxt(c)}</div>
                 </div>
                 {onQuick&&!done&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px",whiteSpace:"nowrap"}} onClick={()=>onQuick(c)} title="Registrar rápido (asistencia + cargas previstas)">✓ Hecho</button>}
                 {done&&<span style={{fontSize:11,fontWeight:700,color:"#16a34a",whiteSpace:"nowrap"}}>✓ Registrado</span>}
@@ -2711,7 +2720,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
             :<div className="ring" style={{width:48,height:48,background:client.color+"20",color:client.color,fontSize:15,border:`2px solid ${client.color}55`}}>{ini(client.name)}</div>}
           <div style={{flex:1,minWidth:0}}>
             <h2 className="mono" style={{fontSize:16,fontWeight:700}}>{client.name}</h2>
-            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {client.sessions_left}/{client.total_sessions} · {fmtDate(date)}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {bonoTxt(client)} · {fmtDate(date)}</div>
             <div style={{marginTop:4}}>
               <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:client.goal==="estetica"?"#f3ecfb":"#e2f4e8",color:client.goal==="estetica"?"#7c3aed":"#059669",border:`1px solid ${client.goal==="estetica"?"#e0d2f5":"#c9e6d1"}`}}>
                 {client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}
@@ -3367,7 +3376,9 @@ function EditBonoModal({client,saving,onSave,onClose}) {
   });
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
   const tot=Math.max(1,parseInt(f.total_sessions)||1);
-  const left=Math.max(0,Math.min(tot,parseInt(f.sessions_left)||0));
+  const cur=parseInt(f.sessions_left)||0;
+  const owed=Math.max(0,-cur); // sesiones hechas sin bono (se descuentan del siguiente)
+  const left=Math.max(0,Math.min(tot,cur));
   const usadas=tot-left;
   const setUsadas=(v)=>{ const u=Math.max(0,Math.min(tot,parseInt(v)||0)); setF(x=>({...x,sessions_left:tot-u})); };
   return(
@@ -3384,15 +3395,18 @@ function EditBonoModal({client,saving,onSave,onClose}) {
               <input type="number" min="0" className="inp" value={usadas} onChange={e=>setUsadas(e.target.value)}/>
             </div>
             <div><span className="lbl">RESTANTES</span>
-              <input type="number" min="0" className="inp" value={f.sessions_left} onChange={e=>set("sessions_left",e.target.value)}/>
+              <input type="number" className="inp" value={f.sessions_left} onChange={e=>set("sessions_left",e.target.value)}/>
             </div>
           </div>
           <div style={{background:"#eaf1fb",border:"1px solid #bcd3ee",borderRadius:9,padding:"8px 11px",fontSize:12,color:"#64748b"}}>
-            Bono a medias: <b style={{color:"#0284c7"}}>{usadas}</b> usadas de <b style={{color:"#0284c7"}}>{tot}</b> · quedan <b style={{color:"#16a34a"}}>{left}</b>{usadas===0?" (bono completo)":left===0?" (agotado)":""}
+            Bono a medias: <b style={{color:"#0284c7"}}>{usadas}</b> usadas de <b style={{color:"#0284c7"}}>{tot}</b> · quedan <b style={{color:"#16a34a"}}>{left}</b>{usadas===0?" (bono completo)":left===0&&!owed?" (agotado)":""}
           </div>
+          {owed>0&&<div style={{background:"#fdf2f4",border:"1px solid #f4c7d1",borderRadius:9,padding:"8px 11px",fontSize:12,color:"#9f1239"}}>
+            🧾 Debe <b>{owed}</b> sesión(es) hechas sin bono pagado. Al poner un bono nuevo se descuentan (RESTANTES en negativo = sesiones debidas).
+          </div>}
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {[5,10,20].map(n=>(
-              <button key={n} className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setF(x=>({...x,sessions_left:n,total_sessions:n}))}>Bono {n} nuevo</button>
+              <button key={n} className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setF(x=>({...x,sessions_left:n-Math.max(0,-(parseInt(x.sessions_left)||0)),total_sessions:n}))}>Bono {n} nuevo</button>
             ))}
             <button className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setF(x=>({...x,sessions_left:tot}))}>Marcar completo</button>
           </div>
@@ -3558,7 +3572,7 @@ const fillWA = (tpl,c,extra) => {
   const vence = isNaN(pd) ? "pronto" : pd===0 ? "hoy" : pd<0 ? `hace ${abs} día${abs===1?"":"s"}` : `en ${pd} día${pd===1?"":"s"}`;
   return tpl
     .split("{nombre}").join(c.name.split(" ")[0])
-    .split("{sesiones}").join(c.sessions_left)
+    .split("{sesiones}").join(Math.max(0,c.sessions_left))
     .split("{importe}").join(c.payment_amount??"")
     .split("{vence}").join(vence)
     .split("{hora}").join((extra&&extra.hora)||"");
@@ -3589,7 +3603,7 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
   const grupos = {
     pay: clients.filter(c=>daysUntil(c.next_payment)<=5),
     low: clients.filter(c=>c.sessions_left<=2&&c.sessions_left>0),
-    expired: clients.filter(c=>c.sessions_left===0),
+    expired: clients.filter(c=>c.sessions_left<=0),
     tomorrow: clients.filter(c=>tomorrowMap[c.id]),
     all: clients,
   };
@@ -3664,7 +3678,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
   const mySessions=allSessions.filter(s=>s.client_id===client.id&&s.date>=TODAY&&s.status!=="completed").sort((a,b)=>a.date.localeCompare(b.date));
   const myHistory=allHistory.filter(s=>s.client_id===client.id).sort((a,b)=>b.date.localeCompare(a.date));
-  const pct=Math.round(client.sessions_left/client.total_sessions*100);
+  const pct=Math.max(0,Math.round(client.sessions_left/client.total_sessions*100));
   const pd=daysUntil(client.next_payment);
   const streak=calcStreak(myHistory);
   const nextSess=mySessions.find(s=>!s.requested);
@@ -3721,7 +3735,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
       {client.sessions_left<=1 && (
         <div style={{background:client.sessions_left<=0?"#fbe6e6":"#fbf1d8",border:`1px solid ${client.sessions_left<=0?"#f2cccc":"#e4cd8c"}`,borderRadius:14,padding:"12px 16px",marginBottom:16}}>
           <div style={{fontSize:13,fontWeight:700,color:client.sessions_left<=0?"#dc2626":"#b8860b",marginBottom:8}}>
-            {client.sessions_left<=0 ? "🚫 Te has quedado sin sesiones del bono" : "⏳ Te queda tu última sesión del bono"}
+            {client.sessions_left<0 ? `🧾 Tienes ${owedOf(client)} sesión(es) pendientes de pago (se descuentan del próximo bono)` : client.sessions_left<=0 ? "🚫 Te has quedado sin sesiones del bono" : "⏳ Te queda tu última sesión del bono"}
           </div>
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer">
             <button className="btn wa" style={{fontSize:12,padding:"8px 14px",justifyContent:"center"}}>📱 Renovar con mi trainer</button>
@@ -3765,7 +3779,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
             </div>
           </div>
           <div style={{textAlign:"right"}}>
-            <div className="mono" style={{fontSize:32,fontWeight:700,color:client.color,lineHeight:1}}>{client.sessions_left}</div>
+            <div className="mono" style={{fontSize:32,fontWeight:700,color:client.color,lineHeight:1}}>{Math.max(0,client.sessions_left)}</div>
             <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>SESIONES</div>
           </div>
         </div>
@@ -3776,7 +3790,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
             <div className="pfill" style={{width:`${pct}%`,background:`linear-gradient(90deg,${pct>40?"#0284c7,#16a34a":pct>20?"#f59e0b,#ca8a04":"#dc2626,#dc2626"})`}}/>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",marginTop:5,fontSize:10,color:"#94a3b8"}}>
-            <span>{client.sessions_left} disponibles</span><span>{client.total_sessions} total</span>
+            <span>{Math.max(0,client.sessions_left)} disponibles</span><span>{client.total_sessions} total</span>
           </div>
         </div>
 
@@ -3860,7 +3874,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
           {/* RESERVAR: selector de huecos (reserva directa) */}
           <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,margin:"24px 0 10px"}}>➕ RESERVAR CLASES</div>
-          {client.sessions_left===0
+          {client.sessions_left<=0
             ?<div className="card" style={{textAlign:"center",padding:28,border:"1px solid #f2cccc"}}>
               <div style={{fontSize:24,marginBottom:8}}>🚫</div>
               <div style={{color:"#dc2626",fontWeight:700,marginBottom:6}}>Sin sesiones en tu bono</div>
@@ -3972,7 +3986,7 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
   };
 
   const submit=async()=>{
-    if(client.sessions_left===0) return notify("Sin sesiones. Contacta a tu trainer.","err");
+    if(client.sessions_left<=0) return notify("Sin sesiones. Contacta a tu trainer.","err");
     if(picked.length===0) return notify("Elige al menos una hora libre","err");
     const bad=picked.map(k=>k.split("|")).find(([d,t])=>freeAt(d,t)<=0||slotBlocked(d,t)||isPast(d,t));
     if(bad) return notify(`La clase ${bad[1]} del ${fmtDate(bad[0])} ya no está disponible`,"err");
@@ -3997,7 +4011,7 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
     <div className="card">
       <div style={{background:"#eaf1fb",borderRadius:10,padding:"11px 13px",border:"1px solid #bcd3ee",fontSize:13,color:"#64748b",marginBottom:14}}>
         💡 Planea tus clases: cambia entre <b>día</b>, <b>semana</b> y <b>mes</b>, y toca las horas libres para reservarlas al instante.
-        <div style={{marginTop:4,fontSize:12,color:"#94a3b8"}}>Clases en tu bono: <span style={{color:"#0284c7",fontWeight:700}}>{client.sessions_left}</span></div>
+        <div style={{marginTop:4,fontSize:12,color:"#94a3b8"}}>Clases en tu bono: <span style={{color:"#0284c7",fontWeight:700}}>{Math.max(0,client.sessions_left)}</span></div>
       </div>
 
       {/* Elegidas (multi-día) */}
