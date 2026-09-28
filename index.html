@@ -246,6 +246,24 @@ const fmtMonth = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{month:
 // pagado, que se descuentan automáticamente del siguiente bono al renovar.
 const owedOf = c => Math.max(0, -(parseInt(c&&c.sessions_left)||0));
 const bonoTxt = c => owedOf(c) ? `debe ${owedOf(c)}` : `${c.sessions_left}/${c.total_sessions}`;
+// Posición de una reserva dentro del bono ACTUAL (p. ej. 4ª de 8), a partir de
+// las sesiones ya descontadas (total − restantes) y del historial:
+// - hecha: se cuenta hacia atrás desde la última registrada;
+// - pendiente: siguiente a las hechas (+ otras pendientes de hoy en adelante antes que ella).
+// ≤0 = sesión de un bono anterior; > total = fuera de bono (debe).
+function bonoPos(client, s, sessions, history){
+  const tot=parseInt(client.total_sessions)||0;
+  const used=tot-(parseInt(client.sessions_left)||0);
+  const key=(d,t)=>`${d||""} ${t||""}`;
+  const sk=key(s.date,s.time);
+  const hist=(history||[]).filter(h=>h.client_id===client.id);
+  if(s.status==="completed") return used-hist.filter(h=>key(h.date,h.time)>sk).length;
+  const lastH=hist.reduce((m,h)=>{ const k=key(h.date,h.time); return k>m?k:m; },"");
+  const before=(sessions||[]).filter(x=>x.client_id===client.id&&x.id!==s.id&&x.status!=="completed"&&!x.requested&&x.date>=TODAY&&key(x.date,x.time)>lastH&&key(x.date,x.time)<sk).length;
+  return used+before+1;
+}
+const capFirst = (t) => String(t||"").charAt(0).toUpperCase()+String(t||"").slice(1);
+const bonoPosTxt = (client,pos) => { const tot=parseInt(client.total_sessions)||0; return pos<1?"de un bono anterior":pos>tot?`fuera de bono (+${pos-tot})`:`sesión ${pos}/${tot} del bono`; };
 const statusOf = c => c.sessions_left<0?"owed":c.sessions_left<=0?"expired":c.sessions_left<=2?"alert":"active";
 const statusColor = s => s==="active"?"#16a34a":s==="alert"?"#ca8a04":s==="owed"?"#be123c":"#dc2626";
 const statusLabel = s => s==="active"?"Activo":s==="alert"?"Pocas sesiones":s==="owed"?"Debe sesiones":"Sin sesiones";
@@ -1383,10 +1401,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                               :<>
                                 {slots.map(s=>{
                                   const done=s.status==="completed";
-                                  const sNum=sessions.filter(x=>x.client_id===s.client_id && (x.date<s.date||(x.date===s.date&&x.time<=s.time))).length;
-                                  const esPrimera=sNum===1;
-                                  const esUltima=(s.client.sessions_left||0)<=1; // última del bono (o sin bono)
-                                  const sinBono=(s.client.sessions_left||0)<=0;
+                                  // 1ª sesión de su vida en el centro (para el aviso de bienvenida).
+                                  const esPrimera=sessions.filter(x=>x.client_id===s.client_id&&!x.requested&&(x.date<s.date||(x.date===s.date&&x.time<=s.time))).length===1;
+                                  const pos=bonoPos(s.client,s,sessions,history); // posición dentro del bono actual
+                                  const tot=parseInt(s.client.total_sessions)||0;
+                                  const esUltima=pos>=tot; // última del bono (o fuera de bono)
+                                  const sinBono=pos>tot;
                                   // Resumen de lo que le toca (asignado o previsto automático).
                                   const asig=assignedSessions.find(a=>a.client_id===s.client_id&&a.date===activeDay);
                                   const tmpl=asig&&sessionTemplates.find(t=>t.id===asig.template_id);
@@ -1404,9 +1424,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                         <span style={{color:done?"#16a34a":s.client.color,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>
                                           {s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span>
                                           {esPrimera&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 6px",marginLeft:6}}>🎉 1ª</span>}
-                                          {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?(owedOf(s.client)?`🧾 debe ${owedOf(s.client)}`:"⚠️ sin bono"):"⏳ última"}</span>}
+                                          {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?`🧾 fuera de bono`:"⏳ última"}</span>}
                                         </span>
-                                        <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>Sesión nº{sNum} · bono {bonoTxt(s.client)}</span>
+                                        <span style={{fontSize:10,color:sinBono?"#be123c":"#94a3b8",fontWeight:700}}>{capFirst(bonoPosTxt(s.client,pos))} · {owedOf(s.client)?`debe ${owedOf(s.client)}`:`quedan ${s.client.sessions_left}`}</span>
                                         <span style={{fontSize:11,color:asig?"#0284c7":"#65a30d",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>🏋️ {planLbl}</span>
                                       </div>
                                     </div>
@@ -1811,7 +1831,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -2487,7 +2507,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
 // ── VISTA DE CLASE (todas las personas de una hora, desglosado) ────────────
 // Muestra el entreno de cada atleta para organizar material/espacio y permite
 // cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
-function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+function ClassViewModal({date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
   const idOfLabel=(label)=>{ const e=DAY_TYPES.find(d=>d[1]===label); return e?e[0]:""; };
@@ -2565,8 +2585,9 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
 
         {rutinas.map(({s,r})=>{
           const c=s.client, done=s.status==="completed", curId=r.assigned?"":idOfLabel(r.label);
-          const sNum=(sessions||[]).filter(x=>x.client_id===c.id && (x.date<s.date||(x.date===s.date&&x.time<=s.time))).length;
-          const esPrimera=sNum===1, esUltima=(c.sessions_left||0)<=1, sinBono=(c.sessions_left||0)<=0;
+          const esPrimera=(sessions||[]).filter(x=>x.client_id===c.id&&!x.requested&&(x.date<s.date||(x.date===s.date&&x.time<=s.time))).length===1;
+          const pos=bonoPos(c,s,sessions,history), tot=parseInt(c.total_sessions)||0;
+          const esUltima=pos>=tot, sinBono=pos>tot;
           return(
             <div key={s.id} style={{border:`1px solid ${done?"#16a34a":esUltima?"#e4cd8c":"#e6ebf3"}`,borderRadius:12,padding:12,marginBottom:10,background:done?"#f4faf6":"#fff"}}>
               <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
@@ -2577,9 +2598,9 @@ function ClassViewModal({date,time,sessions,clients,assignedSessions,assignedExe
                   <div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {c.name} {done&&<span style={{fontSize:11,color:"#16a34a"}}>✓</span>}
                     {esPrimera&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 6px",marginLeft:6}}>🎉 1ª sesión</span>}
-                    {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?(owedOf(c)?`🧾 debe ${owedOf(c)}`:"⚠️ sin bono"):"⏳ última del bono"}</span>}
+                    {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?`🧾 fuera de bono`:"⏳ última del bono"}</span>}
                   </div>
-                  <div style={{fontSize:11,color:c.goal==="estetica"?"#7c3aed":"#059669",fontWeight:700}}>{r.label}{r.assigned?"":" · previsto"} · bono {bonoTxt(c)}</div>
+                  <div style={{fontSize:11,color:c.goal==="estetica"?"#7c3aed":"#059669",fontWeight:700}}>{r.label}{r.assigned?"":" · previsto"} · {bonoPosTxt(c,pos)}</div>
                 </div>
                 {onQuick&&!done&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px",whiteSpace:"nowrap"}} onClick={()=>onQuick(c)} title="Registrar rápido (asistencia + cargas previstas)">✓ Hecho</button>}
                 {done&&<span style={{fontSize:11,fontWeight:700,color:"#16a34a",whiteSpace:"nowrap"}}>✓ Registrado</span>}
