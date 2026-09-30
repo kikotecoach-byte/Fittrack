@@ -262,6 +262,13 @@ function bonoPos(client, s, sessions, history){
   const before=(sessions||[]).filter(x=>x.client_id===client.id&&x.id!==s.id&&x.status!=="completed"&&!x.requested&&x.date>=TODAY&&key(x.date,x.time)>lastH&&key(x.date,x.time)<sk).length;
   return used+before+1;
 }
+// Nombre de una sesión del historial: el tipo del entreno asignado ese día
+// (p. ej. "🟦 Push (empuje)") o su plantilla; si no hay, el guardado.
+const asigName = (a, sessionTemplates) => { if(!a) return ""; if(a.day_type&&DAY_LABEL[a.day_type]) return DAY_LABEL[a.day_type]; const t=(sessionTemplates||[]).find(x=>x.id===a.template_id); return (t&&t.name)||""; };
+const sessionName = (h, assignedSessions, sessionTemplates) => {
+  const a=(assignedSessions||[]).find(x=>x.client_id===h.client_id&&x.date===h.date);
+  return asigName(a,sessionTemplates) || h.type || "Sesión";
+};
 const capFirst = (t) => String(t||"").charAt(0).toUpperCase()+String(t||"").slice(1);
 const bonoPosTxt = (client,pos) => { const tot=parseInt(client.total_sessions)||0; return pos<1?"de un bono anterior":pos>tot?`fuera de bono (+${pos-tot})`:`sesión ${pos}/${tot} del bono`; };
 const statusOf = c => c.sessions_left<0?"owed":c.sessions_left<=0?"expired":c.sessions_left<=2?"alert":"active";
@@ -621,6 +628,17 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showSched,setShowSched] = React.useState(false);
   const [moveSess,setMoveSess] = React.useState(null);
   const [quickView,setQuickView] = React.useState(null);
+  const [focusSlot,setFocusSlot] = React.useState(null); // {date,time} hora resaltada en la agenda
+  // Desde el resumen del día: ir a la agenda, a su hora (resaltada) y abrir su entreno.
+  const goToPerson = (s, c) => {
+    setActiveDay(s.date); setSchedView("day"); setView("schedule");
+    setFocusSlot({date:s.date,time:s.time}); setQuickView(c);
+    // Espera a que la agenda esté pintada y lleva la vista a su hora (reintenta unos segundos).
+    let tries=0; const scrollToSlot=()=>{ const el=document.querySelector(`[data-slot="1"][data-day="${s.date}"][data-time="${s.time}"]`);
+      if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"center"}); else if(tries++<15) setTimeout(scrollToSlot,150); };
+    setTimeout(scrollToSlot,120);
+    setTimeout(()=>setFocusSlot(f=>(f&&f.date===s.date&&f.time===s.time)?null:f),6000);
+  };
   const [execData,setExecData] = React.useState(null);
   const [classExec,setClassExec] = React.useState(null); // {date,time} ejecutar la clase entera
   const [assignData,setAssignData] = React.useState(null);
@@ -718,12 +736,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   // historial): tipo de día / plantilla asignada; si no, el tipo de la reserva.
   const trainingName = (clientId,date,fallback) => {
     const a=(assignedSessions||[]).find(s=>s.client_id===clientId&&s.date===date);
-    if(a){
-      if(a.day_type&&DAY_LABEL[a.day_type]) return DAY_LABEL[a.day_type];
-      const t=(sessionTemplates||[]).find(x=>x.id===a.template_id);
-      if(t&&t.name) return t.name;
-    }
-    return fallback||"Sesión";
+    const n=asigName(a,sessionTemplates); if(n) return n;
+    const c=clients.find(x=>x.id===clientId);
+    if(c&&blockForDate(annualBlocks,date)){ const au=autoRoutineFor(c,date,sessions,annualBlocks); if(au&&au.label) return au.label; }
+    return (fallback&&fallback!=="Sesión")?fallback:"Sesión";
   };
 
   // Marcar asistencia: la sesión se queda en la agenda (status "completed") para
@@ -864,6 +880,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     const rows=routine.map((e,i)=>{ const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
       return {session_id:sess.id,exercise_name:e[0],prescribed_weight:suggestLoad(cw,e[5],blk,date),sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i}; });
     if(rows.length) await sb.from("assigned_exercises").insert(rows);
+    if(dt&&DAY_LABEL[dt]) await sb.from("history").update({type:DAY_LABEL[dt]}).eq("client_id",client.id).eq("date",date);
     return "ok";
   };
   const materializeRoutine = (client, date, dayType) => w(async()=>{
@@ -900,6 +917,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(error) return false;
     const rows=srcEx.map((e,i)=>({session_id:sess.id,exercise_name:e.exercise_name,prescribed_weight:(e.actual_weight!=null?e.actual_weight:e.prescribed_weight),sets:e.sets,reps:e.reps,protocol:e.protocol,rest_seconds:e.rest_seconds,notes:e.notes||"",load_band:e.load_band||null,order_index:i}));
     if(rows.length){ let r=await sb.from("assigned_exercises").insert(rows); if(r.error){ await sb.from("assigned_exercises").insert(rows.map(({load_band,...x})=>x)); } }
+    const nm=asigName(src,sessionTemplates); if(nm) await sb.from("history").update({type:nm}).eq("client_id",client.id).eq("date",toDate);
     return true;
   };
   // Copiar entrenos de la semana anterior a los días pendientes. pairs = [[fechaOrigen,fechaDestino],...]
@@ -1042,9 +1060,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     const blk=blockForDate(annualBlocks,TODAY);
                     const done=s.status==="completed";
                     const autoPlan = (!asig&&blk)?autoRoutineFor(c,TODAY,sessions,annualBlocks):null;
-                    const quePlan = tmpl?`${tmpl.name}${nEx?` · ${nEx} ej.`:""}` : autoPlan?`${autoPlan.label} · previsto` : blk?`${blk.name} · sin asignar` : "Sin entreno asignado";
+                    const hist=history.find(h=>h.client_id===c.id&&h.date===TODAY);
+                    const asigLbl=asig?(asigName(asig,sessionTemplates)||"Entreno asignado"):"";
+                    const quePlan = done&&hist ? sessionName(hist,assignedSessions,sessionTemplates)
+                      : asig?`${asigLbl}${nEx?` · ${nEx} ej.`:""}` : autoPlan?`${autoPlan.label} · previsto` : blk?`${blk.name} · sin asignar` : "Sin entreno asignado";
+                    const stop=(e)=>e.stopPropagation();
                     return(
-                      <div key={s.id} onClick={()=>setView("schedule")} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:i<todaySessions.length-1?"1px solid #f1f4fa":"none",cursor:"pointer",background:done?"#f4faf6":"transparent"}}>
+                      <div key={s.id} onClick={()=>goToPerson(s,c)} style={{display:"flex",alignItems:"center",gap:12,padding:"12px 16px",borderBottom:i<todaySessions.length-1?"1px solid #f1f4fa":"none",cursor:"pointer",background:done?"#f4faf6":"transparent"}}>
                         <div style={{textAlign:"center",flexShrink:0,minWidth:46}}>
                           <div className="mono" style={{fontSize:16,fontWeight:700,color:done?"#16a34a":"#0284c7"}}>{s.time}</div>
                           {done&&<div style={{fontSize:9,color:"#16a34a",fontWeight:700}}>✓ vino</div>}
@@ -1054,8 +1076,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           :<div className="ring" style={{width:40,height:40,background:c.color+"20",color:c.color,fontSize:12,border:`2px solid ${c.color}40`,flexShrink:0}}>{ini(c.name)}</div>}
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</div>
-                          <div style={{fontSize:12,color:tmpl?"#0284c7":autoPlan?"#65a30d":"#94a3b8",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>🏋️ {quePlan}</div>
+                          <div style={{fontSize:12,color:done?"#16a34a":asig?"#0284c7":autoPlan?"#65a30d":"#94a3b8",marginTop:2,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done?"✅":"🏋️"} {quePlan}</div>
+                          {!done&&!asig&&(
+                            <div onClick={stop} style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                              {autoPlan&&<button className="btn grn" style={{fontSize:11,padding:"5px 10px"}} disabled={saving} onClick={()=>materializeRoutine(c,TODAY)}>⚡ Asignar previsto</button>}
+                              <select value="" disabled={saving} onChange={e=>{ if(e.target.value) materializeRoutine(c,TODAY,e.target.value); }}
+                                style={{fontSize:11,fontWeight:700,color:"#0284c7",border:"1px solid #bcd3ee",borderRadius:8,padding:"5px 8px",background:"#fff",appearance:"none",cursor:"pointer",maxWidth:170}}>
+                                <option value="">🎯 Elegir tipo…</option>
+                                {DAY_TYPES.map(([id,l])=><option key={id} value={id}>{l}</option>)}
+                              </select>
+                            </div>
+                          )}
                         </div>
+                        {!done&&asig&&(
+                          <div onClick={stop} style={{display:"flex",gap:5,flexShrink:0}}>
+                            <button className="btn ghost" style={{fontSize:12,padding:"6px 9px"}} title="Editar ejercicios" onClick={()=>setSessionEdit({client:c,date:TODAY})}>✏️</button>
+                            <button className="btn grn" style={{fontSize:12,padding:"6px 10px"}} title="Ejecutar entreno" onClick={()=>setExecData({client:c,date:TODAY})}>▶</button>
+                          </div>
+                        )}
                         <span style={{fontSize:18,color:"#cbd5e1",flexShrink:0}}>›</span>
                       </div>
                     );
@@ -1225,7 +1263,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         </div>
                         {/* Historial: sesiones por día/fecha y pagos (toca una sesión para ver cargas y replicar) */}
                         <div style={{marginBottom:14}}>
-                          <ClientHistoryPanel client={c} history={history} payments={payments} onOpenSession={(h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}/>
+                          <ClientHistoryPanel client={c} history={history} payments={payments} assignedSessions={assignedSessions} sessionTemplates={sessionTemplates} onOpenSession={(h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}/>
                         </div>
                         {/* Avatar upload */}
                         <div style={{marginBottom:14}}>
@@ -1390,7 +1428,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time&&l.status!=="cliente");
                       const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
-                        <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",background:dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
+                        <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",transition:"background .4s, box-shadow .4s",boxShadow:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"inset 0 0 0 2px #0284c7":"none",background:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"#e3f0fd":dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?"#fbecec":isWork?"transparent":"#f1f4fa"}}>
                           <div className="mono" onClick={()=>{ if(slotBlocked)return; if(slots.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
                             style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#16a34a",fontSize:11,fontWeight:700,cursor:slotBlocked?"default":"pointer"}}>
                             {time}{!slotBlocked&&<span style={{fontSize:13}}>{slots.length>0?"👁":"➕"}</span>}
@@ -2280,11 +2318,11 @@ function QuickAddModal({date,time,sessions,clients,cap,onAdd,onClose}) {
 }
 
 // ── HISTORIAL DEL CLIENTE (sesiones por día/fecha y pagos registrados) ─────
-function ClientHistoryPanel({client,history,payments,onOpenSession,compact}) {
+function ClientHistoryPanel({client,history,payments,assignedSessions,sessionTemplates,onOpenSession,compact}) {
   const [tab,setTab]=React.useState("todo");
   const [limit,setLimit]=React.useState(compact?6:12);
   const DOW=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-  const ses=(history||[]).filter(h=>h.client_id===client.id&&h.date).map(h=>({kind:"s",date:h.date,time:h.time||"",h}));
+  const ses=(history||[]).filter(h=>h.client_id===client.id&&h.date).map(h=>({kind:"s",date:h.date,time:h.time||"",h:{...h,type:sessionName(h,assignedSessions,sessionTemplates)}}));
   const pays=(payments||[]).filter(p=>p.client_id===client.id&&p.paid_at).map(p=>({kind:"p",date:String(p.paid_at).slice(0,10),time:"",p}));
   const all=(tab==="ses"?ses:tab==="pay"?pays:[...ses,...pays]).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||(a.kind==="p"?-1:1));
   const shown=all.slice(0,limit);
@@ -2823,7 +2861,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
                   const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
                   const hist=mine(history).find(h=>h.date===d);
                   const done=isDone(d);
-                  const label=done?(hist&&hist.type?hist.type:"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
+                  const label=done?(hist?sessionName(hist,assignedSessions,sessionTemplates):"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
                   const curType=asig?(asig.day_type||""):(au?au.dayType:"");
                   const nd=new Date(d+"T12:00:00");
                   const isTodayRow=d===date;
@@ -2891,7 +2929,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
 
         {/* Historial: sesiones por día/fecha y pagos */}
         <div style={{marginBottom:14}}>
-          <ClientHistoryPanel client={client} history={history} payments={payments} compact onOpenSession={onOpenHistory}/>
+          <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
         </div>
 
         <div>
@@ -2901,7 +2939,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
           </div>
           {sess
             ?<div style={{background:"#f1f4fa",border:"1px solid #14532d",borderRadius:10,padding:"11px 13px"}}>
-              {tmpl&&<div style={{fontSize:13,fontWeight:700,color:"#16a34a",marginBottom:exs.length?8:0}}>{tmpl.name}</div>}
+              {asigName(sess,sessionTemplates)&&<div style={{fontSize:13,fontWeight:700,color:"#16a34a",marginBottom:exs.length?8:0}}>{asigName(sess,sessionTemplates)}</div>}
               {exs.length===0
                 ?<div style={{fontSize:12,color:"#64748b"}}>Sesión asignada (sin ejercicios detallados).</div>
                 :exs.map((e,i)=>(
@@ -2929,12 +2967,20 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
                     </div>
                   );
                 })}
-                <div style={{fontSize:10,color:"#6b7a3f",marginTop:8,lineHeight:1.4}}>Adaptado a <b>{blk.name}</b> y objetivo <b>{client.goal==="estetica"?"Estética/Masa":"Salud"}</b>{client.goal!=="estetica"?" · rota cada semana":""}. Toca “Usar este entreno” para fijarlo.</div>
+                <div style={{fontSize:10,color:"#6b7a3f",marginTop:8,lineHeight:1.4}}>Adaptado a <b>{blk.name}</b> (semana {isTestBlock(blk)?"test":waveOf(blk,macroWeek(date)).ab}) y objetivo <b>{client.goal==="estetica"?"Estética/Masa":"Salud"}</b>. Toca “Usar este entreno” para fijarlo.</div>
               </div>
               :<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:12,color:"#64748b"}}>
-                Sin entrenamiento asignado. Toca <b style={{color:"#0284c7"}}>➕ Asignar</b> para ponerle una plantilla.
+                Sin entrenamiento asignado. Elige un tipo abajo o toca <b style={{color:"#0284c7"}}>➕ Asignar</b> para ponerle una plantilla.
               </div>
           }
+          {!sess&&onSetType&&(
+            <div style={{marginTop:8}}>
+              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:5}}>⚡ ASIGNAR RÁPIDO UN TIPO</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:5}}>
+                {DAY_TYPES.map(([id,l])=><button key={id} className="btn ghost" style={{fontSize:11,padding:"7px 6px",fontWeight:700,justifyContent:"flex-start",border:`1px solid ${auto&&auto.dayType===id?"#9ccf6b":"#dbe2ec"}`,background:auto&&auto.dayType===id?"#f4faed":"#fff"}} onClick={()=>onSetType(date,id)}>{l}</button>)}
+              </div>
+            </div>
+          )}
         </div>
 
         {sess&&(onEditSession||onMove)&&(
@@ -3094,6 +3140,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
         sets:ex.sets,reps:ex.reps,protocol:ex.protocol,rest_seconds:ex.rest_seconds,notes:ex.notes,order_index:ex.order_index};
     });
     if(rows.length>0) await sb.from("assigned_exercises").insert(rows);
+    if(tmpl.name) await sb.from("history").update({type:tmpl.name}).eq("client_id",client.id).eq("date",date); // si ya vino, el historial toma el nombre
     await loadAll(); setSaving(false); notify("Entreno asignado ✓"); onClose();
   };
 
@@ -3104,8 +3151,9 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
       await sb.from("assigned_exercises").delete().eq("session_id",existing.id);
       await sb.from("assigned_sessions").delete().eq("id",existing.id);
     }
-    const {data:sess,error}=await sb.from("assigned_sessions")
-      .insert({client_id:client.id,date,status:"pending"}).select().single();
+    let ins=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending",day_type:dayType}).select().single();
+    if(ins.error) ins=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending"}).select().single(); // sin columna day_type
+    const {data:sess,error}=ins;
     if(error){ notify("Error al generar","err"); setSaving(false); return; }
     const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date));
     const wts=(clientWeights||[]).filter(w=>w.client_id===client.id);
@@ -3115,6 +3163,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
         sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i};
     });
     if(rows.length>0) await sb.from("assigned_exercises").insert(rows);
+    if(DAY_LABEL[dayType]) await sb.from("history").update({type:DAY_LABEL[dayType]}).eq("client_id",client.id).eq("date",date);
     await loadAll(); setSaving(false); notify("Rutina del día generada ✓"); onClose();
   };
 
