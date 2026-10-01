@@ -805,12 +805,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
   const removeWaitlist = (id) => w(async()=>{ await sb.from("waitlist").delete().eq("id",id); notify("Quitado de la lista de espera"); });
 
-  const markPayment = (client, amount) => w(async()=>{
-    const next=new Date(client.next_payment+"T12:00:00"); next.setMonth(next.getMonth()+1);
+  const markPayment = (client, amount, date) => w(async()=>{
+    const base=client.next_payment||TODAY;
+    const next=new Date(base+"T12:00:00"); next.setMonth(next.getMonth()+1);
     await sb.from("clients").update({next_payment:next.toISOString().split("T")[0]}).eq("id",client.id);
-    await sb.from("payments").insert({client_id:client.id,client_name:client.name,amount:amount||client.payment_amount,paid_at:TODAY});
-    setShowPay(null); notify("Pago registrado ✓");
+    await sb.from("payments").insert({client_id:client.id,client_name:client.name,amount:amount||client.payment_amount,paid_at:date||TODAY});
+    notify(`Pago registrado ✓ (${fmtDate(date||TODAY)})`);
   });
+  const updatePayment = (id, fields) => w(async()=>{ const {error}=await sb.from("payments").update(fields).eq("id",id); notify(error?"No se pudo guardar el pago":"Pago actualizado ✓",error?"err":undefined); });
+  const deletePayment = (id) => w(async()=>{ await sb.from("payments").delete().eq("id",id); notify("Pago eliminado"); });
 
   const renewSessions = (client) => w(async()=>{
     const owed=owedOf(client), tot=parseInt(client.total_sessions)||0;
@@ -1257,7 +1260,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7",border:"1px solid #bcd3ee",fontWeight:700}} onClick={()=>{setActiveDay(TODAY);setQuickView(c);}}>🗓️ Semana</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={()=>{setLeadsClient(c);setShowLeads(true);}}>📋 Valoración</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowPhotos(c)}>📸 Fotos</button>
-                          <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pago</button>
+                          <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
                         </div>
@@ -1757,7 +1760,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3"}}>
                     <div>
                       <div style={{fontSize:13,fontWeight:600}}>{p.client_name}</div>
-                      <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.paid_at}</div>
+                      <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.paid_at?fmtDate(String(p.paid_at).slice(0,10)):""}</div>
                     </div>
                     <div className="mono" style={{fontSize:15,fontWeight:700,color:"#16a34a"}}>{p.amount}€</div>
                   </div>
@@ -1867,7 +1870,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Modals */}
       {showNS&&<SessionModal clients={clients} ns={ns} setNs={setNs} onSave={addSession} onClose={()=>setShowNS(false)}/>}
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
-      {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
+      {showPay&&(()=>{ const pc=clients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
       {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
@@ -3398,24 +3401,61 @@ function NotesEditor({initialNotes, onSave}) {
 }
 
 // ── PAY MODAL ──────────────────────────────────────────────────────────────
-function PayModal({client,onSave,onClose}) {
+function PayModal({client,payments,saving,onSave,onUpdate,onDelete,onClose}) {
   const [amount,setAmount] = React.useState(client.payment_amount);
+  const [date,setDate] = React.useState(TODAY);
+  const [edit,setEdit] = React.useState(null); // {id,amount,paid_at} pago en edición
+  const list=(payments||[]).filter(p=>p.client_id===client.id&&p.paid_at).slice().sort((a,b)=>String(b.paid_at).localeCompare(String(a.paid_at)));
+  const total=list.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
+  const eur=(n)=>`${Math.round((parseFloat(n)||0)*100)/100}€`;
+  const dayTxt=(d)=>{ const t=new Date(String(d).slice(0,10)+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short",year:"numeric"}); return t.charAt(0).toUpperCase()+t.slice(1); };
+  const pd=daysUntil(client.next_payment);
   return(
     <div className="ovl" onClick={onClose}>
-      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:360}}>
-        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Registrar pago — {client.name}</h2>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div><span className="lbl">IMPORTE (€)</span>
-            <input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)}/>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:420,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>💳 Pagos — {client.name}</h2>
+        <p style={{fontSize:11,color:"#64748b",marginBottom:12}}>Próximo pago: <b style={{color:pd<0?"#dc2626":pd<=3?"#ca8a04":"#0284c7"}}>{client.next_payment?fmtDate(client.next_payment):"—"}</b>{client.next_payment?` (${pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"hoy":`en ${pd}d`})`:""}</p>
+
+        <div style={{background:"#f4faf6",border:"1px solid #c9e6d1",borderRadius:10,padding:11,marginBottom:12,flexShrink:0}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#16a34a",marginBottom:8}}>REGISTRAR PAGO</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1.3fr",gap:8,marginBottom:8}}>
+            <div><span className="lbl">IMPORTE (€)</span><input type="number" step="0.01" className="inp" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+            <div><span className="lbl">FECHA DEL PAGO</span><input type="date" className="inp" value={date} onChange={e=>setDate(e.target.value)}/></div>
           </div>
-          <div style={{background:"#eaf1fb",borderRadius:10,padding:"10px 13px",fontSize:12,color:"#64748b",border:"1px solid #bcd3ee"}}>
-            ✓ Se registrará el pago y la fecha del próximo pago avanzará un mes automáticamente.
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button className="btn grn" style={{flex:1,padding:11}} onClick={()=>onSave(parseFloat(amount))}>Confirmar pago</button>
-            <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
-          </div>
+          <button className="btn grn" style={{width:"100%",padding:11,justifyContent:"center"}} disabled={saving||!date} onClick={()=>onSave(parseFloat(amount),date)}>Confirmar pago</button>
+          <div style={{fontSize:10,color:"#64748b",marginTop:6}}>La fecha del próximo pago avanza un mes automáticamente.</div>
         </div>
+
+        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,flexShrink:0}}>
+          <span className="lbl" style={{marginBottom:0}}>📜 HISTORIAL DE PAGOS</span>
+          <span style={{fontSize:11,fontWeight:700,color:"#7c3aed"}}>{list.length} pago{list.length!==1?"s":""} · {eur(total)}</span>
+        </div>
+        <div style={{flex:1,overflowY:"auto",minHeight:0}}>
+          {list.length===0
+            ?<div style={{fontSize:12,color:"#94a3b8",padding:"10px 2px"}}>Sin pagos registrados todavía.</div>
+            :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+              {list.map((p,i)=>{ const ed=edit&&edit.id===p.id; return(
+                <div key={p.id||i} style={{padding:"9px 11px",borderTop:i>0?"1px solid #eef1f7":"none",background:ed?"#f5f1fd":"#fff"}}>
+                  {ed
+                    ?<div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <input type="date" className="inp" style={{flex:1.4,padding:"6px 8px",fontSize:12}} value={String(edit.paid_at).slice(0,10)} onChange={e=>setEdit(x=>({...x,paid_at:e.target.value}))}/>
+                      <input type="number" step="0.01" className="inp" style={{flex:1,padding:"6px 8px",fontSize:12}} value={edit.amount} onChange={e=>setEdit(x=>({...x,amount:e.target.value}))}/>
+                      <button className="btn grn" style={{padding:"6px 9px",fontSize:12}} disabled={saving} onClick={()=>{ onUpdate(p.id,{paid_at:String(edit.paid_at).slice(0,10),amount:parseFloat(edit.amount)||0}); setEdit(null); }}>✓</button>
+                      <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} onClick={()=>setEdit(null)}>✕</button>
+                    </div>
+                    :<div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{dayTxt(p.paid_at)}</div>
+                      </div>
+                      <span className="mono" style={{fontSize:14,fontWeight:800,color:"#16a34a"}}>{eur(p.amount)}</span>
+                      {p.id&&<button title="Corregir fecha o importe" className="btn ghost" style={{padding:"5px 8px",fontSize:12}} onClick={()=>setEdit({id:p.id,amount:p.amount,paid_at:p.paid_at})}>✏️</button>}
+                      {p.id&&<button title="Eliminar pago" className="btn ghost" style={{padding:"5px 8px",fontSize:12,color:"#dc2626"}} disabled={saving} onClick={()=>{ if(window.confirm(`¿Eliminar el pago de ${eur(p.amount)} del ${fmtDate(String(p.paid_at).slice(0,10))}?`)) onDelete(p.id); }}>🗑</button>}
+                    </div>}
+                </div>
+              );})}
+            </div>}
+        </div>
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:10,flexShrink:0}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
   );
