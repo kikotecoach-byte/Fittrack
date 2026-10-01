@@ -985,7 +985,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Secondary nav tabs */}
       {["forum","reminders","income"].includes(view)&&(
         <div style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
-          {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Ingresos"]].map(([id,label])=>(
+          {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Finanzas"]].map(([id,label])=>(
             <button key={id} className={"tab"+(view===id?" on":"")} onClick={()=>setView(id)} style={{flexShrink:0,fontSize:12}}>{label}</button>
           ))}
           <button className={"tab"} onClick={()=>setView("dashboard")} style={{flexShrink:0,fontSize:12,color:"#64748b"}}>← Volver</button>
@@ -1029,11 +1029,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               {[
                 {label:"Clientes",val:clients.length,color:"#0284c7"},
                 {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,color:"#16a34a"},
-                {label:"Alertas",val:reminders.length,color:"#ca8a04"},
+                {label:"Alertas",val:reminders.length,color:"#ca8a04",go:"reminders"},
                 {label:"Sesiones hoy",val:todaySessions.length,color:"#a78bfa"},
-                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a"},
+                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a",go:"income"},
               ].map(s=>(
-                <div key={s.label} className="card">
+                <div key={s.label} className="card" onClick={s.go?()=>setView(s.go):undefined} style={s.go?{cursor:"pointer"}:undefined}>
                   <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
                   <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
                 </div>
@@ -1738,36 +1738,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
         {/* INCOME */}
         {view==="income"&&(
-          <div>
-            <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:22}}>Ingresos</h1>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:22}}>
-              {[
-                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a"},
-                {label:"Total acumulado",val:`${totalIncome}€`,color:"#0284c7"},
-                {label:"Pagos registrados",val:payments.length,color:"#a78bfa"},
-                {label:"Ticket medio",val:`${payments.length>0?Math.round(totalIncome/payments.length):0}€`,color:"#ea580c"},
-              ].map(s=>(
-                <div key={s.label} className="card">
-                  <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
-                  <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
-                </div>
-              ))}
-            </div>
-            <div className="card">
-              <h3 style={{fontSize:13,fontWeight:700,marginBottom:14}}>Historial de pagos</h3>
-              {payments.length===0?<p style={{fontSize:13,color:"#cbd5e1"}}>Sin pagos registrados aún</p>
-                :payments.map(p=>(
-                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3"}}>
-                    <div>
-                      <div style={{fontSize:13,fontWeight:600}}>{p.client_name}</div>
-                      <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.paid_at?fmtDate(String(p.paid_at).slice(0,10)):""}</div>
-                    </div>
-                    <div className="mono" style={{fontSize:15,fontWeight:700,color:"#16a34a"}}>{p.amount}€</div>
-                  </div>
-                ))
-              }
-            </div>
-          </div>
+          <FinanceView clients={clients} sessions={sessions} history={history} payments={payments}/>
         )}
 
         {/* REMINDERS */}
@@ -2316,6 +2287,187 @@ function QuickAddModal({date,time,sessions,clients,cap,onAdd,onClose}) {
         </div>
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:12,flexShrink:0}} onClick={onClose}>Listo</button>
       </div>
+    </div>
+  );
+}
+
+// ── FINANZAS (ingresos en el tiempo, €/sesión de cada bono, € por hora de clase) ──
+// "Generado" = valor de las sesiones hechas (cada asistencia vale el precio por
+// sesión del bono de esa persona: importe ÷ nº de sesiones). "Cobrado" = pagos
+// registrados. Una "hora de clase" = una franja (fecha + hora) con al menos 1 persona.
+function FinanceView({clients,sessions,history,payments}) {
+  const [mode,setMode]=React.useState("week"); // day | week | month
+  const [anchor,setAnchor]=React.useState(TODAY);
+  const [selHour,setSelHour]=React.useState(null);
+  const [selDay,setSelDay]=React.useState(null);
+  const [selMonth,setSelMonth]=React.useState(null);
+  const [showPays,setShowPays]=React.useState(10);
+  const ACC="#0284c7", ACC_D="#075985", TRACK="#e6eef8", PAY="#16a34a", PAY_D="#166534";
+  const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
+  const eur0=(n)=>`${Math.round(n||0)}€`;
+  const ppS=(c)=>{ const t=parseInt(c&&c.total_sessions)||0; const a=parseFloat(c&&c.payment_amount)||0; return t>0?a/t:0; };
+  const byId=Object.fromEntries((clients||[]).map(c=>[c.id,c]));
+  const ds=(d)=>d.toISOString().split("T")[0];
+  const range=(()=>{ const a=new Date(anchor+"T12:00:00");
+    if(mode==="day") return [anchor,anchor];
+    if(mode==="week"){ const m=mondayOfDate(anchor); const e=new Date(m+"T12:00:00"); e.setDate(e.getDate()+6); return [m,ds(e)]; }
+    const f=new Date(a.getFullYear(),a.getMonth(),1,12), l=new Date(a.getFullYear(),a.getMonth()+1,0,12); return [ds(f),ds(l)]; })();
+  const inR=(d)=>d&&d>=range[0]&&d<=range[1];
+  const shift=(dir)=>{ const a=new Date(anchor+"T12:00:00"); if(mode==="day") a.setDate(a.getDate()+dir); else if(mode==="week") a.setDate(a.getDate()+7*dir); else a.setMonth(a.getMonth()+dir,1); setAnchor(ds(a)); setSelHour(null); setSelDay(null); };
+  const cap=(t)=>t.charAt(0).toUpperCase()+t.slice(1);
+  const label = mode==="day" ? cap(new Date(anchor+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}))
+    : mode==="week" ? `${fmtDate(range[0])} – ${fmtDate(range[1])}`
+    : cap(new Date(anchor+"T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"}));
+
+  // Asistencias realizadas del periodo (historial) y clases (fecha+hora).
+  const done=(history||[]).filter(h=>inR(h.date)&&byId[h.client_id]);
+  const classes={}; done.forEach(h=>{ const k=h.date+"|"+(h.time||"—"); (classes[k]=classes[k]||{date:h.date,time:h.time||"—",people:[],val:0}); classes[k].people.push(byId[h.client_id]); classes[k].val+=ppS(byId[h.client_id]); });
+  const cls=Object.values(classes).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  const gen=cls.reduce((a,c)=>a+c.val,0), nCls=cls.length, nSes=done.length;
+  const perHour=nCls?gen/nCls:0, ppl=nCls?nSes/nCls:0, perSes=nSes?gen/nSes:0;
+  const cobrado=(payments||[]).filter(p=>inR(String(p.paid_at||"").slice(0,10))).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
+  const previsto=(sessions||[]).filter(s=>inR(s.date)&&s.date>=TODAY&&s.status!=="completed"&&!s.requested&&byId[s.client_id]).reduce((a,s)=>a+ppS(byId[s.client_id]),0);
+
+  // Por franja horaria.
+  const slots={}; cls.forEach(c=>{ const k=c.time; (slots[k]=slots[k]||{time:k,n:0,val:0,ppl:0}); slots[k].n++; slots[k].val+=c.val; slots[k].ppl+=c.people.length; });
+  const slotArr=Object.values(slots).sort((a,b)=>a.time.localeCompare(b.time)).map(x=>({...x,avg:x.val/x.n,avgP:x.ppl/x.n}));
+  const maxAvg=Math.max(1,...slotArr.map(x=>x.avg));
+  const best=slotArr.length>1?slotArr.reduce((m,x)=>x.avg>m.avg?x:m,slotArr[0]):null;
+  const worst=slotArr.length>1?slotArr.reduce((m,x)=>x.avg<m.avg?x:m,slotArr[0]):null;
+
+  // Por día del periodo (semana/mes).
+  const days=[]; if(mode!=="day"){ const d=new Date(range[0]+"T12:00:00"); while(ds(d)<=range[1]){ const k=ds(d); const dc=cls.filter(c=>c.date===k); days.push({date:k,val:dc.reduce((a,c)=>a+c.val,0),n:dc.length}); d.setDate(d.getDate()+1); } }
+  const maxDay=Math.max(1,...days.map(x=>x.val));
+
+  // Cobrado por mes (últimos 12 meses).
+  const months=[]; { const t=new Date(TODAY+"T12:00:00"); for(let i=11;i>=0;i--){ const m=new Date(t.getFullYear(),t.getMonth()-i,1,12); const key=ds(m).slice(0,7); months.push({key,lbl:m.toLocaleDateString("es-ES",{month:"short"}).replace(".",""),val:(payments||[]).filter(p=>String(p.paid_at||"").slice(0,7)===key).reduce((a,p)=>a+(parseFloat(p.amount)||0),0)}); } }
+  const maxMonth=Math.max(1,...months.map(x=>x.val));
+
+  // Precio por sesión de cada bono.
+  const bonos=(clients||[]).filter(c=>ppS(c)>0).map(c=>({c,pp:ppS(c)})).sort((a,b)=>b.pp-a.pp);
+  const avgPP=bonos.length?bonos.reduce((a,x)=>a+x.pp,0)/bonos.length:0;
+
+  const Tile=({l,v,sub})=>(<div className="card" style={{padding:"11px 12px"}}><div style={{fontSize:10,color:"#64748b",fontWeight:700}}>{l}</div><div style={{fontSize:18,fontWeight:700,color:"#0f172a",marginTop:3}}>{v}</div>{sub&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{sub}</div>}</div>);
+  const Section=({title,sub,children})=>(<div className="card" style={{marginBottom:12}}><div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{title}</div>{sub&&<div style={{fontSize:11,color:"#64748b",marginTop:2,marginBottom:10}}>{sub}</div>}{children}</div>);
+  // Columnas verticales con selección por toque (tooltip en la cabecera del gráfico).
+  const Columns=({data,max,color,colorSel,sel,onSel,valOf,lblOf,tipOf,labelEvery=1,empty})=>!data.some(d=>valOf(d)>0)
+    ?<div style={{fontSize:12,color:"#94a3b8",padding:"14px 0"}}>{empty||"Sin datos en este periodo."}</div>
+    :(
+    <div>
+      <div style={{minHeight:18,fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:4}}>{sel!=null&&data[sel]?tipOf(data[sel]):<span style={{color:"#94a3b8",fontWeight:500}}>Toca una barra para ver el detalle</span>}</div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:2,height:120,borderBottom:"1px solid #dbe2ec"}}>
+        {data.map((d,i)=>{ const v=valOf(d); const h=v>0?Math.max(3,Math.round(v/max*112)):0; const on=sel===i; return(
+          <div key={i} onClick={()=>onSel(on?null:i)} style={{flex:1,height:"100%",display:"flex",alignItems:"flex-end",justifyContent:"center",cursor:"pointer"}}>
+            <div style={{width:"100%",maxWidth:24,height:h,background:on?colorSel:color,borderRadius:"4px 4px 0 0",opacity:sel!=null&&!on?.55:1,transition:"opacity .15s"}}/>
+          </div>); })}
+      </div>
+      <div style={{display:"flex",gap:2,marginTop:4}}>
+        {data.map((d,i)=><div key={i} style={{flex:1,textAlign:"center",fontSize:9,color:"#64748b",fontWeight:sel===i?800:500,whiteSpace:"nowrap",overflow:"visible"}}>{i%labelEvery===0||sel===i?lblOf(d):""}</div>)}
+      </div>
+    </div>
+  );
+  const DOW=["D","L","M","X","J","V","S"];
+  return(
+    <div>
+      <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:12}}>Finanzas</h1>
+      {/* Filtros: periodo + navegación */}
+      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",background:"#e6ebf3",borderRadius:10,padding:3}}>
+          {[["day","Día"],["week","Semana"],["month","Mes"]].map(([k,l])=><button key={k} onClick={()=>{setMode(k);setSelHour(null);setSelDay(null);}} style={{border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,cursor:"pointer",background:mode===k?"#fff":"transparent",color:mode===k?"#0f172a":"#64748b",boxShadow:mode===k?"0 1px 2px rgba(15,23,42,.12)":"none"}}>{l}</button>)}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:4,flex:1,minWidth:200,justifyContent:"flex-end"}}>
+          <button className="btn ghost" style={{padding:"5px 10px"}} onClick={()=>shift(-1)}>‹</button>
+          <span style={{fontSize:12,fontWeight:700,color:"#0f172a",textAlign:"center",flex:1}}>{label}</span>
+          <button className="btn ghost" style={{padding:"5px 10px"}} onClick={()=>shift(1)}>›</button>
+          {anchor!==TODAY&&<button className="btn ghost" style={{padding:"5px 9px",fontSize:11}} onClick={()=>{setAnchor(TODAY);setSelHour(null);setSelDay(null);}}>Hoy</button>}
+        </div>
+      </div>
+
+      {/* Cifra principal: € por hora de clase */}
+      <div className="card" style={{marginBottom:10}}>
+        <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>€ por hora de clase</div>
+        <div style={{fontSize:48,fontWeight:700,color:"#0f172a",lineHeight:1.1,marginTop:2}}>{eur(perHour)}</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:4}}>{nCls?`${eur0(gen)} generados en ${nCls} hora${nCls!==1?"s":""} de clase · ${ppl.toFixed(1).replace(".",",")} personas de media`:"Sin sesiones hechas en este periodo"}</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+        <Tile l="Generado" v={eur0(gen)} sub={`${nSes} sesiones`}/>
+        <Tile l="Cobrado" v={eur0(cobrado)} sub="pagos registrados"/>
+        <Tile l="€ / sesión" v={eur(perSes)} sub="media del periodo"/>
+        <Tile l="Horas de clase" v={nCls} sub="con al menos 1 persona"/>
+        <Tile l="Personas / hora" v={ppl.toFixed(1).replace(".",",")} sub="media"/>
+        <Tile l="Previsto" v={eur0(previsto)} sub="reservas pendientes"/>
+      </div>
+
+      {/* Cómo se paga cada franja horaria */}
+      <Section title="Cómo se paga cada hora" sub="€ medio por clase en cada franja del periodo">
+        {slotArr.length===0
+          ?<div style={{fontSize:12,color:"#94a3b8"}}>Sin clases hechas en este periodo.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {slotArr.map(x=>{ const on=selHour===x.time; return(
+              <div key={x.time} onClick={()=>setSelHour(on?null:x.time)} style={{cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span className="mono" style={{width:42,fontSize:12,fontWeight:700,color:"#0f172a"}}>{x.time}</span>
+                  <div style={{flex:1,height:16,background:TRACK,borderRadius:4,overflow:"hidden"}}>
+                    <div style={{width:`${Math.max(2,x.avg/maxAvg*100)}%`,height:"100%",background:on?ACC_D:ACC,borderRadius:"0 4px 4px 0"}}/>
+                  </div>
+                  <span style={{width:60,textAlign:"right",fontSize:12,fontWeight:700,color:"#0f172a"}}>{eur(x.avg)}</span>
+                </div>
+                <div style={{fontSize:10,color:"#64748b",marginLeft:50,marginTop:2}}>{x.n} clase{x.n!==1?"s":""} · {x.avgP.toFixed(1).replace(".",",")} pers. de media · total {eur0(x.val)}{best&&best.time===x.time?" · ⬆ la mejor":""}{worst&&worst.time===x.time?" · ⬇ la que menos":""}</div>
+                {on&&<div style={{marginLeft:50,marginTop:5,fontSize:11,color:"#0f172a",background:"#f1f5fb",borderRadius:8,padding:"6px 9px"}}>
+                  {cls.filter(c=>c.time===x.time).map(c=><div key={c.date}>{fmtDate(c.date)}: {c.people.length} pers. · {eur(c.val)} <span style={{color:"#64748b"}}>({c.people.map(p=>p.name.split(" ")[0]).join(", ")})</span></div>)}
+                </div>}
+              </div>
+            );})}
+          </div>}
+      </Section>
+
+      {/* Por día del periodo, o clases del día */}
+      {mode==="day"
+        ?<Section title="Clases del día" sub="Valor de cada hora según quién vino">
+          {cls.length===0?<div style={{fontSize:12,color:"#94a3b8"}}>Sin clases hechas este día.</div>
+            :cls.map(c=>(
+              <div key={c.time} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:"1px solid #eef1f7"}}>
+                <span className="mono" style={{width:42,fontSize:12,fontWeight:700}}>{c.time}</span>
+                <span style={{flex:1,minWidth:0,fontSize:12,color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.people.map(p=>`${p.name.split(" ")[0]} (${eur(ppS(p))})`).join(", ")}</span>
+                <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{eur(c.val)}</span>
+              </div>))}
+        </Section>
+        :<Section title="€ generados por día" sub={mode==="week"?"Valor de las sesiones hechas cada día de la semana":"Valor de las sesiones hechas cada día del mes"}>
+          <Columns data={days} max={maxDay} color={ACC} colorSel={ACC_D} sel={selDay} onSel={setSelDay} valOf={d=>d.val}
+            lblOf={d=>{ const x=new Date(d.date+"T12:00:00"); return mode==="week"?DOW[x.getDay()]:String(x.getDate()); }}
+            tipOf={d=>`${fmtDate(d.date)}: ${eur(d.val)} · ${d.n} hora${d.n!==1?"s":""} de clase${d.n?` · ${eur(d.val/d.n)}/hora`:""}`}
+            labelEvery={mode==="week"?1:5} empty={mode==="week"?"Aún no hay sesiones hechas esta semana.":"Aún no hay sesiones hechas este mes."}/>
+        </Section>}
+
+      {/* Cobrado por mes */}
+      <Section title="Cobrado por mes" sub="Pagos registrados en los últimos 12 meses">
+        <Columns data={months} max={maxMonth} color={PAY} colorSel={PAY_D} sel={selMonth} onSel={setSelMonth} valOf={m=>m.val}
+          empty="Aún no hay pagos registrados." lblOf={m=>m.lbl} tipOf={m=>`${cap(new Date(m.key+"-15T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"}))}: ${eur0(m.val)}`}/>
+        <div style={{fontSize:11,color:"#64748b",marginTop:8}}>Este mes: <b style={{color:"#0f172a"}}>{eur0(months[11].val)}</b> · media mensual: <b style={{color:"#0f172a"}}>{eur0(months.reduce((a,m)=>a+m.val,0)/12)}</b></div>
+      </Section>
+
+      {/* A cuánto sale cada bono */}
+      <Section title="A cuánto sale la sesión de cada bono" sub={`Importe del bono ÷ nº de sesiones · media ${eur(avgPP)}/sesión`}>
+        {bonos.length===0?<div style={{fontSize:12,color:"#94a3b8"}}>Sin bonos con precio.</div>
+          :bonos.map(({c,pp})=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:"1px solid #eef1f7"}}>
+              <span style={{width:8,height:8,borderRadius:4,background:c.color,flexShrink:0}}/>
+              <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+              <span style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap"}}>{c.total_sessions} ses. · {eur(parseFloat(c.payment_amount)||0)}</span>
+              <span style={{width:58,textAlign:"right",fontSize:13,fontWeight:800,color:"#0f172a"}}>{eur(pp)}</span>
+            </div>))}
+      </Section>
+
+      {/* Historial de pagos */}
+      <Section title="Historial de pagos" sub={`${(payments||[]).length} pagos registrados`}>
+        {(payments||[]).length===0?<div style={{fontSize:12,color:"#94a3b8"}}>Sin pagos registrados aún.</div>
+          :(payments||[]).slice(0,showPays).map(p=>(
+            <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #eef1f7"}}>
+              <div><div style={{fontSize:13,fontWeight:600}}>{p.client_name}</div><div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.paid_at?fmtDate(String(p.paid_at).slice(0,10)):""}</div></div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>{eur(parseFloat(p.amount)||0)}</div>
+            </div>))}
+        {(payments||[]).length>showPays&&<button className="btn ghost" style={{width:"100%",marginTop:8,fontSize:12}} onClick={()=>setShowPays(n=>n+20)}>Ver más ({(payments||[]).length-showPays})</button>}
+      </Section>
     </div>
   );
 }
