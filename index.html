@@ -2605,7 +2605,10 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const [busy,setBusy]=React.useState(false);
   const selClient=clients.find(c=>c.id===sel);
   const asig=(assignedSessions||[]).find(a=>a.client_id===sel&&a.date===date);
-  const exs=asig?(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const allExs=asig?(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const wods=wodBlocks(allExs);
+  const exs=allExs.filter(e=>!isWodHeader(e));
+  const [timerWod,setTimerWod]=React.useState(null);
   const valOf=(ex,k)=>{ const e=edited[ex.id]; if(e&&e[k]!==undefined) return e[k];
     if(k==="w") return ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:"");
     if(k==="r") return ex.actual_reps!=null?ex.actual_reps:(ex.reps!=null?ex.reps:"");
@@ -2662,6 +2665,17 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
           {!asig
             ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entreno asignado. Genéralo desde la ficha o la vista de clase.</div>
             :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {wods.map((b,i)=>(
+            <button key={"w"+i} onClick={()=>setTimerWod(b)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:"11px 12px",marginBottom:0}}>
+              <span style={{fontSize:24}}>⏱</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:"block",fontSize:14,fontWeight:800,color:"#9a3412"}}>{b.title}</span>
+                <span style={{display:"block",fontSize:11,color:"#7c2d12",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")}</span>
+                {(b.header||b.rows[0]).actual_reps&&<span style={{display:"block",fontSize:11,fontWeight:700,color:"#16a34a"}}>✓ Resultado: {(b.header||b.rows[0]).actual_reps}</span>}
+              </span>
+              <span style={{fontSize:12,fontWeight:800,color:"#fff",background:"#ea580c",borderRadius:10,padding:"7px 10px",whiteSpace:"nowrap"}}>▶ Temporizador</span>
+            </button>
+          ))}
               {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
               {exs.map(ex=>{ const done=valOf(ex,"done"); return(
                 <div key={ex.id} style={{background:done?"#eef8dd":"#f8fafc",border:`1px solid ${done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
@@ -2700,6 +2714,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
           <button className="btn ghost" style={{flex:asig?"0 0 auto":1,padding:"12px 16px"}} onClick={cerrar}>Cerrar</button>
         </div>
       </div>
+      {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)} onSave={async(res)=>{ const r=timerWod.header||timerWod.rows[0]; const {error}=await sb.from("assigned_exercises").update({actual_reps:res,done:true,done_at:new Date().toISOString()}).eq("id",r.id); notify(error?"No se pudo guardar el resultado":"Resultado del WOD guardado ✓",error?"err":undefined); }}/>}
     </div>
   );
 }
@@ -2708,6 +2723,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
 // Muestra el entreno de cada atleta para organizar material/espacio y permite
 // cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
 function ClassViewModal({date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+  const [classTimer,setClassTimer]=React.useState(null);
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
   const idOfLabel=(label)=>{ const e=DAY_TYPES.find(d=>d[1]===label); return e?e[0]:""; };
@@ -2716,7 +2732,7 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
     if(asig){
       const exs=(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
       const tmpl=(sessionTemplates||[]).find(t=>t.id===asig.template_id);
-      return {label:tmpl?tmpl.name:"Entreno asignado", exs:exs.map(e=>({name:e.exercise_name,sets:e.sets,reps:e.reps,proto:e.protocol,w:e.prescribed_weight})), assigned:true};
+      return {label:asigName(asig,sessionTemplates)||"Entreno asignado", exs:exs.map(e=>({name:e.exercise_name,sets:e.sets,reps:e.reps,proto:e.protocol,w:e.prescribed_weight})), assigned:true, raw:exs};
     }
     const au=blk?autoRoutineFor(client,date,sessions,annualBlocks):null;
     return au?{label:au.label, exs:au.routine.map(e=>({name:e[0],sets:e[1],reps:e[2],proto:e[4],w:null})), assigned:false}:{label:"—",exs:[],assigned:false};
@@ -2744,6 +2760,11 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
             ▶ Ejecutar clase · apuntar pesos por persona
           </button>
         )}
+        {slot.length>0&&(()=>{
+          // Primer WOD de la clase (asignado o previsto) para el temporizador común.
+          let cw=null; for(const sl of slot){ const r=rutinaDe(sl.client); const exs=r.raw||r.exs.map(e=>({exercise_name:e.name,sets:e.sets,reps:e.reps,protocol:e.proto})); const b=wodBlocks(exs)[0]; if(b){ cw=b; break; } }
+          return <button className="btn ghost" style={{width:"100%",padding:11,marginBottom:8,fontSize:13,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fdba74"}} onClick={()=>setClassTimer(cw||{format:"amrap",minutes:12,rounds:1,list:[],title:"Temporizador"})}>⏱ Temporizador de la clase{cw?` · ${cw.title}`:""}</button>;
+        })()}
         {onQuickAll&&slot.length>0&&(
           <button className="btn grn" style={{width:"100%",padding:11,marginBottom:12,fontSize:13,fontWeight:700}} onClick={onQuickAll}>
             ✅ Registrar toda la clase (asistencia + cargas previstas)
@@ -2790,11 +2811,11 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
           const esUltima=pos>=tot, sinBono=pos>tot;
           return(
             <div key={s.id} style={{border:`1px solid ${done?"#16a34a":esUltima?"#e4cd8c":"#e6ebf3"}`,borderRadius:12,padding:12,marginBottom:10,background:done?"#f4faf6":"#fff"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
                 {c.avatar_url
                   ?<img src={c.avatar_url} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color}55`}}/>
                   :<div className="ring" style={{width:38,height:38,background:c.color+"20",color:c.color,fontSize:12,border:`2px solid ${c.color}55`}}>{ini(c.name)}</div>}
-                <div style={{flex:1,minWidth:0}}>
+                <div style={{flex:"1 1 160px",minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {c.name} {done&&<span style={{fontSize:11,color:"#16a34a"}}>✓</span>}
                     {esPrimera&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 6px",marginLeft:6}}>🎉 1ª sesión</span>}
@@ -2836,6 +2857,7 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
 
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:4}} onClick={onClose}>Cerrar</button>
       </div>
+      {classTimer&&<WodTimer wod={classTimer} onClose={()=>setClassTimer(null)}/>}
     </div>
   );
 }
@@ -2857,6 +2879,24 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
   const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
   const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
+  // ── WOD: bloques metabólicos editables y orden de ejercicios ──
+  const blocks = wodBlocks(exs);
+  const inBlock = new Set(blocks.flatMap(b=>b.rows.map(r=>r.id)));
+  const [editWod,setEditWod]=React.useState(null); // índice del bloque o "new"
+  const [timerWod,setTimerWod]=React.useState(null);
+  const renumber = async(arr)=>{ for(let i=0;i<arr.length;i++) if(arr[i].order_index!==i) await sb.from("assigned_exercises").update({order_index:i}).eq("id",arr[i].id); };
+  const saveWod = (b,cfg)=>w(async()=>{
+    const newRows=wodRows(cfg);
+    const idx0=b?exs.indexOf(b.rows[0]):exs.length;
+    const before=exs.slice(0,idx0), after=b?exs.slice(idx0+b.rows.length):[];
+    if(b) await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id));
+    await sb.from("assigned_exercises").insert(newRows.map((r,k)=>({session_id:sess.id,...r,notes:"",prescribed_weight:null,order_index:before.length+k})));
+    for(let j=0;j<after.length;j++){ const oi=before.length+newRows.length+j; if(after[j].order_index!==oi) await sb.from("assigned_exercises").update({order_index:oi}).eq("id",after[j].id); }
+    setEditWod(null); notify("WOD guardado ✓");
+  });
+  const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
+  const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
+  const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
   const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
@@ -2884,9 +2924,13 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
           </div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
-            {exs.map(ex=>(
+            {exs.filter(ex=>!inBlock.has(ex.id)).map((ex,ni,arrN)=>(
               <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,border:"1px solid #dbe2ec"}}>
                 <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===0} onClick={()=>moveEx(ex,-1)} title="Subir">▲</button>
+                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===arrN.length-1} onClick={()=>moveEx(ex,1)} title="Bajar">▼</button>
+                  </div>
                   <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={ex.exercise_name} onChange={e=>swap(ex,e.target.value)}>
                     {!inLib(ex.exercise_name)&&<option value={ex.exercise_name}>{ex.exercise_name}</option>}
                     {libItems.map(([cat,list])=>(
@@ -2902,6 +2946,28 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota / adaptación (p. ej. molestia rodilla → rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
               </div>
             ))}
+            {/* WOD / bloques metabólicos */}
+            <div style={{marginTop:4}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#9a3412",marginBottom:6}}>🔥 WOD / METABÓLICO {blocks.length?`(${blocks.length})`:""}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {blocks.map((b,bi)=> editWod===bi
+                  ?<WodEditor key={"e"+bi} initial={{format:b.format,minutes:b.minutes,rounds:b.rounds,moves:b.list.length?b.list:[{name:"",reps:""}]}} saving={saving}
+                      onSave={(cfg)=>saveWod(b,cfg)} onCancel={()=>setEditWod(null)} onDelete={()=>delWod(b)} onMoveBlock={(d)=>moveWod(b,d)}/>
+                  :<div key={"b"+bi} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"9px 11px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{b.title}</div>
+                        <div style={{fontSize:11,color:"#7c2d12"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")||"Sin movimientos"}</div>
+                      </div>
+                      <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Temporizador" onClick={()=>setTimerWod(b)}>⏱</button>
+                      <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Editar WOD" onClick={()=>setEditWod(bi)}>✏️</button>
+                    </div>
+                  </div>)}
+                {editWod==="new"
+                  ?<WodEditor saving={saving} onSave={(cfg)=>saveWod(null,cfg)} onCancel={()=>setEditWod(null)}/>
+                  :<button className="btn ghost" style={{fontSize:12,padding:"9px",border:"1px dashed #fdba74",color:"#9a3412",fontWeight:700}} disabled={saving} onClick={()=>setEditWod("new")}>＋ Añadir WOD (AMRAP, EMOM, For Time, Hyrox…)</button>}
+              </div>
+            </div>
             {/* Añadir ejercicio */}
             <div style={{background:"#eef4fc",border:"1px dashed #bcd3ee",borderRadius:10,padding:10,display:"flex",gap:6,alignItems:"center"}}>
               <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={addName} onChange={e=>setAddName(e.target.value)}>
@@ -2916,6 +2982,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
         }
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:14}} onClick={onClose}>Listo</button>
       </div>
+      {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)}/>}
     </div>
   );
 }
@@ -3038,6 +3105,215 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
           {onProgress&&<button className="btn ghost" style={{padding:"11px 14px"}} onClick={onProgress} title="Progresión de cargas">📈</button>}
           <button className="btn ghost" style={{padding:"11px 16px"}} onClick={onClose}>Cerrar</button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+// ── WOD (CrossFit / Hyrox): lectura, edición y temporizador ───────────────
+// Un WOD se guarda como filas de ejercicios de la sesión: una cabecera
+// ("WOD AMRAP 14'", "Hyrox · 4 rondas"…) + movimientos con el mismo protocolo.
+const META_PROTOS=["amrap","emom","for_time","chipper","tabata","intervalos"];
+const WOD_FORMATS=[["amrap","AMRAP","Máx. rondas en X min"],["emom","EMOM","Cada minuto, rotando"],["for_time","For Time","Lo más rápido, con límite"],["chipper","Chipper","Lista larga, una vez"],["tabata","Tabata","20 s / 10 s"],["intervalos","Hyrox / intervalos","Carrera + estaciones"]];
+const WOD_DEF={amrap:{min:12,rounds:1},emom:{min:12,rounds:1},for_time:{min:15,rounds:5},chipper:{min:20,rounds:1},tabata:{min:4,rounds:8},intervalos:{min:0,rounds:4}};
+const isWodHeader=(e)=>/^(WOD |Hyrox|Bloque metab)/i.test((e&&e.exercise_name)||"");
+const numIn=(t,re)=>{ const m=String(t||"").match(re); return m?parseInt(m[1],10):null; };
+// Agrupa los ejercicios (ordenados) de una sesión en bloques metabólicos.
+function wodBlocks(exs){
+  const out=[]; let cur=null;
+  (exs||[]).forEach((e,i)=>{
+    const meta=META_PROTOS.includes(e.protocol);
+    if(meta&&(isWodHeader(e)||!cur||cur.format!==e.protocol)){ cur={format:e.protocol,header:isWodHeader(e)?e:null,moves:isWodHeader(e)?[]:[e],rows:[e],start:i}; out.push(cur); }
+    else if(meta&&cur){ cur.moves.push(e); cur.rows.push(e); }
+    else cur=null;
+  });
+  return out.map(b=>{
+    const txt=[b.header&&b.header.exercise_name,b.header&&b.header.reps,...b.moves.map(m=>m.reps)].join(" ");
+    const min=numIn(txt,/(\d+)\s*(?:min|')/i), rnd=numIn(txt,/(\d+)\s*rondas/i);
+    const d=WOD_DEF[b.format]||WOD_DEF.amrap;
+    const rounds=rnd||(b.moves[0]&&b.moves[0].sets>1&&b.format!=="amrap"?b.moves[0].sets:d.rounds);
+    return {...b,minutes:min||d.min,rounds,title:b.header?b.header.exercise_name:`${(WOD_FORMATS.find(f=>f[0]===b.format)||[])[1]||"WOD"} ${min||d.min}'`,
+      list:b.moves.map(m=>({name:m.exercise_name,reps:m.reps||""}))};
+  });
+}
+// Filas de ejercicios a partir de una configuración de WOD.
+function wodRows(cfg){
+  const f=cfg.format, m=Math.max(1,parseInt(cfg.minutes)||WOD_DEF[f].min||1), r=Math.max(1,parseInt(cfg.rounds)||1), n=Math.max(1,cfg.moves.length);
+  const head={amrap:[`WOD AMRAP ${m}'`,`${m} min`],emom:[`WOD EMOM ${m}' (rotando ${n} ejercicio${n>1?"s":""})`,`${m} min`],for_time:[`WOD For Time · ${r} rondas`,`cap ${m} min`],
+    chipper:[`WOD Chipper`,`cap ${m} min`],tabata:[`WOD Tabata ${m}'`,`${m*2} rondas 20s/10s`],intervalos:[`Hyrox · ${r} rondas`,`${r} rondas`]}[f];
+  const sets=f==="emom"?Math.ceil(m/n):f==="tabata"?Math.ceil(m*2/n):(f==="amrap"||f==="chipper")?1:r;
+  return [{exercise_name:head[0],sets:1,reps:head[1],protocol:f,rest_seconds:0},
+    ...cfg.moves.filter(x=>String(x.name||"").trim()).map(x=>({exercise_name:x.name.trim(),sets,reps:x.reps||"",protocol:f,rest_seconds:0}))];
+}
+const WOD_MOVES=()=>[...new Set([...(EX_POOLS.cfLift||[]),...(EX_POOLS.cfWeight||[]),...(EX_POOLS.cfGym||[]),...(EX_POOLS.cfMono||[]),...(EX_POOLS.hyrox||[]),...(EX_POOLS.func||[]),...(EX_POOLS.plyo||[]),...(EX_POOLS.cardio||[]),...(EX_POOLS.core||[]),"Carrera 1 km","Carrera 400 m"])].filter(n=>equipOk(n));
+
+// Editor de un WOD (formato, minutos, rondas, movimientos y orden).
+function WodEditor({initial,saving,onSave,onCancel,onDelete,onMoveBlock}) {
+  const [cfg,setCfg]=React.useState(()=>initial||{format:"amrap",minutes:12,rounds:1,moves:[{name:"Burpees",reps:"10"},{name:"Swing con kettlebell",reps:"15"},{name:"Remo (máquina)",reps:"250 m"}]});
+  const set=(k,v)=>setCfg(c=>({...c,[k]:v}));
+  const setMove=(i,k,v)=>setCfg(c=>({...c,moves:c.moves.map((m,j)=>j===i?{...m,[k]:v}:m)}));
+  const moveRow=(i,d)=>setCfg(c=>{ const a=c.moves.slice(); const j=i+d; if(j<0||j>=a.length) return c; [a[i],a[j]]=[a[j],a[i]]; return {...c,moves:a}; });
+  const f=cfg.format, usesRounds=f==="for_time"||f==="intervalos", usesMin=f!=="intervalos";
+  const listId="wodmoves-dl";
+  return(
+    <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:12,padding:11}}>
+      <datalist id={listId}>{WOD_MOVES().map(n=><option key={n} value={n}/>)}</datalist>
+      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:9}}>
+        {WOD_FORMATS.map(([k,l])=><button key={k} onClick={()=>set("format",k)} style={{fontSize:11,fontWeight:700,padding:"6px 9px",borderRadius:20,cursor:"pointer",border:`1px solid ${f===k?"#ea580c":"#fed7aa"}`,background:f===k?"#ea580c":"#fff",color:f===k?"#fff":"#9a3412"}}>{l}</button>)}
+      </div>
+      <div style={{fontSize:11,color:"#9a3412",marginBottom:8}}>{(WOD_FORMATS.find(x=>x[0]===f)||[])[2]}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:9}}>
+        {usesMin&&<div><span className="lbl">{f==="for_time"||f==="chipper"?"LÍMITE (min)":"MINUTOS"}</span><input type="number" min="1" className="inp" style={{padding:"7px 9px"}} value={cfg.minutes} onChange={e=>set("minutes",e.target.value)}/></div>}
+        {usesRounds&&<div><span className="lbl">RONDAS</span><input type="number" min="1" className="inp" style={{padding:"7px 9px"}} value={cfg.rounds} onChange={e=>set("rounds",e.target.value)}/></div>}
+      </div>
+      <span className="lbl">MOVIMIENTOS</span>
+      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+        {cfg.moves.map((m,i)=>(
+          <div key={i} style={{background:"#fff",border:"1px solid #fde3c8",borderRadius:10,padding:"7px 8px"}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:5}}>
+              <span className="mono" style={{width:16,fontSize:12,color:"#9a3412",fontWeight:800}}>{i+1}</span>
+              <input list={listId} className="inp" style={{flex:1,minWidth:0,padding:"7px 9px",fontSize:13}} value={m.name} placeholder="Ejercicio (escribe o elige)" onChange={e=>setMove(i,"name",e.target.value)}/>
+              <button className="btn ghost" style={{padding:"6px 9px",fontSize:12,color:"#dc2626"}} title="Quitar" onClick={()=>setCfg(c=>({...c,moves:c.moves.filter((_,j)=>j!==i)}))}>✕</button>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center",paddingLeft:22}}>
+              <input className="inp" style={{flex:1,minWidth:0,padding:"6px 9px",fontSize:13}} value={m.reps} placeholder="reps / metros / cal" onChange={e=>setMove(i,"reps",e.target.value)}/>
+              <button className="btn ghost" style={{padding:"6px 10px",fontSize:12}} title="Subir" onClick={()=>moveRow(i,-1)} disabled={i===0}>↑</button>
+              <button className="btn ghost" style={{padding:"6px 10px",fontSize:12}} title="Bajar" onClick={()=>moveRow(i,1)} disabled={i===cfg.moves.length-1}>↓</button>
+            </div>
+          </div>
+        ))}
+        <button className="btn ghost" style={{fontSize:12,padding:"7px",border:"1px dashed #fdba74",color:"#9a3412"}} onClick={()=>setCfg(c=>({...c,moves:[...c.moves,{name:"",reps:""}]}))}>＋ Movimiento</button>
+      </div>
+      <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+        <button className="btn grn" style={{flex:1,padding:10,justifyContent:"center",minWidth:120}} disabled={saving||!cfg.moves.some(m=>String(m.name).trim())} onClick={()=>onSave(cfg)}>Guardar WOD</button>
+        {onMoveBlock&&<button className="btn ghost" style={{padding:"9px 10px",fontSize:12}} title="Subir bloque" onClick={()=>onMoveBlock(-1)}>⤒</button>}
+        {onMoveBlock&&<button className="btn ghost" style={{padding:"9px 10px",fontSize:12}} title="Bajar bloque" onClick={()=>onMoveBlock(1)}>⤓</button>}
+        {onDelete&&<button className="btn danger" style={{padding:"9px 11px"}} disabled={saving} onClick={onDelete}>🗑</button>}
+        {onCancel&&<button className="btn ghost" style={{padding:"9px 12px"}} onClick={onCancel}>Cancelar</button>}
+      </div>
+    </div>
+  );
+}
+
+// Temporizador de WOD a pantalla completa (AMRAP, EMOM, For Time, Chipper, Tabata, Hyrox).
+function WodTimer({wod,onClose,onSave}) {
+  const [cfg,setCfg]=React.useState(()=>({format:(wod&&wod.format)||"amrap",minutes:(wod&&wod.minutes)||12,rounds:(wod&&wod.rounds)||1,moves:(wod&&wod.list&&wod.list.length?wod.list:[{name:"Trabajo",reps:""}])}));
+  const [phase,setPhase]=React.useState("ready"); // ready | prep | run | paused | done
+  const [ms,setMs]=React.useState(0); const [prep,setPrep]=React.useState(10);
+  const [rounds,setRounds]=React.useState(0); const [laps,setLaps]=React.useState([]); const [step,setStep]=React.useState(0);
+  const [saved,setSaved]=React.useState(false);
+  const t0=React.useRef(0), acc=React.useRef(0), audio=React.useRef(null), lastSec=React.useRef(-1), wake=React.useRef(null);
+  const f=cfg.format, total=f==="intervalos"?0:Math.max(1,parseInt(cfg.minutes)||1)*60000, moves=cfg.moves, n=Math.max(1,moves.length);
+  const beep=(fr=880,d=0.15)=>{ try{ const a=audio.current; if(!a) return; const o=a.createOscillator(), g=a.createGain(); o.frequency.value=fr; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.25,a.currentTime); g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+d); o.start(); o.stop(a.currentTime+d); }catch(e){} try{ navigator.vibrate&&navigator.vibrate(d>0.3?400:120); }catch(e){} };
+  const steps=f==="intervalos"?Array.from({length:Math.max(1,parseInt(cfg.rounds)||1)*n},(_,i)=>({r:Math.floor(i/n)+1,m:moves[i%n]})):f==="chipper"?moves.map((m,i)=>({r:1,m})):[];
+  const finish=(why)=>{ acc.current=ms; setPhase("done"); beep(660,0.6); };
+  // Reloj
+  React.useEffect(()=>{
+    if(phase==="prep"){ const id=setInterval(()=>setPrep(p=>{ if(p<=1){ clearInterval(id); t0.current=Date.now(); acc.current=0; setPhase("run"); beep(1046,0.5); return 0; } if(p<=4) beep(660,0.12); return p-1; }),1000); return ()=>clearInterval(id); }
+    if(phase==="run"){ const id=setInterval(()=>{ const v=acc.current+Date.now()-t0.current; setMs(v); },200); return ()=>clearInterval(id); }
+  },[phase]);
+  // Avisos por tiempo
+  React.useEffect(()=>{
+    if(phase!=="run") return;
+    const sec=Math.floor(ms/1000); if(sec===lastSec.current) return; lastSec.current=sec;
+    if(total&&(f==="amrap"||f==="emom"||f==="tabata")&&ms>=total){ finish(); return; }
+    if(total&&(f==="for_time"||f==="chipper")&&ms>=total){ finish(); return; }
+    if(f==="emom"){ const inMin=sec%60; if(inMin===0&&sec>0) beep(1046,0.4); else if(inMin>=57) beep(660,0.1); }
+    if(f==="tabata"){ const inR=sec%30; if(inR===0&&sec>0) beep(1046,0.4); else if(inR===20) beep(440,0.4); else if(inR>=27||(inR>=17&&inR<20)) beep(660,0.08); }
+    if(f==="amrap"&&total&&total-ms<=3500&&total-ms>0) beep(660,0.1);
+  },[ms,phase]);
+  React.useEffect(()=>()=>{ try{ wake.current&&wake.current.release(); }catch(e){} },[]);
+  const start=async()=>{ try{ audio.current=audio.current||new (window.AudioContext||window.webkitAudioContext)(); audio.current.resume&&audio.current.resume(); }catch(e){} try{ if(navigator.wakeLock) wake.current=await navigator.wakeLock.request("screen"); }catch(e){} setMs(0); setRounds(0); setLaps([]); setStep(0); setSaved(false); setPrep(10); lastSec.current=-1; setPhase("prep"); };
+  const pause=()=>{ acc.current=ms; setPhase("paused"); };
+  const resume=()=>{ t0.current=Date.now(); setPhase("run"); };
+  const mmss=(v)=>{ const t=Math.max(0,Math.floor(v/1000)); return `${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`; };
+  const addRound=()=>{ setRounds(r=>{ const nr=r+1; setLaps(l=>[...l,ms]); if(f==="for_time"&&nr>=(parseInt(cfg.rounds)||1)) setTimeout(()=>finish(),0); return nr; }); beep(988,0.1); };
+  const nextStep=()=>{ setLaps(l=>[...l,ms]); setStep(s=>{ const ns=s+1; if(ns>=steps.length) setTimeout(()=>finish(),0); return ns; }); beep(988,0.1); };
+  const sec=Math.floor(ms/1000);
+  // Qué mostrar según el formato
+  let big=mmss(ms), sub="", cur=null, next=null, bg="#0b1220";
+  if(f==="amrap"){ big=mmss(total-ms); sub=`${rounds} ronda${rounds!==1?"s":""}`; }
+  if(f==="emom"){ const k=Math.floor(sec/60); big=`${String(60-(sec%60)).padStart(2,"0")}`; sub=`Minuto ${Math.min(k+1,cfg.minutes)} de ${cfg.minutes}`; cur=moves[k%n]; next=moves[(k+1)%n]; }
+  if(f==="tabata"){ const r=Math.floor(sec/30), inR=sec%30, work=inR<20; big=String(work?20-inR:30-inR).padStart(2,"0"); sub=`${work?"TRABAJO":"DESCANSO"} · ronda ${Math.min(r+1,cfg.minutes*2)} de ${cfg.minutes*2}`; cur=moves[r%n]; bg=phase==="run"?(work?"#14532d":"#7c2d12"):bg; }
+  if(f==="for_time"){ sub=`Ronda ${Math.min(rounds+1,cfg.rounds)} de ${cfg.rounds} · límite ${cfg.minutes}'`; }
+  if(f==="chipper"||f==="intervalos"){ const st=steps[Math.min(step,steps.length-1)]; cur=st&&st.m; next=steps[step+1]&&steps[step+1].m; sub=f==="intervalos"?`Ronda ${st?st.r:1} de ${cfg.rounds} · paso ${Math.min(step+1,steps.length)}/${steps.length}`:`Ejercicio ${Math.min(step+1,steps.length)} de ${steps.length}`; }
+  const result=f==="amrap"?`${rounds} rondas`:f==="for_time"?(rounds>=(parseInt(cfg.rounds)||1)?`Tiempo ${mmss(laps[laps.length-1]||ms)}`:`Cap · ${rounds}/${cfg.rounds} rondas`)
+    :f==="chipper"||f==="intervalos"?(step>=steps.length?`Tiempo ${mmss(laps[laps.length-1]||ms)}`:`Cap · ${step}/${steps.length} pasos`):`Completado ${cfg.minutes}'`;
+  const fmtName=(WOD_FORMATS.find(x=>x[0]===f)||[])[1];
+  const btn=(txt,onClick,style={})=><button onClick={onClick} style={{border:"none",borderRadius:14,padding:"14px 18px",fontSize:16,fontWeight:800,cursor:"pointer",...style}}>{txt}</button>;
+  return(
+    <div onClick={e=>e.stopPropagation()} style={{position:"fixed",inset:0,zIndex:2000,background:bg,color:"#fff",display:"flex",flexDirection:"column",padding:"14px 16px calc(14px + env(safe-area-inset-bottom))",transition:"background .3s"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>{fmtName}{f!=="intervalos"?` · ${cfg.minutes}'`:""}{(f==="for_time"||f==="intervalos")?` · ${cfg.rounds} rondas`:""}</div>
+          <div style={{fontSize:15,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(wod&&wod.title)||"Temporizador"}</div>
+        </div>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,.12)",color:"#fff",border:"none",borderRadius:10,padding:"9px 13px",fontSize:14,fontWeight:700,cursor:"pointer"}}>✕</button>
+      </div>
+
+      {phase==="ready"&&(
+        <div style={{marginTop:16}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+            {WOD_FORMATS.map(([k,l])=><button key={k} onClick={()=>setCfg(c=>({...c,format:k,minutes:(wod&&wod.format===k&&wod.minutes)?wod.minutes:(WOD_DEF[k].min||c.minutes),rounds:(wod&&wod.format===k&&wod.rounds)?wod.rounds:(k==="for_time"||k==="intervalos"?WOD_DEF[k].rounds:c.rounds)}))} style={{fontSize:13,fontWeight:700,padding:"8px 12px",borderRadius:20,cursor:"pointer",border:"none",background:f===k?"#f97316":"rgba(255,255,255,.12)",color:"#fff"}}>{l}</button>)}
+          </div>
+          <div style={{display:"flex",gap:10,marginBottom:12}}>
+            {f!=="intervalos"&&<label style={{flex:1,fontSize:12,color:"#94a3b8",fontWeight:700}}>{f==="for_time"||f==="chipper"?"LÍMITE (min)":"MINUTOS"}<input type="number" min="1" value={cfg.minutes} onChange={e=>setCfg(c=>({...c,minutes:e.target.value}))} style={{display:"block",width:"100%",marginTop:4,fontSize:22,fontWeight:800,padding:"8px 10px",borderRadius:10,border:"none",background:"rgba(255,255,255,.12)",color:"#fff"}}/></label>}
+            {(f==="for_time"||f==="intervalos")&&<label style={{flex:1,fontSize:12,color:"#94a3b8",fontWeight:700}}>RONDAS<input type="number" min="1" value={cfg.rounds} onChange={e=>setCfg(c=>({...c,rounds:e.target.value}))} style={{display:"block",width:"100%",marginTop:4,fontSize:22,fontWeight:800,padding:"8px 10px",borderRadius:10,border:"none",background:"rgba(255,255,255,.12)",color:"#fff"}}/></label>}
+          </div>
+        </div>
+      )}
+
+      {phase==="ready"&&(
+        <div style={{marginBottom:6}}>
+          <div style={{fontSize:12,color:"#94a3b8",fontWeight:700,marginBottom:4}}>MOVIMIENTOS (uno por línea: nombre - reps)</div>
+          <textarea rows={Math.min(6,Math.max(3,moves.length+1))} defaultValue={moves.map(m=>m.reps?`${m.name} - ${m.reps}`:m.name).join("\n")}
+            onChange={e=>{ const mv=e.target.value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{ const i=l.lastIndexOf(" - "); return i>0?{name:l.slice(0,i).trim(),reps:l.slice(i+3).trim()}:{name:l,reps:""}; }); setCfg(c=>({...c,moves:mv.length?mv:[{name:"Trabajo",reps:""}]})); }}
+            style={{width:"100%",fontSize:15,fontWeight:600,padding:"8px 10px",borderRadius:10,border:"none",background:"rgba(255,255,255,.1)",color:"#fff",resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+      )}
+
+      {/* Reloj grande */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",minHeight:0}}>
+        {phase==="prep"
+          ?<><div style={{fontSize:18,color:"#fbbf24",fontWeight:800}}>PREPÁRATE</div><div className="mono" style={{fontSize:"min(40vw,220px)",fontWeight:800,lineHeight:1}}>{prep}</div></>
+          :phase==="ready"
+            ?<div className="mono" style={{fontSize:"min(22vw,140px)",fontWeight:800,lineHeight:1,color:"#cbd5e1"}}>{f==="amrap"?mmss((parseInt(cfg.minutes)||1)*60000):f==="emom"?"60":f==="tabata"?"20":"00:00"}</div>
+            :<><div className="mono" style={{fontSize:f==="emom"||f==="tabata"?"min(40vw,220px)":"min(22vw,140px)",fontWeight:800,lineHeight:1,color:phase==="paused"?"#94a3b8":"#fff"}}>{big}</div>
+              <div style={{fontSize:18,fontWeight:800,marginTop:8,color:"#fbbf24"}}>{phase==="done"?"¡TERMINADO!":phase==="paused"?"PAUSA":sub}</div></>}
+        {cur&&phase!=="ready"&&phase!=="done"&&(
+          <div style={{marginTop:16,background:"rgba(255,255,255,.1)",borderRadius:16,padding:"12px 18px",maxWidth:"100%"}}>
+            <div style={{fontSize:"min(8vw,34px)",fontWeight:800}}>{cur.name}</div>
+            {cur.reps&&<div style={{fontSize:"min(6vw,24px)",fontWeight:700,color:"#fbbf24"}}>{cur.reps}</div>}
+            {next&&<div style={{fontSize:13,color:"#94a3b8",marginTop:6}}>Siguiente: {next.name}{next.reps?` · ${next.reps}`:""}</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Movimientos (AMRAP / For Time / ready) */}
+      {(f==="amrap"||f==="for_time")&&phase!=="done"&&phase!=="ready"&&(
+        <div style={{background:"rgba(255,255,255,.07)",borderRadius:14,padding:"8px 12px",marginBottom:10,maxHeight:"28vh",overflowY:"auto"}}>
+          {moves.map((m,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",fontSize:16,fontWeight:700,borderTop:i?"1px solid rgba(255,255,255,.08)":"none"}}><span>{m.name}</span><span style={{color:"#fbbf24"}}>{m.reps}</span></div>)}
+        </div>
+      )}
+      {phase==="done"&&(
+        <div style={{background:"rgba(255,255,255,.08)",borderRadius:14,padding:12,marginBottom:10,textAlign:"center"}}>
+          <div style={{fontSize:13,color:"#94a3b8"}}>Resultado</div>
+          <div style={{fontSize:26,fontWeight:800}}>{result}</div>
+          {laps.length>0&&(f==="for_time"||f==="intervalos"||f==="chipper")&&<div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{laps.map((l,i)=>`${i+1}: ${mmss(l-(laps[i-1]||0))}`).join(" · ")}</div>}
+        </div>
+      )}
+
+      {/* Controles */}
+      <div style={{display:"flex",gap:8}}>
+        {phase==="ready"&&btn("▶ EMPEZAR",start,{flex:1,background:"#16a34a",color:"#fff",fontSize:20})}
+        {phase==="prep"&&btn("Cancelar",()=>setPhase("ready"),{flex:1,background:"rgba(255,255,255,.15)",color:"#fff"})}
+        {phase==="run"&&(f==="amrap"||f==="for_time")&&btn("+1 RONDA",addRound,{flex:2,background:"#f97316",color:"#fff",fontSize:22})}
+        {phase==="run"&&(f==="chipper"||f==="intervalos")&&btn("SIGUIENTE ✓",nextStep,{flex:2,background:"#f97316",color:"#fff",fontSize:20})}
+        {phase==="run"&&btn((f==="amrap"||f==="for_time"||f==="chipper"||f==="intervalos")?"❚❚":"❚❚ Pausa",pause,{flex:(f==="amrap"||f==="for_time"||f==="chipper"||f==="intervalos")?"0 0 auto":1,background:"rgba(255,255,255,.15)",color:"#fff",fontSize:20,minWidth:64})}
+        {phase==="paused"&&btn("▶ Seguir",resume,{flex:1,background:"#16a34a",color:"#fff"})}
+        {phase==="paused"&&btn("Terminar",()=>finish(),{background:"rgba(255,255,255,.15)",color:"#fff"})}
+        {phase==="done"&&onSave&&btn(saved?"✓ Guardado":"💾 Guardar resultado",async()=>{ if(saved) return; await onSave(result); setSaved(true); },{flex:2,background:saved?"#334155":"#16a34a",color:"#fff"})}
+        {phase==="done"&&btn("↺ Otra vez",()=>setPhase("ready"),{flex:onSave?"0 0 auto":1,background:"rgba(255,255,255,.15)",color:"#fff"})}
       </div>
     </div>
   );
@@ -3180,7 +3456,9 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
 function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const baseExs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
-  const [rows,setRows]=React.useState(()=>baseExs.map(e=>({
+  const wods=wodBlocks(baseExs);
+  const [timerWod,setTimerWod]=React.useState(null);
+  const [rows,setRows]=React.useState(()=>baseExs.filter(e=>!isWodHeader(e)).map(e=>({
     id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
     w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
     r:(e.actual_reps!=null?e.actual_reps:(e.reps!=null?e.reps:"")),
@@ -3232,6 +3510,17 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
           </div>
         </div>
 
+        {wods.map((b,i)=>(
+            <button key={"w"+i} onClick={()=>setTimerWod(b)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:"11px 12px",marginBottom:8}}>
+              <span style={{fontSize:24}}>⏱</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:"block",fontSize:14,fontWeight:800,color:"#9a3412"}}>{b.title}</span>
+                <span style={{display:"block",fontSize:11,color:"#7c2d12",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")}</span>
+                {(b.header||b.rows[0]).actual_reps&&<span style={{display:"block",fontSize:11,fontWeight:700,color:"#16a34a"}}>✓ Resultado: {(b.header||b.rows[0]).actual_reps}</span>}
+              </span>
+              <span style={{fontSize:12,fontWeight:800,color:"#fff",background:"#ea580c",borderRadius:10,padding:"7px 10px",whiteSpace:"nowrap"}}>▶ Temporizador</span>
+            </button>
+          ))}
         {!sess||rows.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
@@ -3271,6 +3560,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
           <button className="btn ghost" style={{flex:sess&&rows.length>0?"0 0 auto":1,padding:"12px 16px"}} onClick={onClose}>Cerrar</button>
         </div>
       </div>
+      {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)} onSave={async(res)=>{ const r=timerWod.header||timerWod.rows[0]; const {error}=await sb.from("assigned_exercises").update({actual_reps:res,done:true,done_at:new Date().toISOString()}).eq("id",r.id); notify(error?"No se pudo guardar el resultado":"Resultado del WOD guardado ✓",error?"err":undefined); await loadAll(); }}/>}
     </div>
   );
 }
