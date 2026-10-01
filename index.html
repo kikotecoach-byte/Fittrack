@@ -805,12 +805,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
   const removeWaitlist = (id) => w(async()=>{ await sb.from("waitlist").delete().eq("id",id); notify("Quitado de la lista de espera"); });
 
-  const markPayment = (client, amount) => w(async()=>{
-    const next=new Date(client.next_payment+"T12:00:00"); next.setMonth(next.getMonth()+1);
+  const markPayment = (client, amount, date) => w(async()=>{
+    const base=client.next_payment||TODAY;
+    const next=new Date(base+"T12:00:00"); next.setMonth(next.getMonth()+1);
     await sb.from("clients").update({next_payment:next.toISOString().split("T")[0]}).eq("id",client.id);
-    await sb.from("payments").insert({client_id:client.id,client_name:client.name,amount:amount||client.payment_amount,paid_at:TODAY});
-    setShowPay(null); notify("Pago registrado ✓");
+    await sb.from("payments").insert({client_id:client.id,client_name:client.name,amount:amount||client.payment_amount,paid_at:date||TODAY});
+    notify(`Pago registrado ✓ (${fmtDate(date||TODAY)})`);
   });
+  const updatePayment = (id, fields) => w(async()=>{ const {error}=await sb.from("payments").update(fields).eq("id",id); notify(error?"No se pudo guardar el pago":"Pago actualizado ✓",error?"err":undefined); });
+  const deletePayment = (id) => w(async()=>{ await sb.from("payments").delete().eq("id",id); notify("Pago eliminado"); });
 
   const renewSessions = (client) => w(async()=>{
     const owed=owedOf(client), tot=parseInt(client.total_sessions)||0;
@@ -982,7 +985,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Secondary nav tabs */}
       {["forum","reminders","income"].includes(view)&&(
         <div style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
-          {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Ingresos"]].map(([id,label])=>(
+          {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Finanzas"]].map(([id,label])=>(
             <button key={id} className={"tab"+(view===id?" on":"")} onClick={()=>setView(id)} style={{flexShrink:0,fontSize:12}}>{label}</button>
           ))}
           <button className={"tab"} onClick={()=>setView("dashboard")} style={{flexShrink:0,fontSize:12,color:"#64748b"}}>← Volver</button>
@@ -1026,11 +1029,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               {[
                 {label:"Clientes",val:clients.length,color:"#0284c7"},
                 {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,color:"#16a34a"},
-                {label:"Alertas",val:reminders.length,color:"#ca8a04"},
+                {label:"Alertas",val:reminders.length,color:"#ca8a04",go:"reminders"},
                 {label:"Sesiones hoy",val:todaySessions.length,color:"#a78bfa"},
-                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a"},
+                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a",go:"income"},
               ].map(s=>(
-                <div key={s.label} className="card">
+                <div key={s.label} className="card" onClick={s.go?()=>setView(s.go):undefined} style={s.go?{cursor:"pointer"}:undefined}>
                   <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
                   <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
                 </div>
@@ -1257,7 +1260,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7",border:"1px solid #bcd3ee",fontWeight:700}} onClick={()=>{setActiveDay(TODAY);setQuickView(c);}}>🗓️ Semana</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={()=>{setLeadsClient(c);setShowLeads(true);}}>📋 Valoración</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowPhotos(c)}>📸 Fotos</button>
-                          <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pago</button>
+                          <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
                         </div>
@@ -1735,36 +1738,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
         {/* INCOME */}
         {view==="income"&&(
-          <div>
-            <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:22}}>Ingresos</h1>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:12,marginBottom:22}}>
-              {[
-                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a"},
-                {label:"Total acumulado",val:`${totalIncome}€`,color:"#0284c7"},
-                {label:"Pagos registrados",val:payments.length,color:"#a78bfa"},
-                {label:"Ticket medio",val:`${payments.length>0?Math.round(totalIncome/payments.length):0}€`,color:"#ea580c"},
-              ].map(s=>(
-                <div key={s.label} className="card">
-                  <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
-                  <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
-                </div>
-              ))}
-            </div>
-            <div className="card">
-              <h3 style={{fontSize:13,fontWeight:700,marginBottom:14}}>Historial de pagos</h3>
-              {payments.length===0?<p style={{fontSize:13,color:"#cbd5e1"}}>Sin pagos registrados aún</p>
-                :payments.map(p=>(
-                  <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3"}}>
-                    <div>
-                      <div style={{fontSize:13,fontWeight:600}}>{p.client_name}</div>
-                      <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.paid_at}</div>
-                    </div>
-                    <div className="mono" style={{fontSize:15,fontWeight:700,color:"#16a34a"}}>{p.amount}€</div>
-                  </div>
-                ))
-              }
-            </div>
-          </div>
+          <FinanceView clients={clients} sessions={sessions} history={history} payments={payments}/>
         )}
 
         {/* REMINDERS */}
@@ -1841,12 +1815,18 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             }
           </div>
         )}
-      </div>
 
         {/* PROGRAMMING VIEW */}
         {view==="programming"&&(
           <ProgrammingAdmin
             clients={clients}
+            sessions={sessions}
+            history={history}
+            onSetType={(c,d,t)=>materializeRoutine(c,d,t)}
+            onPlanWeek={(c,pairs)=>planWeek(c,pairs)}
+            onCopyWeek={(c,pairs)=>copyWeek(c,pairs)}
+            onEditSession={(c,d)=>setSessionEdit({client:c,date:d})}
+            onOpenHistory={(c,h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}
             annualBlocks={annualBlocks}
             sessionTemplates={sessionTemplates}
             templateExercises={templateExercises}
@@ -1863,11 +1843,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="plans"&&(
           <PlansAdmin plans={plans} exercises={exercises} clients={clients} clientPlans={clientPlans} loadAll={loadAll} notify={notify}/>
         )}
+      </div>
 
       {/* Modals */}
       {showNS&&<SessionModal clients={clients} ns={ns} setNs={setNs} onSave={addSession} onClose={()=>setShowNS(false)}/>}
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
-      {showPay&&<PayModal client={showPay} onSave={(amt)=>markPayment(showPay,amt)} onClose={()=>setShowPay(null)}/>}
+      {showPay&&(()=>{ const pc=clients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
       {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
@@ -2317,6 +2298,187 @@ function QuickAddModal({date,time,sessions,clients,cap,onAdd,onClose}) {
   );
 }
 
+// ── FINANZAS (ingresos en el tiempo, €/sesión de cada bono, € por hora de clase) ──
+// "Generado" = valor de las sesiones hechas (cada asistencia vale el precio por
+// sesión del bono de esa persona: importe ÷ nº de sesiones). "Cobrado" = pagos
+// registrados. Una "hora de clase" = una franja (fecha + hora) con al menos 1 persona.
+function FinanceView({clients,sessions,history,payments}) {
+  const [mode,setMode]=React.useState("week"); // day | week | month
+  const [anchor,setAnchor]=React.useState(TODAY);
+  const [selHour,setSelHour]=React.useState(null);
+  const [selDay,setSelDay]=React.useState(null);
+  const [selMonth,setSelMonth]=React.useState(null);
+  const [showPays,setShowPays]=React.useState(10);
+  const ACC="#0284c7", ACC_D="#075985", TRACK="#e6eef8", PAY="#16a34a", PAY_D="#166534";
+  const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
+  const eur0=(n)=>`${Math.round(n||0)}€`;
+  const ppS=(c)=>{ const t=parseInt(c&&c.total_sessions)||0; const a=parseFloat(c&&c.payment_amount)||0; return t>0?a/t:0; };
+  const byId=Object.fromEntries((clients||[]).map(c=>[c.id,c]));
+  const ds=(d)=>d.toISOString().split("T")[0];
+  const range=(()=>{ const a=new Date(anchor+"T12:00:00");
+    if(mode==="day") return [anchor,anchor];
+    if(mode==="week"){ const m=mondayOfDate(anchor); const e=new Date(m+"T12:00:00"); e.setDate(e.getDate()+6); return [m,ds(e)]; }
+    const f=new Date(a.getFullYear(),a.getMonth(),1,12), l=new Date(a.getFullYear(),a.getMonth()+1,0,12); return [ds(f),ds(l)]; })();
+  const inR=(d)=>d&&d>=range[0]&&d<=range[1];
+  const shift=(dir)=>{ const a=new Date(anchor+"T12:00:00"); if(mode==="day") a.setDate(a.getDate()+dir); else if(mode==="week") a.setDate(a.getDate()+7*dir); else a.setMonth(a.getMonth()+dir,1); setAnchor(ds(a)); setSelHour(null); setSelDay(null); };
+  const cap=(t)=>t.charAt(0).toUpperCase()+t.slice(1);
+  const label = mode==="day" ? cap(new Date(anchor+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}))
+    : mode==="week" ? `${fmtDate(range[0])} – ${fmtDate(range[1])}`
+    : cap(new Date(anchor+"T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"}));
+
+  // Asistencias realizadas del periodo (historial) y clases (fecha+hora).
+  const done=(history||[]).filter(h=>inR(h.date)&&byId[h.client_id]);
+  const classes={}; done.forEach(h=>{ const k=h.date+"|"+(h.time||"—"); (classes[k]=classes[k]||{date:h.date,time:h.time||"—",people:[],val:0}); classes[k].people.push(byId[h.client_id]); classes[k].val+=ppS(byId[h.client_id]); });
+  const cls=Object.values(classes).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time));
+  const gen=cls.reduce((a,c)=>a+c.val,0), nCls=cls.length, nSes=done.length;
+  const perHour=nCls?gen/nCls:0, ppl=nCls?nSes/nCls:0, perSes=nSes?gen/nSes:0;
+  const cobrado=(payments||[]).filter(p=>inR(String(p.paid_at||"").slice(0,10))).reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
+  const previsto=(sessions||[]).filter(s=>inR(s.date)&&s.date>=TODAY&&s.status!=="completed"&&!s.requested&&byId[s.client_id]).reduce((a,s)=>a+ppS(byId[s.client_id]),0);
+
+  // Por franja horaria.
+  const slots={}; cls.forEach(c=>{ const k=c.time; (slots[k]=slots[k]||{time:k,n:0,val:0,ppl:0}); slots[k].n++; slots[k].val+=c.val; slots[k].ppl+=c.people.length; });
+  const slotArr=Object.values(slots).sort((a,b)=>a.time.localeCompare(b.time)).map(x=>({...x,avg:x.val/x.n,avgP:x.ppl/x.n}));
+  const maxAvg=Math.max(1,...slotArr.map(x=>x.avg));
+  const best=slotArr.length>1?slotArr.reduce((m,x)=>x.avg>m.avg?x:m,slotArr[0]):null;
+  const worst=slotArr.length>1?slotArr.reduce((m,x)=>x.avg<m.avg?x:m,slotArr[0]):null;
+
+  // Por día del periodo (semana/mes).
+  const days=[]; if(mode!=="day"){ const d=new Date(range[0]+"T12:00:00"); while(ds(d)<=range[1]){ const k=ds(d); const dc=cls.filter(c=>c.date===k); days.push({date:k,val:dc.reduce((a,c)=>a+c.val,0),n:dc.length}); d.setDate(d.getDate()+1); } }
+  const maxDay=Math.max(1,...days.map(x=>x.val));
+
+  // Cobrado por mes (últimos 12 meses).
+  const months=[]; { const t=new Date(TODAY+"T12:00:00"); for(let i=11;i>=0;i--){ const m=new Date(t.getFullYear(),t.getMonth()-i,1,12); const key=ds(m).slice(0,7); months.push({key,lbl:m.toLocaleDateString("es-ES",{month:"short"}).replace(".",""),val:(payments||[]).filter(p=>String(p.paid_at||"").slice(0,7)===key).reduce((a,p)=>a+(parseFloat(p.amount)||0),0)}); } }
+  const maxMonth=Math.max(1,...months.map(x=>x.val));
+
+  // Precio por sesión de cada bono.
+  const bonos=(clients||[]).filter(c=>ppS(c)>0).map(c=>({c,pp:ppS(c)})).sort((a,b)=>b.pp-a.pp);
+  const avgPP=bonos.length?bonos.reduce((a,x)=>a+x.pp,0)/bonos.length:0;
+
+  const Tile=({l,v,sub})=>(<div className="card" style={{padding:"11px 12px"}}><div style={{fontSize:10,color:"#64748b",fontWeight:700}}>{l}</div><div style={{fontSize:18,fontWeight:700,color:"#0f172a",marginTop:3}}>{v}</div>{sub&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{sub}</div>}</div>);
+  const Section=({title,sub,children})=>(<div className="card" style={{marginBottom:12}}><div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{title}</div>{sub&&<div style={{fontSize:11,color:"#64748b",marginTop:2,marginBottom:10}}>{sub}</div>}{children}</div>);
+  // Columnas verticales con selección por toque (tooltip en la cabecera del gráfico).
+  const Columns=({data,max,color,colorSel,sel,onSel,valOf,lblOf,tipOf,labelEvery=1,empty})=>!data.some(d=>valOf(d)>0)
+    ?<div style={{fontSize:12,color:"#94a3b8",padding:"14px 0"}}>{empty||"Sin datos en este periodo."}</div>
+    :(
+    <div>
+      <div style={{minHeight:18,fontSize:12,fontWeight:700,color:"#0f172a",marginBottom:4}}>{sel!=null&&data[sel]?tipOf(data[sel]):<span style={{color:"#94a3b8",fontWeight:500}}>Toca una barra para ver el detalle</span>}</div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:2,height:120,borderBottom:"1px solid #dbe2ec"}}>
+        {data.map((d,i)=>{ const v=valOf(d); const h=v>0?Math.max(3,Math.round(v/max*112)):0; const on=sel===i; return(
+          <div key={i} onClick={()=>onSel(on?null:i)} style={{flex:1,height:"100%",display:"flex",alignItems:"flex-end",justifyContent:"center",cursor:"pointer"}}>
+            <div style={{width:"100%",maxWidth:24,height:h,background:on?colorSel:color,borderRadius:"4px 4px 0 0",opacity:sel!=null&&!on?.55:1,transition:"opacity .15s"}}/>
+          </div>); })}
+      </div>
+      <div style={{display:"flex",gap:2,marginTop:4}}>
+        {data.map((d,i)=><div key={i} style={{flex:1,textAlign:"center",fontSize:9,color:"#64748b",fontWeight:sel===i?800:500,whiteSpace:"nowrap",overflow:"visible"}}>{i%labelEvery===0||sel===i?lblOf(d):""}</div>)}
+      </div>
+    </div>
+  );
+  const DOW=["D","L","M","X","J","V","S"];
+  return(
+    <div>
+      <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:12}}>Finanzas</h1>
+      {/* Filtros: periodo + navegación */}
+      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
+        <div style={{display:"flex",background:"#e6ebf3",borderRadius:10,padding:3}}>
+          {[["day","Día"],["week","Semana"],["month","Mes"]].map(([k,l])=><button key={k} onClick={()=>{setMode(k);setSelHour(null);setSelDay(null);}} style={{border:"none",borderRadius:8,padding:"6px 12px",fontSize:12,fontWeight:700,cursor:"pointer",background:mode===k?"#fff":"transparent",color:mode===k?"#0f172a":"#64748b",boxShadow:mode===k?"0 1px 2px rgba(15,23,42,.12)":"none"}}>{l}</button>)}
+        </div>
+        <div style={{display:"flex",alignItems:"center",gap:4,flex:1,minWidth:200,justifyContent:"flex-end"}}>
+          <button className="btn ghost" style={{padding:"5px 10px"}} onClick={()=>shift(-1)}>‹</button>
+          <span style={{fontSize:12,fontWeight:700,color:"#0f172a",textAlign:"center",flex:1}}>{label}</span>
+          <button className="btn ghost" style={{padding:"5px 10px"}} onClick={()=>shift(1)}>›</button>
+          {anchor!==TODAY&&<button className="btn ghost" style={{padding:"5px 9px",fontSize:11}} onClick={()=>{setAnchor(TODAY);setSelHour(null);setSelDay(null);}}>Hoy</button>}
+        </div>
+      </div>
+
+      {/* Cifra principal: € por hora de clase */}
+      <div className="card" style={{marginBottom:10}}>
+        <div style={{fontSize:11,color:"#64748b",fontWeight:700}}>€ por hora de clase</div>
+        <div style={{fontSize:48,fontWeight:700,color:"#0f172a",lineHeight:1.1,marginTop:2}}>{eur(perHour)}</div>
+        <div style={{fontSize:12,color:"#64748b",marginTop:4}}>{nCls?`${eur0(gen)} generados en ${nCls} hora${nCls!==1?"s":""} de clase · ${ppl.toFixed(1).replace(".",",")} personas de media`:"Sin sesiones hechas en este periodo"}</div>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+        <Tile l="Generado" v={eur0(gen)} sub={`${nSes} sesiones`}/>
+        <Tile l="Cobrado" v={eur0(cobrado)} sub="pagos registrados"/>
+        <Tile l="€ / sesión" v={eur(perSes)} sub="media del periodo"/>
+        <Tile l="Horas de clase" v={nCls} sub="con al menos 1 persona"/>
+        <Tile l="Personas / hora" v={ppl.toFixed(1).replace(".",",")} sub="media"/>
+        <Tile l="Previsto" v={eur0(previsto)} sub="reservas pendientes"/>
+      </div>
+
+      {/* Cómo se paga cada franja horaria */}
+      <Section title="Cómo se paga cada hora" sub="€ medio por clase en cada franja del periodo">
+        {slotArr.length===0
+          ?<div style={{fontSize:12,color:"#94a3b8"}}>Sin clases hechas en este periodo.</div>
+          :<div style={{display:"flex",flexDirection:"column",gap:7}}>
+            {slotArr.map(x=>{ const on=selHour===x.time; return(
+              <div key={x.time} onClick={()=>setSelHour(on?null:x.time)} style={{cursor:"pointer"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8}}>
+                  <span className="mono" style={{width:42,fontSize:12,fontWeight:700,color:"#0f172a"}}>{x.time}</span>
+                  <div style={{flex:1,height:16,background:TRACK,borderRadius:4,overflow:"hidden"}}>
+                    <div style={{width:`${Math.max(2,x.avg/maxAvg*100)}%`,height:"100%",background:on?ACC_D:ACC,borderRadius:"0 4px 4px 0"}}/>
+                  </div>
+                  <span style={{width:60,textAlign:"right",fontSize:12,fontWeight:700,color:"#0f172a"}}>{eur(x.avg)}</span>
+                </div>
+                <div style={{fontSize:10,color:"#64748b",marginLeft:50,marginTop:2}}>{x.n} clase{x.n!==1?"s":""} · {x.avgP.toFixed(1).replace(".",",")} pers. de media · total {eur0(x.val)}{best&&best.time===x.time?" · ⬆ la mejor":""}{worst&&worst.time===x.time?" · ⬇ la que menos":""}</div>
+                {on&&<div style={{marginLeft:50,marginTop:5,fontSize:11,color:"#0f172a",background:"#f1f5fb",borderRadius:8,padding:"6px 9px"}}>
+                  {cls.filter(c=>c.time===x.time).map(c=><div key={c.date}>{fmtDate(c.date)}: {c.people.length} pers. · {eur(c.val)} <span style={{color:"#64748b"}}>({c.people.map(p=>p.name.split(" ")[0]).join(", ")})</span></div>)}
+                </div>}
+              </div>
+            );})}
+          </div>}
+      </Section>
+
+      {/* Por día del periodo, o clases del día */}
+      {mode==="day"
+        ?<Section title="Clases del día" sub="Valor de cada hora según quién vino">
+          {cls.length===0?<div style={{fontSize:12,color:"#94a3b8"}}>Sin clases hechas este día.</div>
+            :cls.map(c=>(
+              <div key={c.time} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:"1px solid #eef1f7"}}>
+                <span className="mono" style={{width:42,fontSize:12,fontWeight:700}}>{c.time}</span>
+                <span style={{flex:1,minWidth:0,fontSize:12,color:"#334155",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.people.map(p=>`${p.name.split(" ")[0]} (${eur(ppS(p))})`).join(", ")}</span>
+                <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{eur(c.val)}</span>
+              </div>))}
+        </Section>
+        :<Section title="€ generados por día" sub={mode==="week"?"Valor de las sesiones hechas cada día de la semana":"Valor de las sesiones hechas cada día del mes"}>
+          <Columns data={days} max={maxDay} color={ACC} colorSel={ACC_D} sel={selDay} onSel={setSelDay} valOf={d=>d.val}
+            lblOf={d=>{ const x=new Date(d.date+"T12:00:00"); return mode==="week"?DOW[x.getDay()]:String(x.getDate()); }}
+            tipOf={d=>`${fmtDate(d.date)}: ${eur(d.val)} · ${d.n} hora${d.n!==1?"s":""} de clase${d.n?` · ${eur(d.val/d.n)}/hora`:""}`}
+            labelEvery={mode==="week"?1:5} empty={mode==="week"?"Aún no hay sesiones hechas esta semana.":"Aún no hay sesiones hechas este mes."}/>
+        </Section>}
+
+      {/* Cobrado por mes */}
+      <Section title="Cobrado por mes" sub="Pagos registrados en los últimos 12 meses">
+        <Columns data={months} max={maxMonth} color={PAY} colorSel={PAY_D} sel={selMonth} onSel={setSelMonth} valOf={m=>m.val}
+          empty="Aún no hay pagos registrados." lblOf={m=>m.lbl} tipOf={m=>`${cap(new Date(m.key+"-15T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"}))}: ${eur0(m.val)}`}/>
+        <div style={{fontSize:11,color:"#64748b",marginTop:8}}>Este mes: <b style={{color:"#0f172a"}}>{eur0(months[11].val)}</b> · media mensual: <b style={{color:"#0f172a"}}>{eur0(months.reduce((a,m)=>a+m.val,0)/12)}</b></div>
+      </Section>
+
+      {/* A cuánto sale cada bono */}
+      <Section title="A cuánto sale la sesión de cada bono" sub={`Importe del bono ÷ nº de sesiones · media ${eur(avgPP)}/sesión`}>
+        {bonos.length===0?<div style={{fontSize:12,color:"#94a3b8"}}>Sin bonos con precio.</div>
+          :bonos.map(({c,pp})=>(
+            <div key={c.id} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:"1px solid #eef1f7"}}>
+              <span style={{width:8,height:8,borderRadius:4,background:c.color,flexShrink:0}}/>
+              <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+              <span style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap"}}>{c.total_sessions} ses. · {eur(parseFloat(c.payment_amount)||0)}</span>
+              <span style={{width:58,textAlign:"right",fontSize:13,fontWeight:800,color:"#0f172a"}}>{eur(pp)}</span>
+            </div>))}
+      </Section>
+
+      {/* Historial de pagos */}
+      <Section title="Historial de pagos" sub={`${(payments||[]).length} pagos registrados`}>
+        {(payments||[]).length===0?<div style={{fontSize:12,color:"#94a3b8"}}>Sin pagos registrados aún.</div>
+          :(payments||[]).slice(0,showPays).map(p=>(
+            <div key={p.id} style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"8px 0",borderTop:"1px solid #eef1f7"}}>
+              <div><div style={{fontSize:13,fontWeight:600}}>{p.client_name}</div><div style={{fontSize:11,color:"#64748b",marginTop:2}}>{p.paid_at?fmtDate(String(p.paid_at).slice(0,10)):""}</div></div>
+              <div className="mono" style={{fontSize:14,fontWeight:700,color:"#0f172a"}}>{eur(parseFloat(p.amount)||0)}</div>
+            </div>))}
+        {(payments||[]).length>showPays&&<button className="btn ghost" style={{width:"100%",marginTop:8,fontSize:12}} onClick={()=>setShowPays(n=>n+20)}>Ver más ({(payments||[]).length-showPays})</button>}
+      </Section>
+    </div>
+  );
+}
+
 // ── HISTORIAL DEL CLIENTE (sesiones por día/fecha y pagos registrados) ─────
 function ClientHistoryPanel({client,history,payments,assignedSessions,sessionTemplates,onOpenSession,compact}) {
   const [tab,setTab]=React.useState("todo");
@@ -2443,7 +2605,10 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const [busy,setBusy]=React.useState(false);
   const selClient=clients.find(c=>c.id===sel);
   const asig=(assignedSessions||[]).find(a=>a.client_id===sel&&a.date===date);
-  const exs=asig?(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const allExs=asig?(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
+  const wods=wodBlocks(allExs);
+  const exs=allExs.filter(e=>!isWodHeader(e));
+  const [timerWod,setTimerWod]=React.useState(null);
   const valOf=(ex,k)=>{ const e=edited[ex.id]; if(e&&e[k]!==undefined) return e[k];
     if(k==="w") return ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:"");
     if(k==="r") return ex.actual_reps!=null?ex.actual_reps:(ex.reps!=null?ex.reps:"");
@@ -2500,6 +2665,17 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
           {!asig
             ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entreno asignado. Genéralo desde la ficha o la vista de clase.</div>
             :<div style={{display:"flex",flexDirection:"column",gap:8}}>
+              {wods.map((b,i)=>(
+            <button key={"w"+i} onClick={()=>setTimerWod(b)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:"11px 12px",marginBottom:0}}>
+              <span style={{fontSize:24}}>⏱</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:"block",fontSize:14,fontWeight:800,color:"#9a3412"}}>{b.title}</span>
+                <span style={{display:"block",fontSize:11,color:"#7c2d12",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")}</span>
+                {(b.header||b.rows[0]).actual_reps&&<span style={{display:"block",fontSize:11,fontWeight:700,color:"#16a34a"}}>✓ Resultado: {(b.header||b.rows[0]).actual_reps}</span>}
+              </span>
+              <span style={{fontSize:12,fontWeight:800,color:"#fff",background:"#ea580c",borderRadius:10,padding:"7px 10px",whiteSpace:"nowrap"}}>▶ Temporizador</span>
+            </button>
+          ))}
               {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
               {exs.map(ex=>{ const done=valOf(ex,"done"); return(
                 <div key={ex.id} style={{background:done?"#eef8dd":"#f8fafc",border:`1px solid ${done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
@@ -2538,6 +2714,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
           <button className="btn ghost" style={{flex:asig?"0 0 auto":1,padding:"12px 16px"}} onClick={cerrar}>Cerrar</button>
         </div>
       </div>
+      {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)} onSave={async(res)=>{ const r=timerWod.header||timerWod.rows[0]; const {error}=await sb.from("assigned_exercises").update({actual_reps:res,done:true,done_at:new Date().toISOString()}).eq("id",r.id); notify(error?"No se pudo guardar el resultado":"Resultado del WOD guardado ✓",error?"err":undefined); }}/>}
     </div>
   );
 }
@@ -2546,6 +2723,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
 // Muestra el entreno de cada atleta para organizar material/espacio y permite
 // cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
 function ClassViewModal({date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+  const [classTimer,setClassTimer]=React.useState(null);
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
   const idOfLabel=(label)=>{ const e=DAY_TYPES.find(d=>d[1]===label); return e?e[0]:""; };
@@ -2554,7 +2732,7 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
     if(asig){
       const exs=(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
       const tmpl=(sessionTemplates||[]).find(t=>t.id===asig.template_id);
-      return {label:tmpl?tmpl.name:"Entreno asignado", exs:exs.map(e=>({name:e.exercise_name,sets:e.sets,reps:e.reps,proto:e.protocol,w:e.prescribed_weight})), assigned:true};
+      return {label:asigName(asig,sessionTemplates)||"Entreno asignado", exs:exs.map(e=>({name:e.exercise_name,sets:e.sets,reps:e.reps,proto:e.protocol,w:e.prescribed_weight})), assigned:true, raw:exs};
     }
     const au=blk?autoRoutineFor(client,date,sessions,annualBlocks):null;
     return au?{label:au.label, exs:au.routine.map(e=>({name:e[0],sets:e[1],reps:e[2],proto:e[4],w:null})), assigned:false}:{label:"—",exs:[],assigned:false};
@@ -2582,6 +2760,11 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
             ▶ Ejecutar clase · apuntar pesos por persona
           </button>
         )}
+        {slot.length>0&&(()=>{
+          // Primer WOD de la clase (asignado o previsto) para el temporizador común.
+          let cw=null; for(const sl of slot){ const r=rutinaDe(sl.client); const exs=r.raw||r.exs.map(e=>({exercise_name:e.name,sets:e.sets,reps:e.reps,protocol:e.proto})); const b=wodBlocks(exs)[0]; if(b){ cw=b; break; } }
+          return <button className="btn ghost" style={{width:"100%",padding:11,marginBottom:8,fontSize:13,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fdba74"}} onClick={()=>setClassTimer(cw||{format:"amrap",minutes:12,rounds:1,list:[],title:"Temporizador"})}>⏱ Temporizador de la clase{cw?` · ${cw.title}`:""}</button>;
+        })()}
         {onQuickAll&&slot.length>0&&(
           <button className="btn grn" style={{width:"100%",padding:11,marginBottom:12,fontSize:13,fontWeight:700}} onClick={onQuickAll}>
             ✅ Registrar toda la clase (asistencia + cargas previstas)
@@ -2628,11 +2811,11 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
           const esUltima=pos>=tot, sinBono=pos>tot;
           return(
             <div key={s.id} style={{border:`1px solid ${done?"#16a34a":esUltima?"#e4cd8c":"#e6ebf3"}`,borderRadius:12,padding:12,marginBottom:10,background:done?"#f4faf6":"#fff"}}>
-              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
+              <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10,flexWrap:"wrap"}}>
                 {c.avatar_url
                   ?<img src={c.avatar_url} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color}55`}}/>
                   :<div className="ring" style={{width:38,height:38,background:c.color+"20",color:c.color,fontSize:12,border:`2px solid ${c.color}55`}}>{ini(c.name)}</div>}
-                <div style={{flex:1,minWidth:0}}>
+                <div style={{flex:"1 1 160px",minWidth:0}}>
                   <div style={{fontSize:14,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
                     {c.name} {done&&<span style={{fontSize:11,color:"#16a34a"}}>✓</span>}
                     {esPrimera&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 6px",marginLeft:6}}>🎉 1ª sesión</span>}
@@ -2674,6 +2857,7 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
 
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:4}} onClick={onClose}>Cerrar</button>
       </div>
+      {classTimer&&<WodTimer wod={classTimer} onClose={()=>setClassTimer(null)}/>}
     </div>
   );
 }
@@ -2695,6 +2879,24 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
   const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
   const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
+  // ── WOD: bloques metabólicos editables y orden de ejercicios ──
+  const blocks = wodBlocks(exs);
+  const inBlock = new Set(blocks.flatMap(b=>b.rows.map(r=>r.id)));
+  const [editWod,setEditWod]=React.useState(null); // índice del bloque o "new"
+  const [timerWod,setTimerWod]=React.useState(null);
+  const renumber = async(arr)=>{ for(let i=0;i<arr.length;i++) if(arr[i].order_index!==i) await sb.from("assigned_exercises").update({order_index:i}).eq("id",arr[i].id); };
+  const saveWod = (b,cfg)=>w(async()=>{
+    const newRows=wodRows(cfg);
+    const idx0=b?exs.indexOf(b.rows[0]):exs.length;
+    const before=exs.slice(0,idx0), after=b?exs.slice(idx0+b.rows.length):[];
+    if(b) await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id));
+    await sb.from("assigned_exercises").insert(newRows.map((r,k)=>({session_id:sess.id,...r,notes:"",prescribed_weight:null,order_index:before.length+k})));
+    for(let j=0;j<after.length;j++){ const oi=before.length+newRows.length+j; if(after[j].order_index!==oi) await sb.from("assigned_exercises").update({order_index:oi}).eq("id",after[j].id); }
+    setEditWod(null); notify("WOD guardado ✓");
+  });
+  const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
+  const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
+  const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
   const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
@@ -2722,9 +2924,13 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
           </div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
-            {exs.map(ex=>(
+            {exs.filter(ex=>!inBlock.has(ex.id)).map((ex,ni,arrN)=>(
               <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,border:"1px solid #dbe2ec"}}>
                 <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
+                  <div style={{display:"flex",flexDirection:"column",gap:2}}>
+                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===0} onClick={()=>moveEx(ex,-1)} title="Subir">▲</button>
+                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===arrN.length-1} onClick={()=>moveEx(ex,1)} title="Bajar">▼</button>
+                  </div>
                   <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={ex.exercise_name} onChange={e=>swap(ex,e.target.value)}>
                     {!inLib(ex.exercise_name)&&<option value={ex.exercise_name}>{ex.exercise_name}</option>}
                     {libItems.map(([cat,list])=>(
@@ -2740,6 +2946,28 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota / adaptación (p. ej. molestia rodilla → rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
               </div>
             ))}
+            {/* WOD / bloques metabólicos */}
+            <div style={{marginTop:4}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#9a3412",marginBottom:6}}>🔥 WOD / METABÓLICO {blocks.length?`(${blocks.length})`:""}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
+                {blocks.map((b,bi)=> editWod===bi
+                  ?<WodEditor key={"e"+bi} initial={{format:b.format,minutes:b.minutes,rounds:b.rounds,moves:b.list.length?b.list:[{name:"",reps:""}]}} saving={saving}
+                      onSave={(cfg)=>saveWod(b,cfg)} onCancel={()=>setEditWod(null)} onDelete={()=>delWod(b)} onMoveBlock={(d)=>moveWod(b,d)}/>
+                  :<div key={"b"+bi} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"9px 11px"}}>
+                    <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{b.title}</div>
+                        <div style={{fontSize:11,color:"#7c2d12"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")||"Sin movimientos"}</div>
+                      </div>
+                      <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Temporizador" onClick={()=>setTimerWod(b)}>⏱</button>
+                      <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Editar WOD" onClick={()=>setEditWod(bi)}>✏️</button>
+                    </div>
+                  </div>)}
+                {editWod==="new"
+                  ?<WodEditor saving={saving} onSave={(cfg)=>saveWod(null,cfg)} onCancel={()=>setEditWod(null)}/>
+                  :<button className="btn ghost" style={{fontSize:12,padding:"9px",border:"1px dashed #fdba74",color:"#9a3412",fontWeight:700}} disabled={saving} onClick={()=>setEditWod("new")}>＋ Añadir WOD (AMRAP, EMOM, For Time, Hyrox…)</button>}
+              </div>
+            </div>
             {/* Añadir ejercicio */}
             <div style={{background:"#eef4fc",border:"1px dashed #bcd3ee",borderRadius:10,padding:10,display:"flex",gap:6,alignItems:"center"}}>
               <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={addName} onChange={e=>setAddName(e.target.value)}>
@@ -2754,6 +2982,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
         }
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:14}} onClick={onClose}>Listo</button>
       </div>
+      {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)}/>}
     </div>
   );
 }
@@ -2768,8 +2997,6 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
   // Entreno previsto automático (si no hay uno asignado ya).
   const auto = (!sess && blk) ? autoRoutineFor(client,date,sessions,annualBlocks) : null;
   const cw = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id && (w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
-  const [wkOff,setWkOff] = React.useState(0); // navegación de semanas en "ESTA SEMANA"
-  const [openDay,setOpenDay] = React.useState(null); // día desplegado (ejercicios y pesos)
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
@@ -2806,126 +3033,8 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         )}
 
         {/* Semana: vista previa por sesión, desplegable con ejercicios y pesos, y organización rápida */}
-        {(()=>{
-          const anchor=(()=>{const x=new Date(mondayOfDate(date)+"T12:00:00");x.setDate(x.getDate()+wkOff*7);return x.toISOString().split("T")[0];})();
-          const week=getWeekDays(anchor);
-          const td=parseDays(client.train_days);
-          const mine=(arr)=>(arr||[]).filter(x=>x.client_id===client.id);
-          const hasBooking=(d)=>mine(sessions).some(s=>s.date===d);
-          const hasAsig=(d)=>mine(assignedSessions).some(a=>a.date===d);
-          const hasHist=(d)=>mine(history).some(h=>h.date===d);
-          // Solo lo real: días con reserva, con entreno asignado o ya hechos.
-          const rows=week.filter(d=>hasBooking(d)||hasAsig(d)||hasHist(d));
-          const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d);
-          const pending=rows.filter(d=>!isDone(d));
-          const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-          const doneN=rows.filter(isDone).length;
-          const bookedN=rows.filter(d=>hasBooking(d)||hasHist(d)).length;
-          // Días habituales (ficha) que esta semana no tienen reserva: solo aviso.
-          const libres=week.filter(d=>td.includes(weekdayOf(d))&&!rows.includes(d));
-          const wLabel=wkOff===0?"Esta semana":wkOff===1?"Semana +1":wkOff===-1?"Semana -1":(wkOff>0?`+${wkOff} sem`:`${wkOff} sem`);
-          const exsOf=(a)=>a?(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0)):[];
-          const loadTxt=(e,done)=>e.load_band?bandLabel(e.load_band):(done&&e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
-          // Organizar los días pendientes con un split.
-          const SPLITS=[["auto","⚡ Automático (A/B)"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
-          const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
-          const okReplace=()=>!pending.some(hasAsig)||window.confirm("Se reemplazarán los entrenos ya generados de los días pendientes. ¿Continuar?");
-          const applySplit=(key)=>{
-            if(!pending.length||!onPlanWeek||!okReplace()) return;
-            const pairs=pending.map(d=>[d,key==="auto"?null:SEQ[key][rows.indexOf(d)%SEQ[key].length]]);
-            onPlanWeek(pairs);
-          };
-          const prevWeek=getWeekDays((()=>{const x=new Date(anchor+"T12:00:00");x.setDate(x.getDate()-7);return x.toISOString().split("T")[0];})());
-          const prevAsig=mine(assignedSessions).filter(a=>prevWeek.includes(a.date)&&exsOf(a).length>0).sort((a,b)=>a.date.localeCompare(b.date));
-          const copyPrev=()=>{
-            if(!pending.length||!prevAsig.length||!onCopyWeek||!okReplace()) return;
-            onCopyWeek(pending.map((d,i)=>[prevAsig[i%prevAsig.length].date,d]));
-          };
-          return(
-            <div style={{marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-                <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()}{(()=>{const b=blockForDate(annualBlocks,anchor); return b&&!isTestBlock(b)?` (${waveOf(b,macroWeek(anchor)).ab})`:"";})()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
-                <div style={{display:"flex",gap:4}}>
-                  <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w-1);setOpenDay(null);}}>‹</button>
-                  {wkOff!==0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>{setWkOff(0);setOpenDay(null);}}>Hoy</button>}
-                  <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w+1);setOpenDay(null);}}>›</button>
-                </div>
-              </div>
-              {rows.length===0
-                ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>Sin reservas ni entrenos esta semana.</div>
-                :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
-                {rows.map((d,i)=>{
-                  const booking=mine(sessions).find(s=>s.date===d);
-                  const asig=mine(assignedSessions).find(a=>a.date===d);
-                  const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
-                  const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
-                  const hist=mine(history).find(h=>h.date===d);
-                  const done=isDone(d);
-                  const label=done?(hist?sessionName(hist,assignedSessions,sessionTemplates):"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
-                  const curType=asig?(asig.day_type||""):(au?au.dayType:"");
-                  const nd=new Date(d+"T12:00:00");
-                  const isTodayRow=d===date;
-                  const open=openDay===d;
-                  const exs=exsOf(asig);
-                  return(
-                    <div key={d} style={{borderTop:i>0?"1px solid #eef1f7":"none"}}>
-                      <div onClick={()=>setOpenDay(open?null:d)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",cursor:"pointer",background:open?"#f1f5fb":isTodayRow?"#eef4fc":done?"#f4faf6":"#fff"}}>
-                        <div style={{width:34,flexShrink:0,textAlign:"center"}}>
-                          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{dow[nd.getDay()]}</div>
-                          <div className="mono" style={{fontSize:13,fontWeight:700,color:isTodayRow?"#0284c7":"#0f172a"}}>{nd.getDate()}</div>
-                        </div>
-                        {(done||!onSetType)
-                          ?<div style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
-                          :<select value={curType||""} onChange={e=>{const v=e.target.value; onSetType(d,v||undefined);}} onClick={e=>e.stopPropagation()}
-                              style={{flex:1,minWidth:0,appearance:"none",fontSize:12,fontWeight:700,color:asig?"#0284c7":"#65a30d",border:"1px solid #dbe2ec",borderRadius:8,padding:"6px 8px",background:"#fff",cursor:"pointer"}}>
-                              {!curType&&<option value="">— elegir tipo —</option>}
-                              {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
-                            </select>}
-                        <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?"reservado":"sin reserva"}</div>
-                        <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
-                      </div>
-                      {open&&(
-                        <div style={{padding:"6px 10px 10px",background:"#f8fafc",borderTop:"1px dashed #e6ebf3"}}>
-                          {exs.length>0
-                            ?exs.map((e,j)=>{ const ld=loadTxt(e,done); return(
-                              <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:j>0?"1px solid #eef1f7":"none"}}>
-                                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}{e.exercise_name}</span>
-                                <span className="mono" style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${done&&e.actual_reps?e.actual_reps:e.reps}`:""}</span>
-                                {ld&&<span style={{fontSize:11,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{ld}</span>}
-                              </div>
-                            );})
-                            :(!done&&au
-                              ?<div style={{fontSize:12,color:"#64748b"}}>
-                                <div style={{fontSize:11,fontWeight:700,color:"#65a30d",marginBottom:3}}>Previsto automático · {au.label}</div>
-                                {au.routine.slice(0,6).map((e,j)=><div key={j}>• {e[0]} <span className="mono" style={{color:"#94a3b8"}}>{e[1]}×{e[2]}</span></div>)}
-                                {au.routine.length>6&&<div style={{fontSize:11,color:"#94a3b8"}}>+{au.routine.length-6} más…</div>}
-                              </div>
-                              :<div style={{fontSize:12,color:"#94a3b8"}}>{done?"Se marcó como hecha sin registrar ejercicios ni cargas.":"Sin entreno todavía: elige un tipo arriba."}</div>)}
-                          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                            {!done&&!asig&&au&&onSetType&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onSetType(d,au.dayType)}>⚡ Generar este entreno</button>}
-                            {asig&&onEditSession&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onEditSession(d)}>✏️ Editar ejercicios</button>}
-                            {exs.length>0&&onOpenHistory&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7"}} onClick={()=>onOpenHistory({date:d,type:label,time:hist&&hist.time})}>🔁 Replicar</button>}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              }
-              {libres.length>0&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Días habituales sin reservar: {libres.map(d=>dow[weekdayOf(d)]).join(", ")}</div>}
-              {pending.length>0&&(onPlanWeek||onCopyWeek)&&(
-                <div style={{marginTop:8,background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 10px"}}>
-                  <div style={{fontSize:10,fontWeight:700,color:"#64748b",marginBottom:6}}>⚙️ ORGANIZAR {pending.length} DÍA{pending.length>1?"S":""} PENDIENTE{pending.length>1?"S":""} CON UN SPLIT</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                    {onPlanWeek&&SPLITS.map(([k,l])=><button key={k} className="btn ghost" style={{fontSize:11,padding:"6px 9px"}} onClick={()=>applySplit(k)}>{l}</button>)}
-                    {onCopyWeek&&prevAsig.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"6px 9px",color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={copyPrev}>📋 Copiar semana anterior</button>}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
+          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
 
         {/* Historial: sesiones por día/fecha y pagos */}
         <div style={{marginBottom:14}}>
@@ -3001,11 +3110,355 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
   );
 }
 
+// ── WOD (CrossFit / Hyrox): lectura, edición y temporizador ───────────────
+// Un WOD se guarda como filas de ejercicios de la sesión: una cabecera
+// ("WOD AMRAP 14'", "Hyrox · 4 rondas"…) + movimientos con el mismo protocolo.
+const META_PROTOS=["amrap","emom","for_time","chipper","tabata","intervalos"];
+const WOD_FORMATS=[["amrap","AMRAP","Máx. rondas en X min"],["emom","EMOM","Cada minuto, rotando"],["for_time","For Time","Lo más rápido, con límite"],["chipper","Chipper","Lista larga, una vez"],["tabata","Tabata","20 s / 10 s"],["intervalos","Hyrox / intervalos","Carrera + estaciones"]];
+const WOD_DEF={amrap:{min:12,rounds:1},emom:{min:12,rounds:1},for_time:{min:15,rounds:5},chipper:{min:20,rounds:1},tabata:{min:4,rounds:8},intervalos:{min:0,rounds:4}};
+const isWodHeader=(e)=>/^(WOD |Hyrox|Bloque metab)/i.test((e&&e.exercise_name)||"");
+const numIn=(t,re)=>{ const m=String(t||"").match(re); return m?parseInt(m[1],10):null; };
+// Agrupa los ejercicios (ordenados) de una sesión en bloques metabólicos.
+function wodBlocks(exs){
+  const out=[]; let cur=null;
+  (exs||[]).forEach((e,i)=>{
+    const meta=META_PROTOS.includes(e.protocol);
+    if(meta&&(isWodHeader(e)||!cur||cur.format!==e.protocol)){ cur={format:e.protocol,header:isWodHeader(e)?e:null,moves:isWodHeader(e)?[]:[e],rows:[e],start:i}; out.push(cur); }
+    else if(meta&&cur){ cur.moves.push(e); cur.rows.push(e); }
+    else cur=null;
+  });
+  return out.map(b=>{
+    const txt=[b.header&&b.header.exercise_name,b.header&&b.header.reps,...b.moves.map(m=>m.reps)].join(" ");
+    const min=numIn(txt,/(\d+)\s*(?:min|')/i), rnd=numIn(txt,/(\d+)\s*rondas/i);
+    const d=WOD_DEF[b.format]||WOD_DEF.amrap;
+    const rounds=rnd||(b.moves[0]&&b.moves[0].sets>1&&b.format!=="amrap"?b.moves[0].sets:d.rounds);
+    return {...b,minutes:min||d.min,rounds,title:b.header?b.header.exercise_name:`${(WOD_FORMATS.find(f=>f[0]===b.format)||[])[1]||"WOD"} ${min||d.min}'`,
+      list:b.moves.map(m=>({name:m.exercise_name,reps:m.reps||""}))};
+  });
+}
+// Filas de ejercicios a partir de una configuración de WOD.
+function wodRows(cfg){
+  const f=cfg.format, m=Math.max(1,parseInt(cfg.minutes)||WOD_DEF[f].min||1), r=Math.max(1,parseInt(cfg.rounds)||1), n=Math.max(1,cfg.moves.length);
+  const head={amrap:[`WOD AMRAP ${m}'`,`${m} min`],emom:[`WOD EMOM ${m}' (rotando ${n} ejercicio${n>1?"s":""})`,`${m} min`],for_time:[`WOD For Time · ${r} rondas`,`cap ${m} min`],
+    chipper:[`WOD Chipper`,`cap ${m} min`],tabata:[`WOD Tabata ${m}'`,`${m*2} rondas 20s/10s`],intervalos:[`Hyrox · ${r} rondas`,`${r} rondas`]}[f];
+  const sets=f==="emom"?Math.ceil(m/n):f==="tabata"?Math.ceil(m*2/n):(f==="amrap"||f==="chipper")?1:r;
+  return [{exercise_name:head[0],sets:1,reps:head[1],protocol:f,rest_seconds:0},
+    ...cfg.moves.filter(x=>String(x.name||"").trim()).map(x=>({exercise_name:x.name.trim(),sets,reps:x.reps||"",protocol:f,rest_seconds:0}))];
+}
+const WOD_MOVES=()=>[...new Set([...(EX_POOLS.cfLift||[]),...(EX_POOLS.cfWeight||[]),...(EX_POOLS.cfGym||[]),...(EX_POOLS.cfMono||[]),...(EX_POOLS.hyrox||[]),...(EX_POOLS.func||[]),...(EX_POOLS.plyo||[]),...(EX_POOLS.cardio||[]),...(EX_POOLS.core||[]),"Carrera 1 km","Carrera 400 m"])].filter(n=>equipOk(n));
+
+// Editor de un WOD (formato, minutos, rondas, movimientos y orden).
+function WodEditor({initial,saving,onSave,onCancel,onDelete,onMoveBlock}) {
+  const [cfg,setCfg]=React.useState(()=>initial||{format:"amrap",minutes:12,rounds:1,moves:[{name:"Burpees",reps:"10"},{name:"Swing con kettlebell",reps:"15"},{name:"Remo (máquina)",reps:"250 m"}]});
+  const set=(k,v)=>setCfg(c=>({...c,[k]:v}));
+  const setMove=(i,k,v)=>setCfg(c=>({...c,moves:c.moves.map((m,j)=>j===i?{...m,[k]:v}:m)}));
+  const moveRow=(i,d)=>setCfg(c=>{ const a=c.moves.slice(); const j=i+d; if(j<0||j>=a.length) return c; [a[i],a[j]]=[a[j],a[i]]; return {...c,moves:a}; });
+  const f=cfg.format, usesRounds=f==="for_time"||f==="intervalos", usesMin=f!=="intervalos";
+  const listId="wodmoves-dl";
+  return(
+    <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:12,padding:11}}>
+      <datalist id={listId}>{WOD_MOVES().map(n=><option key={n} value={n}/>)}</datalist>
+      <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:9}}>
+        {WOD_FORMATS.map(([k,l])=><button key={k} onClick={()=>set("format",k)} style={{fontSize:11,fontWeight:700,padding:"6px 9px",borderRadius:20,cursor:"pointer",border:`1px solid ${f===k?"#ea580c":"#fed7aa"}`,background:f===k?"#ea580c":"#fff",color:f===k?"#fff":"#9a3412"}}>{l}</button>)}
+      </div>
+      <div style={{fontSize:11,color:"#9a3412",marginBottom:8}}>{(WOD_FORMATS.find(x=>x[0]===f)||[])[2]}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:9}}>
+        {usesMin&&<div><span className="lbl">{f==="for_time"||f==="chipper"?"LÍMITE (min)":"MINUTOS"}</span><input type="number" min="1" className="inp" style={{padding:"7px 9px"}} value={cfg.minutes} onChange={e=>set("minutes",e.target.value)}/></div>}
+        {usesRounds&&<div><span className="lbl">RONDAS</span><input type="number" min="1" className="inp" style={{padding:"7px 9px"}} value={cfg.rounds} onChange={e=>set("rounds",e.target.value)}/></div>}
+      </div>
+      <span className="lbl">MOVIMIENTOS</span>
+      <div style={{display:"flex",flexDirection:"column",gap:5}}>
+        {cfg.moves.map((m,i)=>(
+          <div key={i} style={{background:"#fff",border:"1px solid #fde3c8",borderRadius:10,padding:"7px 8px"}}>
+            <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:5}}>
+              <span className="mono" style={{width:16,fontSize:12,color:"#9a3412",fontWeight:800}}>{i+1}</span>
+              <input list={listId} className="inp" style={{flex:1,minWidth:0,padding:"7px 9px",fontSize:13}} value={m.name} placeholder="Ejercicio (escribe o elige)" onChange={e=>setMove(i,"name",e.target.value)}/>
+              <button className="btn ghost" style={{padding:"6px 9px",fontSize:12,color:"#dc2626"}} title="Quitar" onClick={()=>setCfg(c=>({...c,moves:c.moves.filter((_,j)=>j!==i)}))}>✕</button>
+            </div>
+            <div style={{display:"flex",gap:6,alignItems:"center",paddingLeft:22}}>
+              <input className="inp" style={{flex:1,minWidth:0,padding:"6px 9px",fontSize:13}} value={m.reps} placeholder="reps / metros / cal" onChange={e=>setMove(i,"reps",e.target.value)}/>
+              <button className="btn ghost" style={{padding:"6px 10px",fontSize:12}} title="Subir" onClick={()=>moveRow(i,-1)} disabled={i===0}>↑</button>
+              <button className="btn ghost" style={{padding:"6px 10px",fontSize:12}} title="Bajar" onClick={()=>moveRow(i,1)} disabled={i===cfg.moves.length-1}>↓</button>
+            </div>
+          </div>
+        ))}
+        <button className="btn ghost" style={{fontSize:12,padding:"7px",border:"1px dashed #fdba74",color:"#9a3412"}} onClick={()=>setCfg(c=>({...c,moves:[...c.moves,{name:"",reps:""}]}))}>＋ Movimiento</button>
+      </div>
+      <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+        <button className="btn grn" style={{flex:1,padding:10,justifyContent:"center",minWidth:120}} disabled={saving||!cfg.moves.some(m=>String(m.name).trim())} onClick={()=>onSave(cfg)}>Guardar WOD</button>
+        {onMoveBlock&&<button className="btn ghost" style={{padding:"9px 10px",fontSize:12}} title="Subir bloque" onClick={()=>onMoveBlock(-1)}>⤒</button>}
+        {onMoveBlock&&<button className="btn ghost" style={{padding:"9px 10px",fontSize:12}} title="Bajar bloque" onClick={()=>onMoveBlock(1)}>⤓</button>}
+        {onDelete&&<button className="btn danger" style={{padding:"9px 11px"}} disabled={saving} onClick={onDelete}>🗑</button>}
+        {onCancel&&<button className="btn ghost" style={{padding:"9px 12px"}} onClick={onCancel}>Cancelar</button>}
+      </div>
+    </div>
+  );
+}
+
+// Temporizador de WOD a pantalla completa (AMRAP, EMOM, For Time, Chipper, Tabata, Hyrox).
+function WodTimer({wod,onClose,onSave}) {
+  const [cfg,setCfg]=React.useState(()=>({format:(wod&&wod.format)||"amrap",minutes:(wod&&wod.minutes)||12,rounds:(wod&&wod.rounds)||1,moves:(wod&&wod.list&&wod.list.length?wod.list:[{name:"Trabajo",reps:""}])}));
+  const [phase,setPhase]=React.useState("ready"); // ready | prep | run | paused | done
+  const [ms,setMs]=React.useState(0); const [prep,setPrep]=React.useState(10);
+  const [rounds,setRounds]=React.useState(0); const [laps,setLaps]=React.useState([]); const [step,setStep]=React.useState(0);
+  const [saved,setSaved]=React.useState(false);
+  const t0=React.useRef(0), acc=React.useRef(0), audio=React.useRef(null), lastSec=React.useRef(-1), wake=React.useRef(null);
+  const f=cfg.format, total=f==="intervalos"?0:Math.max(1,parseInt(cfg.minutes)||1)*60000, moves=cfg.moves, n=Math.max(1,moves.length);
+  const beep=(fr=880,d=0.15)=>{ try{ const a=audio.current; if(!a) return; const o=a.createOscillator(), g=a.createGain(); o.frequency.value=fr; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.25,a.currentTime); g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+d); o.start(); o.stop(a.currentTime+d); }catch(e){} try{ navigator.vibrate&&navigator.vibrate(d>0.3?400:120); }catch(e){} };
+  const steps=f==="intervalos"?Array.from({length:Math.max(1,parseInt(cfg.rounds)||1)*n},(_,i)=>({r:Math.floor(i/n)+1,m:moves[i%n]})):f==="chipper"?moves.map((m,i)=>({r:1,m})):[];
+  const finish=(why)=>{ acc.current=ms; setPhase("done"); beep(660,0.6); };
+  // Reloj
+  React.useEffect(()=>{
+    if(phase==="prep"){ const id=setInterval(()=>setPrep(p=>{ if(p<=1){ clearInterval(id); t0.current=Date.now(); acc.current=0; setPhase("run"); beep(1046,0.5); return 0; } if(p<=4) beep(660,0.12); return p-1; }),1000); return ()=>clearInterval(id); }
+    if(phase==="run"){ const id=setInterval(()=>{ const v=acc.current+Date.now()-t0.current; setMs(v); },200); return ()=>clearInterval(id); }
+  },[phase]);
+  // Avisos por tiempo
+  React.useEffect(()=>{
+    if(phase!=="run") return;
+    const sec=Math.floor(ms/1000); if(sec===lastSec.current) return; lastSec.current=sec;
+    if(total&&(f==="amrap"||f==="emom"||f==="tabata")&&ms>=total){ finish(); return; }
+    if(total&&(f==="for_time"||f==="chipper")&&ms>=total){ finish(); return; }
+    if(f==="emom"){ const inMin=sec%60; if(inMin===0&&sec>0) beep(1046,0.4); else if(inMin>=57) beep(660,0.1); }
+    if(f==="tabata"){ const inR=sec%30; if(inR===0&&sec>0) beep(1046,0.4); else if(inR===20) beep(440,0.4); else if(inR>=27||(inR>=17&&inR<20)) beep(660,0.08); }
+    if(f==="amrap"&&total&&total-ms<=3500&&total-ms>0) beep(660,0.1);
+  },[ms,phase]);
+  React.useEffect(()=>()=>{ try{ wake.current&&wake.current.release(); }catch(e){} },[]);
+  const start=async()=>{ try{ audio.current=audio.current||new (window.AudioContext||window.webkitAudioContext)(); audio.current.resume&&audio.current.resume(); }catch(e){} try{ if(navigator.wakeLock) wake.current=await navigator.wakeLock.request("screen"); }catch(e){} setMs(0); setRounds(0); setLaps([]); setStep(0); setSaved(false); setPrep(10); lastSec.current=-1; setPhase("prep"); };
+  const pause=()=>{ acc.current=ms; setPhase("paused"); };
+  const resume=()=>{ t0.current=Date.now(); setPhase("run"); };
+  const mmss=(v)=>{ const t=Math.max(0,Math.floor(v/1000)); return `${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`; };
+  const addRound=()=>{ setRounds(r=>{ const nr=r+1; setLaps(l=>[...l,ms]); if(f==="for_time"&&nr>=(parseInt(cfg.rounds)||1)) setTimeout(()=>finish(),0); return nr; }); beep(988,0.1); };
+  const nextStep=()=>{ setLaps(l=>[...l,ms]); setStep(s=>{ const ns=s+1; if(ns>=steps.length) setTimeout(()=>finish(),0); return ns; }); beep(988,0.1); };
+  const sec=Math.floor(ms/1000);
+  // Qué mostrar según el formato
+  let big=mmss(ms), sub="", cur=null, next=null, bg="#0b1220";
+  if(f==="amrap"){ big=mmss(total-ms); sub=`${rounds} ronda${rounds!==1?"s":""}`; }
+  if(f==="emom"){ const k=Math.floor(sec/60); big=`${String(60-(sec%60)).padStart(2,"0")}`; sub=`Minuto ${Math.min(k+1,cfg.minutes)} de ${cfg.minutes}`; cur=moves[k%n]; next=moves[(k+1)%n]; }
+  if(f==="tabata"){ const r=Math.floor(sec/30), inR=sec%30, work=inR<20; big=String(work?20-inR:30-inR).padStart(2,"0"); sub=`${work?"TRABAJO":"DESCANSO"} · ronda ${Math.min(r+1,cfg.minutes*2)} de ${cfg.minutes*2}`; cur=moves[r%n]; bg=phase==="run"?(work?"#14532d":"#7c2d12"):bg; }
+  if(f==="for_time"){ sub=`Ronda ${Math.min(rounds+1,cfg.rounds)} de ${cfg.rounds} · límite ${cfg.minutes}'`; }
+  if(f==="chipper"||f==="intervalos"){ const st=steps[Math.min(step,steps.length-1)]; cur=st&&st.m; next=steps[step+1]&&steps[step+1].m; sub=f==="intervalos"?`Ronda ${st?st.r:1} de ${cfg.rounds} · paso ${Math.min(step+1,steps.length)}/${steps.length}`:`Ejercicio ${Math.min(step+1,steps.length)} de ${steps.length}`; }
+  const result=f==="amrap"?`${rounds} rondas`:f==="for_time"?(rounds>=(parseInt(cfg.rounds)||1)?`Tiempo ${mmss(laps[laps.length-1]||ms)}`:`Cap · ${rounds}/${cfg.rounds} rondas`)
+    :f==="chipper"||f==="intervalos"?(step>=steps.length?`Tiempo ${mmss(laps[laps.length-1]||ms)}`:`Cap · ${step}/${steps.length} pasos`):`Completado ${cfg.minutes}'`;
+  const fmtName=(WOD_FORMATS.find(x=>x[0]===f)||[])[1];
+  const btn=(txt,onClick,style={})=><button onClick={onClick} style={{border:"none",borderRadius:14,padding:"14px 18px",fontSize:16,fontWeight:800,cursor:"pointer",...style}}>{txt}</button>;
+  return(
+    <div onClick={e=>e.stopPropagation()} style={{position:"fixed",inset:0,zIndex:2000,background:bg,color:"#fff",display:"flex",flexDirection:"column",padding:"14px 16px calc(14px + env(safe-area-inset-bottom))",transition:"background .3s"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>{fmtName}{f!=="intervalos"?` · ${cfg.minutes}'`:""}{(f==="for_time"||f==="intervalos")?` · ${cfg.rounds} rondas`:""}</div>
+          <div style={{fontSize:15,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(wod&&wod.title)||"Temporizador"}</div>
+        </div>
+        <button onClick={onClose} style={{background:"rgba(255,255,255,.12)",color:"#fff",border:"none",borderRadius:10,padding:"9px 13px",fontSize:14,fontWeight:700,cursor:"pointer"}}>✕</button>
+      </div>
+
+      {phase==="ready"&&(
+        <div style={{marginTop:16}}>
+          <div style={{display:"flex",flexWrap:"wrap",gap:6,marginBottom:12}}>
+            {WOD_FORMATS.map(([k,l])=><button key={k} onClick={()=>setCfg(c=>({...c,format:k,minutes:(wod&&wod.format===k&&wod.minutes)?wod.minutes:(WOD_DEF[k].min||c.minutes),rounds:(wod&&wod.format===k&&wod.rounds)?wod.rounds:(k==="for_time"||k==="intervalos"?WOD_DEF[k].rounds:c.rounds)}))} style={{fontSize:13,fontWeight:700,padding:"8px 12px",borderRadius:20,cursor:"pointer",border:"none",background:f===k?"#f97316":"rgba(255,255,255,.12)",color:"#fff"}}>{l}</button>)}
+          </div>
+          <div style={{display:"flex",gap:10,marginBottom:12}}>
+            {f!=="intervalos"&&<label style={{flex:1,fontSize:12,color:"#94a3b8",fontWeight:700}}>{f==="for_time"||f==="chipper"?"LÍMITE (min)":"MINUTOS"}<input type="number" min="1" value={cfg.minutes} onChange={e=>setCfg(c=>({...c,minutes:e.target.value}))} style={{display:"block",width:"100%",marginTop:4,fontSize:22,fontWeight:800,padding:"8px 10px",borderRadius:10,border:"none",background:"rgba(255,255,255,.12)",color:"#fff"}}/></label>}
+            {(f==="for_time"||f==="intervalos")&&<label style={{flex:1,fontSize:12,color:"#94a3b8",fontWeight:700}}>RONDAS<input type="number" min="1" value={cfg.rounds} onChange={e=>setCfg(c=>({...c,rounds:e.target.value}))} style={{display:"block",width:"100%",marginTop:4,fontSize:22,fontWeight:800,padding:"8px 10px",borderRadius:10,border:"none",background:"rgba(255,255,255,.12)",color:"#fff"}}/></label>}
+          </div>
+        </div>
+      )}
+
+      {phase==="ready"&&(
+        <div style={{marginBottom:6}}>
+          <div style={{fontSize:12,color:"#94a3b8",fontWeight:700,marginBottom:4}}>MOVIMIENTOS (uno por línea: nombre - reps)</div>
+          <textarea rows={Math.min(6,Math.max(3,moves.length+1))} defaultValue={moves.map(m=>m.reps?`${m.name} - ${m.reps}`:m.name).join("\n")}
+            onChange={e=>{ const mv=e.target.value.split("\n").map(l=>l.trim()).filter(Boolean).map(l=>{ const i=l.lastIndexOf(" - "); return i>0?{name:l.slice(0,i).trim(),reps:l.slice(i+3).trim()}:{name:l,reps:""}; }); setCfg(c=>({...c,moves:mv.length?mv:[{name:"Trabajo",reps:""}]})); }}
+            style={{width:"100%",fontSize:15,fontWeight:600,padding:"8px 10px",borderRadius:10,border:"none",background:"rgba(255,255,255,.1)",color:"#fff",resize:"vertical",fontFamily:"inherit"}}/>
+        </div>
+      )}
+
+      {/* Reloj grande */}
+      <div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",textAlign:"center",minHeight:0}}>
+        {phase==="prep"
+          ?<><div style={{fontSize:18,color:"#fbbf24",fontWeight:800}}>PREPÁRATE</div><div className="mono" style={{fontSize:"min(40vw,220px)",fontWeight:800,lineHeight:1}}>{prep}</div></>
+          :phase==="ready"
+            ?<div className="mono" style={{fontSize:"min(22vw,140px)",fontWeight:800,lineHeight:1,color:"#cbd5e1"}}>{f==="amrap"?mmss((parseInt(cfg.minutes)||1)*60000):f==="emom"?"60":f==="tabata"?"20":"00:00"}</div>
+            :<><div className="mono" style={{fontSize:f==="emom"||f==="tabata"?"min(40vw,220px)":"min(22vw,140px)",fontWeight:800,lineHeight:1,color:phase==="paused"?"#94a3b8":"#fff"}}>{big}</div>
+              <div style={{fontSize:18,fontWeight:800,marginTop:8,color:"#fbbf24"}}>{phase==="done"?"¡TERMINADO!":phase==="paused"?"PAUSA":sub}</div></>}
+        {cur&&phase!=="ready"&&phase!=="done"&&(
+          <div style={{marginTop:16,background:"rgba(255,255,255,.1)",borderRadius:16,padding:"12px 18px",maxWidth:"100%"}}>
+            <div style={{fontSize:"min(8vw,34px)",fontWeight:800}}>{cur.name}</div>
+            {cur.reps&&<div style={{fontSize:"min(6vw,24px)",fontWeight:700,color:"#fbbf24"}}>{cur.reps}</div>}
+            {next&&<div style={{fontSize:13,color:"#94a3b8",marginTop:6}}>Siguiente: {next.name}{next.reps?` · ${next.reps}`:""}</div>}
+          </div>
+        )}
+      </div>
+
+      {/* Movimientos (AMRAP / For Time / ready) */}
+      {(f==="amrap"||f==="for_time")&&phase!=="done"&&phase!=="ready"&&(
+        <div style={{background:"rgba(255,255,255,.07)",borderRadius:14,padding:"8px 12px",marginBottom:10,maxHeight:"28vh",overflowY:"auto"}}>
+          {moves.map((m,i)=><div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"5px 0",fontSize:16,fontWeight:700,borderTop:i?"1px solid rgba(255,255,255,.08)":"none"}}><span>{m.name}</span><span style={{color:"#fbbf24"}}>{m.reps}</span></div>)}
+        </div>
+      )}
+      {phase==="done"&&(
+        <div style={{background:"rgba(255,255,255,.08)",borderRadius:14,padding:12,marginBottom:10,textAlign:"center"}}>
+          <div style={{fontSize:13,color:"#94a3b8"}}>Resultado</div>
+          <div style={{fontSize:26,fontWeight:800}}>{result}</div>
+          {laps.length>0&&(f==="for_time"||f==="intervalos"||f==="chipper")&&<div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{laps.map((l,i)=>`${i+1}: ${mmss(l-(laps[i-1]||0))}`).join(" · ")}</div>}
+        </div>
+      )}
+
+      {/* Controles */}
+      <div style={{display:"flex",gap:8}}>
+        {phase==="ready"&&btn("▶ EMPEZAR",start,{flex:1,background:"#16a34a",color:"#fff",fontSize:20})}
+        {phase==="prep"&&btn("Cancelar",()=>setPhase("ready"),{flex:1,background:"rgba(255,255,255,.15)",color:"#fff"})}
+        {phase==="run"&&(f==="amrap"||f==="for_time")&&btn("+1 RONDA",addRound,{flex:2,background:"#f97316",color:"#fff",fontSize:22})}
+        {phase==="run"&&(f==="chipper"||f==="intervalos")&&btn("SIGUIENTE ✓",nextStep,{flex:2,background:"#f97316",color:"#fff",fontSize:20})}
+        {phase==="run"&&btn((f==="amrap"||f==="for_time"||f==="chipper"||f==="intervalos")?"❚❚":"❚❚ Pausa",pause,{flex:(f==="amrap"||f==="for_time"||f==="chipper"||f==="intervalos")?"0 0 auto":1,background:"rgba(255,255,255,.15)",color:"#fff",fontSize:20,minWidth:64})}
+        {phase==="paused"&&btn("▶ Seguir",resume,{flex:1,background:"#16a34a",color:"#fff"})}
+        {phase==="paused"&&btn("Terminar",()=>finish(),{background:"rgba(255,255,255,.15)",color:"#fff"})}
+        {phase==="done"&&onSave&&btn(saved?"✓ Guardado":"💾 Guardar resultado",async()=>{ if(saved) return; await onSave(result); setSaved(true); },{flex:2,background:saved?"#334155":"#16a34a",color:"#fff"})}
+        {phase==="done"&&btn("↺ Otra vez",()=>setPhase("ready"),{flex:onSave?"0 0 auto":1,background:"rgba(255,255,255,.15)",color:"#fff"})}
+      </div>
+    </div>
+  );
+}
+
+// ── PLANIFICADOR SEMANAL DEL CLIENTE (ficha rápida y Programa → Asignar) ───
+// Vista previa por sesión con desplegable de ejercicios y pesos, cambio de tipo
+// por día, splits rápidos y copiar la semana anterior. allDays = muestra todos
+// los días laborables (también los que aún no tienen reserva).
+function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onSetType,onPlanWeek,onCopyWeek,onOpenHistory,onEditSession,onTemplate,allDays}) {
+  const [wkOff,setWkOff] = React.useState(0);
+  const [openDay,setOpenDay] = React.useState(null);
+  React.useEffect(()=>{ setWkOff(0); setOpenDay(null); },[client&&client.id]);
+  const anchor=(()=>{const x=new Date(mondayOfDate(date)+"T12:00:00");x.setDate(x.getDate()+wkOff*7);return x.toISOString().split("T")[0];})();
+  const week=getWeekDays(anchor);
+  const td=parseDays(client.train_days);
+  const mine=(arr)=>(arr||[]).filter(x=>x.client_id===client.id);
+  const hasBooking=(d)=>mine(sessions).some(s=>s.date===d);
+  const hasAsig=(d)=>mine(assignedSessions).some(a=>a.date===d);
+  const hasHist=(d)=>mine(history).some(h=>h.date===d);
+  // Solo lo real: días con reserva, con entreno asignado o ya hechos.
+  const real=(d)=>hasBooking(d)||hasAsig(d)||hasHist(d);
+  const realRows=week.filter(real);
+  // En "Asignar" se ven todos los días laborables (para poder programar cualquiera).
+  const rows=allDays?week.filter(d=>real(d)||(weekdayOf(d)>=1&&weekdayOf(d)<=5)):realRows;
+  const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d);
+  const pending=realRows.filter(d=>!isDone(d));
+  const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const doneN=realRows.filter(isDone).length;
+  const bookedN=realRows.filter(d=>hasBooking(d)||hasHist(d)).length;
+  // Días habituales (ficha) que esta semana no tienen reserva: solo aviso.
+  const libres=allDays?[]:week.filter(d=>td.includes(weekdayOf(d))&&!rows.includes(d));
+  const wLabel=wkOff===0?"Esta semana":wkOff===1?"Semana +1":wkOff===-1?"Semana -1":(wkOff>0?`+${wkOff} sem`:`${wkOff} sem`);
+  const exsOf=(a)=>a?(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0)):[];
+  const loadTxt=(e,done)=>e.load_band?bandLabel(e.load_band):(done&&e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
+  // Organizar los días pendientes con un split.
+  const SPLITS=[["auto","⚡ Automático (A/B)"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
+  const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
+  const okReplace=()=>!pending.some(hasAsig)||window.confirm("Se reemplazarán los entrenos ya generados de los días pendientes. ¿Continuar?");
+  const applySplit=(key)=>{
+    if(!pending.length||!onPlanWeek||!okReplace()) return;
+    const pairs=pending.map(d=>[d,key==="auto"?null:SEQ[key][realRows.indexOf(d)%SEQ[key].length]]);
+    onPlanWeek(pairs);
+  };
+  const prevWeek=getWeekDays((()=>{const x=new Date(anchor+"T12:00:00");x.setDate(x.getDate()-7);return x.toISOString().split("T")[0];})());
+  const prevAsig=mine(assignedSessions).filter(a=>prevWeek.includes(a.date)&&exsOf(a).length>0).sort((a,b)=>a.date.localeCompare(b.date));
+  const copyPrev=()=>{
+    if(!pending.length||!prevAsig.length||!onCopyWeek||!okReplace()) return;
+    onCopyWeek(pending.map((d,i)=>[prevAsig[i%prevAsig.length].date,d]));
+  };
+  return(
+    <div style={{marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+        <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()}{(()=>{const b=blockForDate(annualBlocks,anchor); return b&&!isTestBlock(b)?` (${waveOf(b,macroWeek(anchor)).ab})`:"";})()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
+        <div style={{display:"flex",gap:4}}>
+          <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w-1);setOpenDay(null);}}>‹</button>
+          {wkOff!==0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>{setWkOff(0);setOpenDay(null);}}>Hoy</button>}
+          <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w+1);setOpenDay(null);}}>›</button>
+        </div>
+      </div>
+      {rows.length===0
+        ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>Sin reservas ni entrenos esta semana.</div>
+        :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+        {rows.map((d,i)=>{
+          const booking=mine(sessions).find(s=>s.date===d);
+          const asig=mine(assignedSessions).find(a=>a.date===d);
+          const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
+          const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
+          const hist=mine(history).find(h=>h.date===d);
+          const done=isDone(d);
+          const label=done?(hist?sessionName(hist,assignedSessions,sessionTemplates):"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
+          const isReal=real(d);
+          const curType=asig?(asig.day_type||""):(isReal&&au?au.dayType:"");
+          const nd=new Date(d+"T12:00:00");
+          const isTodayRow=d===date;
+          const open=openDay===d;
+          const exs=exsOf(asig);
+          return(
+            <div key={d} style={{borderTop:i>0?"1px solid #eef1f7":"none"}}>
+              <div onClick={()=>setOpenDay(open?null:d)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",cursor:"pointer",background:open?"#f1f5fb":isTodayRow?"#eef4fc":done?"#f4faf6":"#fff"}}>
+                <div style={{width:34,flexShrink:0,textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{dow[nd.getDay()]}</div>
+                  <div className="mono" style={{fontSize:13,fontWeight:700,color:isTodayRow?"#0284c7":"#0f172a"}}>{nd.getDate()}</div>
+                </div>
+                {(done||!onSetType)
+                  ?<div style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+                  :<select value={curType||""} onChange={e=>{const v=e.target.value; onSetType(d,v||undefined);}} onClick={e=>e.stopPropagation()}
+                      style={{flex:1,minWidth:0,appearance:"none",fontSize:12,fontWeight:700,color:asig?"#0284c7":"#65a30d",border:"1px solid #dbe2ec",borderRadius:8,padding:"6px 8px",background:"#fff",cursor:"pointer"}}>
+                      {!curType&&<option value="">{isReal?"— elegir tipo —":"＋ asignar entreno"}</option>}
+                      {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
+                    </select>}
+                <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:isReal?"sin reserva":"libre"}</div>
+                <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
+              </div>
+              {open&&(
+                <div style={{padding:"6px 10px 10px",background:"#f8fafc",borderTop:"1px dashed #e6ebf3"}}>
+                  {exs.length>0
+                    ?exs.map((e,j)=>{ const ld=loadTxt(e,done); return(
+                      <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:j>0?"1px solid #eef1f7":"none"}}>
+                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}{e.exercise_name}</span>
+                        <span className="mono" style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${done&&e.actual_reps?e.actual_reps:e.reps}`:""}</span>
+                        {ld&&<span style={{fontSize:11,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{ld}</span>}
+                      </div>
+                    );})
+                    :(!done&&au
+                      ?<div style={{fontSize:12,color:"#64748b"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#65a30d",marginBottom:3}}>Previsto automático · {au.label}</div>
+                        {au.routine.slice(0,6).map((e,j)=><div key={j}>• {e[0]} <span className="mono" style={{color:"#94a3b8"}}>{e[1]}×{e[2]}</span></div>)}
+                        {au.routine.length>6&&<div style={{fontSize:11,color:"#94a3b8"}}>+{au.routine.length-6} más…</div>}
+                      </div>
+                      :<div style={{fontSize:12,color:"#94a3b8"}}>{done?"Se marcó como hecha sin registrar ejercicios ni cargas.":"Sin entreno todavía: elige un tipo arriba."}</div>)}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    {!done&&!asig&&au&&onSetType&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onSetType(d,au.dayType)}>⚡ Generar este entreno</button>}
+                    {asig&&onEditSession&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onEditSession(d)}>✏️ Editar ejercicios</button>}
+                    {!done&&onTemplate&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onTemplate(d)}>📋 Usar plantilla</button>}
+                    {exs.length>0&&onOpenHistory&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7"}} onClick={()=>onOpenHistory({date:d,type:label,time:hist&&hist.time})}>🔁 Replicar</button>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      }
+      {libres.length>0&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Días habituales sin reservar: {libres.map(d=>dow[weekdayOf(d)]).join(", ")}</div>}
+      {pending.length>0&&(onPlanWeek||onCopyWeek)&&(
+        <div style={{marginTop:8,background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 10px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",marginBottom:6}}>⚙️ ORGANIZAR {pending.length} DÍA{pending.length>1?"S":""} PENDIENTE{pending.length>1?"S":""} CON UN SPLIT</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {onPlanWeek&&SPLITS.map(([k,l])=><button key={k} className="btn ghost" style={{fontSize:11,padding:"6px 9px"}} onClick={()=>applySplit(k)}>{l}</button>)}
+            {onCopyWeek&&prevAsig.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"6px 9px",color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={copyPrev}>📋 Copiar semana anterior</button>}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ── EJECUTAR SESIÓN (registro de cargas durante el entreno) ────────────────
 function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const baseExs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
-  const [rows,setRows]=React.useState(()=>baseExs.map(e=>({
+  const wods=wodBlocks(baseExs);
+  const [timerWod,setTimerWod]=React.useState(null);
+  const [rows,setRows]=React.useState(()=>baseExs.filter(e=>!isWodHeader(e)).map(e=>({
     id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
     w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
     r:(e.actual_reps!=null?e.actual_reps:(e.reps!=null?e.reps:"")),
@@ -3057,6 +3510,17 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
           </div>
         </div>
 
+        {wods.map((b,i)=>(
+            <button key={"w"+i} onClick={()=>setTimerWod(b)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:"11px 12px",marginBottom:8}}>
+              <span style={{fontSize:24}}>⏱</span>
+              <span style={{flex:1,minWidth:0}}>
+                <span style={{display:"block",fontSize:14,fontWeight:800,color:"#9a3412"}}>{b.title}</span>
+                <span style={{display:"block",fontSize:11,color:"#7c2d12",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")}</span>
+                {(b.header||b.rows[0]).actual_reps&&<span style={{display:"block",fontSize:11,fontWeight:700,color:"#16a34a"}}>✓ Resultado: {(b.header||b.rows[0]).actual_reps}</span>}
+              </span>
+              <span style={{fontSize:12,fontWeight:800,color:"#fff",background:"#ea580c",borderRadius:10,padding:"7px 10px",whiteSpace:"nowrap"}}>▶ Temporizador</span>
+            </button>
+          ))}
         {!sess||rows.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
@@ -3096,6 +3560,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
           <button className="btn ghost" style={{flex:sess&&rows.length>0?"0 0 auto":1,padding:"12px 16px"}} onClick={onClose}>Cerrar</button>
         </div>
       </div>
+      {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)} onSave={async(res)=>{ const r=timerWod.header||timerWod.rows[0]; const {error}=await sb.from("assigned_exercises").update({actual_reps:res,done:true,done_at:new Date().toISOString()}).eq("id",r.id); notify(error?"No se pudo guardar el resultado":"Resultado del WOD guardado ✓",error?"err":undefined); await loadAll(); }}/>}
     </div>
   );
 }
@@ -3398,24 +3863,61 @@ function NotesEditor({initialNotes, onSave}) {
 }
 
 // ── PAY MODAL ──────────────────────────────────────────────────────────────
-function PayModal({client,onSave,onClose}) {
+function PayModal({client,payments,saving,onSave,onUpdate,onDelete,onClose}) {
   const [amount,setAmount] = React.useState(client.payment_amount);
+  const [date,setDate] = React.useState(TODAY);
+  const [edit,setEdit] = React.useState(null); // {id,amount,paid_at} pago en edición
+  const list=(payments||[]).filter(p=>p.client_id===client.id&&p.paid_at).slice().sort((a,b)=>String(b.paid_at).localeCompare(String(a.paid_at)));
+  const total=list.reduce((a,p)=>a+(parseFloat(p.amount)||0),0);
+  const eur=(n)=>`${Math.round((parseFloat(n)||0)*100)/100}€`;
+  const dayTxt=(d)=>{ const t=new Date(String(d).slice(0,10)+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short",year:"numeric"}); return t.charAt(0).toUpperCase()+t.slice(1); };
+  const pd=daysUntil(client.next_payment);
   return(
     <div className="ovl" onClick={onClose}>
-      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:360}}>
-        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Registrar pago — {client.name}</h2>
-        <div style={{display:"flex",flexDirection:"column",gap:14}}>
-          <div><span className="lbl">IMPORTE (€)</span>
-            <input type="number" className="inp" value={amount} onChange={e=>setAmount(e.target.value)}/>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:420,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+        <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:4}}>💳 Pagos — {client.name}</h2>
+        <p style={{fontSize:11,color:"#64748b",marginBottom:12}}>Próximo pago: <b style={{color:pd<0?"#dc2626":pd<=3?"#ca8a04":"#0284c7"}}>{client.next_payment?fmtDate(client.next_payment):"—"}</b>{client.next_payment?` (${pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"hoy":`en ${pd}d`})`:""}</p>
+
+        <div style={{background:"#f4faf6",border:"1px solid #c9e6d1",borderRadius:10,padding:11,marginBottom:12,flexShrink:0}}>
+          <div style={{fontSize:11,fontWeight:700,color:"#16a34a",marginBottom:8}}>REGISTRAR PAGO</div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1.3fr",gap:8,marginBottom:8}}>
+            <div><span className="lbl">IMPORTE (€)</span><input type="number" step="0.01" className="inp" value={amount} onChange={e=>setAmount(e.target.value)}/></div>
+            <div><span className="lbl">FECHA DEL PAGO</span><input type="date" className="inp" value={date} onChange={e=>setDate(e.target.value)}/></div>
           </div>
-          <div style={{background:"#eaf1fb",borderRadius:10,padding:"10px 13px",fontSize:12,color:"#64748b",border:"1px solid #bcd3ee"}}>
-            ✓ Se registrará el pago y la fecha del próximo pago avanzará un mes automáticamente.
-          </div>
-          <div style={{display:"flex",gap:8}}>
-            <button className="btn grn" style={{flex:1,padding:11}} onClick={()=>onSave(parseFloat(amount))}>Confirmar pago</button>
-            <button className="btn ghost" style={{flex:1,padding:11}} onClick={onClose}>Cancelar</button>
-          </div>
+          <button className="btn grn" style={{width:"100%",padding:11,justifyContent:"center"}} disabled={saving||!date} onClick={()=>onSave(parseFloat(amount),date)}>Confirmar pago</button>
+          <div style={{fontSize:10,color:"#64748b",marginTop:6}}>La fecha del próximo pago avanza un mes automáticamente.</div>
         </div>
+
+        <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",marginBottom:6,flexShrink:0}}>
+          <span className="lbl" style={{marginBottom:0}}>📜 HISTORIAL DE PAGOS</span>
+          <span style={{fontSize:11,fontWeight:700,color:"#7c3aed"}}>{list.length} pago{list.length!==1?"s":""} · {eur(total)}</span>
+        </div>
+        <div style={{flex:1,overflowY:"auto",minHeight:0}}>
+          {list.length===0
+            ?<div style={{fontSize:12,color:"#94a3b8",padding:"10px 2px"}}>Sin pagos registrados todavía.</div>
+            :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+              {list.map((p,i)=>{ const ed=edit&&edit.id===p.id; return(
+                <div key={p.id||i} style={{padding:"9px 11px",borderTop:i>0?"1px solid #eef1f7":"none",background:ed?"#f5f1fd":"#fff"}}>
+                  {ed
+                    ?<div style={{display:"flex",gap:6,alignItems:"center"}}>
+                      <input type="date" className="inp" style={{flex:1.4,padding:"6px 8px",fontSize:12}} value={String(edit.paid_at).slice(0,10)} onChange={e=>setEdit(x=>({...x,paid_at:e.target.value}))}/>
+                      <input type="number" step="0.01" className="inp" style={{flex:1,padding:"6px 8px",fontSize:12}} value={edit.amount} onChange={e=>setEdit(x=>({...x,amount:e.target.value}))}/>
+                      <button className="btn grn" style={{padding:"6px 9px",fontSize:12}} disabled={saving} onClick={()=>{ onUpdate(p.id,{paid_at:String(edit.paid_at).slice(0,10),amount:parseFloat(edit.amount)||0}); setEdit(null); }}>✓</button>
+                      <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} onClick={()=>setEdit(null)}>✕</button>
+                    </div>
+                    :<div style={{display:"flex",alignItems:"center",gap:10}}>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{dayTxt(p.paid_at)}</div>
+                      </div>
+                      <span className="mono" style={{fontSize:14,fontWeight:800,color:"#16a34a"}}>{eur(p.amount)}</span>
+                      {p.id&&<button title="Corregir fecha o importe" className="btn ghost" style={{padding:"5px 8px",fontSize:12}} onClick={()=>setEdit({id:p.id,amount:p.amount,paid_at:p.paid_at})}>✏️</button>}
+                      {p.id&&<button title="Eliminar pago" className="btn ghost" style={{padding:"5px 8px",fontSize:12,color:"#dc2626"}} disabled={saving} onClick={()=>{ if(window.confirm(`¿Eliminar el pago de ${eur(p.amount)} del ${fmtDate(String(p.paid_at).slice(0,10))}?`)) onDelete(p.id); }}>🗑</button>}
+                    </div>}
+                </div>
+              );})}
+            </div>}
+        </div>
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:10,flexShrink:0}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
   );
@@ -5171,7 +5673,7 @@ const TEMPLATE_EXERCISES = {
   "Movilidad / Regeneración":[["Movilidad de cadera",2,"8-10",0,false],["Movilidad torácica",2,"8-10",0,false],["Gato-camello",2,"10",0,false],["Plancha frontal",3,"30-45s",30,false],["Bicicleta / Assault bike",1,"15-20 min",0,false]],
 };
 
-function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
+function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
   const [tab,setTab] = React.useState("macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
   const [selTemplate,setSelTemplate] = React.useState(null);
@@ -5570,76 +6072,35 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
         </div>
       )}
 
-      {/* ── ASSIGN TAB ── */}
+      {/* ── ASSIGN TAB: planificador semanal por cliente ── */}
       {tab==="assign"&&(
         <div>
-          <div style={{marginBottom:14}}>
-            <span className="lbl">CLIENTE</span>
-            <select className="inp" style={{appearance:"none"}} value={selClient} onChange={e=>setSelClient(e.target.value)}>
-              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+          {/* Cliente: buscador + chips para cambiar rápido */}
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:10}}>
+            {clients.map(c=>{ const on=c.id===selClient; return(
+              <button key={c.id} onClick={()=>setSelClient(c.id)} style={{flexShrink:0,display:"flex",alignItems:"center",gap:6,padding:"6px 11px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700,
+                border:on?"1px solid #0284c7":"1px solid #dbe2ec",background:on?"#0284c7":"#fff",color:on?"#fff":"#334155"}}>
+                <span style={{width:8,height:8,borderRadius:4,background:on?"#fff":c.color}}/>{c.name.split(" ")[0]}{c.name.split(" ")[1]?` ${c.name.split(" ")[1][0]}.`:""}
+              </button>
+            );})}
           </div>
-
-          {selClientObj&&(
-            <div>
-              <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:10}}>PRÓXIMOS 14 DÍAS — {selClientObj.name}</div>
-
-              {next14Days.map(date=>{
-                const dayName = new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
-                const isToday = date === new Date().toISOString().split("T")[0];
-                const existing = assignedSessions.filter(s=>s.client_id===selClient&&s.date===date);
-                const wk = getWeekNumber(date);
-                const blk = annualBlocks.find(b=>wk>=b.start_week&&wk<=b.end_week);
-                const isWeekend = [0,6].includes(new Date(date+"T12:00:00").getDay());
-
-                if(isWeekend) return null;
-
-                return(
-                  <div key={date} className="card" style={{marginBottom:8,border:`1px solid ${isToday?"#bcd3ee":"var(--border)"}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:existing.length>0?10:0}}>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:600,textTransform:"capitalize"}}>{dayName}{isToday&&<span style={{fontSize:10,color:"#0284c7",marginLeft:6,fontWeight:700}}>HOY</span>}</div>
-                        {blk&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{blk.name}</div>}
-                      </div>
-                      <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowAssignModal({date,clientId:selClient,block:blk})}>+ Sesión</button>
-                    </div>
-
-                    {existing.map(sess=>{
-                      const tmpl = sessionTemplates.find(t=>t.id===sess.template_id);
-                      const sessExes = assignedExercises.filter(ae=>ae.session_id===sess.id);
-                      return(
-                        <div key={sess.id} style={{background:"#f1f4fa",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                            <div>
-                              <div style={{fontSize:12,fontWeight:700,color:"#0284c7"}}>{tmpl?.name||"Sesión"}</div>
-                              <div style={{fontSize:10,color:"#64748b"}}>{sessExes.length} ejercicios · {sess.status==="completed"?"✓ Completada":sess.status==="pending"?"Pendiente":"Omitida"}</div>
-                            </div>
-                            <div style={{display:"flex",gap:5}}>
-                              {sess.status==="completed"&&<span style={{fontSize:12}}>✅</span>}
-                              <button className="btn danger" style={{fontSize:10,padding:"3px 7px"}} onClick={()=>w(async()=>{
-                                await sb.from("assigned_sessions").delete().eq("id",sess.id);
-                                notify("Sesión eliminada");
-                              })}>✕</button>
-                            </div>
-                          </div>
-                          {sessExes.map(ae=>(
-                            <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #eef1f7",color:"#64748b"}}>
-                              <span>{ae.exercise_name}</span>
-                              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                                <span className="mono" style={{color:"#0284c7"}}>{ae.sets}×{ae.reps}</span>
-                                {ae.load_band?<span style={{fontWeight:700}}>{bandLabel(ae.load_band)}</span>:ae.prescribed_weight?<span style={{color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>:null}
-                                {ae.completed&&<span style={{color:"#16a34a",fontSize:10}}>✓</span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+          {selClientObj
+            ?<div className="card" style={{padding:12}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:15,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selClientObj.name}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{selClientObj.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"} · bono {bonoTxt(selClientObj)}</div>
+                </div>
+              </div>
+              <ClientWeekPlanner client={selClientObj} date={TODAY} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} allDays
+                onSetType={(d,t)=>onSetType&&onSetType(selClientObj,d,t)}
+                onPlanWeek={(pairs)=>onPlanWeek&&onPlanWeek(selClientObj,pairs)}
+                onCopyWeek={(pairs)=>onCopyWeek&&onCopyWeek(selClientObj,pairs)}
+                onEditSession={(d)=>onEditSession&&onEditSession(selClientObj,d)}
+                onOpenHistory={(h)=>onOpenHistory&&onOpenHistory(selClientObj,h)}
+                onTemplate={(d)=>{ const wk=getWeekNumber(d); setShowAssignModal({date:d,clientId:selClient,block:annualBlocks.find(b=>wk>=b.start_week&&wk<=b.end_week)}); }}/>
             </div>
-          )}
+            :<div style={{fontSize:13,color:"#94a3b8"}}>Elige un cliente.</div>}
         </div>
       )}
 
