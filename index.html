@@ -1844,7 +1844,6 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             }
           </div>
         )}
-      </div>
 
         {/* PROGRAMMING VIEW */}
         {view==="programming"&&(
@@ -1866,6 +1865,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="plans"&&(
           <PlansAdmin plans={plans} exercises={exercises} clients={clients} clientPlans={clientPlans} loadAll={loadAll} notify={notify}/>
         )}
+      </div>
 
       {/* Modals */}
       {showNS&&<SessionModal clients={clients} ns={ns} setNs={setNs} onSave={addSession} onClose={()=>setShowNS(false)}/>}
