@@ -1820,6 +1820,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="programming"&&(
           <ProgrammingAdmin
             clients={clients}
+            sessions={sessions}
+            history={history}
+            onSetType={(c,d,t)=>materializeRoutine(c,d,t)}
+            onPlanWeek={(c,pairs)=>planWeek(c,pairs)}
+            onCopyWeek={(c,pairs)=>copyWeek(c,pairs)}
+            onEditSession={(c,d)=>setSessionEdit({client:c,date:d})}
+            onOpenHistory={(c,h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}
             annualBlocks={annualBlocks}
             sessionTemplates={sessionTemplates}
             templateExercises={templateExercises}
@@ -2923,8 +2930,6 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
   // Entreno previsto automático (si no hay uno asignado ya).
   const auto = (!sess && blk) ? autoRoutineFor(client,date,sessions,annualBlocks) : null;
   const cw = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id && (w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
-  const [wkOff,setWkOff] = React.useState(0); // navegación de semanas en "ESTA SEMANA"
-  const [openDay,setOpenDay] = React.useState(null); // día desplegado (ejercicios y pesos)
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
@@ -2961,126 +2966,8 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         )}
 
         {/* Semana: vista previa por sesión, desplegable con ejercicios y pesos, y organización rápida */}
-        {(()=>{
-          const anchor=(()=>{const x=new Date(mondayOfDate(date)+"T12:00:00");x.setDate(x.getDate()+wkOff*7);return x.toISOString().split("T")[0];})();
-          const week=getWeekDays(anchor);
-          const td=parseDays(client.train_days);
-          const mine=(arr)=>(arr||[]).filter(x=>x.client_id===client.id);
-          const hasBooking=(d)=>mine(sessions).some(s=>s.date===d);
-          const hasAsig=(d)=>mine(assignedSessions).some(a=>a.date===d);
-          const hasHist=(d)=>mine(history).some(h=>h.date===d);
-          // Solo lo real: días con reserva, con entreno asignado o ya hechos.
-          const rows=week.filter(d=>hasBooking(d)||hasAsig(d)||hasHist(d));
-          const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d);
-          const pending=rows.filter(d=>!isDone(d));
-          const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
-          const doneN=rows.filter(isDone).length;
-          const bookedN=rows.filter(d=>hasBooking(d)||hasHist(d)).length;
-          // Días habituales (ficha) que esta semana no tienen reserva: solo aviso.
-          const libres=week.filter(d=>td.includes(weekdayOf(d))&&!rows.includes(d));
-          const wLabel=wkOff===0?"Esta semana":wkOff===1?"Semana +1":wkOff===-1?"Semana -1":(wkOff>0?`+${wkOff} sem`:`${wkOff} sem`);
-          const exsOf=(a)=>a?(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0)):[];
-          const loadTxt=(e,done)=>e.load_band?bandLabel(e.load_band):(done&&e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
-          // Organizar los días pendientes con un split.
-          const SPLITS=[["auto","⚡ Automático (A/B)"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
-          const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
-          const okReplace=()=>!pending.some(hasAsig)||window.confirm("Se reemplazarán los entrenos ya generados de los días pendientes. ¿Continuar?");
-          const applySplit=(key)=>{
-            if(!pending.length||!onPlanWeek||!okReplace()) return;
-            const pairs=pending.map(d=>[d,key==="auto"?null:SEQ[key][rows.indexOf(d)%SEQ[key].length]]);
-            onPlanWeek(pairs);
-          };
-          const prevWeek=getWeekDays((()=>{const x=new Date(anchor+"T12:00:00");x.setDate(x.getDate()-7);return x.toISOString().split("T")[0];})());
-          const prevAsig=mine(assignedSessions).filter(a=>prevWeek.includes(a.date)&&exsOf(a).length>0).sort((a,b)=>a.date.localeCompare(b.date));
-          const copyPrev=()=>{
-            if(!pending.length||!prevAsig.length||!onCopyWeek||!okReplace()) return;
-            onCopyWeek(pending.map((d,i)=>[prevAsig[i%prevAsig.length].date,d]));
-          };
-          return(
-            <div style={{marginBottom:14}}>
-              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-                <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()}{(()=>{const b=blockForDate(annualBlocks,anchor); return b&&!isTestBlock(b)?` (${waveOf(b,macroWeek(anchor)).ab})`:"";})()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
-                <div style={{display:"flex",gap:4}}>
-                  <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w-1);setOpenDay(null);}}>‹</button>
-                  {wkOff!==0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>{setWkOff(0);setOpenDay(null);}}>Hoy</button>}
-                  <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w+1);setOpenDay(null);}}>›</button>
-                </div>
-              </div>
-              {rows.length===0
-                ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>Sin reservas ni entrenos esta semana.</div>
-                :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
-                {rows.map((d,i)=>{
-                  const booking=mine(sessions).find(s=>s.date===d);
-                  const asig=mine(assignedSessions).find(a=>a.date===d);
-                  const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
-                  const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
-                  const hist=mine(history).find(h=>h.date===d);
-                  const done=isDone(d);
-                  const label=done?(hist?sessionName(hist,assignedSessions,sessionTemplates):"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
-                  const curType=asig?(asig.day_type||""):(au?au.dayType:"");
-                  const nd=new Date(d+"T12:00:00");
-                  const isTodayRow=d===date;
-                  const open=openDay===d;
-                  const exs=exsOf(asig);
-                  return(
-                    <div key={d} style={{borderTop:i>0?"1px solid #eef1f7":"none"}}>
-                      <div onClick={()=>setOpenDay(open?null:d)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",cursor:"pointer",background:open?"#f1f5fb":isTodayRow?"#eef4fc":done?"#f4faf6":"#fff"}}>
-                        <div style={{width:34,flexShrink:0,textAlign:"center"}}>
-                          <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{dow[nd.getDay()]}</div>
-                          <div className="mono" style={{fontSize:13,fontWeight:700,color:isTodayRow?"#0284c7":"#0f172a"}}>{nd.getDate()}</div>
-                        </div>
-                        {(done||!onSetType)
-                          ?<div style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
-                          :<select value={curType||""} onChange={e=>{const v=e.target.value; onSetType(d,v||undefined);}} onClick={e=>e.stopPropagation()}
-                              style={{flex:1,minWidth:0,appearance:"none",fontSize:12,fontWeight:700,color:asig?"#0284c7":"#65a30d",border:"1px solid #dbe2ec",borderRadius:8,padding:"6px 8px",background:"#fff",cursor:"pointer"}}>
-                              {!curType&&<option value="">— elegir tipo —</option>}
-                              {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
-                            </select>}
-                        <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?"reservado":"sin reserva"}</div>
-                        <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
-                      </div>
-                      {open&&(
-                        <div style={{padding:"6px 10px 10px",background:"#f8fafc",borderTop:"1px dashed #e6ebf3"}}>
-                          {exs.length>0
-                            ?exs.map((e,j)=>{ const ld=loadTxt(e,done); return(
-                              <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:j>0?"1px solid #eef1f7":"none"}}>
-                                <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}{e.exercise_name}</span>
-                                <span className="mono" style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${done&&e.actual_reps?e.actual_reps:e.reps}`:""}</span>
-                                {ld&&<span style={{fontSize:11,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{ld}</span>}
-                              </div>
-                            );})
-                            :(!done&&au
-                              ?<div style={{fontSize:12,color:"#64748b"}}>
-                                <div style={{fontSize:11,fontWeight:700,color:"#65a30d",marginBottom:3}}>Previsto automático · {au.label}</div>
-                                {au.routine.slice(0,6).map((e,j)=><div key={j}>• {e[0]} <span className="mono" style={{color:"#94a3b8"}}>{e[1]}×{e[2]}</span></div>)}
-                                {au.routine.length>6&&<div style={{fontSize:11,color:"#94a3b8"}}>+{au.routine.length-6} más…</div>}
-                              </div>
-                              :<div style={{fontSize:12,color:"#94a3b8"}}>{done?"Se marcó como hecha sin registrar ejercicios ni cargas.":"Sin entreno todavía: elige un tipo arriba."}</div>)}
-                          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
-                            {!done&&!asig&&au&&onSetType&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onSetType(d,au.dayType)}>⚡ Generar este entreno</button>}
-                            {asig&&onEditSession&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onEditSession(d)}>✏️ Editar ejercicios</button>}
-                            {exs.length>0&&onOpenHistory&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7"}} onClick={()=>onOpenHistory({date:d,type:label,time:hist&&hist.time})}>🔁 Replicar</button>}
-                          </div>
-                        </div>
-                      )}
-                    </div>
-                  );
-                })}
-              </div>
-              }
-              {libres.length>0&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Días habituales sin reservar: {libres.map(d=>dow[weekdayOf(d)]).join(", ")}</div>}
-              {pending.length>0&&(onPlanWeek||onCopyWeek)&&(
-                <div style={{marginTop:8,background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 10px"}}>
-                  <div style={{fontSize:10,fontWeight:700,color:"#64748b",marginBottom:6}}>⚙️ ORGANIZAR {pending.length} DÍA{pending.length>1?"S":""} PENDIENTE{pending.length>1?"S":""} CON UN SPLIT</div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                    {onPlanWeek&&SPLITS.map(([k,l])=><button key={k} className="btn ghost" style={{fontSize:11,padding:"6px 9px"}} onClick={()=>applySplit(k)}>{l}</button>)}
-                    {onCopyWeek&&prevAsig.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"6px 9px",color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={copyPrev}>📋 Copiar semana anterior</button>}
-                  </div>
-                </div>
-              )}
-            </div>
-          );
-        })()}
+        <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
+          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
 
         {/* Historial: sesiones por día/fecha y pagos */}
         <div style={{marginBottom:14}}>
@@ -3152,6 +3039,139 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
           <button className="btn ghost" style={{padding:"11px 16px"}} onClick={onClose}>Cerrar</button>
         </div>
       </div>
+    </div>
+  );
+}
+
+// ── PLANIFICADOR SEMANAL DEL CLIENTE (ficha rápida y Programa → Asignar) ───
+// Vista previa por sesión con desplegable de ejercicios y pesos, cambio de tipo
+// por día, splits rápidos y copiar la semana anterior. allDays = muestra todos
+// los días laborables (también los que aún no tienen reserva).
+function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onSetType,onPlanWeek,onCopyWeek,onOpenHistory,onEditSession,onTemplate,allDays}) {
+  const [wkOff,setWkOff] = React.useState(0);
+  const [openDay,setOpenDay] = React.useState(null);
+  React.useEffect(()=>{ setWkOff(0); setOpenDay(null); },[client&&client.id]);
+  const anchor=(()=>{const x=new Date(mondayOfDate(date)+"T12:00:00");x.setDate(x.getDate()+wkOff*7);return x.toISOString().split("T")[0];})();
+  const week=getWeekDays(anchor);
+  const td=parseDays(client.train_days);
+  const mine=(arr)=>(arr||[]).filter(x=>x.client_id===client.id);
+  const hasBooking=(d)=>mine(sessions).some(s=>s.date===d);
+  const hasAsig=(d)=>mine(assignedSessions).some(a=>a.date===d);
+  const hasHist=(d)=>mine(history).some(h=>h.date===d);
+  // Solo lo real: días con reserva, con entreno asignado o ya hechos.
+  const real=(d)=>hasBooking(d)||hasAsig(d)||hasHist(d);
+  const realRows=week.filter(real);
+  // En "Asignar" se ven todos los días laborables (para poder programar cualquiera).
+  const rows=allDays?week.filter(d=>real(d)||(weekdayOf(d)>=1&&weekdayOf(d)<=5)):realRows;
+  const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d);
+  const pending=realRows.filter(d=>!isDone(d));
+  const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
+  const doneN=realRows.filter(isDone).length;
+  const bookedN=realRows.filter(d=>hasBooking(d)||hasHist(d)).length;
+  // Días habituales (ficha) que esta semana no tienen reserva: solo aviso.
+  const libres=allDays?[]:week.filter(d=>td.includes(weekdayOf(d))&&!rows.includes(d));
+  const wLabel=wkOff===0?"Esta semana":wkOff===1?"Semana +1":wkOff===-1?"Semana -1":(wkOff>0?`+${wkOff} sem`:`${wkOff} sem`);
+  const exsOf=(a)=>a?(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0)):[];
+  const loadTxt=(e,done)=>e.load_band?bandLabel(e.load_band):(done&&e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
+  // Organizar los días pendientes con un split.
+  const SPLITS=[["auto","⚡ Automático (A/B)"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
+  const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
+  const okReplace=()=>!pending.some(hasAsig)||window.confirm("Se reemplazarán los entrenos ya generados de los días pendientes. ¿Continuar?");
+  const applySplit=(key)=>{
+    if(!pending.length||!onPlanWeek||!okReplace()) return;
+    const pairs=pending.map(d=>[d,key==="auto"?null:SEQ[key][realRows.indexOf(d)%SEQ[key].length]]);
+    onPlanWeek(pairs);
+  };
+  const prevWeek=getWeekDays((()=>{const x=new Date(anchor+"T12:00:00");x.setDate(x.getDate()-7);return x.toISOString().split("T")[0];})());
+  const prevAsig=mine(assignedSessions).filter(a=>prevWeek.includes(a.date)&&exsOf(a).length>0).sort((a,b)=>a.date.localeCompare(b.date));
+  const copyPrev=()=>{
+    if(!pending.length||!prevAsig.length||!onCopyWeek||!okReplace()) return;
+    onCopyWeek(pending.map((d,i)=>[prevAsig[i%prevAsig.length].date,d]));
+  };
+  return(
+    <div style={{marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+        <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()}{(()=>{const b=blockForDate(annualBlocks,anchor); return b&&!isTestBlock(b)?` (${waveOf(b,macroWeek(anchor)).ab})`:"";})()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
+        <div style={{display:"flex",gap:4}}>
+          <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w-1);setOpenDay(null);}}>‹</button>
+          {wkOff!==0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>{setWkOff(0);setOpenDay(null);}}>Hoy</button>}
+          <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w+1);setOpenDay(null);}}>›</button>
+        </div>
+      </div>
+      {rows.length===0
+        ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>Sin reservas ni entrenos esta semana.</div>
+        :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
+        {rows.map((d,i)=>{
+          const booking=mine(sessions).find(s=>s.date===d);
+          const asig=mine(assignedSessions).find(a=>a.date===d);
+          const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
+          const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
+          const hist=mine(history).find(h=>h.date===d);
+          const done=isDone(d);
+          const label=done?(hist?sessionName(hist,assignedSessions,sessionTemplates):"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
+          const isReal=real(d);
+          const curType=asig?(asig.day_type||""):(isReal&&au?au.dayType:"");
+          const nd=new Date(d+"T12:00:00");
+          const isTodayRow=d===date;
+          const open=openDay===d;
+          const exs=exsOf(asig);
+          return(
+            <div key={d} style={{borderTop:i>0?"1px solid #eef1f7":"none"}}>
+              <div onClick={()=>setOpenDay(open?null:d)} style={{display:"flex",alignItems:"center",gap:8,padding:"8px 10px",cursor:"pointer",background:open?"#f1f5fb":isTodayRow?"#eef4fc":done?"#f4faf6":"#fff"}}>
+                <div style={{width:34,flexShrink:0,textAlign:"center"}}>
+                  <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{dow[nd.getDay()]}</div>
+                  <div className="mono" style={{fontSize:13,fontWeight:700,color:isTodayRow?"#0284c7":"#0f172a"}}>{nd.getDate()}</div>
+                </div>
+                {(done||!onSetType)
+                  ?<div style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{label}</div>
+                  :<select value={curType||""} onChange={e=>{const v=e.target.value; onSetType(d,v||undefined);}} onClick={e=>e.stopPropagation()}
+                      style={{flex:1,minWidth:0,appearance:"none",fontSize:12,fontWeight:700,color:asig?"#0284c7":"#65a30d",border:"1px solid #dbe2ec",borderRadius:8,padding:"6px 8px",background:"#fff",cursor:"pointer"}}>
+                      {!curType&&<option value="">{isReal?"— elegir tipo —":"＋ asignar entreno"}</option>}
+                      {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
+                    </select>}
+                <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:isReal?"sin reserva":"libre"}</div>
+                <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
+              </div>
+              {open&&(
+                <div style={{padding:"6px 10px 10px",background:"#f8fafc",borderTop:"1px dashed #e6ebf3"}}>
+                  {exs.length>0
+                    ?exs.map((e,j)=>{ const ld=loadTxt(e,done); return(
+                      <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:j>0?"1px solid #eef1f7":"none"}}>
+                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}{e.exercise_name}</span>
+                        <span className="mono" style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${done&&e.actual_reps?e.actual_reps:e.reps}`:""}</span>
+                        {ld&&<span style={{fontSize:11,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{ld}</span>}
+                      </div>
+                    );})
+                    :(!done&&au
+                      ?<div style={{fontSize:12,color:"#64748b"}}>
+                        <div style={{fontSize:11,fontWeight:700,color:"#65a30d",marginBottom:3}}>Previsto automático · {au.label}</div>
+                        {au.routine.slice(0,6).map((e,j)=><div key={j}>• {e[0]} <span className="mono" style={{color:"#94a3b8"}}>{e[1]}×{e[2]}</span></div>)}
+                        {au.routine.length>6&&<div style={{fontSize:11,color:"#94a3b8"}}>+{au.routine.length-6} más…</div>}
+                      </div>
+                      :<div style={{fontSize:12,color:"#94a3b8"}}>{done?"Se marcó como hecha sin registrar ejercicios ni cargas.":"Sin entreno todavía: elige un tipo arriba."}</div>)}
+                  <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                    {!done&&!asig&&au&&onSetType&&<button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onSetType(d,au.dayType)}>⚡ Generar este entreno</button>}
+                    {asig&&onEditSession&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onEditSession(d)}>✏️ Editar ejercicios</button>}
+                    {!done&&onTemplate&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onTemplate(d)}>📋 Usar plantilla</button>}
+                    {exs.length>0&&onOpenHistory&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7"}} onClick={()=>onOpenHistory({date:d,type:label,time:hist&&hist.time})}>🔁 Replicar</button>}
+                  </div>
+                </div>
+              )}
+            </div>
+          );
+        })}
+      </div>
+      }
+      {libres.length>0&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Días habituales sin reservar: {libres.map(d=>dow[weekdayOf(d)]).join(", ")}</div>}
+      {pending.length>0&&(onPlanWeek||onCopyWeek)&&(
+        <div style={{marginTop:8,background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 10px"}}>
+          <div style={{fontSize:10,fontWeight:700,color:"#64748b",marginBottom:6}}>⚙️ ORGANIZAR {pending.length} DÍA{pending.length>1?"S":""} PENDIENTE{pending.length>1?"S":""} CON UN SPLIT</div>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+            {onPlanWeek&&SPLITS.map(([k,l])=><button key={k} className="btn ghost" style={{fontSize:11,padding:"6px 9px"}} onClick={()=>applySplit(k)}>{l}</button>)}
+            {onCopyWeek&&prevAsig.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"6px 9px",color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={copyPrev}>📋 Copiar semana anterior</button>}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -5363,7 +5383,7 @@ const TEMPLATE_EXERCISES = {
   "Movilidad / Regeneración":[["Movilidad de cadera",2,"8-10",0,false],["Movilidad torácica",2,"8-10",0,false],["Gato-camello",2,"10",0,false],["Plancha frontal",3,"30-45s",30,false],["Bicicleta / Assault bike",1,"15-20 min",0,false]],
 };
 
-function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
+function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
   const [tab,setTab] = React.useState("macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
   const [selTemplate,setSelTemplate] = React.useState(null);
@@ -5762,76 +5782,35 @@ function ProgrammingAdmin({clients,annualBlocks,sessionTemplates,templateExercis
         </div>
       )}
 
-      {/* ── ASSIGN TAB ── */}
+      {/* ── ASSIGN TAB: planificador semanal por cliente ── */}
       {tab==="assign"&&(
         <div>
-          <div style={{marginBottom:14}}>
-            <span className="lbl">CLIENTE</span>
-            <select className="inp" style={{appearance:"none"}} value={selClient} onChange={e=>setSelClient(e.target.value)}>
-              {clients.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-            </select>
+          {/* Cliente: buscador + chips para cambiar rápido */}
+          <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:6,marginBottom:10}}>
+            {clients.map(c=>{ const on=c.id===selClient; return(
+              <button key={c.id} onClick={()=>setSelClient(c.id)} style={{flexShrink:0,display:"flex",alignItems:"center",gap:6,padding:"6px 11px",borderRadius:20,cursor:"pointer",fontSize:12,fontWeight:700,
+                border:on?"1px solid #0284c7":"1px solid #dbe2ec",background:on?"#0284c7":"#fff",color:on?"#fff":"#334155"}}>
+                <span style={{width:8,height:8,borderRadius:4,background:on?"#fff":c.color}}/>{c.name.split(" ")[0]}{c.name.split(" ")[1]?` ${c.name.split(" ")[1][0]}.`:""}
+              </button>
+            );})}
           </div>
-
-          {selClientObj&&(
-            <div>
-              <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:10}}>PRÓXIMOS 14 DÍAS — {selClientObj.name}</div>
-
-              {next14Days.map(date=>{
-                const dayName = new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
-                const isToday = date === new Date().toISOString().split("T")[0];
-                const existing = assignedSessions.filter(s=>s.client_id===selClient&&s.date===date);
-                const wk = getWeekNumber(date);
-                const blk = annualBlocks.find(b=>wk>=b.start_week&&wk<=b.end_week);
-                const isWeekend = [0,6].includes(new Date(date+"T12:00:00").getDay());
-
-                if(isWeekend) return null;
-
-                return(
-                  <div key={date} className="card" style={{marginBottom:8,border:`1px solid ${isToday?"#bcd3ee":"var(--border)"}`}}>
-                    <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:existing.length>0?10:0}}>
-                      <div>
-                        <div style={{fontSize:13,fontWeight:600,textTransform:"capitalize"}}>{dayName}{isToday&&<span style={{fontSize:10,color:"#0284c7",marginLeft:6,fontWeight:700}}>HOY</span>}</div>
-                        {blk&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>{blk.name}</div>}
-                      </div>
-                      <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowAssignModal({date,clientId:selClient,block:blk})}>+ Sesión</button>
-                    </div>
-
-                    {existing.map(sess=>{
-                      const tmpl = sessionTemplates.find(t=>t.id===sess.template_id);
-                      const sessExes = assignedExercises.filter(ae=>ae.session_id===sess.id);
-                      return(
-                        <div key={sess.id} style={{background:"#f1f4fa",borderRadius:10,padding:"10px 12px",marginBottom:6}}>
-                          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-                            <div>
-                              <div style={{fontSize:12,fontWeight:700,color:"#0284c7"}}>{tmpl?.name||"Sesión"}</div>
-                              <div style={{fontSize:10,color:"#64748b"}}>{sessExes.length} ejercicios · {sess.status==="completed"?"✓ Completada":sess.status==="pending"?"Pendiente":"Omitida"}</div>
-                            </div>
-                            <div style={{display:"flex",gap:5}}>
-                              {sess.status==="completed"&&<span style={{fontSize:12}}>✅</span>}
-                              <button className="btn danger" style={{fontSize:10,padding:"3px 7px"}} onClick={()=>w(async()=>{
-                                await sb.from("assigned_sessions").delete().eq("id",sess.id);
-                                notify("Sesión eliminada");
-                              })}>✕</button>
-                            </div>
-                          </div>
-                          {sessExes.map(ae=>(
-                            <div key={ae.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #eef1f7",color:"#64748b"}}>
-                              <span>{ae.exercise_name}</span>
-                              <div style={{display:"flex",gap:8,alignItems:"center"}}>
-                                <span className="mono" style={{color:"#0284c7"}}>{ae.sets}×{ae.reps}</span>
-                                {ae.load_band?<span style={{fontWeight:700}}>{bandLabel(ae.load_band)}</span>:ae.prescribed_weight?<span style={{color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>:null}
-                                {ae.completed&&<span style={{color:"#16a34a",fontSize:10}}>✓</span>}
-                              </div>
-                            </div>
-                          ))}
-                        </div>
-                      );
-                    })}
-                  </div>
-                );
-              })}
+          {selClientObj
+            ?<div className="card" style={{padding:12}}>
+              <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:15,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selClientObj.name}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{selClientObj.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"} · bono {bonoTxt(selClientObj)}</div>
+                </div>
+              </div>
+              <ClientWeekPlanner client={selClientObj} date={TODAY} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} allDays
+                onSetType={(d,t)=>onSetType&&onSetType(selClientObj,d,t)}
+                onPlanWeek={(pairs)=>onPlanWeek&&onPlanWeek(selClientObj,pairs)}
+                onCopyWeek={(pairs)=>onCopyWeek&&onCopyWeek(selClientObj,pairs)}
+                onEditSession={(d)=>onEditSession&&onEditSession(selClientObj,d)}
+                onOpenHistory={(h)=>onOpenHistory&&onOpenHistory(selClientObj,h)}
+                onTemplate={(d)=>{ const wk=getWeekNumber(d); setShowAssignModal({date:d,clientId:selClient,block:annualBlocks.find(b=>wk>=b.start_week&&wk<=b.end_week)}); }}/>
             </div>
-          )}
+            :<div style={{fontSize:13,color:"#94a3b8"}}>Elige un cliente.</div>}
         </div>
       )}
 
