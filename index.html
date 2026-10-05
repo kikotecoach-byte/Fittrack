@@ -1039,6 +1039,28 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 </div>
               ))}
             </div>
+            {/* ── ACCESO DIRECTO A FINANZAS ── */}
+            {(()=>{
+              const ppS=(c)=>{ const t=parseInt(c&&c.total_sessions)||0; return t>0?(parseFloat(c.payment_amount)||0)/t:0; };
+              const byId=Object.fromEntries(clients.map(c=>[c.id,c]));
+              const weekOf=(off)=>{ const m=new Date(mondayOfDate(TODAY)+"T12:00:00"); m.setDate(m.getDate()+off*7); const a=m.toISOString().split("T")[0]; m.setDate(m.getDate()+6); const b=m.toISOString().split("T")[0];
+                const wk=history.filter(h=>h.date>=a&&h.date<=b&&byId[h.client_id]); return {wk,gen:wk.reduce((x,h)=>x+ppS(byId[h.client_id]),0),horas:new Set(wk.map(h=>h.date+"|"+(h.time||""))).size}; };
+              let cur=weekOf(0), lbl="Esta semana"; if(!cur.horas){ cur=weekOf(-1); lbl="Semana pasada"; }
+              const {gen,horas}=cur;
+              const porHora=horas?gen/horas:0;
+              const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
+              return(
+                <div className="card" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
+                  <div style={{fontSize:28,flexShrink:0}}>💶</div>
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
+                    <div style={{fontSize:12,color:"#475569",marginTop:2}}>{lbl} <b style={{color:"#0f172a"}}>{eur(porHora)}/hora</b> · {eur(gen)} generados · {horas} h de clase</div>
+                    <div style={{fontSize:12,color:"#475569"}}>Cobrado este mes <b style={{color:"#0f172a"}}>{eur(monthIncome)}</b></div>
+                  </div>
+                  <span style={{fontSize:13,fontWeight:800,color:"#16a34a",flexShrink:0,whiteSpace:"nowrap"}}>Ver ›</span>
+                </div>
+              );
+            })()}
             {/* ── RESUMEN DEL DÍA (protagonista) ── */}
             <div className="card" style={{marginBottom:14,padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
