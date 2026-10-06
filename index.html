@@ -218,9 +218,10 @@ const DEFAULT_SCHEDULE = {
   // Material disponible del gimnasio (para que el generador solo use lo que hay).
   // Ajustado al material real: racks + multipower (R7 Saber) + pines, discos,
   // barras (power/SSB/Z), mancuernas 2.5-35kg, leg extension/curl femoral dual,
-  // doble polea + jalón de placas, dominadas y fondera. Sin prensa/hack,
-  // kettlebell, cardio, cajón, bandas, comba, trineo, cuerdas, balón ni rueda.
-  equip:{ barra:true, multipower:true, rackpines:true, mancuernas:true, legmachine:true,
+  // doble polea + jalón de placas, dominadas y fondera y remo ergómetro (aeróbico).
+  // Sin prensa/hack, kettlebell, otro cardio, cajón, bandas, comba, trineo,
+  // cuerdas, balón ni rueda.
+  equip:{ barra:true, multipower:true, rackpines:true, mancuernas:true, legmachine:true, remo:true,
     poleas:true, pesocorporal:true, legpress:false, machine:false, kettlebell:false,
     cajon:false, banda:false, comba:false, cardio:false, cuerdas:false, trineo:false,
     balon:false, rueda:false, antebrazo:true, movilidad:true },
@@ -3138,7 +3139,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
 const META_PROTOS=["amrap","emom","for_time","chipper","tabata","intervalos"];
 const WOD_FORMATS=[["amrap","AMRAP","Máx. rondas en X min"],["emom","EMOM","Cada minuto, rotando"],["for_time","For Time","Lo más rápido, con límite"],["chipper","Chipper","Lista larga, una vez"],["tabata","Tabata","20 s / 10 s"],["intervalos","Hyrox / intervalos","Carrera + estaciones"]];
 const WOD_DEF={amrap:{min:12,rounds:1},emom:{min:12,rounds:1},for_time:{min:15,rounds:5},chipper:{min:20,rounds:1},tabata:{min:4,rounds:8},intervalos:{min:0,rounds:4}};
-const isWodHeader=(e)=>/^(WOD |Hyrox|Bloque metab)/i.test((e&&e.exercise_name)||"");
+const isWodHeader=(e)=>/^(WOD |Hyrox|Bloque metab|Benchmark|Finisher|Circuito)/i.test((e&&e.exercise_name)||"");
 const numIn=(t,re)=>{ const m=String(t||"").match(re); return m?parseInt(m[1],10):null; };
 // Agrupa los ejercicios (ordenados) de una sesión en bloques metabólicos.
 function wodBlocks(exs){
@@ -3167,7 +3168,7 @@ function wodRows(cfg){
   return [{exercise_name:head[0],sets:1,reps:head[1],protocol:f,rest_seconds:0},
     ...cfg.moves.filter(x=>String(x.name||"").trim()).map(x=>({exercise_name:x.name.trim(),sets,reps:x.reps||"",protocol:f,rest_seconds:0}))];
 }
-const WOD_MOVES=()=>[...new Set([...(EX_POOLS.cfLift||[]),...(EX_POOLS.cfWeight||[]),...(EX_POOLS.cfGym||[]),...(EX_POOLS.cfMono||[]),...(EX_POOLS.hyrox||[]),...(EX_POOLS.func||[]),...(EX_POOLS.plyo||[]),...(EX_POOLS.cardio||[]),...(EX_POOLS.core||[]),"Carrera 1 km","Carrera 400 m"])].filter(n=>equipOk(n));
+const WOD_MOVES=()=>[...new Set([...Object.values(MET_MOVES).flat(),...MET_LIFT,...HYROX_ST.map(x=>x[0]),...(EX_POOLS.core||[])])].filter(n=>equipOk(n));
 
 // Editor de un WOD (formato, minutos, rondas, movimientos y orden).
 function WodEditor({initial,saving,onSave,onCancel,onDelete,onMoveBlock}) {
@@ -3827,7 +3828,9 @@ function ProgressionModal({client,clientWeights,weightHistory,records,onClose}) 
 // Configura las franjas de mañana y tarde (sesiones de 1h) y los atletas por hora.
 function ScheduleModal({config,onSave,onClose}) {
   const [cfg,setCfg] = React.useState({...DEFAULT_SCHEDULE,...config,capacity:{...(config.capacity||{})},equip:{...DEFAULT_SCHEDULE.equip,...(config.equip||{})}});
-  const toggleEquip = (k) => setCfg(c=>({...c,equip:{...c.equip,[k]:!(c.equip&&c.equip[k])}}));
+  // Igual que el generador: un material sin valor guardado cuenta como disponible.
+  const equipOn = (c,k) => { const v=c.equip&&c.equip[k]; return v===undefined?true:!!v; };
+  const toggleEquip = (k) => setCfg(c=>({...c,equip:{...c.equip,[k]:!equipOn(c,k)}}));
   const slots = [...genSlots(cfg.morningFrom,cfg.morningTo),...genSlots(cfg.afternoonFrom,cfg.afternoonTo)];
   // Capacidad entre 1 y 5 atletas por hora.
   const capOf = (t) => cfg.capacity[t]!=null?cfg.capacity[t]:cfg.defaultCapacity;
@@ -3883,7 +3886,7 @@ function ScheduleModal({config,onSave,onClose}) {
         <div style={{marginTop:18,marginBottom:4}}>
           <span className="lbl">🧰 MATERIAL DISPONIBLE (el entreno se adapta a esto)</span>
           <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-            {EQUIP_KEYS.map(k=>{ const on=!!(cfg.equip&&cfg.equip[k]); return(
+            {EQUIP_KEYS.map(k=>{ const on=equipOn(cfg,k); return(
               <button key={k} type="button" onClick={()=>toggleEquip(k)}
                 style={{fontSize:11,fontWeight:700,padding:"6px 10px",borderRadius:20,cursor:"pointer",
                   border:on?"1px solid #16a34a":"1px solid #cfd8e6",background:on?"#e2f4e8":"#fff",color:on?"#16a34a":"#94a3b8"}}>
@@ -5709,21 +5712,21 @@ const TEMPLATE_EXERCISES = {
   "Legs":[["Sentadilla trasera",4,"6-10",150,true],["Peso muerto rumano",3,"8-10",120,false],["Prensa de piernas",3,"10-12",90,false],["Sentadilla búlgara",3,"8-10",90,false],["Curl femoral sentado",3,"12-15",60,false],["Extensión de cuádriceps",3,"12-15",60,false]],
   "Cadena posterior":[["Peso muerto",4,"5-8",180,true],["Hip thrust",4,"8-12",90,false],["Peso muerto piernas rígidas",3,"10-12",90,false],["Curl femoral tumbado",3,"12-15",60,false],["Extensión de cadera en polea",3,"12-15",60,false],["Buenos días",3,"8-10",90,false]],
   "Brazos":[["Curl con barra",4,"8-12",60,false],["Curl martillo",3,"10-12",60,false],["Curl en predicador",3,"10-12",60,false],["Press francés",4,"8-12",60,false],["Extensión de tríceps en polea",3,"12-15",60,false],["Fondos de tríceps",3,"10-15",60,false]],
-  "Cardio ligero":[["Remo (máquina)",1,"10-15 min",0,false],["Bicicleta / Assault bike",1,"10-15 min",0,false]],
-  "Cardio/Circuito":[["Circuito metabólico",3,"40s/20s",30,false],["Swing con kettlebell",4,"15-20",45,false],["Burpees",4,"12-15",45,false]],
-  "Circuito concurrente":[["EMOM 10'",1,"10 min",0,false],["Swing con kettlebell",4,"15-20",45,false],["Comba",4,"60s",30,false]],
-  "Circuito/cardio":[["AMRAP 12'",1,"12 min",0,false],["Burpees",4,"12-15",45,false],["Comba",4,"60s",30,false]],
-  "Circuito EMOM":[["EMOM 10'",1,"10 min",0,false],["Swing con kettlebell",4,"15-20",45,false],["Burpees",4,"12-15",45,false]],
-  "Circuito AMRAP":[["AMRAP 12'",1,"12 min",0,false],["Comba",4,"60s",30,false],["Swing con kettlebell",4,"15-20",45,false]],
-  "HIIT/Tabata":[["Tabata (8×20/10)",1,"4 min",0,false],["Burpees",4,"12-15",45,false],["Comba",4,"60s",30,false]],
+  "Cardio ligero":[["Remo ergómetro",1,"15-20 min (ritmo suave)",0,false],["Movilidad de cadera",2,"8-10",0,false]],
+  "Cardio/Circuito":[["Remo ergómetro",4,"250 m",30,false],["Thrusters con mancuernas",4,"12",30,false],["Burpees",4,"10",30,false],["Remo invertido (peso corporal)",4,"10",30,false]],
+  "Circuito concurrente":[["Remo ergómetro",5,"10-12 cal",0,false],["Snatch con mancuerna",5,"10 (alternando)",0,false],["Flexiones",5,"10-12",0,false]],
+  "Circuito/cardio":[["Remo ergómetro",1,"15 cal",0,false],["Sentadilla goblet con mancuerna",1,"12",0,false],["Burpees",1,"10",0,false]],
+  "Circuito EMOM":[["Remo ergómetro",4,"10-12 cal",0,false],["Thrusters con mancuernas",4,"8-10",0,false],["Dominadas",4,"5-8",0,false],["Hollow hold",4,"30 s",0,false]],
+  "Circuito AMRAP":[["Remo ergómetro",1,"15 cal",0,false],["Cargada con mancuernas",1,"10",0,false],["Flexiones",1,"10-15",0,false]],
+  "HIIT/Tabata":[["Remo ergómetro",4,"20 s máx. / 10 s",0,false],["Sentadilla al aire (air squat)",4,"20 s / 10 s",0,false],["Flexiones",4,"20 s / 10 s",0,false],["Mountain climbers",4,"20 s / 10 s",0,false]],
   "Test AMRAP básicos":[["Sentadilla trasera",1,"AMRAP 3-8",180,true],["Press banca",1,"AMRAP 3-8",180,true],["Peso muerto",1,"AMRAP 3-8",180,true],["Dominadas",1,"AMRAP 3-8",180,true]],
   "Superserie antagonistas":[["Press banca inclinado",4,"8-10",90,false],["Remo con mancuerna",4,"8-10",90,false],["Curl con barra",3,"10-12",60,false],["Extensión de tríceps en polea",3,"10-12",60,false],["Elevaciones laterales",3,"12-15",45,false],["Face pull",3,"15-20",45,false]],
   "Cluster":[["Sentadilla trasera",5,"3 (cluster)",180,true],["Press banca",5,"3 (cluster)",180,true],["Peso muerto rumano",4,"3 (cluster)",150,true]],
   "Torso completo":[["Press banca",4,"6-8",120,true],["Remo con barra",4,"6-8",120,true],["Press militar mancuernas",3,"8-10",75,false],["Jalón agarre neutro",3,"10-12",75,false],["Elevaciones laterales",3,"12-15",45,false],["Face pull",3,"15-20",45,false]],
   "Pierna completa":[["Sentadilla trasera",4,"6-8",150,true],["Peso muerto rumano",4,"6-8",150,true],["Hip thrust",3,"10-12",90,false],["Prensa de piernas",3,"12-15",75,false],["Curl femoral sentado",3,"12-15",60,false],["Elevación de gemelos de pie",4,"12-20",45,false]],
   "Small muscles":[["Elevaciones laterales",4,"12-20",45,false],["Curl con mancuernas",3,"10-15",45,false],["Extensión de tríceps en polea",3,"10-15",45,false],["Pájaros / Deltoides posterior",3,"15-20",45,false],["Curl martillo",3,"12-15",45,false],["Elevación de gemelos sentado",4,"15-20",45,false],["Curl de muñeca",3,"15-20",45,false],["Crunch en polea",3,"12-15",45,false]],
-  "Fullbody metabólico":[["Sentadilla goblet",4,"12-15",50,false],["Swing con kettlebell",4,"15-20",45,false],["Thrusters",4,"10-12",50,false],["Remo con mancuerna",4,"12-15",45,false],["Burpees",4,"12-15",40,false],["Paseo del granjero",3,"30-40m",45,false]],
-  "HIIT / Cardio":[["AMRAP 12'",1,"12 min",0,false],["Salto al cajón (box jump)",4,"30s",30,false],["Mountain climbers",4,"30s",30,false],["Comba",4,"60s",30,false],["Plancha frontal",3,"30-45s",30,false]],
+  "Fullbody metabólico":[["Sentadilla goblet con mancuerna",4,"12",45,false],["Remo con mancuerna",4,"12",45,false],["Peso muerto rumano con mancuernas",4,"12",45,false],["Press de hombro con mancuernas",4,"12",45,false],["Paseo del granjero con mancuernas",3,"40 m",45,false],["Remo ergómetro",4,"250 m",45,false]],
+  "HIIT / Cardio":[["Remo ergómetro",8,"250 m (descanso 1')",60,false],["Burpees",4,"10",30,false],["Mountain climbers",4,"30 s",30,false],["Plancha frontal",3,"30-45 s",30,false]],
   "Movilidad / Regeneración":[["Movilidad de cadera",2,"8-10",0,false],["Movilidad torácica",2,"8-10",0,false],["Gato-camello",2,"10",0,false],["Plancha frontal",3,"30-45s",30,false],["Bicicleta / Assault bike",1,"15-20 min",0,false]],
 };
 
@@ -6789,7 +6792,7 @@ const EX_POOLS = {
   core:["Plancha frontal","Plancha lateral","Rueda abdominal","Crunch en polea","Elevación de piernas colgado","Russian twist","Pallof press (anti-rotación)","Woodchop en polea","Hollow hold","Copenhagen plank"],
   func:["Swing con kettlebell","Thrusters","Wall balls","Burpees","Sled push (empuje trineo)","Battle ropes","Salto al cajón (box jump)","Mountain climbers"],
   plyo:["Salto al cajón (box jump)","Burpees","Mountain climbers","Comba"],
-  cardio:["Remo (máquina)","Bicicleta / Assault bike","Cinta / Carrera","Comba"],
+  cardio:["Remo ergómetro","Bicicleta / Assault bike","Cinta / Carrera","Comba"],
   hiit:["Sprints / Intervalos","Tabata (8×20/10)","AMRAP 12'","EMOM 10'","Assault bike (intervalos)"],
   carry:["Paseo del granjero","Farmer hold (agarre)","Sled push (empuje trineo)"],
   mobility:["Movilidad de cadera","Movilidad torácica","Círculos de hombro (banda)","Gato-camello","90/90 cadera","World's greatest stretch","Activación de glúteo (banda)","Sentadilla profunda (holds)"],
@@ -6801,12 +6804,164 @@ const EX_POOLS = {
   cfMeta:["Burpees","Swing con kettlebell","Wall balls","Assault bike (calorías)","Thrusters","Mountain climbers"],
   hyrox:["SkiErg","Sled push (empuje trineo)","Sled pull (arrastre trineo)","Burpee broad jumps","Remo (máquina)","Paseo del granjero","Zancadas con saco (sandbag)","Wall balls"],
 };
+// ── METCON: diseño de WOD por protocolo y momento de la temporada ─────────
+// Movimientos por PATRÓN (en orden de preferencia; se filtran por el material
+// del gimnasio). Así cada WOD combina patrones complementarios y no repite
+// (p. ej. nunca dos sentadillas): monoestructural (remo) + cargado + gimnástico.
+const MET_MOVES = {
+  mono:["Remo ergómetro","Assault bike (calorías)","SkiErg","Carrera","Comba (dobles)"],
+  squat:["Thrusters con mancuernas","Sentadilla goblet con mancuerna","Thrusters con barra","Sentadilla frontal","Wall balls"],
+  hinge:["Snatch con mancuerna","Cargada con mancuernas","Peso muerto con barra","Peso muerto rumano con mancuernas","Cargada de potencia (power clean)","Swing con kettlebell"],
+  push:["Flexiones","Press de hombro con mancuernas","Fondos en paralelas","Push press con barra"],
+  pull:["Dominadas","Remo invertido (peso corporal)","Remo con mancuerna","Jalón al pecho"],
+  full:["Burpees","Burpee broad jumps","Mountain climbers"],
+  bw:["Sentadilla al aire (air squat)","Flexiones","Mountain climbers","Burpees"], // sencillos (Tabata)
+  lunge:["Zancadas con mancuernas","Sentadilla búlgara con mancuernas","Zancada caminando"],
+  carry:["Paseo del granjero con mancuernas","Sled push (empuje trineo)"],
+  core:["Hollow hold","Toes to bar","Plancha frontal","V-ups"],
+};
+// Parte de fuerza/técnica antes del metcon (multiarticulares con barra/mancuerna).
+const MET_LIFT = ["Cargada de potencia (power clean)","Push press con barra","Sentadilla frontal","Thrusters con barra","Peso muerto con barra","Snatch con mancuerna"];
+// Estaciones Hyrox (con sustitutos para el material disponible) y su distancia/reps.
+const HYROX_ST = [["SkiErg","500 m"],["Sled push (empuje trineo)","25-50 m"],["Burpee broad jumps","20 m"],["Paseo del granjero con mancuernas","100 m"],["Zancadas con mancuernas","20 m"],["Wall balls","30"],["Thrusters con mancuernas","20"],["Remo ergómetro","500 m"]];
+// Repeticiones por patrón y protocolo: EMOM ≈ 40 s de trabajo por minuto;
+// AMRAP moderado y sostenible; Chipper con volumen alto; For Time por rondas.
+const MET_REPS = {
+  amrap:{squat:"10-12",hinge:"8-10",push:"10-15",pull:"6-10",full:"8-10",bw:"15",lunge:"12-16",carry:"40 m",core:"15"},
+  emom:{squat:"8-10",hinge:"6-8",push:"10-12",pull:"5-8",full:"8-10",bw:"15",lunge:"10-12",carry:"40 m",core:"30 s"},
+  for_time:{squat:"12",hinge:"10",push:"15",pull:"10",full:"10",bw:"20",lunge:"16",carry:"60 m",core:"20"},
+  chipper:{squat:"30",hinge:"25",push:"40",pull:"25",full:"30",bw:"50",lunge:"40 pasos",carry:"100 m",core:"40"},
+  tabata:{squat:"máx. reps",hinge:"máx. reps",push:"máx. reps",pull:"máx. reps",full:"máx. reps",bw:"máx. reps",lunge:"máx. reps",carry:"—",core:"aguanta 20 s"},
+  intervalos:{squat:"12",hinge:"10",push:"15",pull:"10",full:"10",bw:"20",lunge:"16",carry:"40 m",core:"20"},
+};
+// Ajustes por ejercicio: isométricos por tiempo, dinámicos por reps, volúmenes realistas.
+const MET_REP_OVR = [
+  [/hollow|plancha/i,{amrap:"30 s",emom:"30 s",for_time:"30 s",chipper:"1 min",tabata:"aguanta 20 s",intervalos:"30 s"}],
+  [/toes to bar|v-ups/i,{amrap:"10-12",emom:"8-10",for_time:"12",chipper:"30",tabata:"máx. reps",intervalos:"12"}],
+  [/mountain climbers/i,{amrap:"30 (15/lado)",emom:"30 s",for_time:"30",chipper:"60",tabata:"máx. 20 s",intervalos:"30"}],
+  [/fondos/i,{amrap:"8-12",emom:"6-10",for_time:"10",chipper:"25",intervalos:"10"}],
+  [/dominadas/i,{chipper:"20"}],
+  [/burpee broad/i,{amrap:"8",emom:"6-8",for_time:"10",chipper:"20",intervalos:"20 m"}],
+];
+const monoReps = (name, fmt, bt) => {
+  const n=String(name||"").toLowerCase();
+  const T = /carrera/.test(n) ? {amrap:"400 m",emom:"200 m",for_time:"400 m",chipper:"1 km",tabata:"sprint",intervalos:"1 km",finisher:"200 m"}
+    : /comba/.test(n) ? {amrap:"50 dobles",emom:"40 dobles",for_time:"60 dobles",chipper:"100 dobles",tabata:"máx.",intervalos:"100 dobles",finisher:"40 dobles"}
+    : /assault|bici/.test(n) ? {amrap:"12-15 cal",emom:"12 cal",for_time:"20 cal",chipper:"50 cal",tabata:"máx. cal",intervalos:"25 cal",finisher:"12 cal"}
+    : {amrap:"15 cal",emom:bt==="fuerza"?"10 cal (rápido)":"10-12 cal",for_time:"500 m",chipper:"1000 m",tabata:"máx. cal",intervalos:"1000 m",finisher:"12 cal"}; // remo / SkiErg
+  return T[fmt]||T.amrap;
+};
+// Formato y duración por fase. A/B = formato de las semanas A y B del bloque
+// (en "Específico" se invierten); min = minutos base (+2' por ciclo).
+const MET_PLAN = {
+  acondicionamiento:{A:"emom",B:"amrap",min:{emom:16,amrap:16,for_time:15,chipper:20},lift:[4,"5 (técnica)",120]},
+  fuerza:{A:"emom",B:"for_time",min:{emom:12,amrap:10,for_time:10,chipper:15},lift:[5,"3",150]},
+  hipertrofia:{A:"amrap",B:"emom",min:{emom:16,amrap:12,for_time:12,chipper:18},lift:[4,"6-8",120]},
+  hibrido:{A:"chipper",B:"amrap",min:{emom:16,amrap:18,for_time:15,chipper:22},lift:[5,"3-5",120]},
+  descarga:{A:"emom",B:"emom",min:{emom:10,amrap:10,for_time:10,chipper:12},lift:[3,"3 (técnica, suave)",90]},
+};
+// kind: "crossfit" (fuerza + WOD) · "hyrox" · "hiit" · "circuit" (fullbody
+// metabólico) · "finisher". Devuelve filas [nombre,series,reps,descanso,protocolo,principal].
+function buildMetcon(kind, block, goal, weekNo){
+  const bt=block?block.type:"fuerza", wv=waveOf(block,weekNo), test=isTestBlock(block);
+  const plan=MET_PLAN[bt]||MET_PLAN.fuerza;
+  const esp=isEspecificoBlock(block);
+  const seed=(block?(block.start_week||0):Math.floor((weekNo||0)/8))+(wv.ab==="B"?3:0);
+  const prog=(bt==="descarga"||test)?0:Math.min(wv.step,2); // ciclos dentro del bloque
+  const soft=bt==="descarga";
+  const used=[], rows=[];
+  const pick=(role,off=0,top=3,allowUsed=false)=>{ const av=(MET_MOVES[role]||[]).filter(n=>equipOk(n)&&(allowUsed||!used.includes(n))); if(!av.length) return null; const pool=av.slice(0,top); const n=pool[((seed+off)%pool.length+pool.length)%pool.length]; if(!used.includes(n)) used.push(n); return n; };
+  const repsOf=(role,fmt,name)=>{
+    if(role==="mono") return monoReps(name,fmt,bt)+(soft?" · suave":"");
+    let r=(MET_REPS[fmt]||MET_REPS.amrap)[role]||"10";
+    const ov=MET_REP_OVR.find(([re])=>re.test(name||"")); if(ov&&ov[1][fmt]) r=ov[1][fmt];
+    if(bt==="fuerza"&&fmt==="emom"&&(role==="squat"||role==="hinge")) r="5-6 (pesado)";
+    if(bt==="hipertrofia"&&(fmt==="amrap"||fmt==="emom")&&(role==="squat"||role==="hinge")) r="10-12 (carga moderada)";
+    return soft?r+" · suave":r;
+  };
+  const head=(name,reps,fmt)=>rows.push([name,1,reps,0,fmt,false]);
+  const mv=(role,fmt,sets,off=0,repsTxt,allowUsed=false,top=3)=>{ const n=pick(role,off,top,allowUsed); if(n) rows.push([n,sets,repsTxt||repsOf(role,fmt,n),0,fmt,false]); return n; };
+  // Semana A: sentadilla + tracción · semana B: bisagra + empuje (equilibrado en el ciclo).
+  const lower=wv.ab==="A"?"squat":"hinge", upper=wv.ab==="A"?"pull":"push";
+  const coreAcc=()=>{ const n=pick("core",1); if(n) rows.push([n,3,/hollow|plancha/i.test(n)?"30-45 s":"10-15",30,"series_planas",false]); };
+
+  if(kind==="finisher"){
+    head("Finisher EMOM 8' (alternando)","8 min","emom");
+    mv("mono","emom",4,0,monoReps(MET_MOVES.mono.find(equipOk)||"Remo ergómetro","finisher",bt));
+    mv(wv.step%2?"core":"full","emom",4,0);
+    return rows;
+  }
+  if(kind==="hyrox"){
+    const rounds=soft?2:(test?4:3+prog);
+    const run=equipOk("Carrera")?"Carrera":(equipOk("Remo ergómetro")?"Remo ergómetro":MET_MOVES.mono.find(equipOk));
+    head(`Hyrox · ${rounds} rondas (${run==="Carrera"?"1 km":"1000 m remo"} + 3 estaciones)`,`${rounds} rondas`,"intervalos");
+    if(run){ used.push(run); rows.push([run,rounds,run==="Carrera"?"1 km":"1000 m",0,"intervalos",false]); }
+    const st=HYROX_ST.filter(([n])=>equipOk(n)&&!used.includes(n));
+    for(let k=0;k<Math.min(3,st.length);k++){ const [n,r]=st[(seed+k)%st.length]; if(used.includes(n)) continue; used.push(n); rows.push([n,rounds,soft?r+" · suave":r,0,"intervalos",false]); }
+    coreAcc(); return rows;
+  }
+  if(kind==="circuit"){ // fullbody metabólico: fuerza-resistencia por rondas
+    const rounds=soft?2:Math.min(5,3+prog);
+    head(`Circuito · ${rounds} rondas (descanso 1' entre rondas)`,`${rounds} rondas`,"intervalos");
+    [["squat"],["pull"],["hinge"],["push"],["carry"],["mono"]].forEach(([role],i)=>{ const n=pick(role,i); if(n) rows.push([n,rounds,role==="mono"?(soft?"250 m · suave":"250 m"):repsOf(role,"intervalos",n),0,"intervalos",false]); });
+    coreAcc(); return rows;
+  }
+  if(kind==="hiit"){ // cardio dominante: EMOM aeróbico + Tabata
+    const st=soft?2:4, m=Math.ceil(((soft?10:plan.min.emom)+2*prog)/st)*st;
+    head(`WOD EMOM ${m}' (rotando ${st} ejercicios)`,`${m} min`,"emom");
+    const roles=soft?["mono","core"]:["mono","full","bw","core"];
+    roles.forEach((role,i)=>mv(role,"emom",m/st,i));
+    if(!soft){ head("WOD Tabata 4'","8 rondas 20s/10s","tabata"); mv("mono","tabata",4,0,null,true); mv("bw","tabata",4,1,null,true); }
+    return rows;
+  }
+  // ── crossfit: fuerza/técnica + metcon según la fase ──
+  const fmt=test?"amrap":((wv.ab==="A")!==esp?plan.A:plan.B);
+  // Fuerza previa complementaria: si el WOD es de sentadilla, bisagra/cargada; si es de bisagra, sentadilla/empuje.
+  const liftList=lower==="squat"?["Cargada de potencia (power clean)","Peso muerto con barra","Snatch con mancuerna"]:["Sentadilla frontal","Push press con barra","Thrusters con barra"];
+  const lift=(()=>{ const av=liftList.filter(n=>equipOk(n)); if(!av.length) return null; const n=av[seed%av.length]; used.push(n); return n; })();
+  if(lift) rows.push([lift,plan.lift[0],test?"3-5 (técnica)":plan.lift[1],plan.lift[2],soft?"series_planas":"ramp_up",true]);
+  if(/thrusters/i.test(lift||"")) used.push("Thrusters con mancuernas");
+  if(test){ // benchmark fijo para comparar entre bloques
+    head("Benchmark AMRAP 12'","12 min","amrap");
+    const first=(role)=>(MET_MOVES[role]||[]).find(n=>equipOk(n)&&!used.includes(n));
+    [["mono","15 cal"],["squat","10"],["full","10"]].forEach(([role,r])=>{ const n=first(role); if(n){ used.push(n); rows.push([n,1,role==="mono"?monoReps(n,"amrap",bt):r,0,"amrap",false]); } });
+    return rows;
+  }
+  if(fmt==="amrap"){
+    const m=plan.min.amrap+2*prog; head(`WOD AMRAP ${m}'`,`${m} min`,"amrap");
+    mv("mono","amrap",1); mv(lower,"amrap",1,1); mv(upper,"amrap",1,2);
+  } else if(fmt==="emom"){
+    const roles=soft?["mono","core"]:bt==="fuerza"?["mono",lower,upper]:["mono",lower,upper,"core"];
+    const st=roles.length, m=Math.ceil((plan.min.emom+2*prog)/st)*st;
+    head(`WOD EMOM ${m}' (rotando ${st} ejercicios)`,`${m} min`,"emom");
+    roles.forEach((role,i)=>mv(role,"emom",m/st,i));
+  } else if(fmt==="for_time"){
+    if(bt==="fuerza"){ // pareja clásica corta e intensa
+      const cap=plan.min.for_time; head("WOD For Time · 21-15-9",`cap ${cap} min`,"for_time");
+      mv(lower,"for_time",3,1,"21-15-9"); if(upper==="pull") mv("pull","for_time",3,2,"21-15-9"); else mv("full","for_time",3,0,"21-15-9",false,1); // dominadas o burpees
+    } else {
+      const rounds=Math.min(6,4+prog), cap=plan.min.for_time+2*prog;
+      head(`WOD For Time · ${rounds} rondas`,`cap ${cap} min`,"for_time");
+      mv("mono","for_time",rounds); mv(lower,"for_time",rounds,1); mv(upper,"for_time",rounds,2);
+    }
+  } else if(fmt==="chipper"){
+    const cap=plan.min.chipper+2*prog; head("WOD Chipper",`cap ${cap} min`,"chipper");
+    const mono=mv("mono","chipper",1);
+    ["squat","pull","hinge","push","lunge","full"].forEach((role,i)=>mv(role,"chipper",1,i));
+    if(mono) rows.push([mono,1,monoReps(mono,"for_time",bt),0,"chipper",false]); // cierra con remo
+  }
+  if(!soft&&fmt!=="emom") coreAcc();
+  return rows;
+}
+
 // Distancias/reps de referencia de las estaciones Hyrox.
 const HYROX_REPS = {"SkiErg":"500 m","Sled push (empuje trineo)":"25-50 m","Sled pull (arrastre trineo)":"25-50 m","Burpee broad jumps":"20-40 m","Remo (máquina)":"500 m","Paseo del granjero":"100 m","Zancadas con saco (sandbag)":"50 m","Wall balls":"30-50"};
 // Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
 // Devuelve una CLAVE de equipo; la etiqueta visible está en EQUIP_LABEL.
 const EQUIP = [
-  [/air squat|al aire|toes to bar|burpee broad/i,"pesocorporal"],
+  [/remo ergómetro|remo ergometro|remo aeróbico|remo aerobico|remo \(máquina\)|remo \(maquina\)/i,"remo"],
+  [/goblet.*mancuerna|mancuerna.*goblet/i,"mancuernas"],
+  [/air squat|al aire|toes to bar|burpee broad|v-ups|hollow/i,"pesocorporal"],
   [/multipower|smith|jaula/i,"multipower"],
   [/desde pines|rack pull|pin press|press desde pines|tirón desde pines|tiron desde pines/i,"rackpines"],
   [/kettlebell|swing|goblet|turkish/i,"kettlebell"],
@@ -6834,16 +6989,16 @@ const EQUIP_LABEL = {
   poleas:"🪢 Poleas / cable", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barra / rack",
   pesocorporal:"🤸 Peso corporal", comba:"🪀 Comba", cuerdas:"🪢 Cuerdas de batalla",
   trineo:"🛷 Trineo", balon:"⚽ Balón medicinal", cajon:"📦 Cajón / pliometría",
-  banda:"🎗️ Banda elástica", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (máquina)",
+  banda:"🎗️ Banda elástica", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (bici, SkiErg, cinta)", remo:"🚣 Remo ergómetro",
   antebrazo:"🤏 Antebrazo / agarre", movilidad:"🧘 Movilidad / suelo", otros:"🎯 Otros / analítico",
 };
 // Orden y etiquetas para el editor de material.
-const EQUIP_KEYS = ["barra","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
+const EQUIP_KEYS = ["barra","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
 const equipmentOf = (name) => { for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
 const equipmentLabel = (name) => EQUIP_LABEL[equipmentOf(name)] || EQUIP_LABEL.otros;
 // Prioridad de material: barra/rack/multipower PRIMERO (es el cuello de botella),
 // luego máquinas de pierna, mancuernas, poleas y por último peso corporal/cardio.
-const EQUIP_ORDER = ["barra","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
+const EQUIP_ORDER = ["barra","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","remo","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
 const equipRank = (name) => { const i=EQUIP_ORDER.indexOf(equipmentOf(name)); return i<0?99:i; };
 
 // Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
@@ -6865,6 +7020,8 @@ const DAY_LABEL = Object.fromEntries(DAY_TYPES);
 // A se repite cada dos semanas, igual que el de B. Cada par A+B es un "ciclo";
 // en cada ciclo nuevo sube la carga de los básicos (sobrecarga progresiva).
 const isTestBlock = (b) => !!(b && /test/i.test(b.name||""));
+// "Específico" (ojo: "Inespecífico" también contiene la palabra).
+const isEspecificoBlock = (b) => { const n=String((b&&b.name)||""); return /espec[ií]fico/i.test(n)&&!/inespec[ií]fico/i.test(n); };
 const waveOf = (block, weekNo) => {
   const w = parseInt(weekNo)||0;
   const idx = block ? Math.max(0, w-(block.start_week||w)) : Math.max(0, w-1);
@@ -6933,7 +7090,7 @@ function buildDayRoutine(dayType, block, goal, weekNo){
   // semanas y así se puede progresar la carga); cambian al cambiar de bloque.
   const wk = (block?(block.start_week||0):Math.floor((weekNo||0)/8)) + (wv.ab==="B"?3:0);
   // Protocolo del ejercicio principal según fase.
-  const isEspecifico = /específico|especifico/i.test(block?(block.name||""):"");
+  const isEspecifico = isEspecificoBlock(block);
   const mainProto = bt==="fuerza" ? (isEspecifico?"ramp_up":"top_set_backoff")
                   : bt==="hipertrofia" ? (isEspecifico?"rest_pause":"series_planas")
                   : "series_planas";
@@ -6948,7 +7105,6 @@ function buildDayRoutine(dayType, block, goal, weekNo){
   // si no queda ninguno disponible para ese patrón, omite el hueco (no fuerza
   // material que no tienes).
   const pick=(arr,base)=>{ const av=arr.filter(n=>equipOk(n)&&!r.some(x=>x[0]===n)); if(!av.length) return null; return av[(((wk+base)%av.length)+av.length)%av.length]; };
-  const metaProto = ["amrap","emom","tabata","series_planas"][(salud?(weekNo||0):0)%4];
 
   if(dayType==="fuerzaA"){ // tren inferior fuerza
     add(pick(EX_POOLS.squat,0),mS,rep,150,mainProto,true);
@@ -7003,47 +7159,19 @@ function buildDayRoutine(dayType, block, goal, weekNo){
     add(pick(EX_POOLS.calf,4),aS,"12-20",45,accProto,false);
     add(pick(EX_POOLS.forearm,5),aS,"12-20",45,accProto,false);
     add(pick(EX_POOLS.core,6),aS,"12-15",45,accProto,false);
-  } else if(dayType==="hiit"){ // HIIT / cardio
-    add(pick(EX_POOLS.hiit,0),1,"12-20 min",0,"amrap",false);
-    add(pick(EX_POOLS.plyo,1),4,"30s",30,"tabata",false);
-    add(pick(EX_POOLS.func,2),4,"12-15",40,"emom",false);
-    add(pick(EX_POOLS.core,3),3,"30-45s",30,"series_planas",false);
-  } else if(dayType==="crossfit"){ // WOD estilo CrossFit: fuerza/técnica + metcon
-    const fmt=["amrap","for_time","emom","chipper"][(weekNo||0)%4];
-    const head={amrap:["WOD AMRAP 14'","14 min"],for_time:["WOD For Time · 5 rondas","cap 15 min"],emom:["WOD EMOM 15' (rotando 3 ejercicios)","15 min"],chipper:["WOD Chipper","cap 20 min"]}[fmt];
-    const rounds=bt==="descarga"?2:(fmt==="chipper"?1:5);
-    const rr=fmt==="chipper"?"30-50":fmt==="emom"?"8-12":"10-15";
-    const firstWord=(n)=>String(n||"").split(/[ (]/)[0].toLowerCase();
-    // Evita repetir el mismo patrón en el WOD (p. ej. dos sentadillas).
-    const pickDiff=(arr,base)=>{ const used=r.map(x=>firstWord(x[0])); const av=arr.filter(n=>equipOk(n)&&!r.some(x=>x[0]===n)&&!used.includes(firstWord(n))); if(!av.length) return pick(arr,base); return av[(((wk+base)%av.length)+av.length)%av.length]; };
-    const monoReps=(n)=>{ const c=fmt==="chipper"; if(/^carrera/i.test(n||"")) return c?"1 km":"400 m"; if(/^comba/i.test(n||"")) return c?"100 dobles":"50 dobles / 100 simples"; return c?"1000 m / 50 cal":"250 m / 12-15 cal"; };
-    add(pick(EX_POOLS.cfLift,0),bt==="descarga"?3:5,"3-5",120,"ramp_up",true);
-    add(head[0],1,head[1],0,fmt,false);
-    add(pickDiff(EX_POOLS.cfWeight,1),rounds,rr,0,fmt,false);
-    add(pickDiff(EX_POOLS.cfGym,2),rounds,rr,0,fmt,false);
-    const mono=pickDiff(EX_POOLS.cfMono,3); add(mono,rounds,monoReps(mono),0,fmt,false);
-    if(fmt==="chipper") add(pickDiff(EX_POOLS.cfGym,5),1,"30-50",0,fmt,false);
-    add(pick(EX_POOLS.core,4),3,"30-45s",30,"series_planas",false);
-    return r; // orden del WOD tal cual
-  } else if(dayType==="hyrox"){ // resistencia tipo Hyrox: carrera + estaciones
-    const rounds=bt==="descarga"?2:(test?4:3+Math.min(wv.step,2)); // +1 ronda por ciclo
-    add(`Hyrox · ${rounds} rondas (1 km + 3 estaciones)`,1,`${rounds} rondas`,0,"intervalos",false);
-    add(equipOk("Carrera 1 km")?"Carrera 1 km":pick(EX_POOLS.cfMono,0),rounds,"1 km",0,"intervalos",false);
-    for(let k=0;k<3;k++){ const n=pick(EX_POOLS.hyrox,k*2); if(n) add(n,rounds,HYROX_REPS[n]||"1 estación",0,"intervalos",false); }
-    add(pick(EX_POOLS.core,3),3,"30-45s",30,"series_planas",false);
-    return r;
+  } else if(dayType==="hiit"){ // HIIT / cardio: EMOM aeróbico + Tabata
+    return buildMetcon("hiit",block,goal,weekNo);
+  } else if(dayType==="crossfit"){ // fuerza/técnica + WOD según la fase
+    return buildMetcon("crossfit",block,goal,weekNo);
+  } else if(dayType==="hyrox"){ // remo/carrera + estaciones
+    return buildMetcon("hyrox",block,goal,weekNo);
   } else if(dayType==="mobility"){ // movilidad / regeneración
     add(pick(EX_POOLS.mobility,0),2,"8-10",0,"series_planas",false);
     add(pick(EX_POOLS.mobility,2),2,"8-10",0,"series_planas",false);
     add(pick(EX_POOLS.core,1),3,"30-45s",30,"series_planas",false);
     add(pick(EX_POOLS.cardio,0),1,"15-20 min",0,"series_planas",false);
-  } else { // fullbody metabólico
-    add(pick(EX_POOLS.squat,0),4,"10-12",60,metaProto,false);
-    add(pick(EX_POOLS.hinge,1),4,"10-12",60,metaProto,false);
-    add(pick(EX_POOLS.func,2),4,"12-15",45,metaProto,false);
-    add(pick(EX_POOLS.func,5),4,"12-15",45,metaProto,false);
-    add(pick(EX_POOLS.carry,0),3,"30-40m",45,metaProto,false);
-    add(pick(EX_POOLS.core,3),3,"30-45s",30,metaProto,false);
+  } else { // fullbody metabólico: circuito de fuerza-resistencia por rondas
+    return buildMetcon("circuit",block,goal,weekNo);
   }
   // Orden final: primero los principales, luego por prioridad de material
   // (barra/rack/multipower primero) para descongestionar los racks al inicio.
@@ -7054,8 +7182,7 @@ function buildDayRoutine(dayType, block, goal, weekNo){
   }).map(x=>x.e);
   // Salud (concurrente): finisher metabólico en las semanas B de los días de fuerza.
   if(salud && wv.ab==="B" && bt!=="descarga" && !test && ["fuerzaA","fuerzaB","push","pull","legs","upper","lower"].includes(dayType)){
-    const av=EX_POOLS.cfMeta.filter(n=>equipOk(n)&&!out.some(x=>x[0]===n));
-    if(av.length) out.push([av[(weekNo||0)%av.length],1,"EMOM 8' · 10-12/min",0,"emom",false]);
+    buildMetcon("finisher",block,goal,weekNo).forEach(x=>out.push(x));
   }
   return out;
 }
