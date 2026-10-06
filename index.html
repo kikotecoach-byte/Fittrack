@@ -3226,31 +3226,60 @@ function WodTimer({wod,onClose,onSave}) {
   const [saved,setSaved]=React.useState(false);
   const t0=React.useRef(0), acc=React.useRef(0), audio=React.useRef(null), lastSec=React.useRef(-1), wake=React.useRef(null);
   const f=cfg.format, total=f==="intervalos"?0:Math.max(1,parseInt(cfg.minutes)||1)*60000, moves=cfg.moves, n=Math.max(1,moves.length);
-  const beep=(fr=880,d=0.15)=>{ try{ const a=audio.current; if(!a) return; const o=a.createOscillator(), g=a.createGain(); o.frequency.value=fr; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.25,a.currentTime); g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+d); o.start(); o.stop(a.currentTime+d); }catch(e){} try{ navigator.vibrate&&navigator.vibrate(d>0.3?400:120); }catch(e){} };
+  // Sonido: "voz" (pitidos + voz en español), "pitidos" o "off". Se recuerda en este móvil.
+  const [snd,setSnd]=React.useState(()=>{ try{ return localStorage.getItem("kg_wod_snd")||"voz"; }catch(e){ return "voz"; } });
+  const sndRef=React.useRef(snd); sndRef.current=snd;
+  const cycleSnd=()=>{ const nx=snd==="voz"?"pitidos":snd==="pitidos"?"off":"voz"; setSnd(nx); try{ localStorage.setItem("kg_wod_snd",nx); }catch(e){} if(nx!=="voz"){ try{ window.speechSynthesis&&speechSynthesis.cancel(); }catch(e){} } };
+  const beep=(fr=880,d=0.15,delay=0)=>{ if(sndRef.current!=="off"){ try{ const a=audio.current; if(a){ const t=a.currentTime+delay, o=a.createOscillator(), g=a.createGain(); o.frequency.value=fr; o.connect(g); g.connect(a.destination); g.gain.setValueAtTime(0.0001,t); g.gain.exponentialRampToValueAtTime(0.3,t+0.01); g.gain.exponentialRampToValueAtTime(0.001,t+d); o.start(t); o.stop(t+d+0.02); } }catch(e){} }
+    if(delay===0){ try{ navigator.vibrate&&navigator.vibrate(d>0.3?400:120); }catch(e){} } };
+  const say=(t)=>{ if(sndRef.current!=="voz"||!t) return; try{ const S=window.speechSynthesis; if(!S) return; S.cancel(); const u=new SpeechSynthesisUtterance(t); u.lang="es-ES"; u.rate=1.05; const v=(S.getVoices()||[]).find(x=>/^es/i.test(x.lang)); if(v) u.voice=v; S.speak(u); }catch(e){} };
+  const sChange=(t)=>{ beep(1046,0.45); say(t); };            // cambio de ejercicio / fase
+  const sHalf=(t)=>{ beep(880,0.12); beep(880,0.12,0.22); say(t); }; // mitad (doble pitido)
+  const sTick=()=>beep(660,0.08);                              // 3-2-1
   const steps=f==="intervalos"?Array.from({length:Math.max(1,parseInt(cfg.rounds)||1)*n},(_,i)=>({r:Math.floor(i/n)+1,m:moves[i%n]})):f==="chipper"?moves.map((m,i)=>({r:1,m})):[];
-  const finish=(why)=>{ acc.current=ms; setPhase("done"); beep(660,0.6); };
+  const finish=(why)=>{ acc.current=ms; setPhase("done"); beep(523,0.25); beep(523,0.25,0.3); beep(784,0.8,0.6); say(why||"¡Tiempo! Terminado"); };
   // Reloj
   React.useEffect(()=>{
-    if(phase==="prep"){ const id=setInterval(()=>setPrep(p=>{ if(p<=1){ clearInterval(id); t0.current=Date.now(); acc.current=0; setPhase("run"); beep(1046,0.5); return 0; } if(p<=4) beep(660,0.12); return p-1; }),1000); return ()=>clearInterval(id); }
+    if(phase==="prep"){ const id=setInterval(()=>setPrep(p=>{ if(p<=1){ clearInterval(id); t0.current=Date.now(); acc.current=0; setPhase("run"); beep(1046,0.5);
+        const first=(f==="emom"||f==="tabata"||f==="intervalos"||f==="chipper")&&moves[0]?moves[0].name:""; say(first?`¡Vamos! ${first}`:"¡Vamos!"); return 0; }
+      if(p<=4){ sTick(); say(String(p-1)); } return p-1; }),1000); return ()=>clearInterval(id); }
     if(phase==="run"){ const id=setInterval(()=>{ const v=acc.current+Date.now()-t0.current; setMs(v); },200); return ()=>clearInterval(id); }
   },[phase]);
-  // Avisos por tiempo
+  // Avisos por tiempo: cambios, mitad de cada minuto (EMOM), mitad del WOD, último minuto y 3-2-1.
+  const cueAt=(sec)=>{
+    const T=total/1000, half=T>0&&T%2===0?T/2:(T>0?Math.floor(T/2):-1);
+    if(f==="emom"){ const inMin=sec%60, k=Math.floor(sec/60);
+      if(inMin===0&&sec>0&&sec<T){ const mv=moves[k%n]; sChange(`${sec===half?"Mitad del EMOM. ":""}Cambio${mv?`, ${mv.name}`:""}`); }
+      else if(inMin===30) sHalf(sec===half?"Mitad del EMOM":"Mitad");
+      else if(inMin>=57) sTick();
+      return; }
+    if(f==="tabata"){ const inR=sec%30, r=Math.floor(sec/30);
+      if(inR===0&&sec>0&&sec<T){ const mv=moves[r%n]; beep(1046,0.45); say(`${sec===half?"Mitad. ":""}Trabajo${mv?`, ${mv.name}`:""}`); }
+      else if(inR===20){ beep(440,0.5); say("Descanso"); }
+      else if(inR>=27||(inR>=17&&inR<20)) sTick();
+      return; }
+    if(T>0){ // AMRAP, For Time, Chipper
+      if(sec===half) sHalf("Mitad del tiempo");
+      else if(T>90&&sec===T-60) sHalf("Último minuto");
+      else if(sec>=T-3&&sec<T) sTick();
+    }
+  };
   React.useEffect(()=>{
     if(phase!=="run") return;
-    const sec=Math.floor(ms/1000); if(sec===lastSec.current) return; lastSec.current=sec;
-    if(total&&(f==="amrap"||f==="emom"||f==="tabata")&&ms>=total){ finish(); return; }
-    if(total&&(f==="for_time"||f==="chipper")&&ms>=total){ finish(); return; }
-    if(f==="emom"){ const inMin=sec%60; if(inMin===0&&sec>0) beep(1046,0.4); else if(inMin>=57) beep(660,0.1); }
-    if(f==="tabata"){ const inR=sec%30; if(inR===0&&sec>0) beep(1046,0.4); else if(inR===20) beep(440,0.4); else if(inR>=27||(inR>=17&&inR<20)) beep(660,0.08); }
-    if(f==="amrap"&&total&&total-ms<=3500&&total-ms>0) beep(660,0.1);
+    const sec=Math.floor(ms/1000); if(sec<=lastSec.current) return;
+    for(let x=Math.max(0,lastSec.current+1);x<=sec;x++) cueAt(x);
+    lastSec.current=sec;
+    if(total&&ms>=total){ finish(f==="for_time"||f==="chipper"?"¡Tiempo límite!":"¡Tiempo! Terminado"); return; }
   },[ms,phase]);
-  React.useEffect(()=>()=>{ try{ wake.current&&wake.current.release(); }catch(e){} },[]);
+  React.useEffect(()=>()=>{ try{ wake.current&&wake.current.release(); }catch(e){} try{ window.speechSynthesis&&speechSynthesis.cancel(); }catch(e){} },[]);
   const start=async()=>{ try{ audio.current=audio.current||new (window.AudioContext||window.webkitAudioContext)(); audio.current.resume&&audio.current.resume(); }catch(e){} try{ if(navigator.wakeLock) wake.current=await navigator.wakeLock.request("screen"); }catch(e){} setMs(0); setRounds(0); setLaps([]); setStep(0); setSaved(false); setPrep(10); lastSec.current=-1; setPhase("prep"); };
   const pause=()=>{ acc.current=ms; setPhase("paused"); };
   const resume=()=>{ t0.current=Date.now(); setPhase("run"); };
   const mmss=(v)=>{ const t=Math.max(0,Math.floor(v/1000)); return `${String(Math.floor(t/60)).padStart(2,"0")}:${String(t%60).padStart(2,"0")}`; };
-  const addRound=()=>{ setRounds(r=>{ const nr=r+1; setLaps(l=>[...l,ms]); if(f==="for_time"&&nr>=(parseInt(cfg.rounds)||1)) setTimeout(()=>finish(),0); return nr; }); beep(988,0.1); };
-  const nextStep=()=>{ setLaps(l=>[...l,ms]); setStep(s=>{ const ns=s+1; if(ns>=steps.length) setTimeout(()=>finish(),0); return ns; }); beep(988,0.1); };
+  const addRound=()=>{ const nr=rounds+1; setRounds(nr); setLaps(l=>[...l,ms]); const goal=parseInt(cfg.rounds)||1;
+    if(f==="for_time"&&nr>=goal){ setTimeout(()=>finish("¡Terminado!"),0); } else { beep(988,0.12); say(f==="for_time"?`Ronda ${nr}. Quedan ${goal-nr}`:`Ronda ${nr}`); } };
+  const nextStep=()=>{ const ns=step+1; setLaps(l=>[...l,ms]); setStep(ns);
+    if(ns>=steps.length){ setTimeout(()=>finish("¡Terminado!"),0); } else { const nx=steps[ns]; sChange(`${f==="intervalos"&&nx.r!==steps[step].r?`Ronda ${nx.r}. `:""}${nx.m?nx.m.name:"Siguiente"}`); } };
   const sec=Math.floor(ms/1000);
   // Qué mostrar según el formato
   let big=mmss(ms), sub="", cur=null, next=null, bg="#0b1220";
@@ -3270,7 +3299,10 @@ function WodTimer({wod,onClose,onSave}) {
           <div style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>{fmtName}{f!=="intervalos"?` · ${cfg.minutes}'`:""}{(f==="for_time"||f==="intervalos")?` · ${cfg.rounds} rondas`:""}</div>
           <div style={{fontSize:15,fontWeight:800,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{(wod&&wod.title)||"Temporizador"}</div>
         </div>
-        <button onClick={onClose} style={{background:"rgba(255,255,255,.12)",color:"#fff",border:"none",borderRadius:10,padding:"9px 13px",fontSize:14,fontWeight:700,cursor:"pointer"}}>✕</button>
+        <div style={{display:"flex",gap:6,flexShrink:0}}>
+          <button onClick={cycleSnd} title="Sonido: voz + pitidos / solo pitidos / silencio" style={{background:"rgba(255,255,255,.12)",color:"#fff",border:"none",borderRadius:10,padding:"9px 11px",fontSize:13,fontWeight:700,cursor:"pointer",whiteSpace:"nowrap"}}>{snd==="voz"?"🗣️ Voz":snd==="pitidos"?"🔔 Pitidos":"🔇 Silencio"}</button>
+          <button onClick={()=>{ try{ window.speechSynthesis&&speechSynthesis.cancel(); }catch(e){} onClose(); }} style={{background:"rgba(255,255,255,.12)",color:"#fff",border:"none",borderRadius:10,padding:"9px 13px",fontSize:14,fontWeight:700,cursor:"pointer"}}>✕</button>
+        </div>
       </div>
 
       {phase==="ready"&&(
