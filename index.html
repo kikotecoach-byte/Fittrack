@@ -556,6 +556,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
 function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify,onLogout}) {
+  setCustomExercises(exercises); // ejercicios propios (músculos y material) para buscador y generador
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
   const [weekBig,setWeekBig] = React.useState(false); // vista de semana ampliada (más espacio para arrastrar)
@@ -2658,6 +2659,12 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
       if(oldW!=null&&Number(oldW)!==w) await sb.from("weight_history").insert({client_id:sel,exercise_name:ex.exercise_name,old_weight:oldW,new_weight:w,reason:"Sesión ejecutada"});
     }
   };
+  const [picker,setPicker]=React.useState(null); // {mode:"swap",ex} | {mode:"add"}
+  const cwOfSel=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const pickIt=async(it)=>{ const p=picker; setPicker(null); setBusy(true);
+    if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
+    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
+    await loadAll(); setBusy(false); };
   const finalizarPersona=async()=>{ if(!asig) return; setBusy(true); await sb.from("assigned_sessions").update({status:"done"}).eq("id",asig.id); await loadAll(); setBusy(false); notify(`${selClient.name.split(" ")[0]}: entreno registrado ✓`); };
   const cerrar=async()=>{ setBusy(true); await loadAll(); setBusy(false); onClose(); };
   const doneCount=exs.filter(ex=>valOf(ex,"done")).length;
@@ -2703,7 +2710,10 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
               {exs.map(ex=>{ const done=valOf(ex,"done"); return(
                 <div key={ex.id} style={{background:done?"#eef8dd":"#f8fafc",border:`1px solid ${done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
-                    <div style={{fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ex.exercise_name}</div>
+                    <div style={{minWidth:0}}>
+                      <div style={{fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ex.exercise_name} <button onClick={()=>setPicker({mode:"swap",ex})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
+                      <MuscleTags name={ex.exercise_name}/>
+                    </div>
                     <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {ex.sets&&ex.reps?`${ex.sets}×${ex.reps}`:"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}</div>
                   </div>
                   <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
@@ -2733,11 +2743,13 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
         </div>
 
         <div style={{display:"flex",gap:8,marginTop:12,flexShrink:0}}>
+          {asig&&<button className="btn ghost" style={{padding:"12px 12px"}} title="Añadir ejercicio" disabled={busy} onClick={()=>setPicker({mode:"add"})}>＋</button>}
           {asig&&<button className="btn sky" style={{flex:1,padding:12,justifyContent:"center"}} disabled={busy} onClick={finalizarPersona}>Registrar {selClient?selClient.name.split(" ")[0]:""} ({doneCount}/{exs.length})</button>}
           <button className="btn ghost" style={{flex:asig?"0 0 auto":1,padding:"12px 16px"}} onClick={cerrar}>Cerrar</button>
         </div>
       </div>
       {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)} onSave={async(res)=>{ const r=timerWod.header||timerWod.rows[0]; const {error}=await sb.from("assigned_exercises").update({actual_reps:res,done:true,done_at:new Date().toISOString()}).eq("id",r.id); notify(error?"No se pudo guardar el resultado":"Resultado del WOD guardado ✓",error?"err":undefined); }}/>}
+      {picker&&<ExercisePicker title={picker.mode==="swap"?"🔄 Cambiar ejercicio":`＋ Añadir ejercicio${selClient?` · ${selClient.name.split(" ")[0]}`:""}`} current={picker.mode==="swap"?picker.ex.exercise_name:null} loadAll={loadAll} notify={notify} onPick={pickIt} onClose={()=>setPicker(null)}/>}
     </div>
   );
 }
@@ -2885,14 +2897,116 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
   );
 }
 
+// ── BUSCADOR DE EJERCICIOS (cambiar / añadir / crear) ──────────────────────
+// Sustitutos del mismo patrón y músculo, búsqueda, filtro por músculo y
+// material, y crear ejercicios propios (se guardan para reutilizarlos).
+const MuscleTags=({name,max=3})=>{ const m=musclesOf(name).slice(0,max); return m.length?<span style={{display:"inline-flex",gap:3,flexWrap:"wrap"}}>{m.map((x,i)=><span key={x} style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:20,background:i===0?"#e0ecfb":"#f1f4fa",color:i===0?"#0369a1":"#64748b",border:"1px solid #dbe2ec"}}>{x}</span>)}</span>:null; };
+function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
+  const [q,setQ]=React.useState("");
+  const [mus,setMus]=React.useState("");
+  const [onlyMine,setOnlyMine]=React.useState(true);
+  const [eqF,setEqF]=React.useState("");
+  const [creating,setCreating]=React.useState(false);
+  const [nw,setNw]=React.useState({name:"",muscles:[],equip:"",sets:3,reps:"10-12",rest:60,notes:""});
+  const [busy,setBusy]=React.useState(false);
+  const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const subs=current?substitutesFor(current,10):[];
+  const list=exerciseCatalog().filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!mus||musclesOf(x.name).includes(mus))&&(!onlyMine||equipOk(x.name))&&(!eqF||equipmentOf(x.name)===eqF))
+    .sort((a,b)=>(b.custom-a.custom)||a.name.localeCompare(b.name)).slice(0,80);
+  const Row=({x,hint})=>(
+    <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
+      <span style={{flex:1,minWidth:0}}>
+        <span style={{display:"block",fontSize:13,fontWeight:700,color:"#0f172a"}}>{x.name}{x.custom&&<span style={{fontSize:9,fontWeight:800,color:"#7c3aed",marginLeft:6}}>PROPIO</span>}</span>
+        <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(EQUIP_LABEL[equipmentOf(x.name)]||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
+      </span>
+      <span style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{hint||`${x.sets}×${x.reps}`}</span>
+    </button>
+  );
+  const create=async()=>{
+    const name=nw.name.trim(); if(!name) return notify("Escribe el nombre del ejercicio","err");
+    setBusy(true);
+    const cat=MUSCLE_CAT[nw.muscles[0]]||"Fuerza";
+    const base={name,category:cat,muscle_group:nw.muscles.join(", "),description:nw.notes||"",difficulty:"Intermedio"};
+    let r=await sb.from("exercises").insert({...base,equipment:nw.equip||null,default_sets:parseInt(nw.sets)||3,default_reps:nw.reps||"10-12",rest_seconds:parseInt(nw.rest)||60});
+    if(r.error) r=await sb.from("exercises").insert(base); // sin las columnas nuevas (docs/ejercicios.sql)
+    setBusy(false);
+    if(r.error){ notify("No se pudo guardar: "+r.error.message,"err"); return; }
+    // Disponible al momento (aunque falten columnas en la tabla).
+    CUSTOM_EX[name.toLowerCase()]={name,equip:nw.equip||null,muscles:nw.muscles,cat,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,desc:nw.notes||""};
+    if(loadAll) loadAll();
+    notify("Ejercicio creado ✓");
+    onPick({name,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,custom:true,notes:nw.notes||""});
+  };
+  const chip=(on,txt,onClick,key)=><button key={key||txt} onClick={onClick} style={{flexShrink:0,fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{txt}</button>;
+  return(
+    <div className="ovl" style={{zIndex:1500}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>{title||"Elegir ejercicio"}</h2>
+        {current&&<div style={{fontSize:11,color:"#64748b",marginBottom:8}}>Ahora: <b style={{color:"#0f172a"}}>{current}</b> · <MuscleTags name={current}/> · {EQUIP_LABEL[equipmentOf(current)]||""}</div>}
+        {!creating?<>
+          <input className="inp" autoFocus={!current} placeholder="🔍 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:8,flexShrink:0}}/>
+          <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:5,flexShrink:0}}>
+            {chip(!mus,"Todos",()=>setMus(""),"_all")}
+            {MUSCLES.map(m=>chip(mus===m,m,()=>setMus(mus===m?"":m),m))}
+          </div>
+          <div style={{display:"flex",gap:6,alignItems:"center",margin:"4px 0 8px",flexWrap:"wrap",flexShrink:0}}>
+            <label style={{fontSize:11,fontWeight:700,color:"#475569",display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}><input type="checkbox" checked={onlyMine} onChange={e=>setOnlyMine(e.target.checked)}/> Solo mi material</label>
+            <select value={eqF} onChange={e=>setEqF(e.target.value)} style={{fontSize:11,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:8,padding:"4px 6px",background:"#fff",color:"#475569"}}>
+              <option value="">Cualquier material</option>
+              {EQUIP_KEYS.concat(["otros"]).map(k=><option key={k} value={k}>{EQUIP_LABEL[k]||k}</option>)}
+            </select>
+          </div>
+          <div style={{flex:1,overflowY:"auto",minHeight:0,display:"flex",flexDirection:"column",gap:6}}>
+            {current&&!q&&!mus&&!eqF&&subs.length>0&&<>
+              <div style={{fontSize:10,fontWeight:800,color:"#16a34a",marginTop:2}}>🔄 SUSTITUTOS SUGERIDOS (mismo patrón y músculo)</div>
+              {subs.map(x=><Row key={"s"+x.name} x={x}/>)}
+              <div style={{fontSize:10,fontWeight:800,color:"#64748b",marginTop:6}}>TODOS LOS EJERCICIOS</div>
+            </>}
+            {list.map(x=><Row key={x.name} x={x}/>)}
+            {list.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"8px 2px"}}>No hay ejercicios con esos filtros.</div>}
+          </div>
+          <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
+            <button className="btn sky" style={{flex:1,padding:10,justifyContent:"center"}} onClick={()=>{ setNw(n=>({...n,name:q.trim(),muscles:mus?[mus]:(current?musclesOf(current).slice(0,2):[]),equip:eqF||""})); setCreating(true); }}>＋ Crear ejercicio nuevo{q.trim()?` "${q.trim()}"`:""}</button>
+            <button className="btn ghost" style={{padding:"10px 14px"}} onClick={onClose}>Cerrar</button>
+          </div>
+        </>:<div style={{overflowY:"auto"}}>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:10}}>Se guarda en tu biblioteca para usarlo con cualquier cliente.</div>
+          <span className="lbl">NOMBRE</span>
+          <input className="inp" value={nw.name} placeholder="p. ej. Sentadilla a banco con mancuerna" onChange={e=>setNw(n=>({...n,name:e.target.value}))} style={{marginBottom:10}}/>
+          <span className="lbl">MÚSCULOS (el primero es el principal)</span>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+            {MUSCLES.map(m=>{ const i=nw.muscles.indexOf(m); return chip(i>=0,i===0?`★ ${m}`:m,()=>setNw(n=>({...n,muscles:i>=0?n.muscles.filter(x=>x!==m):[...n.muscles,m]})),m); })}
+          </div>
+          <span className="lbl">MATERIAL</span>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+            {EQUIP_KEYS.concat(["otros"]).map(k=>chip(nw.equip===k,EQUIP_LABEL[k]||k,()=>setNw(n=>({...n,equip:n.equip===k?"":k})),k))}
+          </div>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
+            <div><span className="lbl">SERIES</span><input type="number" className="inp" value={nw.sets} onChange={e=>setNw(n=>({...n,sets:e.target.value}))}/></div>
+            <div><span className="lbl">REPS</span><input className="inp" value={nw.reps} onChange={e=>setNw(n=>({...n,reps:e.target.value}))}/></div>
+            <div><span className="lbl">DESCANSO (s)</span><input type="number" className="inp" value={nw.rest} onChange={e=>setNw(n=>({...n,rest:e.target.value}))}/></div>
+          </div>
+          <span className="lbl">NOTAS / TÉCNICA (opcional)</span>
+          <textarea className="inp" rows={2} value={nw.notes} placeholder="Ejecución, rango, adaptación…" onChange={e=>setNw(n=>({...n,notes:e.target.value}))} style={{resize:"vertical",marginBottom:10}}/>
+          <div style={{display:"flex",gap:8}}>
+            <button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} disabled={busy||!nw.name.trim()} onClick={create}>{busy?"Guardando…":"Crear y usar"}</button>
+            <button className="btn ghost" style={{padding:"11px 14px"}} onClick={()=>setCreating(false)}>Volver</button>
+          </div>
+        </div>}
+      </div>
+    </div>
+  );
+}
+
 // ── EDITAR EJERCICIOS DE LA SESIÓN (imprevistos / molestias) ───────────────
 // Permite cambiar, quitar, añadir y ajustar los ejercicios del entreno de una
 // persona en un día concreto (p. ej. si tiene una molestia se sustituye el
 // ejercicio que le duele). Respeta el material disponible del gimnasio.
-function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,sessions,annualBlocks,onGenerate,loadAll,notify,onClose}) {
+function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,sessions,annualBlocks,exercises,onGenerate,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const [saving,setSaving]=React.useState(false);
   const [addName,setAddName]=React.useState("");
+  const [picker,setPicker]=React.useState(null); // {mode:"swap",ex} | {mode:"add"}
   const exs = sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
   const auto = (!sess&&blockForDate(annualBlocks,date))?autoRoutineFor(client,date,sessions,annualBlocks):null;
   const libItems = Object.entries(EXERCISE_LIBRARY).map(([cat,list])=>[cat,list.filter(x=>equipOk(x[0]))]).filter(([c,l])=>l.length);
@@ -2920,6 +3034,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
   const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
+  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:wOf(it.name),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
   const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
@@ -2954,17 +3069,17 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                     <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===0} onClick={()=>moveEx(ex,-1)} title="Subir">▲</button>
                     <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===arrN.length-1} onClick={()=>moveEx(ex,1)} title="Bajar">▼</button>
                   </div>
-                  <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={ex.exercise_name} onChange={e=>swap(ex,e.target.value)}>
-                    {!inLib(ex.exercise_name)&&<option value={ex.exercise_name}>{ex.exercise_name}</option>}
-                    {libItems.map(([cat,list])=>(
-                      <optgroup key={cat} label={cat}>{list.map(x=><option key={x[0]} value={x[0]}>{x[0]}</option>)}</optgroup>
-                    ))}
-                  </select>
+                  <button onClick={()=>setPicker({mode:"swap",ex})} disabled={saving} title="Cambiar ejercicio (sustitutos, músculo, material o crear uno)" style={{flex:1,minWidth:0,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 9px"}}>
+                    <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
+                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span></span>
+                  </button>
                   <button className="btn danger" style={{padding:"6px 9px"}} disabled={saving} onClick={()=>remove(ex)}>✕</button>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                   <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.sets} onBlur={e=>setField(ex,"sets",parseInt(e.target.value)||null)}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>REPS</span><input className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>PESO (kg)</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>DESC. (s)</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.rest_seconds??""} onBlur={e=>setField(ex,"rest_seconds",parseInt(e.target.value)||null)}/></div>
                 </div>
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota / adaptación (p. ej. molestia rodilla → rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
               </div>
@@ -2993,19 +3108,22 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
             </div>
             {/* Añadir ejercicio */}
             <div style={{background:"#eef4fc",border:"1px dashed #bcd3ee",borderRadius:10,padding:10,display:"flex",gap:6,alignItems:"center"}}>
-              <select className="inp" style={{appearance:"none",fontSize:13,padding:"7px 8px",flex:1}} value={addName} onChange={e=>setAddName(e.target.value)}>
+              <button className="btn sky" style={{flex:1,padding:"9px 12px",fontSize:13,fontWeight:700,justifyContent:"center"}} disabled={saving} onClick={()=>setPicker({mode:"add"})}>＋ Añadir ejercicio (buscar, filtrar o crear)</button>
+              <select className="inp" style={{display:"none"}} value={addName} onChange={e=>setAddName(e.target.value)}>
                 <option value="">+ Añadir ejercicio…</option>
                 {libItems.map(([cat,list])=>(
                   <optgroup key={cat} label={cat}>{list.map(x=><option key={x[0]} value={x[0]}>{x[0]}</option>)}</optgroup>
                 ))}
               </select>
-              <button className="btn sky" style={{padding:"7px 12px",fontSize:12}} disabled={saving||!addName} onClick={add}>Añadir</button>
+
             </div>
           </div>
         }
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:14}} onClick={onClose}>Listo</button>
       </div>
       {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)}/>}
+      {picker&&<ExercisePicker title={picker.mode==="swap"?"🔄 Cambiar ejercicio":"＋ Añadir ejercicio"} current={picker.mode==="swap"?picker.ex.exercise_name:null} loadAll={loadAll} notify={notify}
+        onPick={(it)=>{ if(picker.mode==="swap"){ const ex=picker.ex; setPicker(null); swap(ex,it.name); } else addItem(it); }} onClose={()=>setPicker(null)}/>}
     </div>
   );
 }
@@ -3545,6 +3663,13 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
     setSaving(false);
   };
 
+  const [picker,setPicker]=React.useState(null); // {mode:"swap",row} | {mode:"add"}
+  const cwOf=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const swapRow=async(row,it)=>{ const pw=cwOf(it.name); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
+    setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg"}:x)); notify("Ejercicio cambiado ✓"); };
+  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
+    if(error||!data) return notify("No se pudo añadir","err");
+    setRows(rs=>[...rs,{id:data.id,name:data.exercise_name,sets:data.sets,reps:data.reps,protocol:"",prescribed:pw,w:pw!=null?pw:"",r:data.reps||"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg",done:false}]); notify("Ejercicio añadido ✓"); };
   const finalizar=async()=>{
     setSaving(true);
     if(sess) await sb.from("assigned_sessions").update({status:"done"}).eq("id",sess.id);
@@ -3582,7 +3707,10 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
             {rows.map(row=>(
               <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
-                  <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{row.name}</div>
+                  <div style={{minWidth:0}}>
+                    <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{row.name} <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
+                    <MuscleTags name={row.name}/>
+                  </div>
                   <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}</div>
                 </div>
                 <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
@@ -3611,11 +3739,14 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
         }
 
         <div style={{display:"flex",gap:8,marginTop:16}}>
+          {sess&&<button className="btn ghost" style={{padding:"12px 12px"}} title="Añadir ejercicio" onClick={()=>setPicker({mode:"add"})}>＋</button>}
           {sess&&rows.length>0&&<button className="btn sky" style={{flex:1,padding:12,justifyContent:"center"}} disabled={saving} onClick={finalizar}>Finalizar entreno</button>}
           <button className="btn ghost" style={{flex:sess&&rows.length>0?"0 0 auto":1,padding:"12px 16px"}} onClick={onClose}>Cerrar</button>
         </div>
       </div>
       {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)} onSave={async(res)=>{ const r=timerWod.header||timerWod.rows[0]; const {error}=await sb.from("assigned_exercises").update({actual_reps:res,done:true,done_at:new Date().toISOString()}).eq("id",r.id); notify(error?"No se pudo guardar el resultado":"Resultado del WOD guardado ✓",error?"err":undefined); await loadAll(); }}/>}
+      {picker&&<ExercisePicker title={picker.mode==="swap"?"🔄 Cambiar ejercicio":"＋ Añadir ejercicio"} current={picker.mode==="swap"?picker.row.name:null} loadAll={loadAll} notify={notify}
+        onPick={async(it)=>{ const p=picker; setPicker(null); if(p.mode==="swap") await swapRow(p.row,it); else await addRow(it); }} onClose={()=>setPicker(null)}/>}
     </div>
   );
 }
@@ -6508,6 +6639,68 @@ function AddWeightModal({clientId, clientWeights, onSave, onClose}) {
 // ── BIBLIOTECA DE EJERCICIOS (relleno rápido) ──────────────────────────────
 // Cada ejercicio: [nombre, series, reps, descanso(s), principal]. Al tocarlo
 // se añade a la plantilla con estos valores por defecto (editables después).
+// ── EJERCICIOS PROPIOS, MÚSCULOS Y SUSTITUTOS (para individualizar) ───────
+const setCustomExercises = (list) => { const m={}; (list||[]).forEach(e=>{ if(!e||!e.name) return; m[e.name.toLowerCase()]={name:e.name,equip:e.equipment||null,muscles:String(e.muscle_group||"").split(",").map(x=>x.trim()).filter(Boolean),cat:e.category||"",sets:e.default_sets||null,reps:e.default_reps||null,rest:e.rest_seconds||null,id:e.id,desc:e.description||""}; }); CUSTOM_EX=m; };
+const MUSCLES=["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Cuádriceps","Isquios","Glúteo","Aductores","Gemelo","Core","Lumbar","Cuerpo completo","Cardio","Movilidad"];
+// Músculos por nombre (el primero que coincide gana; el primer músculo es el principal).
+const MUSCLE_RULES=[
+  [/remo ergómetro|remo ergometro|remo \(máquina\)|remo \(maquina\)|assault|bicicleta|skierg|carrera|cinta|comba|sprint|intervalos|amrap|emom|tabata/i,["Cardio","Cuerpo completo"]],
+  [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|círculos de hombro|circulos de hombro|activación de glúteo|activacion de gluteo|sentadilla profunda/i,["Movilidad"]],
+  [/thruster|wall ball/i,["Cuádriceps","Glúteo","Hombro"]],
+  [/cargada|clean|snatch|arrancada|swing|push jerk/i,["Cuerpo completo","Glúteo","Isquios"]],
+  [/burpee|mountain climbers|sled|trineo/i,["Cuerpo completo","Cardio"]],
+  [/hip thrust|puente de glúteo|puente de gluteo|patada de glúteo|abducci|extensión de cadera|extension de cadera/i,["Glúteo","Isquios"]],
+  [/curl femoral|nordic|buenos días|buenos dias|piernas rígidas|piernas rigidas|rumano/i,["Isquios","Glúteo","Lumbar"]],
+  [/peso muerto|rack pull|trap bar/i,["Isquios","Glúteo","Lumbar","Espalda"]],
+  [/extensión de cuádriceps|extension de cuadriceps|sissy/i,["Cuádriceps"]],
+  [/aductor|copenhagen/i,["Aductores","Core"]],
+  [/sentadilla|prensa|hack|zancada|búlgara|bulgara|step-?up|pistol/i,["Cuádriceps","Glúteo"]],
+  [/gemelo/i,["Gemelo"]],
+  [/muñeca|muneca|agarre|farmer|granjero/i,["Antebrazo","Core"]],
+  [/face pull|pájaros|pajaros|deltoides posterior/i,["Hombro","Espalda"]],
+  [/elevaciones laterales|elevación lateral|elevaciones frontales|remo al mentón|remo al menton/i,["Hombro"]],
+  [/press militar|press arnold|press de hombro|push press|press en máquina hombro/i,["Hombro","Tríceps"]],
+  [/curl/i,["Bíceps","Antebrazo"]],
+  [/tríceps|triceps|francés|frances|press banca cerrado|fondos de tríceps|sobre cabeza/i,["Tríceps"]],
+  [/aperturas|cruce de poleas|peck deck/i,["Pecho"]],
+  [/press banca|press mancuernas|flexiones|fondos|press en máquina|press desde pines/i,["Pecho","Tríceps","Hombro"]],
+  [/dominada|jalón|jalon|pullover/i,["Espalda","Bíceps"]],
+  [/encogimientos/i,["Espalda"]],
+  [/remo/i,["Espalda","Bíceps"]],
+  [/plancha|crunch|rueda|hollow|pallof|woodchop|russian|elevación de piernas|toes to bar|v-ups|dead bug|bird/i,["Core"]],
+];
+const CAT_MUSCLES={"Sentadilla / Cuádriceps":["Cuádriceps","Glúteo"],"Bisagra / Posterior":["Isquios","Glúteo","Lumbar"],"Empuje horizontal (pecho)":["Pecho","Tríceps","Hombro"],"Empuje vertical (hombro)":["Hombro","Tríceps"],
+  "Tracción vertical (dorsal)":["Espalda","Bíceps"],"Tracción horizontal (espalda)":["Espalda","Bíceps"],"Brazos":["Bíceps","Tríceps"],"Core / Estabilidad":["Core"],"Olímpicos / Potencia":["Cuerpo completo"],
+  "Gemelo / Antebrazo":["Gemelo","Antebrazo"],"Movilidad / Calentamiento":["Movilidad"],"Cardio / Metcon":["Cardio"]};
+const MUSCLE_CAT={"Pecho":"Empuje horizontal (pecho)","Espalda":"Tracción horizontal (espalda)","Hombro":"Empuje vertical (hombro)","Bíceps":"Brazos","Tríceps":"Brazos","Antebrazo":"Gemelo / Antebrazo","Cuádriceps":"Sentadilla / Cuádriceps",
+  "Isquios":"Bisagra / Posterior","Glúteo":"Bisagra / Posterior","Aductores":"Sentadilla / Cuádriceps","Gemelo":"Gemelo / Antebrazo","Core":"Core / Estabilidad","Lumbar":"Bisagra / Posterior","Cuerpo completo":"Olímpicos / Potencia","Cardio":"Cardio / Metcon","Movilidad":"Movilidad / Calentamiento"};
+const libCategoryOf = (name) => { const n=String(name||""); for(const [cat,list] of Object.entries(EXERCISE_LIBRARY)) if(list.some(x=>x[0]===n)) return cat; return ""; };
+const musclesOf = (name) => { const c=CUSTOM_EX[String(name||"").toLowerCase()]; if(c&&c.muscles&&c.muscles.length) return c.muscles; for(const [re,m] of MUSCLE_RULES) if(re.test(name||"")) return m; const cat=libCategoryOf(name); return CAT_MUSCLES[cat]||[]; };
+// Patrón (para sugerir sustitutos): categoría de la biblioteca, o la del músculo principal.
+const patternOf = (name) => { const c=CUSTOM_EX[String(name||"").toLowerCase()]; if(c&&c.cat&&CAT_MUSCLES[c.cat]) return c.cat; const lc=libCategoryOf(name); if(lc&&lc!=="Rack / Multipower / Pines") return lc; const m=musclesOf(name)[0]; return MUSCLE_CAT[m]||lc||""; };
+// Catálogo completo: biblioteca + movimientos de WOD + ejercicios propios. [nombre, series, reps, descanso]
+const exerciseCatalog = () => {
+  const out=new Map();
+  Object.values(EXERCISE_LIBRARY).flat().forEach(x=>{ if(!out.has(x[0])&&!/^(AMRAP|EMOM|Tabata|Circuito metab|WOD |Sprints)/i.test(x[0])) out.set(x[0],{name:x[0],sets:x[1],reps:x[2],rest:x[3],custom:false,main:!!x[4]}); });
+  Object.values(MET_MOVES).flat().concat(MET_LIFT).forEach(n=>{ if(!out.has(n)) out.set(n,{name:n,sets:3,reps:"10-12",rest:60,custom:false,main:MET_LIFT.includes(n)}); });
+  Object.values(CUSTOM_EX).forEach(c=>{ const prev=out.get(c.name); out.set(c.name,{name:c.name,sets:c.sets||(prev&&prev.sets)||3,reps:c.reps||(prev&&prev.reps)||"10-12",rest:c.rest||(prev&&prev.rest)||60,custom:true,id:c.id}); });
+  return [...out.values()];
+};
+// Sustitutos de un ejercicio: mismo patrón y músculo principal, con material disponible primero.
+const LOADED_EQ=["barra","multipower","rackpines","mancuernas","legpress","legmachine","machine","poleas","kettlebell","trineo"];
+const substitutesFor = (name, limit=10) => {
+  const cat=exerciseCatalog(), cur=cat.find(x=>x.name===name)||{};
+  const pat=patternOf(name), mus=musclesOf(name), prim=mus[0], eq=equipmentOf(name), loaded=LOADED_EQ.includes(eq);
+  return cat.filter(x=>x.name!==name).map(x=>{ const m=musclesOf(x.name), xe=equipmentOf(x.name); let sc=0;
+      if(patternOf(x.name)===pat) sc+=3; if(m[0]===prim) sc+=3; sc+=m.filter(v=>mus.includes(v)).length;
+      if(equipOk(x.name)) sc+=4;                       // primero lo que hay en el gimnasio
+      if(!!x.main===!!cur.main) sc+=1.5;               // básico por básico, accesorio por accesorio
+      if(loaded&&xe==="pesocorporal") sc-=1.5;          // cargado antes que peso corporal
+      if(xe!==eq) sc+=0.3;                              // ofrece alternativas de material
+      return {...x,sc}; })
+    .filter(x=>x.sc>=6).sort((a,b)=>b.sc-a.sc||a.name.localeCompare(b.name)).slice(0,limit);
+};
+
 const EXERCISE_LIBRARY = {
   "Sentadilla / Cuádriceps": [
     ["Sentadilla trasera",4,"5-8",150,true],
@@ -6994,7 +7187,9 @@ const EQUIP_LABEL = {
 };
 // Orden y etiquetas para el editor de material.
 const EQUIP_KEYS = ["barra","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
-const equipmentOf = (name) => { for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
+// Ejercicios creados por el entrenador (tabla "exercises"): nombre en minúsculas → {name, equip, muscles, cat, sets, reps, rest}.
+let CUSTOM_EX = {};
+const equipmentOf = (name) => { const c=CUSTOM_EX[String(name||"").toLowerCase()]; if(c&&c.equip) return c.equip; for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
 const equipmentLabel = (name) => EQUIP_LABEL[equipmentOf(name)] || EQUIP_LABEL.otros;
 // Prioridad de material: barra/rack/multipower PRIMERO (es el cuello de botella),
 // luego máquinas de pierna, mancuernas, poleas y por último peso corporal/cardio.
