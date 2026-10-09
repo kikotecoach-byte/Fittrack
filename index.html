@@ -167,6 +167,9 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .drag-src{opacity:.35 !important;outline:2px dashed #0284c7;outline-offset:1px;transform:scale(.95);transition:transform .15s,opacity .15s;}
 .drag-target{animation:dragtarget .9s ease-in-out infinite;}
 .drag-landed{animation:draglanded .9s cubic-bezier(.2,.8,.2,1);}
+.hold-pending{animation:holdring .45s linear forwards;}
+@keyframes holdring{0%{box-shadow:0 0 0 0 rgba(2,132,199,0);transform:scale(1)}100%{box-shadow:0 0 0 4px rgba(2,132,199,.75);transform:scale(1.05)}}
+[title*="arrastra" i]{-webkit-touch-callout:none;-webkit-user-select:none;user-select:none;}
 @keyframes draglanded{0%{transform:scale(.6);box-shadow:0 0 0 0 rgba(22,163,74,.6)}45%{transform:scale(1.1);box-shadow:0 0 0 6px rgba(22,163,74,.28)}100%{transform:scale(1);box-shadow:0 0 0 0 rgba(22,163,74,0)}}
 .drag-preview{animation:dragprev .8s ease-in-out infinite;}
 @keyframes dragprev{0%,100%{opacity:.45;transform:scale(.97)}50%{opacity:1;transform:scale(1)}}
@@ -582,32 +585,41 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const fitSwipe=React.useRef(null);
   const buzz=(ms)=>{ try{ navigator.vibrate&&navigator.vibrate(ms); }catch(e){} };
   const slotLabel=(k)=>{ if(!k) return ""; const [d,t]=k.split("|"); const x=new Date(d+"T12:00:00"); const w=x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".",""); return `${w.charAt(0).toUpperCase()+w.slice(1)} ${x.getDate()} · ${t}`; };
+  // Arrastre con PULSACIÓN LARGA: un toque abre la ficha, deslizar mueve la
+  // pantalla, y solo al mantener pulsado (~0,45 s) la tarjeta se "levanta".
+  const HOLD_MS = 450, HOLD_SLOP = 10;
+  const [holdId,setHoldId] = React.useState(null); // tarjeta que se está manteniendo pulsada
+  const dragCleanup = (d)=>{
+    if(d){ clearTimeout(d.timer); window.removeEventListener("pointermove",d.onMove); window.removeEventListener("pointerup",d.onUp); window.removeEventListener("pointercancel",d.onCancel); window.removeEventListener("touchmove",d.onTouch); window.removeEventListener("contextmenu",d.onCtx); }
+    setHoldId(null); try{ document.body.classList.remove("dragging"); }catch(err){}
+  };
   const onSessMove = (e)=>{
     const d=dragRef.current; if(!d) return;
+    d.lastX=e.clientX; d.lastY=e.clientY;
     const dx=e.clientX-d.startX, dy=e.clientY-d.startY;
-    if(!d.moved && Math.hypot(dx,dy)>8){ d.moved=true; setDragId(d.sess.id); buzz(12); try{ document.body.classList.add("dragging"); }catch(err){} }
-    if(d.moved){
-      if(e.cancelable)e.preventDefault();
-      const el=document.elementFromPoint(e.clientX,e.clientY);
-      const cell=el&&el.closest?el.closest("[data-slot]"):null;
-      let k=null, blk=false;
-      if(cell){ k=cell.getAttribute("data-day")+"|"+cell.getAttribute("data-time"); blk=cell.getAttribute("data-blocked")==="1"; }
-      const same=k===(d.sess.date+"|"+d.sess.time);
-      if(k&&!blk&&!same){ setDropKey(prev=>{ if(prev!==k) buzz(6); return k; }); } else setDropKey(null);
-      setDragGhost({name:d.name,color:d.color,x:e.clientX,y:e.clientY,target:k&&!same?slotLabel(k):"",blocked:blk});
-      // Desplaza la vista si arrastras cerca del borde (pantalla o cuadrícula de la semana).
-      const edge=70, vh=window.innerHeight;
-      if(e.clientY<edge+60) window.scrollBy(0,-14); else if(e.clientY>vh-edge-80) window.scrollBy(0,14);
-      const sc=el&&el.closest?el.closest("[data-weekscroll]"):null;
-      if(sc){ const r=sc.getBoundingClientRect(); if(e.clientY<r.top+40) sc.scrollTop-=12; else if(e.clientY>r.bottom-40) sc.scrollTop+=12; }
+    if(!d.armed){ // aún no se ha mantenido: si se mueve, es scroll/toque → no arrastra
+      if(Math.hypot(dx,dy)>HOLD_SLOP){ dragRef.current=null; dragCleanup(d); }
+      return;
     }
+    if(e.cancelable)e.preventDefault();
+    const el=document.elementFromPoint(e.clientX,e.clientY);
+    const cell=el&&el.closest?el.closest("[data-slot]"):null;
+    let k=null, blk=false;
+    if(cell){ k=cell.getAttribute("data-day")+"|"+cell.getAttribute("data-time"); blk=cell.getAttribute("data-blocked")==="1"; }
+    const same=k===(d.sess.date+"|"+d.sess.time);
+    if(k&&!blk&&!same){ setDropKey(prev=>{ if(prev!==k) buzz(6); return k; }); } else setDropKey(null);
+    setDragGhost({name:d.name,color:d.color,x:e.clientX,y:e.clientY,target:k&&!same?slotLabel(k):"",blocked:blk});
+    // Desplaza la vista si arrastras cerca del borde (pantalla o cuadrícula de la semana).
+    const edge=70, vh=window.innerHeight;
+    if(e.clientY<edge+60) window.scrollBy(0,-14); else if(e.clientY>vh-edge-80) window.scrollBy(0,14);
+    const sc=el&&el.closest?el.closest("[data-weekscroll]"):null;
+    if(sc){ const r=sc.getBoundingClientRect(); if(e.clientY<r.top+40) sc.scrollTop-=12; else if(e.clientY>r.bottom-40) sc.scrollTop+=12; }
   };
   const onSessUp = (e)=>{
-    window.removeEventListener("pointermove",onSessMove); window.removeEventListener("pointerup",onSessUp);
-    const d=dragRef.current; dragRef.current=null; setDragGhost(null); setDragId(null); setDropKey(null);
-    try{ document.body.classList.remove("dragging"); }catch(err){}
-    if(!d||!d.moved) return;
-    justDragged.current=true; setTimeout(()=>{justDragged.current=false;},300);
+    const d=dragRef.current; dragRef.current=null; dragCleanup(d);
+    setDragGhost(null); setDragId(null); setDropKey(null);
+    if(!d||!d.armed) return; // toque normal: lo gestiona onClick (abre la ficha)
+    justDragged.current=true; setTimeout(()=>{justDragged.current=false;},350);
     const el=document.elementFromPoint(e.clientX,e.clientY);
     const cell=el&&el.closest?el.closest("[data-slot]"):null;
     if(!cell) return;
@@ -615,9 +627,23 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(cell.getAttribute("data-blocked")==="1"){ notify("Ese hueco está bloqueado","err"); return; }
     if(day&&time&&(day!==d.sess.date||time!==d.sess.time)){ buzz(20); setLandedId(d.sess.id); setTimeout(()=>setLandedId(x=>x===d.sess.id?null:x),1400); rescheduleSession(d.sess,day,time); }
   };
+  const onSessCancel = ()=>{ const d=dragRef.current; dragRef.current=null; dragCleanup(d); setDragGhost(null); setDragId(null); setDropKey(null); };
   const startSessDrag = (e,s)=>{
-    dragRef.current={sess:s,name:(s.client?s.client.name.split(" ")[0]:""),color:s.client?s.client.color:"#0284c7",startX:e.clientX,startY:e.clientY,moved:false};
-    window.addEventListener("pointermove",onSessMove,{passive:false}); window.addEventListener("pointerup",onSessUp);
+    if(e.button!=null&&e.button!==0) return;
+    const prev=dragRef.current; if(prev){ dragRef.current=null; dragCleanup(prev); }
+    const d={sess:s,name:(s.client?s.client.name.split(" ")[0]:""),color:s.client?s.client.color:"#0284c7",startX:e.clientX,startY:e.clientY,lastX:e.clientX,lastY:e.clientY,armed:false};
+    d.onMove=onSessMove; d.onUp=onSessUp; d.onCancel=onSessCancel;
+    d.onTouch=(ev)=>{ if(dragRef.current===d&&d.armed&&ev.cancelable) ev.preventDefault(); }; // bloquea el scroll mientras arrastras
+    d.onCtx=(ev)=>{ if(dragRef.current===d) ev.preventDefault(); };                           // sin menú del navegador al mantener
+    dragRef.current=d; setHoldId(s.id);
+    window.addEventListener("pointermove",d.onMove,{passive:false}); window.addEventListener("pointerup",d.onUp); window.addEventListener("pointercancel",d.onCancel);
+    window.addEventListener("touchmove",d.onTouch,{passive:false}); window.addEventListener("contextmenu",d.onCtx);
+    d.timer=setTimeout(()=>{
+      if(dragRef.current!==d) return;
+      d.armed=true; setHoldId(null); setDragId(s.id); buzz(25);
+      try{ document.body.classList.add("dragging"); }catch(err){}
+      setDragGhost({name:d.name,color:d.color,x:d.lastX,y:d.lastY,target:"",blocked:false});
+    },HOLD_MS);
   };
   const [showVacation,setShowVacation] = React.useState(false);
   const [expanded,setExpanded] = React.useState(null);
@@ -1039,16 +1065,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         const short=(t)=>String(t||"").replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/,"").replace(/\s*\(.*\)/,"").split("·")[0].trim();
         const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&clients.find(c=>c.id===dragSess.client_id);
         const Chip=({s,fs,label,sub,narrow,line2})=>{ const done=s.status==="completed"; if(line2) return(
-          <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} title={`${s.client.name} · ${s.time} — arrastra para mover`}
+          <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed ":"")+(holdId===s.id?"hold-pending":"")} title={`${s.client.name} · ${s.time} — mantén pulsado y arrastra para mover`}
             onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
-            style={{minWidth:0,background:done?"#e7f6ec":"#fff",border:`1px solid ${done?"#bfe5cb":s.client.color+"66"}`,borderLeft:`5px solid ${done?"#16a34a":s.client.color}`,borderRadius:8,padding:"4px 7px",touchAction:"none",cursor:"grab",overflow:"hidden"}}>
+            style={{minWidth:0,background:done?"#e7f6ec":"#fff",border:`1px solid ${done?"#bfe5cb":s.client.color+"66"}`,borderLeft:`5px solid ${done?"#16a34a":s.client.color}`,borderRadius:8,padding:"4px 7px",touchAction:"manipulation",cursor:"grab",overflow:"hidden"}}>
             <div style={{fontSize:fs,lineHeight:1.15,fontWeight:800,color:done?"#166534":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{done?"✓ ":""}{label}</div>
             <div style={{fontSize:Math.max(10,Math.round(fs*0.68)),lineHeight:1.2,fontWeight:700,color:"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{line2}</div>
           </div>); return(
-          <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} title={`${s.client.name} · ${s.time} — arrastra para mover`}
+          <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed ":"")+(holdId===s.id?"hold-pending":"")} title={`${s.client.name} · ${s.time} — mantén pulsado y arrastra para mover`}
             onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
             style={{display:"flex",alignItems:"center",gap:3,minWidth:0,background:done?"#e7f6ec":"#fff",border:`1px solid ${done?"#bfe5cb":s.client.color+"66"}`,borderLeft:`4px solid ${done?"#16a34a":s.client.color}`,borderRadius:6,
-              padding:`${padOf(fs)}px 4px`,fontSize:fs,lineHeight:1.18,fontWeight:800,color:done?"#166534":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",touchAction:"none",cursor:"grab"}}>
+              padding:`${padOf(fs)}px 4px`,fontSize:fs,lineHeight:1.18,fontWeight:800,color:done?"#166534":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",touchAction:"manipulation",cursor:"grab"}}>
             {done&&!narrow&&<span style={{fontSize:Math.max(8,fs-3),flexShrink:0}}>✓</span>}
             <span style={{flex:"1 1 auto",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
             {sub&&<span style={{flexShrink:1,minWidth:0,fontSize:Math.max(8,fs-3),fontWeight:700,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</span>}
@@ -1644,7 +1670,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   const planLbl=asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")+(nEx?` · ${nEx} ej`:"")):(au?`${au.label} · previsto`:"Sin plan");
                                   return(
                                   <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:12,padding:"8px 9px"}}>
-                                    <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"none"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Arrastra para mover de hora · toca para ver ficha">
+                                    <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed ":"")+(holdId===s.id?"hold-pending":"")} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"manipulation"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Mantén pulsado y arrastra para mover de hora · toca para ver ficha">
                                       {s.client.avatar_url
                                         ?<img src={s.client.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${s.client.color}55`,flexShrink:0}}/>
                                         :<div className="ring" style={{width:36,height:36,background:s.client.color+"30",color:s.client.color,fontSize:12,border:`2px solid ${s.client.color}55`,flexShrink:0}}>{ini(s.client.name)}</div>
@@ -1701,7 +1727,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     })}
                   </div>
                   <div style={{flexShrink:0,borderTop:"1px solid #e6ebf3",padding:"6px 10px",fontSize:10,color:"#94a3b8"}}>
-                    <b style={{color:"#16a34a"}}>✓ Vino</b> (queda marcado · ↺ deshacer) · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b> · arrastra el nombre para cambiar de hora
+                    <b style={{color:"#16a34a"}}>✓ Vino</b> (queda marcado · ↺ deshacer) · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b> · mantén pulsado el nombre y arrástralo para cambiar de hora
                   </div>
                 </div>
               );
@@ -1767,11 +1793,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                               onClick={()=>{if(!isBlkDay)setSlotMenu({date:day,time});}}>
                               {slotBlocked&&<div style={{fontSize:9,color:"#b56b6b",textAlign:"center"}}>🚫</div>}
                               {shownS.map(s=>{ const done=s.status==="completed"; const nm=s.client.name.split(" "); const label=withInitial&&nm[1]?`${nm[0]} ${nm[1][0]}.`:nm[0]; return(
-                                <div key={s.id} className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} title={`${s.client.name} · ${s.time}${done?" · ✓ hecho":""} — arrastra para mover`}
+                                <div key={s.id} className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed ":"")+(holdId===s.id?"hold-pending":"")} title={`${s.client.name} · ${s.time}${done?" · ✓ hecho":""} — mantén pulsado y arrastra para mover`}
                                   onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
                                   style={{display:"flex",alignItems:"center",gap:3,background:done?"#e7f6ec":"#fff",border:`1px solid ${done?"#bfe5cb":s.client.color+"66"}`,borderLeft:`4px solid ${done?"#16a34a":s.client.color}`,borderRadius:weekBig?8:5,
                                     padding:weekBig?"6px 6px":"3px 4px",fontSize:chipFs,lineHeight:1.15,fontWeight:800,color:done?"#166534":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minHeight:weekBig?30:undefined,
-                                    touchAction:"none",cursor:"grab",boxShadow:done?"none":"0 1px 2px rgba(15,23,42,.12)"}}>
+                                    touchAction:"manipulation",cursor:"grab",boxShadow:done?"none":"0 1px 2px rgba(15,23,42,.12)"}}>
                                   {done&&<span style={{fontSize:Math.max(9,chipFs-3),flexShrink:0}}>✓</span>}<span style={{flex:"1 1 auto",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
                                 </div>
                               ); })}
@@ -1789,7 +1815,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       </div>
                     ))}
                   </div>
-                  <p style={{fontSize:10,color:"#94a3b8",marginTop:6,paddingLeft:40}}>💡 Arrastra un nombre para moverlo · toca una celda para añadir entreno o valoración · 🚫 bloquear</p>
+                  <p style={{fontSize:10,color:"#94a3b8",marginTop:6,paddingLeft:40}}>💡 Mantén pulsado un nombre y arrástralo para moverlo · toca una celda para añadir entreno o valoración · 🚫 bloquear</p>
                 </div>
               );
             })()}
