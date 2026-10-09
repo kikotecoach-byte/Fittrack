@@ -557,6 +557,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
   const [weekBig,setWeekBig] = React.useState(false); // vista de semana ampliada (más espacio para arrastrar)
+  const [fitMode,setFitMode] = React.useState(()=>{ try{ return localStorage.getItem("kg_agenda_fit")==="1"; }catch(e){ return false; } }); // día/semana a pantalla completa sin scroll
   // Swipe para cambiar entre día / semana / mes en la agenda.
   const swipeRef = React.useRef({x:0,y:0});
   const VIEWS_ORDER = ["day","week","month"];
@@ -571,7 +572,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [dropKey,setDropKey] = React.useState(null); // "día|hora" bajo el dedo
   const [landedId,setLandedId] = React.useState(null); // sesión recién soltada (animación de aterrizaje)
   const [vw,setVw] = React.useState(()=>typeof window!=="undefined"?window.innerWidth:390);
-  React.useEffect(()=>{ const f=()=>setVw(window.innerWidth); window.addEventListener("resize",f); window.addEventListener("orientationchange",f); return ()=>{ window.removeEventListener("resize",f); window.removeEventListener("orientationchange",f); }; },[]);
+  const [vh,setVh] = React.useState(()=>typeof window!=="undefined"?window.innerHeight:780);
+  React.useEffect(()=>{ const f=()=>{ setVw(window.innerWidth); setVh(window.visualViewport?window.visualViewport.height:window.innerHeight); };
+    window.addEventListener("resize",f); window.addEventListener("orientationchange",f); if(window.visualViewport) window.visualViewport.addEventListener("resize",f);
+    return ()=>{ window.removeEventListener("resize",f); window.removeEventListener("orientationchange",f); if(window.visualViewport) window.visualViewport.removeEventListener("resize",f); }; },[]);
+  // Pantalla completa: además de ocupar toda la vista, oculta la barra del navegador si se puede.
+  const enterFit=()=>{ setFitMode(true); try{ localStorage.setItem("kg_agenda_fit","1"); }catch(e){} try{ const el=document.documentElement; if(!document.fullscreenElement){ if(el.requestFullscreen) el.requestFullscreen().catch(()=>{}); else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); } }catch(e){} };
+  const exitFit=()=>{ setFitMode(false); try{ localStorage.setItem("kg_agenda_fit","0"); }catch(e){} try{ if(document.fullscreenElement&&document.exitFullscreen) document.exitFullscreen().catch(()=>{}); else if(document.webkitFullscreenElement&&document.webkitExitFullscreen) document.webkitExitFullscreen(); }catch(e){} };
+  const fitSwipe=React.useRef(null);
   const buzz=(ms)=>{ try{ navigator.vibrate&&navigator.vibrate(ms); }catch(e){} };
   const slotLabel=(k)=>{ if(!k) return ""; const [d,t]=k.split("|"); const x=new Date(d+"T12:00:00"); const w=x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".",""); return `${w.charAt(0).toUpperCase()+w.slice(1)} ${x.getDate()} · ${t}`; };
   const onSessMove = (e)=>{
@@ -1022,6 +1030,150 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
+      {/* ── AGENDA A PANTALLA COMPLETA (día / semana sin scroll) ── */}
+      {fitMode&&view==="schedule"&&(schedView==="day"||schedView==="week")&&(()=>{
+        const week=schedView==="week", W=vw, low=vh<500, headH=low?38:46, availH=Math.max(200,vh-headH-(low?4:10));
+        const shift=(dir)=>{ const d=new Date(activeDay+"T12:00:00"); d.setDate(d.getDate()+(week?7:1)*dir); setActiveDay(d.toISOString().split("T")[0]); };
+        const lbl=week?(()=>{ const wd=getWeekDays(mondayOfDate(activeDay)).slice(0,5); const o={day:"numeric",month:"short"}; return `${new Date(wd[0]+"T12:00:00").toLocaleDateString("es-ES",o)} — ${new Date(wd[4]+"T12:00:00").toLocaleDateString("es-ES",o)}`; })()
+          :new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
+        const short=(t)=>String(t||"").replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/,"").replace(/\s*\(.*\)/,"").split("·")[0].trim();
+        const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&clients.find(c=>c.id===dragSess.client_id);
+        const Chip=({s,fs,label,sub,narrow,line2})=>{ const done=s.status==="completed"; if(line2) return(
+          <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} title={`${s.client.name} · ${s.time} — arrastra para mover`}
+            onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
+            style={{minWidth:0,background:done?"#e7f6ec":"#fff",border:`1px solid ${done?"#bfe5cb":s.client.color+"66"}`,borderLeft:`5px solid ${done?"#16a34a":s.client.color}`,borderRadius:8,padding:"4px 7px",touchAction:"none",cursor:"grab",overflow:"hidden"}}>
+            <div style={{fontSize:fs,lineHeight:1.15,fontWeight:800,color:done?"#166534":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{done?"✓ ":""}{label}</div>
+            <div style={{fontSize:Math.max(10,Math.round(fs*0.68)),lineHeight:1.2,fontWeight:700,color:"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{line2}</div>
+          </div>); return(
+          <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} title={`${s.client.name} · ${s.time} — arrastra para mover`}
+            onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
+            style={{display:"flex",alignItems:"center",gap:3,minWidth:0,background:done?"#e7f6ec":"#fff",border:`1px solid ${done?"#bfe5cb":s.client.color+"66"}`,borderLeft:`4px solid ${done?"#16a34a":s.client.color}`,borderRadius:6,
+              padding:`${padOf(fs)}px 4px`,fontSize:fs,lineHeight:1.18,fontWeight:800,color:done?"#166534":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",touchAction:"none",cursor:"grab"}}>
+            {done&&!narrow&&<span style={{fontSize:Math.max(8,fs-3),flexShrink:0}}>✓</span>}
+            <span style={{flex:"1 1 auto",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
+            {sub&&<span style={{flexShrink:1,minWidth:0,fontSize:Math.max(8,fs-3),fontWeight:700,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</span>}
+          </div>); };
+        const ValChip=({l,fs})=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
+          <div onClick={e=>{e.stopPropagation();setShowValoracion(l);}} style={{minWidth:0,background:done?"#cdeed8":vc.chip,borderRadius:6,padding:`${padOf(fs)}px 4px`,fontSize:fs,lineHeight:1.18,fontWeight:800,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>{done?"✅":"📋"} {(l.name||"valorac.").split(" ")[0]}</div>); };
+        // Elige el mayor tamaño de letra con el que caben todos los nombres en la celda más llena.
+        const padOf=(fs)=>fs>=12?2:1;
+        const fitFont=(rowH,cellW,maxItems,minW,maxFs=16)=>{ const calc=(fs)=>{ const chipH=fs*1.18+2*padOf(fs)+2; const lines=Math.max(1,Math.floor((rowH-4+2)/(chipH+2))); const cols=Math.max(1,Math.min(4,Math.floor((cellW-4+2)/((minW?minW(fs):fs*3.1+14)+2)))); return {fs,cols,cap:lines*cols}; };
+          for(let fs=maxFs;fs>=9;fs--){ const r=calc(fs); if(r.cap>=maxItems) return r; } return calc(9); };
+        let body=null;
+        if(week){
+          const all7=getWeekDays(mondayOfDate(activeDay));
+          const usedDay=(d)=>sessions.some(s=>s.date===d)||extraOf(d).length>0||(leads||[]).some(l=>l.date===d&&l.time);
+          const days=all7.filter((d,i)=>i<5||usedDay(d));
+          const slots=Array.from(new Set([...workSlots,...days.flatMap(d=>extraOf(d)),...sessions.filter(s=>days.includes(s.date)).map(s=>s.time)])).sort();
+          const timeW=36, dayHeadH=low?22:30, gap=2;
+          const busy=(t)=>days.some(d=>sessions.some(s=>s.date===d&&s.time===t)||(leads||[]).some(l=>l.date===d&&l.time===t&&l.status!=="cliente"));
+          const nBusy=slots.filter(busy).length, nEmpty=slots.length-nBusy, emptyH=nBusy?Math.min(30,Math.max(16,(availH-dayHeadH)/slots.length*0.45)):0;
+          const rowH=(availH-dayHeadH-gap*slots.length-emptyH*nEmpty)/Math.max(1,nBusy||slots.length);
+          const colW=(W-12-timeW-gap*days.length)/days.length;
+          const items=(d,t)=>sessions.filter(s=>s.date===d&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===d&&l.time===t&&l.status!=="cliente").length;
+          let maxItems=1; days.forEach(d=>slots.forEach(t=>{ maxItems=Math.max(maxItems,items(d,t)+(dragId?1:0)); }));
+          const {fs,cols,cap}=fitFont(rowH,colW,maxItems);
+          const initial=(colW/cols)>=fs*6.6+18;
+          const grid=`${timeW}px repeat(${days.length},minmax(0,1fr))`;
+          body=(<div style={{height:availH,display:"flex",flexDirection:"column",gap}}>
+            <div style={{display:"grid",gridTemplateColumns:grid,gap,height:dayHeadH,flexShrink:0}}>
+              <div/>
+              {days.map(d=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY; return <div key={d} onClick={()=>{ setActiveDay(d); setSchedView("day"); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,borderRadius:7,background:t?"#dcebfb":"#fff",border:`1px solid ${t?"#93c5fd":"#e6ebf3"}`,cursor:"pointer",fontWeight:800,fontSize:12,color:t?"#0284c7":"#0f172a",textTransform:"capitalize"}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")} <span className="mono">{x.getDate()}</span></div>; })}
+            </div>
+            {slots.map(time=>(
+              <div key={time} style={{display:"grid",gridTemplateColumns:grid,gap,height:(nBusy&&!busy(time))?emptyH:rowH,flexShrink:0}}>
+                <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:Math.min(12,Math.max(9,((nBusy&&!busy(time))?emptyH:rowH)/2.4)),fontWeight:800,color:"#64748b"}}>{time}</div>
+                {days.map(day=>{
+                  const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL"), slotBlocked=isBlkDay||isBlocked(day,time);
+                  const ss=sessions.filter(s=>s.date===day&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                  const vals=(leads||[]).filter(l=>l.date===day&&l.time===time&&l.status!=="cliente");
+                  const k=day+"|"+time, isDrop=dropKey===k;
+                  const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l}))];
+                  const room=cap-(isDrop&&dragCli?1:0), shown=all.length>room?all.slice(0,Math.max(0,room-1)):all, extra=all.length-shown.length;
+                  return(
+                    <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} className={isDrop?"drag-target":""} onClick={()=>{ if(!isBlkDay) setSlotMenu({date:day,time}); }}
+                      style={{borderRadius:6,padding:2,overflow:"hidden",display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:2,alignContent:"start",cursor:"pointer",
+                        background:isDrop?"#dcebfb":slotBlocked?"#fbecec":"#fff",border:isDrop?"1px solid #0284c7":slotBlocked?"1px solid #f2cccc":all.length?"1px solid #cbd5e1":"1px solid #eef1f7"}}>
+                      {slotBlocked&&!all.length&&<div style={{fontSize:10,color:"#b56b6b",textAlign:"center",gridColumn:"1/-1"}}>🚫</div>}
+                      {shown.map(it=>it.t==="s"
+                        ?(()=>{ const nm=it.s.client.name.split(" "); return <Chip key={it.s.id} s={it.s} fs={fs} narrow={(colW/cols)<fs*6+26} label={initial&&nm[1]?`${nm[0]} ${nm[1][0]}.`:nm[0]}/>; })()
+                        :<ValChip key={it.l.id} l={it.l} fs={fs}/>)}
+                      {extra>0&&<div style={{fontSize:Math.max(8,fs-2),fontWeight:800,color:"#475569",paddingLeft:2}}>+{extra}</div>}
+                      {isDrop&&dragCli&&<div className="drag-preview" style={{border:`2px dashed ${dragCli.color}`,borderRadius:6,padding:"1px 4px",fontSize:fs,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",background:"#fff"}}>＋ {dragCli.name.split(" ")[0]}</div>}
+                    </div>);
+                })}
+              </div>
+            ))}
+          </div>);
+        } else {
+          const slots=daySlots, timeW=50, gap=3;
+          const dayOff=(isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL"))&&extraOf(activeDay).length===0;
+          if(dayOff||!slots.length) body=<div style={{height:availH,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#64748b"}}>{isWeekend(activeDay)?"🌴 Fin de semana — libre":"🚫 Día no disponible"}</div>;
+          else {
+            const busyD=(t)=>sessions.some(s=>s.date===activeDay&&s.time===t)||(leads||[]).some(l=>l.date===activeDay&&l.time===t&&l.status!=="cliente");
+            const nB=slots.filter(busyD).length, nE=slots.length-nB, eH=nB?Math.min(34,Math.max(20,availH/slots.length*0.5)):0;
+            const rowH=(availH-gap*(slots.length-1)-eH*nE)/Math.max(1,nB||slots.length), areaW=W-12-timeW-gap-6;
+            const items=(t)=>sessions.filter(s=>s.date===activeDay&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===activeDay&&l.time===t&&l.status!=="cliente").length;
+            let maxItems=1; slots.forEach(t=>{ maxItems=Math.max(maxItems,items(t)+(dragId?1:0)); });
+            // Con espacio: letra grande y segunda línea con lo que le toca.
+            const two=fitFont(rowH,areaW,maxItems,(f)=>f*7+30,20);
+            const twoH=(f)=>f*1.15+Math.max(10,Math.round(f*0.68))*1.2+10;
+            const linesTwo=(f)=>Math.max(1,Math.floor((rowH-4+3)/(twoH(f)+3)));
+            let pick2=null; for(let f=20;f>=12;f--){ const cols2=Math.max(1,Math.min(4,Math.floor((areaW+3)/(f*7+34)))); if(linesTwo(f)*cols2>=maxItems){ pick2={fs:f,cols:cols2,cap:linesTwo(f)*cols2}; break; } }
+            const {fs,cols,cap}=pick2||two, twoLine=!!pick2;
+            const cellW=areaW/cols, withSub=!twoLine&&cellW>=fs*12+40, initial=cellW>=fs*8+30;
+            body=(<div style={{height:availH,display:"flex",flexDirection:"column",gap}}>
+              {slots.map(time=>{
+                const slotBlocked=isBlocked(activeDay,time);
+                const ss=sessions.filter(s=>s.date===activeDay&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                const vals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time&&l.status!=="cliente");
+                const k=activeDay+"|"+time, isDrop=dropKey===k, cp=capOf(time), isWork=isWorkSlot(activeDay,time);
+                const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l}))];
+                const room=cap-(isDrop&&dragCli?1:0), shown=all.length>room?all.slice(0,Math.max(0,room-1)):all, extra=all.length-shown.length;
+                return(
+                  <div key={time} style={{display:"flex",gap,height:(nB&&!busyD(time))?eH:rowH,flexShrink:0}}>
+                    <div onClick={()=>{ if(slotBlocked) return; if(ss.length) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
+                      style={{width:timeW,flexShrink:0,borderRadius:7,background:"#fff",border:"1px solid #e6ebf3",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                      <span className="mono" style={{fontSize:Math.min(14,Math.max(10,((nB&&!busyD(time))?eH:rowH)/2.6)),fontWeight:800,color:ss.length?"#0284c7":"#64748b"}}>{time}</span>
+                      {isWork&&ss.length>0&&rowH>=34&&<span style={{fontSize:9,fontWeight:800,color:ss.length>=cp?"#ca8a04":"#16a34a"}}>{ss.length}/{cp}</span>}
+                    </div>
+                    <div data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={isDrop?"drag-target":""} onClick={()=>setSlotMenu({date:activeDay,time})}
+                      style={{flex:1,minWidth:0,borderRadius:7,padding:3,overflow:"hidden",display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:3,alignContent:"center",cursor:"pointer",
+                        background:isDrop?"#dcebfb":slotBlocked?"#fbecec":isWork?"#fff":"#f1f4fa",border:isDrop?"1px solid #0284c7":slotBlocked?"1px solid #f2cccc":"1px solid #e6ebf3"}}>
+                      {slotBlocked&&<div style={{fontSize:11,color:"#b56b6b",gridColumn:"1/-1"}}>🚫 Bloqueado</div>}
+                      {shown.map(it=>{ if(it.t==="v") return <ValChip key={it.l.id} l={it.l} fs={fs}/>;
+                        const s=it.s, nm=s.client.name.split(" ");
+                        const asig=assignedSessions.find(a=>a.client_id===s.client_id&&a.date===activeDay);
+                        const au=!asig&&blockForDate(annualBlocks,activeDay)?autoRoutineFor(s.client,activeDay,sessions,annualBlocks):null;
+                        const plan=short(asig?asigName(asig,sessionTemplates):(au?au.label:""));
+                        return <Chip key={s.id} s={s} fs={fs} label={initial&&nm[1]?`${nm[0]} ${nm[1][0]}.`:nm[0]} sub={withSub?plan:""} line2={twoLine?(plan||(asig?"Entreno asignado":"Sin entreno")):null}/>; })}
+                      {extra>0&&<div style={{fontSize:Math.max(9,fs-2),fontWeight:800,color:"#475569"}}>+{extra}</div>}
+                      {isDrop&&dragCli&&<div className="drag-preview" style={{border:`2px dashed ${dragCli.color}`,borderRadius:6,padding:"2px 5px",fontSize:fs,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",background:"#fff"}}>＋ {dragCli.name.split(" ")[0]}</div>}
+                    </div>
+                  </div>);
+              })}
+            </div>);
+          }
+        }
+        return(
+          <div data-fit="1" style={{position:"fixed",left:0,right:0,top:0,height:vh,zIndex:150,background:"#eef1f7",display:"flex",flexDirection:"column",padding:"0 6px",boxSizing:"border-box"}}
+            onTouchStart={e=>{ const t=e.touches[0]; fitSwipe.current={x:t.clientX,y:t.clientY,ts:Date.now()}; }}
+            onTouchEnd={e=>{ const st=fitSwipe.current; fitSwipe.current=null; if(!st||dragRef.current||justDragged.current) return; const t=e.changedTouches[0]; const dx=t.clientX-st.x, dy=t.clientY-st.y;
+              if(Math.abs(dx)>70&&Math.abs(dy)<60&&Date.now()-st.ts<700) shift(dx<0?1:-1); }}>
+            <div style={{height:headH,flexShrink:0,display:"flex",alignItems:"center",gap:6}}>
+              <button className="btn ghost" style={{padding:"6px 10px",fontSize:14}} onClick={exitFit} title="Salir de pantalla completa">✕</button>
+              <button className="btn ghost" style={{padding:"6px 10px",fontSize:14}} onClick={()=>shift(-1)}>‹</button>
+              <div style={{flex:1,minWidth:0,textAlign:"center",fontSize:13,fontWeight:800,color:"#0f172a",textTransform:"capitalize",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{lbl}</div>
+              <button className="btn ghost" style={{padding:"6px 10px",fontSize:14}} onClick={()=>shift(1)}>›</button>
+              {activeDay!==TODAY&&<button className="btn ghost" style={{padding:"6px 8px",fontSize:11}} onClick={()=>setActiveDay(TODAY)}>Hoy</button>}
+              <div style={{display:"flex",background:"#e6ebf3",borderRadius:9,padding:2}}>
+                {[["day","Día"],["week","Sem."]].map(([k,l])=><button key={k} onClick={()=>setSchedView(k)} style={{border:"none",borderRadius:7,padding:"5px 9px",fontSize:12,fontWeight:800,cursor:"pointer",background:schedView===k?"#fff":"transparent",color:schedView===k?"#0284c7":"#64748b"}}>{l}</button>)}
+              </div>
+            </div>
+            {body}
+          </div>
+        );
+      })()}
       {dragGhost&&<div className="drag-ghost" style={{position:"fixed",left:Math.min(dragGhost.x+14,(typeof window!=="undefined"?window.innerWidth:400)-190),top:dragGhost.y-52,zIndex:900,pointerEvents:"none",background:"#0f172a",color:"#fff",borderRadius:12,padding:"7px 12px",boxShadow:"0 10px 26px rgba(15,23,42,.4)",borderLeft:`5px solid ${dragGhost.color}`,minWidth:120}}>
         <div style={{fontSize:15,fontWeight:800,lineHeight:1.15}}>{dragGhost.name}</div>
         <div style={{fontSize:11,fontWeight:700,marginTop:2,color:dragGhost.blocked?"#fca5a5":dragGhost.target?"#86efac":"#94a3b8"}}>{dragGhost.blocked?"🚫 Hora bloqueada":dragGhost.target?`→ ${dragGhost.target}`:"Suelta en otra hora"}</div>
@@ -1412,6 +1564,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
             {/* Block day / vacation buttons */}
             <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+              {(schedView==="day"||schedView==="week")&&<button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} onClick={enterFit} title="Ver el día o la semana entera sin scroll">⛶ Pantalla completa</button>}
               <button className="btn ghost" style={{fontSize:11,padding:"7px 12px"}}
                 onClick={()=>toggleBlockDay(activeDay)}>
                 {blocked.some(b=>b.date===activeDay&&b.time==="ALL")?"✓ Día desbloqueado":"🚫 Bloquear día"}
