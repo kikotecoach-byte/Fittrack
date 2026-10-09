@@ -341,7 +341,7 @@ function autoRoutineFor(client, date, sessions, annualBlocks){
   const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, nDays, macroWeek(date), client.goal) : WEEK_PLAN;
   const idx = days.indexOf(date);
   const dayType = plan[idx % plan.length];
-  return { dayType, label:dayTypeLabel(dayType), blk, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date)) };
+  return { dayType, label:dayTypeLabel(dayType), blk, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date), levelOf(client)) };
 }
 
 function getMonthDays(year, month) {
@@ -922,6 +922,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       train_days:(data.train_days||[]).join(","),
       days_week:(data.train_days&&data.train_days.length)||4,
     }).eq("id",client.id);
+    // El nivel va aparte: si falta la columna (docs/nivel.sql) el bono se guarda igual.
+    if(data.level&&data.level!==client.level){ const r=await sb.from("clients").update({level:data.level}).eq("id",client.id); if(r.error){ setShowEdit(null); notify("Bono actualizado ✓ · para guardar el nivel ejecuta docs/nivel.sql","err"); return; } }
     setShowEdit(null); notify("Bono actualizado ✓");
   });
 
@@ -932,7 +934,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const _materialize = async (client, date, dayType) => {
     const blk=blockForDate(annualBlocks,date);
     const auto = dayType ? null : autoRoutineFor(client, date, sessions, annualBlocks);
-    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date)) : (auto?auto.routine:[]);
+    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date), levelOf(client)) : (auto?auto.routine:[]);
     const dt = dayType || (auto&&auto.dayType) || null;
     if(!routine.length) return "noblock";
     const existing=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
@@ -959,6 +961,51 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     for(const [d,t] of pairs){ const r=await _materialize(client,d,t||undefined); if(r==="ok") ok++; else if(r==="noblock") noblk++; }
     if(ok) notify(`Semana organizada: ${ok} entreno${ok>1?"s":""} ✓`);
     else notify(noblk?"No hay bloque del macrociclo para esas fechas":"No se pudo organizar la semana","err");
+  });
+
+  // ── NIVEL: guardar y ajustar entrenos al nivel (complejidad + volumen de series) ──
+  const setLevel = async (client, level) => {
+    const {error}=await sb.from("clients").update({level}).eq("id",client.id);
+    if(error){ notify("Para guardar el nivel ejecuta docs/nivel.sql en Supabase","err"); return false; }
+    if(quickView&&quickView.id===client.id) setQuickView(q=>({...q,level}));
+    await loadAll(); notify(`Nivel: ${LEVEL_LABEL[level]} ✓`); return true;
+  };
+  // Núcleo: reajusta un entreno guardado. Devuelve el nº de cambios.
+  const _adjustSession = async (client, asig, levelOverride) => {
+    const exs=assignedExercises.filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+    if(!exs.length) return 0;
+    const blk=blockForDate(annualBlocks,asig.date);
+    const rows=exs.map(e=>[e.exercise_name,parseInt(e.sets)||1,e.reps||"",e.rest_seconds||0,e.protocol||"",isMainRow(e),e.id]);
+    const res=adaptToLevel(rows,levelOverride||levelOf(client),{block:blk,dayType:asig.day_type,goal:client.goal});
+    const byId=Object.fromEntries(exs.map(e=>[e.id,e])), keep=new Set();
+    const wts=clientWeights.filter(x=>x.client_id===client.id);
+    const cwOf=(n)=>wts.find(x=>(x.exercise_name||"").toLowerCase()===String(n).toLowerCase());
+    let n=0;
+    for(let i=0;i<res.length;i++){
+      const r=res[i], e=r[6]&&byId[r[6]];
+      if(e){
+        keep.add(e.id); const upd={};
+        if(e.exercise_name!==r[0]){ upd.exercise_name=r[0]; upd.prescribed_weight=suggestLoad(cwOf(r[0]),r[5],blk,asig.date); }
+        if((parseInt(e.sets)||1)!==r[1]) upd.sets=r[1];
+        if(String(e.reps||"")!==String(r[2])) upd.reps=r[2];
+        if((e.protocol||"")!==r[4]) upd.protocol=r[4];
+        if(e.order_index!==i) upd.order_index=i;
+        if(Object.keys(upd).length){ await sb.from("assigned_exercises").update(upd).eq("id",e.id); if(Object.keys(upd).some(k=>k!=="order_index")) n++; }
+      } else {
+        await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:r[0],prescribed_weight:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}); n++;
+      }
+    }
+    const del=exs.filter(e=>!keep.has(e.id)).map(e=>e.id);
+    if(del.length){ await sb.from("assigned_exercises").delete().in("id",del); n+=del.length; }
+    return n;
+  };
+  // Ajusta uno o varios días (solo entrenos pendientes, no los ya hechos).
+  const adjustToLevel = (client, dates, levelOverride) => w(async()=>{
+    const list=[].concat(dates).map(d=>assignedSessions.find(a=>a.client_id===client.id&&a.date===d)).filter(a=>a&&a.status!=="done"&&!history.some(h=>h.client_id===client.id&&h.date===a.date));
+    if(!list.length){ notify("No hay entrenos pendientes que ajustar","err"); return; }
+    let ch=0; for(const a of list) ch+=await _adjustSession(client,a,levelOverride);
+    const lv=LEVEL_LABEL[levelOverride||levelOf(client)];
+    notify(ch?`Ajustado a ${lv}: ${ch} cambio${ch>1?"s":""} en ${list.length} entreno${list.length>1?"s":""} ✓`:`Ya estaba ajustado a ${lv} ✓`);
   });
 
   // Replicar un entreno ya hecho/guardado en una o varias fechas (con las cargas usadas).
@@ -2086,6 +2133,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             onSetType={(c,d,t)=>materializeRoutine(c,d,t)}
             onPlanWeek={(c,pairs)=>planWeek(c,pairs)}
             onCopyWeek={(c,pairs)=>copyWeek(c,pairs)}
+            onAdjust={(c,dates)=>adjustToLevel(c,dates)}
+            onSetLevel={setLevel}
             onEditSession={(c,d)=>setSessionEdit({client:c,date:d})}
             onOpenHistory={(c,h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}
             annualBlocks={annualBlocks}
@@ -2117,8 +2166,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
-      {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
+      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
         onTraining={()=>{const s=slotMenu;setSlotMenu(null);setQuickAdd(s);}}
@@ -3166,13 +3215,37 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
 // Sustitutos del mismo patrón y músculo, búsqueda, filtro por músculo y
 // material, y crear ejercicios propios (se guardan para reutilizarlos).
 const MuscleTags=({name,max=3})=>{ const m=musclesOf(name).slice(0,max); return m.length?<span style={{display:"inline-flex",gap:3,flexWrap:"wrap"}}>{m.map((x,i)=><span key={x} style={{fontSize:9,fontWeight:700,padding:"1px 6px",borderRadius:20,background:i===0?"#e0ecfb":"#f1f4fa",color:i===0?"#0369a1":"#64748b",border:"1px solid #dbe2ec"}}>{x}</span>)}</span>:null; };
+// Complejidad técnica (●○○ sencillo · ●●○ medio · ●●● técnico).
+const CxTag=({name})=>{ const c=complexityOf(name); const col=c===3?"#b91c1c":c===2?"#b45309":"#15803d"; return <span title={`Complejidad ${CX_NAME[c]}`} style={{fontSize:10,fontWeight:800,letterSpacing:-1,color:col}}>{CX_LABEL[c]}</span>; };
+// Selector de nivel del cliente.
+function LevelPicker({value,onChange,size="sm"}){
+  const big=size!=="sm";
+  return <div style={{display:"flex",gap:5,flexWrap:"wrap"}}>
+    {LEVELS.map(([k,l])=>{ const on=value===k; return <button key={k} type="button" onClick={(e)=>{ e.stopPropagation(); onChange&&onChange(k); }}
+      style={{fontSize:big?12:11,fontWeight:700,padding:big?"7px 11px":"4px 9px",borderRadius:20,cursor:onChange?"pointer":"default",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{l}</button>; })}
+  </div>;
+}
+// Volumen de la sesión frente al objetivo del nivel. items: [{name,sets,proto}]
+function VolumeBadge({items,level,block,goal,style}){
+  const v=sessionVolume(items), t=levelTarget(level,block,goal), L=LEVEL_CFG[level]||LEVEL_CFG.intermedio;
+  if(!v.ex&&!v.wod) return null;
+  const strength=v.ex>=3;
+  const ok=!strength||(v.sets>=t.min&&v.sets<=t.max);
+  const cxBad=v.hard>(L.maxCx<3?0:L.hardMax);
+  const col=ok&&!cxBad?"#15803d":"#b45309";
+  return <div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,fontWeight:700,color:col,background:ok&&!cxBad?"#f0fdf4":"#fffbeb",border:`1px solid ${ok&&!cxBad?"#bbf7d0":"#fde68a"}`,borderRadius:9,padding:"6px 9px",...(style||{})}}>
+    <span>📊 {v.sets} series{strength?` · objetivo ${t.min}-${t.max}`:v.wod?" + WOD":""}</span>
+    <span style={{color:"#64748b",fontWeight:600}}>{v.ex} ejercicio{v.ex!==1?"s":""} (máx. {L.maxEx})</span>
+    <span style={{color:cxBad?"#b91c1c":"#64748b",fontWeight:600}}>●●● {v.hard}{L.maxCx<3?" (evitar)":L.hardMax<9?` (máx. ${L.hardMax})`:""}</span>
+  </div>;
+}
 function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
   const [q,setQ]=React.useState("");
   const [mus,setMus]=React.useState("");
   const [onlyMine,setOnlyMine]=React.useState(true);
   const [eqF,setEqF]=React.useState("");
   const [creating,setCreating]=React.useState(false);
-  const [nw,setNw]=React.useState({name:"",muscles:[],equip:"",sets:3,reps:"10-12",rest:60,notes:""});
+  const [nw,setNw]=React.useState({name:"",muscles:[],equip:"",sets:3,reps:"10-12",rest:60,notes:"",cx:0});
   const [busy,setBusy]=React.useState(false);
   const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const subs=current?substitutesFor(current,10):[];
@@ -3182,7 +3255,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
       <span style={{flex:1,minWidth:0}}>
         <span style={{display:"block",fontSize:13,fontWeight:700,color:"#0f172a"}}>{x.name}{x.custom&&<span style={{fontSize:9,fontWeight:800,color:"#7c3aed",marginLeft:6}}>PROPIO</span>}</span>
-        <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(EQUIP_LABEL[equipmentOf(x.name)]||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
+        <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><CxTag name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(EQUIP_LABEL[equipmentOf(x.name)]||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
       </span>
       <span style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{hint||`${x.sets}×${x.reps}`}</span>
     </button>
@@ -3191,13 +3264,14 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     const name=nw.name.trim(); if(!name) return notify("Escribe el nombre del ejercicio","err");
     setBusy(true);
     const cat=MUSCLE_CAT[nw.muscles[0]]||"Fuerza";
-    const base={name,category:cat,muscle_group:nw.muscles.join(", "),description:nw.notes||"",difficulty:"Intermedio"};
+    const cx=nw.cx||complexityOf(name);
+    const base={name,category:cat,muscle_group:nw.muscles.join(", "),description:nw.notes||"",difficulty:["","Principiante","Intermedio","Avanzado"][cx]};
     let r=await sb.from("exercises").insert({...base,equipment:nw.equip||null,default_sets:parseInt(nw.sets)||3,default_reps:nw.reps||"10-12",rest_seconds:parseInt(nw.rest)||60});
     if(r.error) r=await sb.from("exercises").insert(base); // sin las columnas nuevas (docs/ejercicios.sql)
     setBusy(false);
     if(r.error){ notify("No se pudo guardar: "+r.error.message,"err"); return; }
     // Disponible al momento (aunque falten columnas en la tabla).
-    CUSTOM_EX[name.toLowerCase()]={name,equip:nw.equip||null,muscles:nw.muscles,cat,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,desc:nw.notes||""};
+    CUSTOM_EX[name.toLowerCase()]={name,equip:nw.equip||null,muscles:nw.muscles,cat,cx,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,desc:nw.notes||""};
     if(loadAll) loadAll();
     notify("Ejercicio creado ✓");
     onPick({name,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,custom:true,notes:nw.notes||""});
@@ -3246,6 +3320,10 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
           <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
             {EQUIP_KEYS.concat(["otros"]).map(k=>chip(nw.equip===k,EQUIP_LABEL[k]||k,()=>setNw(n=>({...n,equip:n.equip===k?"":k})),k))}
           </div>
+          <span className="lbl">COMPLEJIDAD TÉCNICA (para adaptar al nivel)</span>
+          <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
+            {[1,2,3].map(c=>{ const auto=!nw.cx&&complexityOf(nw.name)===c; return chip(nw.cx===c||auto,`${CX_LABEL[c]} ${CX_NAME[c]}${auto?" (auto)":""}`,()=>setNw(n=>({...n,cx:n.cx===c?0:c})),"cx"+c); })}
+          </div>
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:10}}>
             <div><span className="lbl">SERIES</span><input type="number" className="inp" value={nw.sets} onChange={e=>setNw(n=>({...n,sets:e.target.value}))}/></div>
             <div><span className="lbl">REPS</span><input className="inp" value={nw.reps} onChange={e=>setNw(n=>({...n,reps:e.target.value}))}/></div>
@@ -3267,7 +3345,8 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
 // Permite cambiar, quitar, añadir y ajustar los ejercicios del entreno de una
 // persona en un día concreto (p. ej. si tiene una molestia se sustituye el
 // ejercicio que le duele). Respeta el material disponible del gimnasio.
-function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,sessions,annualBlocks,exercises,onGenerate,loadAll,notify,onClose}) {
+function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,sessions,annualBlocks,exercises,onGenerate,onAdjust,onSetLevel,loadAll,notify,onClose}) {
+  const [lv,setLv]=React.useState(()=>levelOf(client));
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const [saving,setSaving]=React.useState(false);
   const [addName,setAddName]=React.useState("");
@@ -3305,7 +3384,14 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>✏️ Editar sesión · {client.name}</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:14}}>{fmtDate(date)} · cambia, quita o añade ejercicios (p. ej. si tiene una molestia). Solo material disponible.</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>{fmtDate(date)} · cambia, quita o añade ejercicios (p. ej. si tiene una molestia). Solo material disponible.</p>
+        <div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 10px",marginBottom:12}}>
+          <div style={{fontSize:10,fontWeight:800,color:"#64748b",marginBottom:6}}>🎚 NIVEL · COMPLEJIDAD Y VOLUMEN DE SERIES</div>
+          <LevelPicker value={lv} onChange={(l)=>{ setLv(l); if(onSetLevel) onSetLevel(client,l); }}/>
+          {sess&&exs.length>0&&<VolumeBadge items={exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))} level={lv} block={blockForDate(annualBlocks,date)} goal={client.goal} style={{marginTop:8}}/>}
+          {sess&&exs.length>0&&onAdjust&&<button className="btn sky" style={{width:"100%",marginTop:8,padding:"9px",fontSize:12,fontWeight:700,justifyContent:"center"}} disabled={saving} onClick={()=>onAdjust(lv)}>🎚 Ajustar a su nivel ({LEVEL_LABEL[lv]})</button>}
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:6,lineHeight:1.4}}>Cambia lo demasiado técnico por un ejercicio del mismo patrón, ajusta series y nº de ejercicios al objetivo del nivel y escala el WOD.</div>
+        </div>
         {!sess
           ?<div>
             <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"12px 14px",fontSize:13,color:"#64748b",marginBottom:12}}>
@@ -3336,7 +3422,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                   </div>
                   <button onClick={()=>setPicker({mode:"swap",ex})} disabled={saving} title="Cambiar ejercicio (sustitutos, músculo, material o crear uno)" style={{flex:1,minWidth:0,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 9px"}}>
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
-                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span></span>
+                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span></span>
                   </button>
                   <button className="btn danger" style={{padding:"6px 9px"}} disabled={saving} onClick={()=>remove(ex)}>✕</button>
                 </div>
@@ -3395,7 +3481,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -3420,6 +3506,10 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
             </div>
           </div>
         </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <span className="lbl" style={{marginBottom:0}}>NIVEL</span>
+          <LevelPicker value={levelOf(client)} onChange={onSetLevel?(l)=>onSetLevel(client,l):null}/>
+        </div>
 
         <div style={{marginBottom:14}}>
           <span className="lbl">🎯 OBJETIVOS · LESIONES · NOTAS</span>
@@ -3440,7 +3530,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
 
         {/* Semana: vista previa por sesión, desplegable con ejercicios y pesos, y organización rápida */}
         <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
-          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
+          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
 
         {/* Historial: sesiones por día/fecha y pagos */}
         <div style={{marginBottom:14}}>
@@ -3455,6 +3545,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
           {sess
             ?<div style={{background:"#f1f4fa",border:"1px solid #14532d",borderRadius:10,padding:"11px 13px"}}>
               {asigName(sess,sessionTemplates)&&<div style={{fontSize:13,fontWeight:700,color:"#16a34a",marginBottom:exs.length?8:0}}>{asigName(sess,sessionTemplates)}</div>}
+              {exs.length>0&&<VolumeBadge items={exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))} level={levelOf(client)} block={blk} goal={client.goal} style={{marginBottom:8}}/>}
               {exs.length===0
                 ?<div style={{fontSize:12,color:"#64748b"}}>Sesión asignada (sin ejercicios detallados).</div>
                 :exs.map((e,i)=>(
@@ -3500,7 +3591,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
 
         {sess&&(onEditSession||onMove)&&(
           <div style={{display:"flex",gap:8,marginTop:12}}>
-            {onEditSession&&<button className="btn ghost" style={{flex:1,padding:10,justifyContent:"center",fontSize:12}} onClick={onEditSession}>✏️ Editar ejercicios (molestia)</button>}
+            {onEditSession&&<button className="btn ghost" style={{flex:1,padding:10,justifyContent:"center",fontSize:12}} onClick={()=>onEditSession()}>✏️ Editar ejercicios (molestia)</button>}
             {onMove&&<button className="btn ghost" style={{flex:1,padding:10,justifyContent:"center",fontSize:12}} onClick={onMove}>🕐 Mover día/hora</button>}
           </div>
         )}
@@ -3761,7 +3852,7 @@ function WodTimer({wod,onClose,onSave}) {
 // Vista previa por sesión con desplegable de ejercicios y pesos, cambio de tipo
 // por día, splits rápidos y copiar la semana anterior. allDays = muestra todos
 // los días laborables (también los que aún no tienen reserva).
-function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onSetType,onPlanWeek,onCopyWeek,onOpenHistory,onEditSession,onTemplate,allDays}) {
+function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onSetType,onPlanWeek,onCopyWeek,onAdjust,onOpenHistory,onEditSession,onTemplate,allDays}) {
   const [wkOff,setWkOff] = React.useState(0);
   const [openDay,setOpenDay] = React.useState(null);
   React.useEffect(()=>{ setWkOff(0); setOpenDay(null); },[client&&client.id]);
@@ -3798,6 +3889,11 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   };
   const prevWeek=getWeekDays((()=>{const x=new Date(anchor+"T12:00:00");x.setDate(x.getDate()-7);return x.toISOString().split("T")[0];})());
   const prevAsig=mine(assignedSessions).filter(a=>prevWeek.includes(a.date)&&exsOf(a).length>0).sort((a,b)=>a.date.localeCompare(b.date));
+  // Nivel: volumen semanal y días pendientes con entreno ya creado (ajustables).
+  const lvl=levelOf(client);
+  const weekAsig=rows.map(d=>mine(assignedSessions).find(a=>a.date===d)).filter(Boolean);
+  const weekSets=weekAsig.reduce((t,a)=>t+sessionVolume(exsOf(a).map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))).sets,0);
+  const adjustable=pending.filter(d=>{ const a=mine(assignedSessions).find(x=>x.date===d); return a&&exsOf(a).length>0; });
   const copyPrev=()=>{
     if(!pending.length||!prevAsig.length||!onCopyWeek||!okReplace()) return;
     onCopyWeek(pending.map((d,i)=>[prevAsig[i%prevAsig.length].date,d]));
@@ -3843,6 +3939,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
                       {!curType&&<option value="">{isReal?"— elegir tipo —":"＋ asignar entreno"}</option>}
                       {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
                     </select>}
+                {exs.length>0&&(()=>{ const v=sessionVolume(exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))); const t=levelTarget(lvl,blockForDate(annualBlocks,d),client.goal); const ok=v.ex<3||(v.sets>=t.min&&v.sets<=t.max); return v.sets>0&&<span title={`Series de trabajo (objetivo ${t.min}-${t.max})`} className="mono" style={{flexShrink:0,fontSize:10,fontWeight:800,color:ok?"#15803d":"#b45309",background:ok?"#f0fdf4":"#fffbeb",border:`1px solid ${ok?"#bbf7d0":"#fde68a"}`,borderRadius:20,padding:"1px 6px"}}>{v.sets} ser.</span>; })()}
                 <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:isReal?"sin reserva":"libre"}</div>
                 <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
               </div>
@@ -3884,6 +3981,12 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
             {onPlanWeek&&SPLITS.map(([k,l])=><button key={k} className="btn ghost" style={{fontSize:11,padding:"6px 9px"}} onClick={()=>applySplit(k)}>{l}</button>)}
             {onCopyWeek&&prevAsig.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"6px 9px",color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={copyPrev}>📋 Copiar semana anterior</button>}
           </div>
+        </div>
+      )}
+      {weekAsig.length>0&&(
+        <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:"#475569",background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
+          <span style={{flex:1,minWidth:150}}>📊 <b>{weekSets}</b> series de trabajo esta semana · {LEVEL_LABEL[lvl]} ({levelTarget(lvl,blockForDate(annualBlocks,anchor),client.goal).min}-{levelTarget(lvl,blockForDate(annualBlocks,anchor),client.goal).max}/sesión)</span>
+          {onAdjust&&adjustable.length>0&&<button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onAdjust(adjustable)}>🎚 Ajustar {adjustable.length} día{adjustable.length>1?"s":""} a su nivel</button>}
         </div>
       )}
     </div>
@@ -4071,7 +4174,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     if(ins.error) ins=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending"}).select().single(); // sin columna day_type
     const {data:sess,error}=ins;
     if(error){ notify("Error al generar","err"); setSaving(false); return; }
-    const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date));
+    const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date),levelOf(client));
     const wts=(clientWeights||[]).filter(w=>w.client_id===client.id);
     const rows=routine.map((e,i)=>{
       const cw=wts.find(w=>(w.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
@@ -4398,6 +4501,7 @@ function EditBonoModal({client,saving,onSave,onClose}) {
     payment_amount:client.payment_amount,
     next_payment:client.next_payment||"",
     train_days:parseDays(client.train_days).length?parseDays(client.train_days):[1,3,5],
+    level:levelOf(client),
   });
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
   const tot=Math.max(1,parseInt(f.total_sessions)||1);
@@ -4443,6 +4547,9 @@ function EditBonoModal({client,saving,onSave,onClose}) {
           </div>
           <div><span className="lbl">DÍAS DE ENTRENO ({(f.train_days||[]).length}/sem)</span>
             <WeekdayPicker value={f.train_days} onChange={(d)=>set("train_days",d)}/>
+          </div>
+          <div><span className="lbl">NIVEL (adapta complejidad y volumen de series)</span>
+            <LevelPicker value={f.level} onChange={(l)=>set("level",l)} size="md"/>
           </div>
           <div style={{fontSize:11,color:"#64748b"}}>Los días marcados ordenan el microciclo automático (3=split corto/full, 5=split más específico). Cámbialos si esta semana entrena otros días.</div>
           <div style={{display:"flex",gap:8,marginTop:4}}>
@@ -6126,7 +6233,7 @@ const TEMPLATE_EXERCISES = {
   "Movilidad / Regeneración":[["Movilidad de cadera",2,"8-10",0,false],["Movilidad torácica",2,"8-10",0,false],["Gato-camello",2,"10",0,false],["Plancha frontal",3,"30-45s",30,false],["Bicicleta / Assault bike",1,"15-20 min",0,false]],
 };
 
-function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
+function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
   const [tab,setTab] = React.useState("macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
   const [selTemplate,setSelTemplate] = React.useState(null);
@@ -6545,10 +6652,12 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
                   <div style={{fontSize:11,color:"#64748b"}}>{selClientObj.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"} · bono {bonoTxt(selClientObj)}</div>
                 </div>
               </div>
+              <div style={{marginBottom:10}}><LevelPicker value={levelOf(selClientObj)} onChange={onSetLevel?(l)=>onSetLevel(selClientObj,l):null}/></div>
               <ClientWeekPlanner client={selClientObj} date={TODAY} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} allDays
                 onSetType={(d,t)=>onSetType&&onSetType(selClientObj,d,t)}
                 onPlanWeek={(pairs)=>onPlanWeek&&onPlanWeek(selClientObj,pairs)}
                 onCopyWeek={(pairs)=>onCopyWeek&&onCopyWeek(selClientObj,pairs)}
+                onAdjust={(dates)=>onAdjust&&onAdjust(selClientObj,dates)}
                 onEditSession={(d)=>onEditSession&&onEditSession(selClientObj,d)}
                 onOpenHistory={(h)=>onOpenHistory&&onOpenHistory(selClientObj,h)}
                 onTemplate={(d)=>{ const wk=getWeekNumber(d); setShowAssignModal({date:d,clientId:selClient,block:annualBlocks.find(b=>wk>=b.start_week&&wk<=b.end_week)}); }}/>
@@ -6905,7 +7014,7 @@ function AddWeightModal({clientId, clientWeights, onSave, onClose}) {
 // Cada ejercicio: [nombre, series, reps, descanso(s), principal]. Al tocarlo
 // se añade a la plantilla con estos valores por defecto (editables después).
 // ── EJERCICIOS PROPIOS, MÚSCULOS Y SUSTITUTOS (para individualizar) ───────
-const setCustomExercises = (list) => { const m={}; (list||[]).forEach(e=>{ if(!e||!e.name) return; m[e.name.toLowerCase()]={name:e.name,equip:e.equipment||null,muscles:String(e.muscle_group||"").split(",").map(x=>x.trim()).filter(Boolean),cat:e.category||"",sets:e.default_sets||null,reps:e.default_reps||null,rest:e.rest_seconds||null,id:e.id,desc:e.description||""}; }); CUSTOM_EX=m; };
+const setCustomExercises = (list) => { const m={}; (list||[]).forEach(e=>{ if(!e||!e.name) return; m[e.name.toLowerCase()]={name:e.name,equip:e.equipment||null,muscles:String(e.muscle_group||"").split(",").map(x=>x.trim()).filter(Boolean),cat:e.category||"",cx:({principiante:1,intermedio:2,avanzado:3})[String(e.difficulty||"").toLowerCase()]||null,sets:e.default_sets||null,reps:e.default_reps||null,rest:e.rest_seconds||null,id:e.id,desc:e.description||""}; }); CUSTOM_EX=m; };
 const MUSCLES=["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Cuádriceps","Isquios","Glúteo","Aductores","Gemelo","Core","Lumbar","Cuerpo completo","Cardio","Movilidad"];
 // Músculos por nombre (el primero que coincide gana; el primer músculo es el principal).
 const MUSCLE_RULES=[
@@ -7535,8 +7644,168 @@ function weekPlanFor(block, days, weekNo, goal){
   const out=[]; for(let i=0;i<n;i++) out.push(base[i%base.length]);
   return out;
 }
+// ── NIVEL DEL CLIENTE: COMPLEJIDAD Y VOLUMEN DE SERIES ─────────────────────
+// Cada sesión se ajusta al nivel (principiante / intermedio / avanzado) con dos
+// criterios: el VOLUMEN TOTAL de series de trabajo (criterio principal) y la
+// COMPLEJIDAD técnica de los ejercicios (●○○ sencillo · ●●○ medio · ●●● técnico).
+const LEVELS = [["principiante","🌱 Principiante"],["intermedio","💪 Intermedio"],["avanzado","🔥 Avanzado"]];
+const LEVEL_LABEL = Object.fromEntries(LEVELS);
+const levelOf = (c) => { const l=String((c&&c.level)||"").toLowerCase(); return LEVEL_LABEL[l]?l:"intermedio"; };
+// Series de trabajo por sesión (sin calentamiento ni WOD), nº máx. de ejercicios,
+// series del básico, tope de series por accesorio, complejidad máxima y nº máx. de ●●●.
+const LEVEL_CFG = {
+  principiante:{min:12,max:15,maxEx:5,mainSets:3,accMax:3,maxCx:2,hardMax:0,wod:0.75,minMainReps:8},
+  intermedio:{min:16,max:20,maxEx:6,mainSets:4,accMax:4,maxCx:3,hardMax:2,wod:1,minMainReps:0},
+  avanzado:{min:20,max:26,maxEx:8,mainSets:5,accMax:5,maxCx:3,hardMax:99,wod:1.2,minMainReps:0},
+};
+const CX_LABEL = {1:"●○○",2:"●●○",3:"●●●"};
+const CX_NAME = {1:"sencillo",2:"medio",3:"técnico"};
+// Complejidad técnica de un ejercicio (1-3).
+const complexityOf = (name) => {
+  const n=String(name||""), c=CUSTOM_EX[n.toLowerCase()];
+  if(c&&c.cx) return c.cx; // fijada por el entrenador al crear el ejercicio
+  if(/^(WOD |Hyrox|Bloque metab|Benchmark|Finisher|Circuito)/i.test(n)) return 1;
+  if(/asistid|en máquina|en maquina|multipower|smith/i.test(n)&&!/pistol/i.test(n)) return /olímp|cargada|snatch/i.test(n)?2:1;
+  if(/cargada|power clean|\bclean\b|snatch|arrancada|push jerk|muscle ?up|pistol|toes to bar|nordic|lastrad|d[eé]ficit|sumo|buenos d[ií]as|ssb|safety|thrusters con barra|push press|sentadilla frontal|con pausa|pendlay|elevación de piernas colgado|copenhagen|rueda abdominal|tirón alto|tiron alto|turkish|^dominadas|fondos en paralelas|comba \(dobles\)/i.test(n)) return 3;
+  const eq=equipmentOf(n);
+  if(eq==="barra"&&/sentadilla|peso muerto|press militar de pie/i.test(n)&&!/rumano|piernas r[ií]gidas|trap bar|cajón|cajon|tempo/i.test(n)) return 3;
+  if(["machine","legmachine","legpress","poleas","cardio","remo","movilidad","antebrazo","banda"].includes(eq)) return 1;
+  if(/^curl|extensión|extension|elevaciones|elevación de gemelos|gemelo|aperturas|pájaros|pajaros|face pull|patada|crunch|plancha|encogimientos|peck deck|cruce|puente de glúteo|puente de gluteo|sentadilla al aire|air squat|hollow|dead bug|bird|pallof|farmer|granjero|zancada caminando|step-?up|sentadilla goblet/i.test(n)) return 1;
+  return 2;
+};
+// Objetivo de series de trabajo de la sesión según nivel, fase y objetivo.
+const levelTarget = (level, block, goal) => {
+  const L=LEVEL_CFG[level]||LEVEL_CFG.intermedio;
+  let min=L.min, max=L.max;
+  if(goal==="estetica"&&level!=="principiante"){ min+=2; max+=2; }
+  if(block&&block.type==="descarga"){ min=Math.round(min*0.6); max=Math.round(max*0.6); }
+  return {min,max};
+};
+const isMetaRow = (name, proto) => META_PROTOS.includes(proto) || /^(WOD |Hyrox|Bloque metab|Benchmark|Finisher|Circuito)/i.test(String(name||""));
+// Resumen de una sesión: series de trabajo (fuera del WOD), nº de ejercicios y complejidad.
+// items: [{name, sets, proto}]
+const sessionVolume = (items) => {
+  const work=(items||[]).filter(x=>x&&x.name&&!isMetaRow(x.name,x.proto));
+  const cx=work.map(x=>complexityOf(x.name));
+  return { sets:work.reduce((s,x)=>s+(parseInt(x.sets)||0),0), ex:work.length, hard:cx.filter(v=>v===3).length,
+    wod:(items||[]).some(x=>x&&isMetaRow(x.name,x.proto)), cx:cx.length?Math.round(cx.reduce((a,b)=>a+b,0)/cx.length*10)/10:0 };
+};
+// ¿Es un básico? (en la sesión guardada no hay marca: protocolo de fuerza o descanso largo).
+const isMainRow = (e) => !META_PROTOS.includes(e.protocol) && (["top_set_backoff","ramp_up","rest_pause","cluster"].includes(e.protocol) || (parseInt(e.rest_seconds)||0)>=120);
+// Adapta una sesión al nivel. rows: [nombre, series, reps, descanso, protocolo, principal, id?]
+// (el 7º campo opcional es el id de la fila guardada; las filas quitadas no vuelven).
+function adaptToLevel(rows, level, ctx={}){
+  const L=LEVEL_CFG[level]; if(!L||!rows||!rows.length) return rows;
+  const {block,dayType,goal}=ctx;
+  if(dayType==="mobility") return rows;
+  const test=isTestBlock(block), soft=block&&block.type==="descarga";
+  let out=rows.map(r=>r.slice());
+  const names=()=>new Set(out.map(r=>r[0]));
+  // 1) Complejidad: sustituye lo demasiado técnico por un ejercicio del mismo patrón más sencillo.
+  // Primero el mismo grupo del generador (mismo patrón), luego sustitutos por músculo.
+  const easier=(name,maxCx,meta)=>{
+    const used=names(), ok=(n)=>n&&!used.has(n)&&equipOk(n)&&complexityOf(n)<=maxCx;
+    const pools=meta?Object.values(MET_MOVES):Object.values(EX_POOLS);
+    for(const p of pools) if(p.includes(name)){ const n=p.find(ok); if(n) return n; }
+    const cand=substitutesFor(name,40).filter(x=>ok(x.name)&&!/^(AMRAP|EMOM|Tabata|WOD )/i.test(x.name));
+    const pool=meta?WOD_MOVES():null;
+    const pick=(meta&&cand.find(x=>pool.includes(x.name)))||cand[0];
+    return pick?pick.name:null;
+  };
+  let hard=0;
+  out.forEach(r=>{
+    if(isWodHeader({exercise_name:r[0]})) return;
+    const cx=complexityOf(r[0]); if(cx<3) return;
+    const meta=META_PROTOS.includes(r[4]);
+    if(cx>L.maxCx||hard>=L.hardMax){
+      const alt=easier(r[0],2,meta);
+      if(alt){ r[0]=alt; if(meta){ const ov=MET_REP_OVR.find(([re])=>re.test(alt)); if(ov&&ov[1][r[4]]) r[2]=ov[1][r[4]]; } return; }
+    }
+    hard++;
+  });
+  // Avanzado: un accesorio más del mismo día (más volumen repartido).
+  const EXTRA={fuerzaA:["hamiso","calf","core"],fuerzaB:["lateral","biceps","triceps"],push:["reardelt","core"],pull:["forearm","core"],legs:["hthrust","core"],upper:["reardelt","biceps","triceps"],lower:["lunge","core"],small:["core"]};
+  if(level==="avanzado"&&!test&&!soft&&EXTRA[dayType]){
+    for(const k of EXTRA[dayType]){
+      const work=out.filter(r=>!isMetaRow(r[0],r[4]));
+      if(work.length>=6) break;
+      const used=names(), pool=EX_POOLS[k]||[];
+      if(pool.some(x=>used.has(x))) continue; // ese patrón ya está en la sesión
+      const n=pool.find(x=>equipOk(x));
+      if(n){ const at=out.indexOf(work[work.length-1])+1; const XR={hamiso:"12-15",calf:"12-20",lateral:"12-20",biceps:"10-12",triceps:"10-12",reardelt:"15-20",forearm:"12-20",hthrust:"10-12",lunge:"10-12"};
+        out.splice(at,0,[n,3,/plancha|hollow/i.test(n)?"30-45s":(XR[k]||"12-15"),k==="hthrust"||k==="lunge"?75:60,"series_planas",false]); }
+    }
+  }
+  // 2) Principiante: protocolos sencillos y reps moderadas en los básicos.
+  if(level==="principiante") out.forEach(r=>{
+    if(r[5]&&!META_PROTOS.includes(r[4])) r[1]=Math.min(parseInt(r[1])||L.mainSets,L.mainSets);
+    if(["top_set_backoff","ramp_up","rest_pause","drop_set","cluster","myo_reps"].includes(r[4])) r[4]="series_planas";
+    if(r[5]&&L.minMainReps){ const m=String(r[2]).match(/^(\d+)(?:\s*-\s*(\d+))?/); if(m&&+m[1]<L.minMainReps) r[2]=`${L.minMainReps}-${L.minMainReps+2}`; }
+  });
+  // 3) WOD: duración/rondas según nivel. La cabecera lleva la marca del nivel
+  // (🌱/🔥) para poder reajustar sin escalar dos veces.
+  if(!test){
+    let blk=null;
+    out.forEach(r=>{
+      const meta=META_PROTOS.includes(r[4]);
+      if(!meta){ blk=null; return; }
+      if(isWodHeader({exercise_name:r[0]})){
+        if(/^Finisher/i.test(r[0])||r[4]==="tabata"){ blk={skip:true}; return; }
+        const tag=(String(r[0]).match(/ (🌱|🔥)$/)||[])[1];
+        const prevF=tag==="🌱"?LEVEL_CFG.principiante.wod:tag==="🔥"?LEVEL_CFG.avanzado.wod:1;
+        const f=L.wod/prevF;
+        r[0]=String(r[0]).replace(/ (🌱|🔥)$/,"")+(level==="principiante"?" 🌱":level==="avanzado"?" 🔥":"");
+        if(Math.abs(f-1)<0.01){ blk={skip:true}; return; }
+        const st=numIn(r[0],/rotando (\d+)/i)||1;
+        const oldR=numIn(r[0]+" "+r[2],/(\d+)\s*rondas/i), newR=oldR?Math.max(2,Math.round(oldR*f)):null;
+        const oldM=numIn(r[0],/(?:AMRAP|EMOM) (\d+)'/i)||numIn(r[2],/(\d+)\s*min/i);
+        const newM=oldM?(r[4]==="emom"?Math.max(st,Math.round(oldM*f/st)*st):Math.max(5,Math.round(oldM*f))):null;
+        if(newR){ r[0]=r[0].replace(/(\d+)\s*rondas/i,`${newR} rondas`); r[2]=String(r[2]).replace(/(\d+)\s*rondas/i,`${newR} rondas`); }
+        if(newM){ r[0]=r[0].replace(/(AMRAP|EMOM) (\d+)'/i,`$1 ${newM}'`); r[2]=String(r[2]).replace(/(\d+)\s*min/i,`${newM} min`); }
+        blk={oldR,newR,emom:r[4]==="emom"?newM/st:null};
+        return;
+      }
+      if(!blk||blk.skip) return;
+      if(blk.emom) r[1]=blk.emom;
+      else if(blk.oldR&&+r[1]===blk.oldR) r[1]=blk.newR;
+    });
+  }
+  // 4) Volumen de series (criterio principal) — solo en la parte de fuerza.
+  const work=out.filter(r=>!isMetaRow(r[0],r[4]));
+  if(!test&&work.length>=3){
+    const mains=work.filter(r=>r[5]), accs=work.filter(r=>!r[5]);
+    if(!soft) mains.forEach(r=>{ r[1]=L.mainSets; });
+    accs.forEach(r=>{ r[1]=Math.max(2,Math.min(parseInt(r[1])||3,L.accMax)); });
+    // Tope de ejercicios: quita los últimos accesorios.
+    let drop=work.length-L.maxEx;
+    for(let i=accs.length-1;i>=0&&drop>0;i--,drop--){ const r=accs[i]; out=out.filter(x=>x!==r); accs.splice(i,1); }
+    const {min,max}=levelTarget(level,block,goal);
+    const total=()=>mains.concat(accs).reduce((s,r)=>s+(parseInt(r[1])||0),0);
+    const floor=soft?1:2, mainFloor=soft?2:3;
+    let guard=60;
+    while(total()>max&&guard--){
+      const a=accs.filter(r=>r[1]>floor).sort((x,y)=>y[1]-x[1])[0];
+      if(a){ a[1]--; continue; }
+      const m=mains.filter(r=>r[1]>mainFloor).sort((x,y)=>y[1]-x[1])[0];
+      if(m){ m[1]--; continue; } break;
+    }
+    const accCap=soft?3:L.accMax;
+    while(total()<min&&guard--){
+      const a=accs.filter(r=>r[1]<accCap).sort((x,y)=>x[1]-y[1])[0];
+      if(a){ a[1]++; continue; }
+      const m=mains.filter(r=>r[1]<(soft?3:L.mainSets+1)).sort((x,y)=>x[1]-y[1])[0];
+      if(m){ m[1]++; continue; } break;
+    }
+  }
+  return out;
+}
+// Rutina del día ya adaptada al nivel del cliente (si se indica).
+function buildDayRoutine(dayType, block, goal, weekNo, level){
+  const rows=baseDayRoutine(dayType, block, goal, weekNo);
+  return level ? adaptToLevel(rows, level, {block, dayType, goal}) : rows;
+}
 // Reps para principales según fase del bloque (usa el rango del bloque si existe).
-function buildDayRoutine(dayType, block, goal, weekNo){
+function baseDayRoutine(dayType, block, goal, weekNo){
   const bt = block?block.type:"fuerza";
   const wv = waveOf(block, weekNo); // semana A/B y ciclo dentro del bloque
   const test = isTestBlock(block);
