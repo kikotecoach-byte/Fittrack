@@ -1542,6 +1542,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         <div style={{display:"flex",gap:7,flexWrap:"wrap",marginBottom:14}}>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowEdit(c)}>✏️ Bono/caducidad</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7",border:"1px solid #bcd3ee",fontWeight:700}} onClick={()=>{setActiveDay(TODAY);setQuickView(c);}}>🗓️ Semana</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7",border:"1px solid #bcd3ee",fontWeight:700}} onClick={()=>setProgData(c)}>📈 Evolución</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={()=>{setLeadsClient(c);setShowLeads(true);}}>📋 Valoración</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowPhotos(c)}>📸 Fotos</button>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
@@ -2135,6 +2136,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             onCopyWeek={(c,pairs)=>copyWeek(c,pairs)}
             onAdjust={(c,dates)=>adjustToLevel(c,dates)}
             onSetLevel={setLevel}
+            onOpenProgress={(c)=>setProgData(c)}
             onEditSession={(c,d)=>setSessionEdit({client:c,date:d})}
             onOpenHistory={(c,h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}
             annualBlocks={annualBlocks}
@@ -2182,7 +2184,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
-      {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} onClose={()=>setProgData(null)}/>}
+      {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} onClose={()=>setProgData(null)}/>}
     </div>
   );
 }
@@ -3599,7 +3601,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         <div style={{display:"flex",gap:8,marginTop:12}}>
           {sess&&onExec&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onExec}>▶ Ejecutar entreno</button>}
           {!sess&&auto&&onUseAuto&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onUseAuto}>✓ Usar este entreno</button>}
-          {onProgress&&<button className="btn ghost" style={{padding:"11px 14px"}} onClick={onProgress} title="Progresión de cargas">📈</button>}
+          {onProgress&&<button className="btn ghost" style={{padding:"11px 14px"}} onClick={onProgress} title="Evolución: trabajo total, cargas y marcas">📈</button>}
           <button className="btn ghost" style={{padding:"11px 16px"}} onClick={onClose}>Cerrar</button>
         </div>
       </div>
@@ -4242,6 +4244,173 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
 }
 
 // ── PROGRESIÓN (evolución de cargas por ejercicio) ─────────────────────────
+// ── EVOLUCIÓN DEL TRABAJO (por persona, semana a semana y por fase) ────────
+// Trabajo hecho: sesiones, series de trabajo, tonelaje (series × reps × kg) y
+// minutos de WOD. Cuenta solo lo realizado (día en historial o sesión hecha);
+// si se marcaron ejercicios uno a uno, solo esos.
+const repsNum = (r) => { const t=String(r||"").trim(); if(!t||/\d\s*(s|seg|min|m|km|cal)\b|'|"/i.test(t)) return null; const m=t.match(/(\d+(?:[.,]\d+)?)(?:\s*-\s*(\d+(?:[.,]\d+)?))?/); if(!m) return null; const a=parseFloat(m[1].replace(",",".")), b=m[2]?parseFloat(m[2].replace(",",".")):a; return (a+b)/2; };
+const addDays = (d,n) => { const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
+function workByWeek(client, {history, assignedSessions, assignedExercises, annualBlocks}){
+  const mineH=(history||[]).filter(h=>h.client_id===client.id&&h.date&&h.date<=TODAY);
+  const mineA=(assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date&&a.date<=TODAY);
+  const doneDates=new Set([...mineH.map(h=>h.date),...mineA.filter(a=>a.status==="done").map(a=>a.date)]);
+  const wk={};
+  const W=(d)=>{ const k=mondayOfDate(d); return wk[k]||(wk[k]={mon:k,sessions:0,sets:0,tonnage:0,wodMin:0,muscles:{}}); };
+  doneDates.forEach(d=>{
+    const w=W(d); w.sessions++;
+    const a=mineA.find(x=>x.date===d); if(!a) return;
+    const all=(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0));
+    const marked=all.some(e=>e.done);
+    const exs=marked?all.filter(e=>e.done||isWodHeader(e)):all;
+    exs.forEach(e=>{
+      if(isMetaRow(e.exercise_name,e.protocol)) return;
+      const sets=parseInt(e.sets)||0; if(!sets) return;
+      w.sets+=sets;
+      const mu=(musclesOf(e.exercise_name)[0])||"Otros"; w.muscles[mu]=(w.muscles[mu]||0)+sets;
+      const kg=e.actual_weight!=null?Number(e.actual_weight):(e.prescribed_weight!=null?Number(e.prescribed_weight):null);
+      const rp=repsNum(e.actual_reps||e.reps);
+      if(kg&&rp) w.tonnage+=sets*rp*kg;
+    });
+    wodBlocks(all).forEach(b=>{ if(!marked||b.rows.some(r=>r.done)) w.wodMin+=(b.minutes||0); });
+  });
+  return wk;
+}
+const fmtNum = (v,dec=0) => (Math.round(v*Math.pow(10,dec))/Math.pow(10,dec)).toLocaleString("es-ES");
+const fmtKg = (v) => v>=1000?`${fmtNum(v/1000,1)} t`:`${fmtNum(v)} kg`;
+const shortBlock = (b) => b?String(b.name||b.type||"").replace(/\s*·\s*/g," ").replace(/Inespec[ií]fico/i,"Inesp.").replace(/Espec[ií]fico/i,"Espec.").trim():"Sin fase";
+const tinyBlock = (b) => shortBlock(b).split(" ").map(w=>w.length>7?w.slice(0,6)+".":w).join(" ");
+const WORK_METRICS = [["sets","Series",(v)=>fmtNum(v)],["tonnage","Tonelaje",fmtKg],["sessions","Sesiones",(v)=>fmtNum(v)],["wodMin","Min. WOD",(v)=>`${fmtNum(v)}'`]];
+
+function WorkEvolution({client,history,assignedSessions,assignedExercises,annualBlocks}){
+  const [metric,setMetric]=React.useState("sets");
+  const [range,setRange]=React.useState("12");
+  const [sel,setSel]=React.useState(null);
+  const [showTable,setShowTable]=React.useState(false);
+  const data=React.useMemo(()=>workByWeek(client,{history,assignedSessions,assignedExercises,annualBlocks}),[client&&client.id,history,assignedSessions,assignedExercises]);
+  const nowMon=mondayOfDate(TODAY);
+  const keys=Object.keys(data).sort();
+  const curBlk=blockForDate(annualBlocks,TODAY);
+  // Rango de semanas (incluye las semanas sin entreno: los huecos también cuentan).
+  let start=addDays(nowMon,-7*11);
+  if(range==="all") start=keys[0]&&keys[0]<start?keys[0]:start;
+  if(range==="block"&&curBlk){ let s=nowMon; for(let i=0;i<60;i++){ const p=addDays(s,-7); if(blockForDate(annualBlocks,p)!==curBlk) break; s=p; } start=s; }
+  if(keys[0]&&keys[0]>start) start=keys[0]; // sin las semanas de antes de empezar a entrenar
+  const weeks=[]; for(let d=start, i=0; d<=nowMon&&i<80; d=addDays(d,7), i++) weeks.push({...(data[d]||{mon:d,sessions:0,sets:0,tonnage:0,wodMin:0,muscles:{}}),blk:blockForDate(annualBlocks,d)});
+  const M=WORK_METRICS.find(m=>m[0]===metric), fmt=M[2];
+  const vals=weeks.map(w=>w[metric]);
+  const total=(k)=>weeks.reduce((s,w)=>s+w[k],0);
+  const active=weeks.filter(w=>w.sessions>0);
+  const avg=(arr,k)=>arr.length?arr.reduce((s,w)=>s+w[k],0)/arr.length:0;
+  const last4=weeks.slice(-4), prev4=weeks.slice(-8,-4);
+  const trend=prev4.length&&avg(prev4,metric)>0?Math.round((avg(last4,metric)/avg(prev4,metric)-1)*100):null;
+  const lvl=levelOf(client);
+  const selW=weeks.find(w=>w.mon===sel)||[...weeks].reverse().find(w=>w.sessions>0)||weeks[weeks.length-1];
+  // Fases del ciclo dentro del rango (bloques consecutivos).
+  const phases=[]; weeks.forEach((w,i)=>{ const p=phases[phases.length-1]; if(p&&p.blk===w.blk) p.w.push(w); else phases.push({blk:w.blk,i0:i,w:[w]}); });
+  // Músculos (series por músculo principal) en el rango.
+  const mus={}; weeks.forEach(w=>Object.entries(w.muscles).forEach(([m,v])=>{ mus[m]=(mus[m]||0)+v; }));
+  const musList=Object.entries(mus).sort((a,b)=>b[1]-a[1]).slice(0,8), musMax=musList.length?musList[0][1]:1;
+  // ── Gráfico de columnas (una serie: no lleva leyenda, el título la nombra) ──
+  const VW=340, VH=150, padL=34, padB=18, padT=16, plotW=VW-padL-4, plotH=VH-padT-padB;
+  const rawMax=Math.max(1,...vals);
+  const niceMax=(()=>{ const p=Math.pow(10,Math.floor(Math.log10(rawMax))); const n=[1,2,2.5,5,10].map(x=>x*p).find(x=>x>=rawMax); return n||rawMax; })();
+  const slot=plotW/Math.max(1,weeks.length), bw=Math.min(24,Math.max(2,slot-2));
+  const yOf=(v)=>padT+plotH-(v/niceMax)*plotH;
+  const tick=(v)=>metric==="tonnage"?(v>=1000?`${fmtNum(v/1000,v%1000?1:0)}K`:fmtNum(v)):fmtNum(v);
+  const col=(i)=>padL+i*slot+(slot-bw)/2;
+  const ACC="#0284c7", ACC_SOFT="#bfdcf2";
+  const bar=(x,y,w,h,r)=>{ if(h<=0) return ""; r=Math.min(r,w/2,h); return `M${x},${y+h} L${x},${y+r} Q${x},${y} ${x+r},${y} L${x+w-r},${y} Q${x+w},${y} ${x+w},${y+r} L${x+w},${y+h} Z`; };
+  const fmtWeek=(mon)=>{ const d=new Date(mon+"T12:00:00"); return d.toLocaleDateString("es-ES",{day:"numeric",month:"short"}); };
+  const chip=(on,txt,onClick,key)=><button key={key} onClick={onClick} style={{flexShrink:0,fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{txt}</button>;
+  const Tile=({label,value,sub})=><div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px",minWidth:0}}>
+    <div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>{label}</div>
+    <div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{value}</div>
+    {sub&&<div style={{fontSize:10,color:"#64748b",marginTop:1}}>{sub}</div>}
+  </div>;
+  if(!keys.length) return <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Aún no hay entrenos hechos. El trabajo aparecerá cuando marques sesiones como realizadas.</div>;
+  return(
+    <div>
+      {/* Filtros: rango y métrica, en una fila sobre todo lo demás */}
+      <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:4,marginBottom:4}}>
+        {[["12","12 semanas"],["block","Fase actual"],["all","Todo el ciclo"]].map(([k,l])=>chip(range===k,l,()=>{setRange(k);setSel(null);},"r"+k))}
+      </div>
+      <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:6,marginBottom:8}}>
+        {WORK_METRICS.map(([k,l])=>chip(metric===k,l,()=>setMetric(k),"m"+k))}
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+        <Tile label="Sesiones hechas" value={fmtNum(total("sessions"))} sub={`${fmtNum(avg(weeks,"sessions"),1)} por semana`}/>
+        <Tile label="Series de trabajo" value={fmtNum(total("sets"))} sub={active.length?`${fmtNum(total("sets")/Math.max(1,total("sessions")),1)} por sesión · objetivo ${levelTarget(lvl,curBlk,client.goal).min}-${levelTarget(lvl,curBlk,client.goal).max}`:"—"}/>
+        <Tile label="Tonelaje" value={fmtKg(total("tonnage"))} sub="series × reps × kg"/>
+        <Tile label={`Tendencia ${M[1].toLowerCase()}`} value={trend==null?"—":`${trend>0?"▲ +":trend<0?"▼ ":"= "}${Math.abs(trend)} %`} sub="últimas 4 sem. vs 4 anteriores"/>
+      </div>
+      {/* Lectura de la semana elegida (toca una columna) */}
+      {selW&&<div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"7px 10px",marginBottom:6}}>
+        <div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>SEMANA DEL {fmtWeek(selW.mon).toUpperCase()} · {shortBlock(selW.blk).toUpperCase()}{selW.blk&&!isTestBlock(selW.blk)?` (${waveOf(selW.blk,macroWeek(selW.mon)).ab})`:""}{selW.mon===nowMon?" · EN CURSO":""}</div>
+        <div style={{display:"flex",gap:10,flexWrap:"wrap",alignItems:"baseline",marginTop:2}}>
+          <span style={{fontSize:16,fontWeight:800,color:"#0f172a"}}>{fmt(selW[metric])}<span style={{fontSize:11,fontWeight:600,color:"#64748b"}}> {M[1].toLowerCase()}</span></span>
+          {WORK_METRICS.filter(m=>m[0]!==metric).map(([k,l,f])=><span key={k} style={{fontSize:11,color:"#475569"}}><b style={{color:"#0f172a"}}>{f(selW[k])}</b> {l.toLowerCase()}</span>)}
+        </div>
+      </div>}
+      <div style={{fontSize:11,fontWeight:800,color:"#0f172a",margin:"2px 0 2px"}}>{M[1]} por semana</div>
+      <svg viewBox={`0 0 ${VW} ${VH}`} style={{width:"100%",height:"auto",display:"block",touchAction:"pan-y"}} role="img" aria-label={`${M[1]} por semana`}>
+        {/* Fases del ciclo como bandas de fondo */}
+        {phases.map((p,k)=>{ const x=padL+p.i0*slot, w=p.w.length*slot; return <g key={"ph"+k}>
+          {k%2===1&&<rect x={x} y={padT-12} width={w} height={plotH+12} fill="#f3f5f9"/>}
+          {w>=44&&<text x={x+3} y={padT-3} fontSize="8" fontWeight="700" fill="#64748b">{(w>=90?shortBlock(p.blk):tinyBlock(p.blk)).slice(0,Math.floor(w/4.6))}</text>}
+        </g>; })}
+        {[0,0.5,1].map(f=>{ const v=niceMax*f, y=yOf(v); return <g key={"g"+f}>
+          <line x1={padL} x2={VW-4} y1={y} y2={y} stroke={f===0?"#c3c2b7":"#e1e0d9"} strokeWidth="1"/>
+          <text x={padL-4} y={y+3} fontSize="8" textAnchor="end" fill="#898781" style={{fontVariantNumeric:"tabular-nums"}}>{tick(v)}</text>
+        </g>; })}
+        {weeks.map((w,i)=>{ const v=w[metric], y=yOf(v), h=padT+plotH-y, on=selW&&w.mon===selW.mon, cur=w.mon===nowMon;
+          return <g key={w.mon} onClick={()=>setSel(w.mon)} onPointerEnter={(e)=>{ if(e.pointerType==="mouse") setSel(w.mon); }} style={{cursor:"pointer"}}>
+            <rect x={padL+i*slot} y={padT-12} width={slot} height={plotH+12+padB} fill="transparent"/>
+            <path d={bar(col(i),y,bw,h,4)} fill={on||cur?ACC:ACC_SOFT}/>
+            {on&&v>0&&<text x={col(i)+bw/2} y={y-3} fontSize="8" fontWeight="700" textAnchor="middle" fill="#0f172a">{tick(v)}</text>}
+          </g>; })}
+        {weeks.map((w,i)=>(i===0||i===weeks.length-1||(weeks.length>8&&i%Math.ceil(weeks.length/5)===0&&i<weeks.length-2))&&<text key={"x"+w.mon} x={col(i)+bw/2} y={VH-5} fontSize="8" textAnchor="middle" fill="#898781">{fmtWeek(w.mon)}</text>)}
+      </svg>
+      <div style={{fontSize:10,color:"#94a3b8",marginBottom:12}}>Toca una columna para ver la semana. Semana actual y elegida en azul fuerte; bandas grises = fases del ciclo.</div>
+      {/* Evolución por fase del ciclo */}
+      <span className="lbl">🔁 POR FASE DEL CICLO (media semanal)</span>
+      <div style={{border:"1px solid #e6ebf3",borderRadius:10,overflow:"hidden",marginBottom:12}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.6fr .6fr .8fr .9fr .9fr",gap:4,padding:"6px 9px",background:"#f8fafc",fontSize:9,fontWeight:800,color:"#64748b"}}>
+          <span>FASE</span><span style={{textAlign:"right"}}>SEM.</span><span style={{textAlign:"right"}}>SES./SEM</span><span style={{textAlign:"right"}}>SERIES/SEM</span><span style={{textAlign:"right"}}>KG/SEM</span>
+        </div>
+        {phases.map((p,k)=>{ const n=p.w.length; return <div key={"pt"+k} style={{display:"grid",gridTemplateColumns:"1.6fr .6fr .8fr .9fr .9fr",gap:4,padding:"6px 9px",borderTop:"1px solid #eef1f7",fontSize:11,color:"#0f172a",fontVariantNumeric:"tabular-nums"}}>
+          <span title={shortBlock(p.blk)} style={{fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tinyBlock(p.blk)}</span>
+          <span style={{textAlign:"right",color:"#64748b"}}>{n}</span>
+          <span style={{textAlign:"right"}}>{fmtNum(avg(p.w,"sessions"),1)}</span>
+          <span style={{textAlign:"right",fontWeight:700}}>{fmtNum(avg(p.w,"sets"),0)}</span>
+          <span style={{textAlign:"right"}}>{fmtKg(avg(p.w,"tonnage"))}</span>
+        </div>; })}
+      </div>
+      {/* Reparto por músculo principal */}
+      {musList.length>0&&<>
+        <span className="lbl">💪 SERIES POR MÚSCULO (en el rango)</span>
+        <div style={{display:"flex",flexDirection:"column",gap:5,marginBottom:12}}>
+          {musList.map(([m,v])=><div key={m} style={{display:"grid",gridTemplateColumns:"84px 1fr 34px",alignItems:"center",gap:8}}>
+            <span style={{fontSize:11,color:"#475569",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m}</span>
+            <div style={{height:10}}><div style={{width:`${Math.max(3,v/musMax*100)}%`,height:10,background:ACC,borderRadius:"0 4px 4px 0"}}/></div>
+            <span style={{fontSize:11,fontWeight:700,color:"#0f172a",textAlign:"right",fontVariantNumeric:"tabular-nums"}}>{v}</span>
+          </div>)}
+        </div>
+      </>}
+      {/* Tabla semanal (todos los valores sin depender del gráfico) */}
+      <button className="btn ghost" style={{width:"100%",fontSize:12,padding:8}} onClick={()=>setShowTable(s=>!s)}>{showTable?"▲ Ocultar tabla semanal":"▼ Ver tabla semanal"}</button>
+      {showTable&&<div style={{border:"1px solid #e6ebf3",borderRadius:10,overflow:"hidden",marginTop:6}}>
+        <div style={{display:"grid",gridTemplateColumns:"1.1fr 1.2fr .6fr .8fr 1fr .6fr",gap:4,padding:"6px 9px",background:"#f8fafc",fontSize:9,fontWeight:800,color:"#64748b"}}>
+          <span>SEMANA</span><span>FASE</span><span style={{textAlign:"right"}}>SES.</span><span style={{textAlign:"right"}}>SERIES</span><span style={{textAlign:"right"}}>KG</span><span style={{textAlign:"right"}}>WOD</span>
+        </div>
+        {[...weeks].reverse().map(w=><div key={"t"+w.mon} onClick={()=>setSel(w.mon)} style={{display:"grid",gridTemplateColumns:"1.1fr 1.2fr .6fr .8fr 1fr .6fr",gap:4,padding:"5px 9px",borderTop:"1px solid #eef1f7",fontSize:11,color:w.sessions?"#0f172a":"#94a3b8",background:selW&&w.mon===selW.mon?"#eef4fc":"#fff",cursor:"pointer",fontVariantNumeric:"tabular-nums"}}>
+          <span>{fmtWeek(w.mon)}</span><span title={shortBlock(w.blk)} style={{overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tinyBlock(w.blk)}</span>
+          <span style={{textAlign:"right"}}>{w.sessions}</span><span style={{textAlign:"right",fontWeight:700}}>{w.sets}</span><span style={{textAlign:"right"}}>{w.tonnage?fmtKg(w.tonnage):"—"}</span><span style={{textAlign:"right"}}>{w.wodMin?`${w.wodMin}'`:"—"}</span>
+        </div>)}
+      </div>}
+    </div>
+  );
+}
+
 function Sparkline({pts,color}) {
   if(!pts||!pts.length) return null;
   const n=pts.length, min=Math.min(...pts), max=Math.max(...pts), rng=(max-min)||1;
@@ -4255,7 +4424,8 @@ function Sparkline({pts,color}) {
     </svg>
   );
 }
-function ProgressionModal({client,clientWeights,weightHistory,records,onClose}) {
+function ProgressionModal({client,clientWeights,weightHistory,records,history,assignedSessions,assignedExercises,annualBlocks,onClose}) {
+  const [tab,setTab]=React.useState("work");
   const cw=(clientWeights||[]).filter(w=>w.client_id===client.id);
   const hist=(weightHistory||[]).filter(h=>h.client_id===client.id);
   const prs=(records||[]).filter(r=>r.client_id===client.id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
@@ -4271,14 +4441,19 @@ function ProgressionModal({client,clientWeights,weightHistory,records,onClose}) 
   };
   return(
     <div className="ovl" onClick={onClose}>
-      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:460}}>
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
+        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:12}}>
           {client.avatar_url
             ?<img src={client.avatar_url} style={{width:44,height:44,borderRadius:"50%",objectFit:"cover"}}/>
             :<div className="ring" style={{width:44,height:44,background:client.color+"20",color:client.color,fontSize:14}}>{ini(client.name)}</div>}
           <div><h2 className="mono" style={{fontSize:16,fontWeight:700}}>Progresión · {client.name}</h2>
-          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Evolución de cargas y marcas</div></div>
+          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Trabajo total, cargas y marcas</div></div>
         </div>
+        <div style={{display:"flex",gap:6,marginBottom:12}}>
+          {[["work","📊 Trabajo total"],["loads","🏋️ Cargas y marcas"]].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{flex:1,fontSize:12,fontWeight:700,padding:"8px 6px",borderRadius:10,cursor:"pointer",border:`1px solid ${tab===k?"#0284c7":"#dbe2ec"}`,background:tab===k?"#0284c7":"#fff",color:tab===k?"#fff":"#475569"}}>{l}</button>)}
+        </div>
+        {tab==="work"&&<div style={{maxHeight:"68vh",overflowY:"auto"}}><WorkEvolution client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks}/></div>}
+        {tab==="loads"&&<>
 
         {names.length===0&&prs.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Aún no hay datos de cargas. Aparecerán cuando ejecutes entrenos con peso.</div>
@@ -4317,6 +4492,7 @@ function ProgressionModal({client,clientWeights,weightHistory,records,onClose}) 
             </>}
           </div>
         }
+        </>}
         <button className="btn ghost" style={{width:"100%",marginTop:16,padding:11}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
@@ -6233,7 +6409,7 @@ const TEMPLATE_EXERCISES = {
   "Movilidad / Regeneración":[["Movilidad de cadera",2,"8-10",0,false],["Movilidad torácica",2,"8-10",0,false],["Gato-camello",2,"10",0,false],["Plancha frontal",3,"30-45s",30,false],["Bicicleta / Assault bike",1,"15-20 min",0,false]],
 };
 
-function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
+function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenProgress,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
   const [tab,setTab] = React.useState("macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
   const [selTemplate,setSelTemplate] = React.useState(null);
@@ -6652,7 +6828,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
                   <div style={{fontSize:11,color:"#64748b"}}>{selClientObj.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"} · bono {bonoTxt(selClientObj)}</div>
                 </div>
               </div>
-              <div style={{marginBottom:10}}><LevelPicker value={levelOf(selClientObj)} onChange={onSetLevel?(l)=>onSetLevel(selClientObj,l):null}/></div>
+              <div style={{marginBottom:10,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap"}}><LevelPicker value={levelOf(selClientObj)} onChange={onSetLevel?(l)=>onSetLevel(selClientObj,l):null}/>{onOpenProgress&&<button className="btn ghost" style={{fontSize:11,padding:"4px 9px",color:"#0284c7",border:"1px solid #bcd3ee",fontWeight:700,marginLeft:"auto"}} onClick={()=>onOpenProgress(selClientObj)}>📈 Evolución</button>}</div>
               <ClientWeekPlanner client={selClientObj} date={TODAY} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} allDays
                 onSetType={(d,t)=>onSetType&&onSetType(selClientObj,d,t)}
                 onPlanWeek={(pairs)=>onPlanWeek&&onPlanWeek(selClientObj,pairs)}
@@ -6762,6 +6938,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
                       <div style={{fontSize:13,fontWeight:600}}>{c.name}</div>
                       <div style={{fontSize:11,color:"#64748b"}}>{cWts.length} ejercicios · {completed} sesiones completadas</div>
                     </div>
+                    {onOpenProgress&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7",border:"1px solid #bcd3ee",fontWeight:700,flexShrink:0}} onClick={()=>onOpenProgress(c)}>📈 Evolución</button>}
                   </div>
                   {cWts.slice(0,4).map(cw=>(
                     <div key={cw.id} style={{display:"flex",justifyContent:"space-between",fontSize:11,padding:"3px 0",borderTop:"1px solid #e6ebf3",color:"#64748b"}}>
