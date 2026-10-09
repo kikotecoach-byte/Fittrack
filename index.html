@@ -47,39 +47,44 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .sidebar{width:200px;flex-shrink:0;padding:22px 10px;display:flex;flex-direction:column;
   gap:3px;border-right:1px solid #e6ebf3;position:sticky;top:0;height:100vh;overflow:auto;}
 
-/* ─ Bottom nav: visible on mobile only ─ */
-.bottom-nav{display:none;}
+/* ─ Navegación: barra inferior y barra superior en todos los tamaños ─
+   (no hay barra lateral; en horizontal/tablet también hace falta navegar) */
+.sidebar{display:none !important;}
+.bottom-nav{
+  display:flex;position:fixed;bottom:0;left:0;right:0;z-index:100;
+  background:rgba(255,255,255,.9);border-top:1px solid #dbe2ec;
+  align-items:center;justify-content:space-around;
+  padding:9px 0 calc(16px + env(safe-area-inset-bottom));
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  box-shadow:0 -2px 14px rgba(16,24,40,.06);
+}
+.bnav-btn{
+  display:flex;flex-direction:column;align-items:center;gap:3px;
+  padding:5px 10px;border:none;background:none;cursor:pointer;
+  color:#64748b;font-family:'Plus Jakarta Sans',sans-serif;
+  font-size:11px;font-weight:600;border-radius:10px;
+  -webkit-tap-highlight-color:transparent;min-width:56px;
+}
+.bnav-btn.on{color:var(--sky);}
+.bnav-icon{font-size:22px;line-height:1.2;position:relative;display:inline-block;}
+.bnav-badge{position:absolute;top:-3px;right:-6px;background:#dc2626;color:#fff;
+  border-radius:10px;font-size:9px;font-weight:700;padding:1px 4px;min-width:15px;text-align:center;}
+.admin-content{padding-bottom:calc(88px + env(safe-area-inset-bottom)) !important;}
+.mobile-topbar{
+  display:flex !important;align-items:center;justify-content:space-between;
+  padding:12px 14px;border-bottom:1px solid #e6ebf3;
+  background:var(--bg);position:sticky;top:0;z-index:50;
+}
+/* Móvil en horizontal (poca altura): barras más compactas para ganar espacio */
+@media(max-height:500px){
+  .bottom-nav{padding:3px 0 calc(5px + env(safe-area-inset-bottom));}
+  .bnav-btn{flex-direction:row;gap:6px;font-size:12px;padding:6px 12px;}
+  .bnav-icon{font-size:17px;}
+  .admin-content{padding-bottom:calc(56px + env(safe-area-inset-bottom)) !important;}
+  .mobile-topbar{padding:6px 14px;}
+}
 
 @media(max-width:640px){
-  /* Hide sidebar */
-  .sidebar{display:none !important;}
-
-  /* Show bottom nav */
-  .bottom-nav{
-    display:flex;position:fixed;bottom:0;left:0;right:0;z-index:100;
-    background:rgba(255,255,255,.9);border-top:1px solid #dbe2ec;
-    align-items:center;justify-content:space-around;
-    padding:9px 0 calc(16px + env(safe-area-inset-bottom));
-    backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
-    box-shadow:0 -2px 14px rgba(16,24,40,.06);
-  }
-  .bnav-btn{
-    display:flex;flex-direction:column;align-items:center;gap:3px;
-    padding:5px 10px;border:none;background:none;cursor:pointer;
-    color:#64748b;font-family:'Plus Jakarta Sans',sans-serif;
-    font-size:11px;font-weight:600;border-radius:10px;
-    -webkit-tap-highlight-color:transparent;min-width:56px;
-  }
-  .bnav-btn.on{color:var(--sky);}
-  .bnav-icon{font-size:22px;line-height:1.2;position:relative;display:inline-block;}
-  .bnav-badge{position:absolute;top:-3px;right:-6px;background:#dc2626;color:#fff;
-    border-radius:10px;font-size:9px;font-weight:700;padding:1px 4px;min-width:15px;text-align:center;}
-
-  /* Main content padding for bottom nav */
-  .admin-content{
-    padding-bottom:calc(88px + env(safe-area-inset-bottom)) !important;
-  }
-
   /* Modals slide up from bottom */
   .ovl{align-items:flex-end !important;}
   .mdl{border-radius:20px 20px 0 0 !important;
@@ -95,19 +100,6 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 
   /* Inputs larger for touch */
   .inp{font-size:16px !important;padding:12px 14px !important;}
-
-  /* Top bar on mobile */
-  .mobile-topbar{
-    display:flex !important;align-items:center;justify-content:space-between;
-    padding:12px 14px;border-bottom:1px solid #e6ebf3;
-    background:var(--bg);position:sticky;top:0;z-index:50;
-  }
-}
-
-@media(min-width:641px){
-  .mobile-topbar{display:none;}
-  .bottom-nav{display:none;}
-  .bnav-btn{display:none;}
 }
 
 /* ─ Shared components ─ */
@@ -172,8 +164,13 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 /* Drag & drop de sesiones */
 .drag-ghost{animation:dragpop .14s ease both;transform-origin:left center;}
 @keyframes dragpop{from{opacity:0;transform:scale(.8) rotate(-4deg)}to{opacity:1;transform:scale(1.05) rotate(-3deg)}}
-.drag-src{opacity:.35 !important;outline:2px dashed #0284c7;outline-offset:1px;}
+.drag-src{opacity:.35 !important;outline:2px dashed #0284c7;outline-offset:1px;transform:scale(.95);transition:transform .15s,opacity .15s;}
 .drag-target{animation:dragtarget .9s ease-in-out infinite;}
+.drag-landed{animation:draglanded .9s cubic-bezier(.2,.8,.2,1);}
+@keyframes draglanded{0%{transform:scale(.6);box-shadow:0 0 0 0 rgba(22,163,74,.6)}45%{transform:scale(1.1);box-shadow:0 0 0 6px rgba(22,163,74,.28)}100%{transform:scale(1);box-shadow:0 0 0 0 rgba(22,163,74,0)}}
+.drag-preview{animation:dragprev .8s ease-in-out infinite;}
+@keyframes dragprev{0%,100%{opacity:.45;transform:scale(.97)}50%{opacity:1;transform:scale(1)}}
+body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;}
 @keyframes dragtarget{0%,100%{box-shadow:0 0 0 0 rgba(2,132,199,.35)}50%{box-shadow:0 0 0 4px rgba(2,132,199,.35)}}
 </style>
 </head>
@@ -572,24 +569,35 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [dragGhost,setDragGhost] = React.useState(null);
   const [dragId,setDragId] = React.useState(null);   // id de la sesión que se arrastra
   const [dropKey,setDropKey] = React.useState(null); // "día|hora" bajo el dedo
+  const [landedId,setLandedId] = React.useState(null); // sesión recién soltada (animación de aterrizaje)
+  const [vw,setVw] = React.useState(()=>typeof window!=="undefined"?window.innerWidth:390);
+  React.useEffect(()=>{ const f=()=>setVw(window.innerWidth); window.addEventListener("resize",f); window.addEventListener("orientationchange",f); return ()=>{ window.removeEventListener("resize",f); window.removeEventListener("orientationchange",f); }; },[]);
+  const buzz=(ms)=>{ try{ navigator.vibrate&&navigator.vibrate(ms); }catch(e){} };
+  const slotLabel=(k)=>{ if(!k) return ""; const [d,t]=k.split("|"); const x=new Date(d+"T12:00:00"); const w=x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".",""); return `${w.charAt(0).toUpperCase()+w.slice(1)} ${x.getDate()} · ${t}`; };
   const onSessMove = (e)=>{
     const d=dragRef.current; if(!d) return;
     const dx=e.clientX-d.startX, dy=e.clientY-d.startY;
-    if(!d.moved && Math.hypot(dx,dy)>8){ d.moved=true; setDragId(d.sess.id); }
+    if(!d.moved && Math.hypot(dx,dy)>8){ d.moved=true; setDragId(d.sess.id); buzz(12); try{ document.body.classList.add("dragging"); }catch(err){} }
     if(d.moved){
       if(e.cancelable)e.preventDefault();
-      setDragGhost({name:d.name,color:d.color,x:e.clientX,y:e.clientY});
       const el=document.elementFromPoint(e.clientX,e.clientY);
       const cell=el&&el.closest?el.closest("[data-slot]"):null;
-      if(cell&&cell.getAttribute("data-blocked")!=="1"){
-        const k=cell.getAttribute("data-day")+"|"+cell.getAttribute("data-time");
-        setDropKey(prev=>prev===k?prev:k);
-      } else setDropKey(null);
+      let k=null, blk=false;
+      if(cell){ k=cell.getAttribute("data-day")+"|"+cell.getAttribute("data-time"); blk=cell.getAttribute("data-blocked")==="1"; }
+      const same=k===(d.sess.date+"|"+d.sess.time);
+      if(k&&!blk&&!same){ setDropKey(prev=>{ if(prev!==k) buzz(6); return k; }); } else setDropKey(null);
+      setDragGhost({name:d.name,color:d.color,x:e.clientX,y:e.clientY,target:k&&!same?slotLabel(k):"",blocked:blk});
+      // Desplaza la vista si arrastras cerca del borde (pantalla o cuadrícula de la semana).
+      const edge=70, vh=window.innerHeight;
+      if(e.clientY<edge+60) window.scrollBy(0,-14); else if(e.clientY>vh-edge-80) window.scrollBy(0,14);
+      const sc=el&&el.closest?el.closest("[data-weekscroll]"):null;
+      if(sc){ const r=sc.getBoundingClientRect(); if(e.clientY<r.top+40) sc.scrollTop-=12; else if(e.clientY>r.bottom-40) sc.scrollTop+=12; }
     }
   };
   const onSessUp = (e)=>{
     window.removeEventListener("pointermove",onSessMove); window.removeEventListener("pointerup",onSessUp);
     const d=dragRef.current; dragRef.current=null; setDragGhost(null); setDragId(null); setDropKey(null);
+    try{ document.body.classList.remove("dragging"); }catch(err){}
     if(!d||!d.moved) return;
     justDragged.current=true; setTimeout(()=>{justDragged.current=false;},300);
     const el=document.elementFromPoint(e.clientX,e.clientY);
@@ -597,7 +605,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(!cell) return;
     const day=cell.getAttribute("data-day"), time=cell.getAttribute("data-time");
     if(cell.getAttribute("data-blocked")==="1"){ notify("Ese hueco está bloqueado","err"); return; }
-    if(day&&time&&(day!==d.sess.date||time!==d.sess.time)) rescheduleSession(d.sess,day,time);
+    if(day&&time&&(day!==d.sess.date||time!==d.sess.time)){ buzz(20); setLandedId(d.sess.id); setTimeout(()=>setLandedId(x=>x===d.sess.id?null:x),1400); rescheduleSession(d.sess,day,time); }
   };
   const startSessDrag = (e,s)=>{
     dragRef.current={sess:s,name:(s.client?s.client.name.split(" ")[0]:""),color:s.client?s.client.color:"#0284c7",startX:e.clientX,startY:e.clientY,moved:false};
@@ -1014,7 +1022,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
-      {dragGhost&&<div className="drag-ghost" style={{position:"fixed",left:dragGhost.x+12,top:dragGhost.y-14,zIndex:900,pointerEvents:"none",background:dragGhost.color,color:"#fff",borderRadius:8,padding:"5px 12px",fontSize:12,fontWeight:700,boxShadow:"0 8px 20px rgba(15,23,42,.35)"}}>{dragGhost.name} 🔀</div>}
+      {dragGhost&&<div className="drag-ghost" style={{position:"fixed",left:Math.min(dragGhost.x+14,(typeof window!=="undefined"?window.innerWidth:400)-190),top:dragGhost.y-52,zIndex:900,pointerEvents:"none",background:"#0f172a",color:"#fff",borderRadius:12,padding:"7px 12px",boxShadow:"0 10px 26px rgba(15,23,42,.4)",borderLeft:`5px solid ${dragGhost.color}`,minWidth:120}}>
+        <div style={{fontSize:15,fontWeight:800,lineHeight:1.15}}>{dragGhost.name}</div>
+        <div style={{fontSize:11,fontWeight:700,marginTop:2,color:dragGhost.blocked?"#fca5a5":dragGhost.target?"#86efac":"#94a3b8"}}>{dragGhost.blocked?"🚫 Hora bloqueada":dragGhost.target?`→ ${dragGhost.target}`:"Suelta en otra hora"}</div>
+      </div>}
 
 
       {/* Content */}
@@ -1384,7 +1395,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 }}>‹</button>
                 {schedView==="week"
                   ? <span style={{fontSize:14,fontWeight:600,color:"#64748b",flex:1,textAlign:"center",textTransform:"capitalize"}}>{(()=>{
-                      const wd=getWeekDays(activeDay).slice(0,5);
+                      const wd=getWeekDays(mondayOfDate(activeDay)).slice(0,5);
                       const a=new Date(wd[0]+"T12:00:00"), b=new Date(wd[4]+"T12:00:00");
                       const o={day:"numeric",month:"short"};
                       return `${a.toLocaleDateString("es-ES",o)} — ${b.toLocaleDateString("es-ES",o)}`;
@@ -1480,7 +1491,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   const planLbl=asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")+(nEx?` · ${nEx} ej`:"")):(au?`${au.label} · previsto`:"Sin plan");
                                   return(
                                   <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:12,padding:"8px 9px"}}>
-                                    <div className={dragId===s.id?"drag-src":""} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"none"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Arrastra para mover de hora · toca para ver ficha">
+                                    <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} style={{flex:1,minWidth:0,display:"flex",alignItems:"center",gap:9,cursor:"grab",touchAction:"none"}} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={()=>{if(justDragged.current)return;setQuickView(s.client);}} title="Arrastra para mover de hora · toca para ver ficha">
                                       {s.client.avatar_url
                                         ?<img src={s.client.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${s.client.color}55`,flexShrink:0}}/>
                                         :<div className="ring" style={{width:36,height:36,background:s.client.color+"30",color:s.client.color,fontSize:12,border:`2px solid ${s.client.color}55`,flexShrink:0}}>{ini(s.client.name)}</div>
@@ -1545,7 +1556,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
             {/* WEEK VIEW - horizontal grid */}
             {schedView==="week"&&(()=>{
-              const weekDays=getWeekDays(activeDay).slice(0,5);
+              // Semana de lunes a viernes; sábado/domingo solo si tienen sesiones u horas abiertas.
+              const all7=getWeekDays(mondayOfDate(activeDay));
+              const usedDay=(d)=>sessions.some(s=>s.date===d)||extraOf(d).length>0||(leads||[]).some(l=>l.date===d&&l.time);
+              const weekDays=all7.filter((d,i)=>i<5||usedDay(d));
+              const cols=`${weekBig?44:38}px repeat(${weekDays.length},minmax(0,1fr))`;
+              // Tamaño del nombre según el ancho real de cada columna (vertical/horizontal).
+              const colW=(Math.min(vw,1200)-60-(weekBig?44:38))/weekDays.length;
+              const chipFs=colW>=110?15:colW>=80?13:11, withInitial=colW>=95;
+              const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&clients.find(c=>c.id===dragSess.client_id);
               const weekSlots=Array.from(new Set([...workSlots,...sessions.filter(s=>weekDays.includes(s.date)).map(s=>s.time)])).sort();
               return(
                 <div className="swipe" style={weekBig?{display:"flex",flexDirection:"column"}:{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
@@ -1555,7 +1574,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     <span style={{fontSize:10,color:"#94a3b8"}}>🔄 Gira el móvil para verla más ancha</span>
                   </div>
                   {/* Header row - days */}
-                  <div style={{display:"grid",gridTemplateColumns:weekBig?"44px repeat(5,1fr)":"38px repeat(5,1fr)",gap:2}}>
+                  <div style={{display:"grid",gridTemplateColumns:cols,gap:2}}>
                     <div/>
                     {weekDays.map(day=>{
                       const isToday=day===TODAY;
@@ -1564,10 +1583,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         <div key={day} style={{textAlign:"center",padding:"4px 2px",borderRadius:8,
                           background:isToday?"#dcebfb":isBlkDay?"#fbe6e6":"#f1f4fa",
                           border:isToday?"1px solid #bcd3ee":isBlkDay?"1px solid #f2cccc":"1px solid #e6ebf3"}}>
-                          <div style={{fontSize:9,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#64748b",fontWeight:700,textTransform:"capitalize"}}>
+                          <div style={{fontSize:10,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#64748b",fontWeight:700,textTransform:"capitalize"}}>
                             {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}
                           </div>
-                          <div className="mono" style={{fontSize:13,fontWeight:700,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#0f172a"}}>
+                          <div className="mono" style={{fontSize:15,fontWeight:700,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#0f172a"}}>
                             {new Date(day+"T12:00:00").getDate()}
                           </div>
                         </div>
@@ -1575,10 +1594,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     })}
                   </div>
                   {/* Time rows - fill available height */}
-                  <div style={weekBig?{display:"flex",flexDirection:"column",gap:3,marginTop:3}:{flex:1,display:"flex",flexDirection:"column",gap:2,marginTop:3,minHeight:0}}>
+                  <div data-weekscroll="1" style={weekBig?{display:"flex",flexDirection:"column",gap:3,marginTop:3}:{flex:1,display:"flex",flexDirection:"column",gap:3,marginTop:3,minHeight:0,overflowY:"auto",overscrollBehavior:"contain"}}>
                     {weekSlots.map(time=>(
-                      <div key={time} style={weekBig?{minHeight:70,display:"grid",gridTemplateColumns:"44px repeat(5,1fr)",gap:3}:{flex:1,display:"grid",gridTemplateColumns:"38px repeat(5,1fr)",gap:2,minHeight:0}}>
-                        <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:weekBig?12:9,color:"#bcd3ee",fontWeight:700}}>{time}</div>
+                      <div key={time} style={{minHeight:weekBig?74:48,display:"grid",gridTemplateColumns:cols,gap:weekBig?3:2,flexShrink:0}}>
+                        <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:weekBig?12:10,color:"#94a3b8",fontWeight:700}}>{time}</div>
                         {weekDays.map(day=>{
                           const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
                           const slotBlocked=isBlkDay||isBlocked(day,time);
@@ -1586,26 +1605,31 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                             .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                           const dayVals=(leads||[]).filter(l=>l.date===day&&l.time===time&&l.status!=="cliente");
                           const hasStuff=daySessions.length>0||dayVals.length>0;
-                          const shownS=daySessions.slice(0,weekBig?8:4);
+                          const shownS=daySessions.slice(0,weekBig?8:6);
+                          const k=day+"|"+time, isDrop=dropKey===k;
                           return(
-                            <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(day+"|"+time)?"drag-target":""} style={{borderRadius:6,padding:2,overflow:"hidden",display:"flex",flexDirection:"column",gap:1,
+                            <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(day+"|"+time)?"drag-target":""} style={{borderRadius:7,padding:3,overflow:"hidden",display:"flex",flexDirection:"column",gap:2,
                               background:dropKey===(day+"|"+time)?"#dcebfb":slotBlocked?"#fbecec":"#f1f4fa",
                               border:dropKey===(day+"|"+time)?"1px solid #0284c7":slotBlocked?"1px solid #f2cccc":hasStuff?"1px solid #cbd5e1":"1px solid #e6ebf3",cursor:"pointer"}}
                               onClick={()=>{if(!isBlkDay)setSlotMenu({date:day,time});}}>
                               {slotBlocked&&<div style={{fontSize:9,color:"#b56b6b",textAlign:"center"}}>🚫</div>}
-                              {shownS.map(s=>(
-                                <div key={s.id} className={dragId===s.id?"drag-src":""} onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
-                                  style={{background:s.client.color+"25",borderRadius:weekBig?6:3,padding:weekBig?"4px 8px":"1px 4px",fontSize:weekBig?12:9,fontWeight:700,color:s.client.color,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",touchAction:"none",cursor:"grab"}}>
-                                  {s.client.name.split(" ")[0]}
+                              {shownS.map(s=>{ const done=s.status==="completed"; const nm=s.client.name.split(" "); const label=withInitial&&nm[1]?`${nm[0]} ${nm[1][0]}.`:nm[0]; return(
+                                <div key={s.id} className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed":"")} title={`${s.client.name} · ${s.time}${done?" · ✓ hecho":""} — arrastra para mover`}
+                                  onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
+                                  style={{display:"flex",alignItems:"center",gap:3,background:done?"#e7f6ec":"#fff",border:`1px solid ${done?"#bfe5cb":s.client.color+"66"}`,borderLeft:`4px solid ${done?"#16a34a":s.client.color}`,borderRadius:weekBig?8:5,
+                                    padding:weekBig?"6px 6px":"3px 4px",fontSize:chipFs,lineHeight:1.15,fontWeight:800,color:done?"#166534":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",minHeight:weekBig?30:undefined,
+                                    touchAction:"none",cursor:"grab",boxShadow:done?"none":"0 1px 2px rgba(15,23,42,.12)"}}>
+                                  {done&&<span style={{fontSize:Math.max(9,chipFs-3),flexShrink:0}}>✓</span>}<span style={{flex:"1 1 auto",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
                                 </div>
-                              ))}
+                              ); })}
+                              {isDrop&&dragCli&&<div className="drag-preview" style={{border:`2px dashed ${dragCli.color}`,borderRadius:weekBig?8:5,padding:weekBig?"5px 6px":"2px 4px",fontSize:chipFs,fontWeight:800,color:"#0f172a",background:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>＋ {dragCli.name.split(" ")[0]}</div>}
                               {dayVals.slice(0,weekBig?4:2).map(l=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
                                 <div key={l.id} onClick={e=>{e.stopPropagation();setShowValoracion(l);}}
-                                  style={{background:done?"#cdeed8":vc.chip,borderRadius:weekBig?6:3,padding:weekBig?"4px 8px":"1px 4px",fontSize:weekBig?12:9,fontWeight:700,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
+                                  style={{background:done?"#cdeed8":vc.chip,borderRadius:weekBig?8:5,padding:weekBig?"5px 7px":"3px 4px",fontSize:weekBig?13:10,fontWeight:800,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
                                   {done?"✅":"📋"} {l.time?`${l.time} `:""}{(l.name||"valorac.").split(" ")[0]}
                                 </div>
                               );})}
-                              {(daySessions.length-shownS.length)>0&&<div style={{fontSize:weekBig?10:8,color:"#64748b",paddingLeft:2}}>+{daySessions.length-shownS.length}</div>}
+                              {(daySessions.length-shownS.length)>0&&<div style={{fontSize:weekBig?11:10,color:"#475569",fontWeight:700,paddingLeft:2}}>+{daySessions.length-shownS.length} más</div>}
                             </div>
                           );
                         })}
