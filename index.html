@@ -695,11 +695,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       if(data&&data[0]&&data[0].config){ const c={...DEFAULT_SCHEDULE,...data[0].config}; setConfig(c); setGymEquip(c); }
     });
   },[]);
-  const saveConfig = (cfg) => w(async()=>{
+  const saveConfig = (cfg, silent) => w(async()=>{
     setConfig(cfg); setGymEquip(cfg);
     const {error}=await sb.from("app_settings").upsert({id:1,config:cfg});
     if(error) return notify("Guarda la tabla app_settings (ver docs)","err");
-    notify("Configuración guardada ✓");
+    if(!silent) notify("Configuración guardada ✓");
   });
 
   // Franjas de trabajo derivadas de la config y capacidad (atletas) por hora.
@@ -715,28 +715,46 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const dayIsOff = isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
   const daySlots = Array.from(new Set([...(dayIsOff?[]:workSlots),...extraOf(activeDay),...sessions.filter(s=>s.date===activeDay).map(s=>s.time)])).sort();
 
-  const reminders = [];
+  // Alertas quitadas (deslizando). La clave incluye el estado: si la situación
+  // cambia o empeora (vence, quedan menos sesiones…), la alerta vuelve a salir.
+  const dismissed = (config&&config.dismissedAlerts)||{};
+  const alertKey = (r) => r.type==="payment" ? `pay|${r.c.id}|${r.c.next_payment}|${r.days<0?"vencido":r.days<=2?"urgente":"pronto"}`
+    : r.type==="sessions" ? `ses|${r.c.id}|${r.c.sessions_left}`
+    : r.type==="expired" ? `exp|${r.c.id}|${r.c.sessions_left<0?"debe":"cero"}`
+    : r.type==="session" ? `sr|${r.c.id}|${r.date}|${r.time}`
+    : r.type==="waitlist" ? `wl|${r.wl.id}` : "";
+  const allReminders = [];
   clients.forEach(c=>{
     const d=daysUntil(c.next_payment);
-    if(d<=5) reminders.push({c,type:"payment",days:d,urgent:d<=2});
-    if(c.sessions_left<=2&&c.sessions_left>0) reminders.push({c,type:"sessions",urgent:c.sessions_left<=1});
-    if(c.sessions_left<=0) reminders.push({c,type:"expired",urgent:true});
+    if(d<=5) allReminders.push({c,type:"payment",days:d,urgent:d<=2});
+    if(c.sessions_left<=2&&c.sessions_left>0) allReminders.push({c,type:"sessions",urgent:c.sessions_left<=1});
+    if(c.sessions_left<=0) allReminders.push({c,type:"expired",urgent:true});
   });
+  const reminders = allReminders.filter(r=>!dismissed[alertKey(r)]);
   // Recordatorios de sesión: sesiones confirmadas de hoy y mañana (lista aparte
   // para no saturar las alertas de pago/bono).
   const TOMORROW = (()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return x.toISOString().split("T")[0];})();
-  const sessionReminders = sessions.filter(s=>(s.date===TODAY||s.date===TOMORROW)&&s.status!=="completed"&&!s.requested)
+  const allSessionReminders = sessions.filter(s=>(s.date===TODAY||s.date===TOMORROW)&&s.status!=="completed"&&!s.requested)
     .map(s=>{const c=clients.find(cl=>cl.id===s.client_id); return c?{c,type:"session",days:s.date===TODAY?0:1,time:s.time,date:s.date}:null;})
     .filter(Boolean)
     .sort((a,b)=>a.days-b.days || String(a.time).localeCompare(String(b.time)));
+  const sessionReminders = allSessionReminders.filter(r=>!dismissed[alertKey(r)]);
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
   // Lista de espera con hueco libre (para avisar al cliente).
-  const freedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
+  const allFreedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
     const taken=sessions.filter(s=>s.date===x.date&&s.time===x.time).length;
     const blk=blocked.some(b=>b.date===x.date&&(b.time===x.time||b.time==="ALL"));
     const c=clients.find(cl=>cl.id===x.client_id);
-    return {wl:x,c,free:!blk&&taken<capOf(x.time)};
+    return {wl:x,c,free:!blk&&taken<capOf(x.time),type:"waitlist"};
   }).filter(o=>o.c&&o.free);
+  const freedWaitlist = allFreedWaitlist.filter(r=>!dismissed[alertKey(r)]);
+  const hiddenAlerts = allReminders.length+allSessionReminders.length+allFreedWaitlist.length-reminders.length-sessionReminders.length-freedWaitlist.length;
+  const [undoAlert,setUndoAlert] = React.useState(null); // {key,label}
+  // Quitar / restaurar alertas: se guardan en la configuración (todas las claves antiguas se limpian).
+  const liveKeys = () => new Set([...allReminders,...allSessionReminders,...allFreedWaitlist].map(alertKey));
+  const dismissAlert = (r) => { const k=alertKey(r); if(!k) return; const live=liveKeys(); const next={}; Object.entries(dismissed).forEach(([kk,v])=>{ if(live.has(kk)) next[kk]=v; }); next[k]=TODAY;
+    saveConfig({...config,dismissedAlerts:next},true); setUndoAlert({key:k,label:r.c?r.c.name.split(" ")[0]:"Alerta"}); clearTimeout(window.__undoAlertT); window.__undoAlertT=setTimeout(()=>setUndoAlert(null),5000); };
+  const restoreAlerts = (keys) => { const next={...dismissed}; keys.forEach(k=>delete next[k]); saveConfig({...config,dismissedAlerts:next},true); setUndoAlert(null); };
   const alertCount = reminders.filter(r=>r.urgent).length+freedWaitlist.length;
 
   // Income stats
@@ -1200,6 +1218,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           </div>
         );
       })()}
+      {undoAlert&&<div style={{position:"fixed",left:"50%",transform:"translateX(-50%)",bottom:"calc(96px + env(safe-area-inset-bottom))",zIndex:600,background:"#0f172a",color:"#fff",borderRadius:12,padding:"10px 12px 10px 16px",display:"flex",alignItems:"center",gap:12,boxShadow:"0 10px 26px rgba(15,23,42,.35)",fontSize:13,fontWeight:700,whiteSpace:"nowrap"}}>
+        <span>🗑 Alerta de {undoAlert.label} quitada</span>
+        <button onClick={()=>restoreAlerts([undoAlert.key])} style={{border:"none",background:"#38bdf8",color:"#0f172a",borderRadius:8,padding:"6px 10px",fontWeight:800,fontSize:12,cursor:"pointer"}}>Deshacer</button>
+      </div>}
       {dragGhost&&<div className="drag-ghost" style={{position:"fixed",left:Math.min(dragGhost.x+14,(typeof window!=="undefined"?window.innerWidth:400)-190),top:dragGhost.y-52,zIndex:900,pointerEvents:"none",background:"#0f172a",color:"#fff",borderRadius:12,padding:"7px 12px",boxShadow:"0 10px 26px rgba(15,23,42,.4)",borderLeft:`5px solid ${dragGhost.color}`,minWidth:120}}>
         <div style={{fontSize:15,fontWeight:800,lineHeight:1.15}}>{dragGhost.name}</div>
         <div style={{fontSize:11,fontWeight:700,marginTop:2,color:dragGhost.blocked?"#fca5a5":dragGhost.target?"#86efac":"#94a3b8"}}>{dragGhost.blocked?"🚫 Hora bloqueada":dragGhost.target?`→ ${dragGhost.target}`:"Suelta en otra hora"}</div>
@@ -1320,7 +1342,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             {/* ── ALERTAS (qué ocurre) ── */}
             <div className="card" style={{padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
-                <h3 style={{fontSize:15,fontWeight:800}}>🔔 Alertas {reminders.length>0&&<span style={{fontSize:12,color:"#dc2626"}}>({reminders.length})</span>}</h3>
+                <div><h3 style={{fontSize:15,fontWeight:800}}>🔔 Alertas {reminders.length>0&&<span style={{fontSize:12,color:"#dc2626"}}>({reminders.length})</span>}</h3>{reminders.length>0&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Desliza una alerta a un lado para quitarla</div>}</div>
                 {reminders.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>setView("reminders")}>Ver todas →</button>}
               </div>
               {reminders.length===0
@@ -1335,7 +1357,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       ? `⚡ Le quedan ${r.c.sessions_left} sesión(es) — conviene renovar`
                       : owedOf(r.c)?`🧾 Debe ${owedOf(r.c)} sesión(es) — se descuentan del próximo bono`:`🚫 Sin sesiones — necesita renovar el bono`;
                     return(
-                      <div key={i} onClick={()=>setView("reminders")} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderBottom:i<Math.min(6,reminders.length)-1?"1px solid #f1f4fa":"none",cursor:"pointer",background:r.urgent?"#fdf3f3":"transparent"}}>
+                      <SwipeDismiss key={alertKey(r)} onDismiss={()=>dismissAlert(r)}>
+                      <div onClick={()=>setView("reminders")} style={{display:"flex",alignItems:"center",gap:12,padding:"11px 16px",borderBottom:i<Math.min(6,reminders.length)-1?"1px solid #f1f4fa":"none",cursor:"pointer",background:r.urgent?"#fdf3f3":"#fff"}}>
                         <div className="ring" style={{width:34,height:34,background:r.c.color+"20",color:r.c.color,fontSize:11,flexShrink:0}}>{ini(r.c.name)}</div>
                         <div style={{flex:1,minWidth:0}}>
                           <div style={{fontSize:13,fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.c.name}</div>
@@ -1343,6 +1366,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         </div>
                         {r.urgent&&<span style={{fontSize:9,fontWeight:700,color:"#dc2626",background:"#fbe6e6",border:"1px solid #f2cccc",borderRadius:20,padding:"2px 8px",flexShrink:0}}>URGENTE</span>}
                       </div>
+                      </SwipeDismiss>
                     );
                   })
               }
@@ -1975,11 +1999,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Alertas</h1>
               <button className="btn wa" onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
             </div>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,margin:"-12px 0 14px",flexWrap:"wrap"}}>
+              <span style={{fontSize:11,color:"#94a3b8"}}>👈 Desliza una alerta a un lado para quitarla</span>
+              {hiddenAlerts>0&&<button className="btn ghost" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>{ const live=liveKeys(); restoreAlerts(Object.keys(dismissed).filter(k=>live.has(k))); notify("Alertas ocultas restauradas ✓"); }}>👁 Mostrar {hiddenAlerts} oculta{hiddenAlerts>1?"s":""}</button>}
+            </div>
             {freedWaitlist.length>0&&(
               <div style={{marginBottom:20}}>
                 <div style={{fontSize:11,color:"#65a30d",fontWeight:700,letterSpacing:1,marginBottom:10}}>⏳ HUECO LIBRE — AVISAR EN ESPERA</div>
-                {freedWaitlist.map(({wl,c})=>(
-                  <div key={wl.id} className="card" style={{marginBottom:8,border:"1px solid #cbe8a4"}}>
+                {freedWaitlist.map((fw)=>{ const {wl,c}=fw; return(
+                  <SwipeDismiss key={alertKey(fw)} radius={16} style={{marginBottom:8}} onDismiss={()=>dismissAlert(fw)}>
+                  <div className="card" style={{border:"1px solid #cbe8a4"}}>
                     <div style={{display:"flex",alignItems:"center",gap:12}}>
                       {c.avatar_url
                         ?<img src={c.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover"}}/>
@@ -1993,14 +2022,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       </div>
                     </div>
                   </div>
-                ))}
+                  </SwipeDismiss>
+                ); })}
               </div>
             )}
             {sessionReminders.length>0&&(
               <div style={{marginBottom:20}}>
                 <div style={{fontSize:11,color:"#0284c7",fontWeight:700,letterSpacing:1,marginBottom:10}}>🔔 RECORDAR SESIÓN (HOY / MAÑANA)</div>
                 {sessionReminders.map((r,i)=>(
-                  <div key={i} className="card" style={{marginBottom:8,border:"1px solid #bcd3ee"}}>
+                  <SwipeDismiss key={alertKey(r)} radius={16} style={{marginBottom:8}} onDismiss={()=>dismissAlert(r)}>
+                  <div className="card" style={{border:"1px solid #bcd3ee"}}>
                     <div style={{display:"flex",alignItems:"center",gap:12}}>
                       {r.c.avatar_url
                         ?<img src={r.c.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover"}}/>
@@ -2011,13 +2042,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       </a>
                     </div>
                   </div>
+                  </SwipeDismiss>
                 ))}
               </div>
             )}
             {reminders.length===0&&sessionReminders.length===0
-              ?<div className="card" style={{textAlign:"center",padding:48}}><div style={{fontSize:32,marginBottom:10}}>✓</div><div style={{color:"#16a34a",fontWeight:700}}>Todo al día</div></div>
+              ?<div className="card" style={{textAlign:"center",padding:48}}><div style={{fontSize:32,marginBottom:10}}>✓</div><div style={{color:"#16a34a",fontWeight:700}}>Todo al día</div>{hiddenAlerts>0&&<div style={{fontSize:12,color:"#94a3b8",marginTop:6}}>{hiddenAlerts} alerta{hiddenAlerts>1?"s":""} oculta{hiddenAlerts>1?"s":""}</div>}</div>
               :reminders.map((r,i)=>(
-                <div key={i} className="card" style={{marginBottom:10,border:`1px solid ${r.urgent?"#f2cccc":"#e2f2e2"}`,background:r.urgent?"#fbecec":"#f1f4fa"}}>
+                <SwipeDismiss key={alertKey(r)} radius={16} style={{marginBottom:10}} onDismiss={()=>dismissAlert(r)}>
+                <div className="card" style={{border:`1px solid ${r.urgent?"#f2cccc":"#e2f2e2"}`,background:r.urgent?"#fbecec":"#f1f4fa"}}>
                   <div style={{display:"flex",alignItems:"center",gap:14}}>
                     <div className="ring" style={{width:42,height:42,background:r.c.color+"18",color:r.c.color,fontSize:13}}>{ini(r.c.name)}</div>
                     <div style={{flex:1}}>
@@ -2038,6 +2071,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     </div>
                   </div>
                 </div>
+                </SwipeDismiss>
               ))
             }
           </div>
@@ -2702,6 +2736,34 @@ function FinanceView({clients,sessions,history,payments}) {
             </div>))}
         {(payments||[]).length>showPays&&<button className="btn ghost" style={{width:"100%",marginTop:8,fontSize:12}} onClick={()=>setShowPays(n=>n+20)}>Ver más ({(payments||[]).length-showPays})</button>}
       </Section>
+    </div>
+  );
+}
+
+// ── DESLIZAR PARA QUITAR (alertas) ─────────────────────────────────────────
+// Desliza a un lado para quitar; en vertical se desplaza la pantalla normal y
+// un toque sigue funcionando. Si no se desliza lo suficiente, vuelve a su sitio.
+function SwipeDismiss({onDismiss,children,style,radius=0,label="🗑 Quitar"}) {
+  const ref=React.useRef(null), st=React.useRef(null), swiped=React.useRef(false);
+  const [dx,setDx]=React.useState(0), [anim,setAnim]=React.useState(false), [gone,setGone]=React.useState(false);
+  const down=(e)=>{ if(e.button!=null&&e.button!==0) return; st.current={x:e.clientX,y:e.clientY,id:e.pointerId,active:false,w:(ref.current&&ref.current.offsetWidth)||300}; setAnim(false); };
+  const move=(e)=>{ const d=st.current; if(!d) return; const mx=e.clientX-d.x, my=e.clientY-d.y;
+    if(!d.active){ if(Math.abs(mx)>12&&Math.abs(mx)>Math.abs(my)*1.4){ d.active=true; try{ ref.current.setPointerCapture(e.pointerId); }catch(err){} } else if(Math.abs(my)>12){ st.current=null; return; } else return; }
+    setDx(mx); };
+  const up=()=>{ const d=st.current; st.current=null; if(!d||!d.active) return; swiped.current=true; setTimeout(()=>{swiped.current=false;},350);
+    setAnim(true);
+    if(Math.abs(dx)>d.w*0.33){ const out=dx>0?d.w*1.15:-d.w*1.15; setDx(out); try{ navigator.vibrate&&navigator.vibrate(15); }catch(err){} setTimeout(()=>{ setGone(true); onDismiss&&onDismiss(); },220); }
+    else setDx(0); };
+  if(gone) return null;
+  const w=(ref.current&&ref.current.offsetWidth)||300, pct=Math.min(1,Math.abs(dx)/(w*0.33));
+  return(
+    <div ref={ref} style={{position:"relative",overflow:"hidden",borderRadius:radius,touchAction:"pan-y",...style}}
+      onPointerDown={down} onPointerMove={move} onPointerUp={up} onPointerCancel={()=>{ st.current=null; setAnim(true); setDx(0); }}
+      onClickCapture={e=>{ if(swiped.current){ e.stopPropagation(); e.preventDefault(); } }}>
+      <div style={{position:"absolute",inset:0,background:pct>=1?"#dc2626":"#f87171",display:"flex",alignItems:"center",justifyContent:dx>0?"flex-start":"flex-end",padding:"0 18px",color:"#fff",fontWeight:800,fontSize:13,opacity:dx?1:0,transition:"background .15s"}}>
+        <span style={{transform:`scale(${0.85+0.15*pct})`}}>{label}</span>
+      </div>
+      <div style={{position:"relative",transform:`translateX(${dx}px)`,transition:anim?"transform .22s ease":"none",opacity:1-0.4*pct}}>{children}</div>
     </div>
   );
 }
