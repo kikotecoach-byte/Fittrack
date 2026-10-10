@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Kikote Gym</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -72,7 +72,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .admin-content{padding-bottom:calc(88px + env(safe-area-inset-bottom)) !important;}
 .mobile-topbar{
   display:flex !important;align-items:center;justify-content:space-between;
-  padding:12px 14px;border-bottom:1px solid #e6ebf3;
+  padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 12px calc(14px + env(safe-area-inset-left));border-bottom:1px solid #e6ebf3;
   background:var(--bg);position:sticky;top:0;z-index:50;
 }
 /* Móvil en horizontal (poca altura): barras más compactas para ganar espacio */
@@ -81,7 +81,43 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
   .bnav-btn{flex-direction:row;gap:6px;font-size:12px;padding:6px 12px;}
   .bnav-icon{font-size:17px;}
   .admin-content{padding-bottom:calc(56px + env(safe-area-inset-bottom)) !important;}
-  .mobile-topbar{padding:6px 14px;}
+  .mobile-topbar{padding:calc(6px + env(safe-area-inset-top)) 14px 6px;}
+}
+
+/* ─ iPad / tablet ─────────────────────────────────────────────────────────
+   ≥768px: más espacio y dos columnas en Inicio.
+   ≥1000px (iPad en horizontal, iPad Pro): barra lateral fija en lugar de la
+   inferior. ≥1100px: la ficha y el entreno se acoplan a la derecha y la
+   agenda sigue visible y usable al lado. */
+.ipad-side{display:none;}
+.tab-only{display:none !important;}
+@media(min-width:768px){
+  .tab-only{display:flex !important;}
+  .admin-content{padding-left:22px !important;padding-right:22px !important;padding-top:18px !important;}
+  .stats-grid{grid-template-columns:repeat(5,1fr) !important;}
+  .dash-cols{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"hoy fin" "hoy ale";grid-template-rows:auto 1fr;gap:14px;align-items:start;}
+  .dash-cols>*{margin-bottom:0 !important;}
+  .dash-fin{grid-area:fin;} .dash-hoy{grid-area:hoy;} .dash-ale{grid-area:ale;}
+  .clients-grid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr)) !important;}
+  .bnav-btn{min-width:72px;font-size:12px;}
+  .mdl{max-width:560px;}
+  .btn{min-height:34px;}
+}
+@media(min-width:1000px){
+  .bottom-nav,.mobile-topbar{display:none !important;}
+  .ipad-side{display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;width:232px;z-index:100;
+    background:#fff;border-right:1px solid #e6ebf3;padding:calc(18px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));overflow-y:auto;}
+  .ipad-side .nav{font-size:14px;padding:11px 12px;border:1px solid transparent;}
+  .ipad-side .nav .cnt{margin-left:auto;background:#dc2626;color:#fff;border-radius:10px;font-size:10px;font-weight:800;padding:1px 6px;}
+  .admin-content{margin-left:232px;padding:22px 26px 30px !important;}
+  .admin-sub{margin-left:232px;}
+  .dash-cols{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);}
+}
+@media(min-width:1100px){
+  .has-dock .admin-content,.has-dock .admin-sub{margin-right:440px;}
+  .ovl.dock{left:auto;width:440px;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;padding:0;align-items:stretch;justify-content:stretch;z-index:160;}
+  .ovl.dock>.mdl{max-width:none !important;width:100%;height:100%;max-height:none;border-radius:0 !important;border:none;border-left:1px solid var(--border);
+    box-shadow:-10px 0 30px rgba(16,24,40,.08);padding:calc(18px + env(safe-area-inset-top)) 20px calc(18px + env(safe-area-inset-bottom));animation:none;}
 }
 
 @media(max-width:640px){
@@ -575,6 +611,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [dropKey,setDropKey] = React.useState(null); // "día|hora" bajo el dedo
   const [landedId,setLandedId] = React.useState(null); // sesión recién soltada (animación de aterrizaje)
   const [vw,setVw] = React.useState(()=>typeof window!=="undefined"?window.innerWidth:390);
+  const DOCK_W = 440; // ancho de la ficha acoplada (iPad en horizontal)
   const [vh,setVh] = React.useState(()=>typeof window!=="undefined"?window.innerHeight:780);
   React.useEffect(()=>{ const f=()=>{ setVw(window.innerWidth); setVh(window.visualViewport?window.visualViewport.height:window.innerHeight); };
     window.addEventListener("resize",f); window.addEventListener("orientationchange",f); if(window.visualViewport) window.visualViewport.addEventListener("resize",f);
@@ -740,6 +777,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     .sort((a,b)=>a.days-b.days || String(a.time).localeCompare(String(b.time)));
   const sessionReminders = allSessionReminders.filter(r=>!dismissed[alertKey(r)]);
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
+  // iPad en horizontal: la ficha / el entreno se acoplan a la derecha (sin tapar la agenda).
+  const canDock = vw>=1100;
+  const docked = canDock && !!(quickView||execData);
   // Lista de espera con hueco libre (para avisar al cliente).
   const allFreedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
     const taken=sessions.filter(s=>s.date===x.date&&s.time===x.time).length;
@@ -1078,7 +1118,33 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
 
   return (
-    <div style={{minHeight:"100vh"}}>
+    <div style={{minHeight:"100vh"}} className={docked?"has-dock":""}>
+      {/* Barra lateral (iPad en horizontal / pantallas anchas) */}
+      <aside className="ipad-side">
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"0 6px 16px"}}>
+          <span style={{fontSize:22}}>🏋️</span>
+          <span className="mono" style={{fontSize:15,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</span>
+        </div>
+        {[["dashboard","🏠","Inicio"],["schedule","📅","Agenda"],["clients","👥","Clientes"],["programming","📊","Programa"],["income","💶","Finanzas"],["reminders","🔔","Alertas",reminders.length],["forum","💬","Foro"]].map(([id,ic,l,n])=>(
+          <button key={id} className={"nav"+(view===id?" on":"")} onClick={()=>setView(id)} style={{marginBottom:3}}>
+            <span style={{fontSize:18,width:24,textAlign:"center"}}>{ic}</span><span>{l}</span>{n>0&&<span className="cnt">{n}</span>}
+          </button>
+        ))}
+        <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",margin:"18px 8px 6px"}}>HOY · {todaySessions.length} SESIÓN{todaySessions.length===1?"":"ES"}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          {todaySessions.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"2px 8px"}}>Sin sesiones hoy</div>}
+          {[...todaySessions].sort((a,b)=>String(a.time).localeCompare(String(b.time))).slice(0,12).map(s=>{ const c=clients.find(x=>x.id===s.client_id); if(!c) return null; const done=s.status==="completed";
+            return <button key={s.id} onClick={()=>goToPerson(s,c)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",border:`1px solid ${quickView&&quickView.id===c.id?"#bcd3ee":"transparent"}`,background:quickView&&quickView.id===c.id?"#eef4fc":"none",borderRadius:9,padding:"6px 8px"}}>
+              <span className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",width:38,flexShrink:0}}>{s.time}</span>
+              <span style={{width:8,height:8,borderRadius:4,background:done?"#16a34a":c.color,flexShrink:0}}/>
+              <span style={{fontSize:13,fontWeight:600,color:done?"#16a34a":"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done?"✓ ":""}{c.name}</span>
+            </button>; })}
+        </div>
+        <div style={{marginTop:"auto",paddingTop:14,display:"flex",gap:8}}>
+          <button className="btn wa" style={{flex:1,fontSize:12,justifyContent:"center"}} onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
+          <button className="btn ghost" style={{fontSize:12}} onClick={onLogout} title="Salir">⏏</button>
+        </div>
+      </aside>
       {/* Mobile top bar */}
       <div className="mobile-topbar">
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -1093,7 +1159,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
       {/* Secondary nav tabs */}
       {["forum","reminders","income"].includes(view)&&(
-        <div style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
+        <div className="admin-sub" style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
           {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Finanzas"]].map(([id,label])=>(
             <button key={id} className={"tab"+(view===id?" on":"")} onClick={()=>setView(id)} style={{flexShrink:0,fontSize:12}}>{label}</button>
           ))}
@@ -1108,8 +1174,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           {id:"clients",icon:"👥",label:"Clientes"},
           {id:"schedule",icon:"📅",label:"Agenda"},
           {id:"programming",icon:"📊",label:"Programa"},
+          {id:"income",icon:"💶",label:"Finanzas",tab:true},
+          {id:"reminders",icon:"🔔",label:"Alertas",tab:true,count:reminders.length},
         ].map(item=>(
-          <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")} onClick={()=>setView(item.id)}>
+          <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")+(item.tab?" tab-only":"")} onClick={()=>setView(item.id)}>
             <span className="bnav-icon">
               {item.icon}
               {item.count>0&&<span className="bnav-badge">{item.count}</span>}
@@ -1123,7 +1191,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       {/* ── AGENDA A PANTALLA COMPLETA (día / semana sin scroll) ── */}
       {fitMode&&view==="schedule"&&(schedView==="day"||schedView==="week")&&(()=>{
-        const week=schedView==="week", W=vw, low=vh<500, headH=low?38:46, availH=Math.max(200,vh-headH-(low?4:10));
+        const week=schedView==="week", W=vw-(docked?DOCK_W:0), low=vh<500, headH=low?38:46, availH=Math.max(200,vh-headH-(low?4:10));
         const shift=(dir)=>{ const d=new Date(activeDay+"T12:00:00"); d.setDate(d.getDate()+(week?7:1)*dir); setActiveDay(d.toISOString().split("T")[0]); };
         const lbl=week?(()=>{ const wd=getWeekDays(mondayOfDate(activeDay)).slice(0,5); const o={day:"numeric",month:"short"}; return `${new Date(wd[0]+"T12:00:00").toLocaleDateString("es-ES",o)} — ${new Date(wd[4]+"T12:00:00").toLocaleDateString("es-ES",o)}`; })()
           :new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
@@ -1247,7 +1315,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           }
         }
         return(
-          <div data-fit="1" style={{position:"fixed",left:0,right:0,top:0,height:vh,zIndex:150,background:"#eef1f7",display:"flex",flexDirection:"column",padding:"0 6px",boxSizing:"border-box"}}
+          <div data-fit="1" style={{position:"fixed",left:0,right:docked?DOCK_W:0,top:0,height:vh,zIndex:150,background:"#eef1f7",display:"flex",flexDirection:"column",padding:"0 6px",boxSizing:"border-box"}}
             onTouchStart={e=>{ const t=e.touches[0]; fitSwipe.current={x:t.clientX,y:t.clientY,ts:Date.now()}; }}
             onTouchEnd={e=>{ const st=fitSwipe.current; fitSwipe.current=null; if(!st||dragRef.current||justDragged.current) return; const t=e.changedTouches[0]; const dx=t.clientX-st.x, dy=t.clientY-st.y;
               if(Math.abs(dx)>70&&Math.abs(dy)<60&&Date.now()-st.ts<700) shift(dx<0?1:-1); }}>
@@ -1285,7 +1353,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               <h1 className="mono" style={{fontSize:20,fontWeight:700}}>{GYM_NAME} — Dashboard</h1>
               <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+            <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
                 {label:"Clientes",val:clients.length,color:"#0284c7"},
                 {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,color:"#16a34a"},
@@ -1299,6 +1367,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 </div>
               ))}
             </div>
+            <div className="dash-cols">
             {/* ── ACCESO DIRECTO A FINANZAS ── */}
             {(()=>{
               const ppS=(c)=>{ const t=parseInt(c&&c.total_sessions)||0; return t>0?(parseFloat(c.payment_amount)||0)/t:0; };
@@ -1310,7 +1379,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               const porHora=horas?gen/horas:0;
               const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
               return(
-                <div className="card" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
+                <div className="card dash-fin" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
                   <div style={{fontSize:28,flexShrink:0}}>💶</div>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
@@ -1322,7 +1391,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               );
             })()}
             {/* ── RESUMEN DEL DÍA (protagonista) ── */}
-            <div className="card" style={{marginBottom:14,padding:0,overflow:"hidden"}}>
+            <div className="card dash-hoy" style={{marginBottom:14,padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
                 <div>
                   <h3 style={{fontSize:15,fontWeight:800}}>Hoy · {todaySessions.length} sesión{todaySessions.length===1?"":"es"}</h3>
@@ -1387,7 +1456,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
 
             {/* ── ALERTAS (qué ocurre) ── */}
-            <div className="card" style={{padding:0,overflow:"hidden"}}>
+            <div className="card dash-ale" style={{padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
                 <div><h3 style={{fontSize:15,fontWeight:800}}>🔔 Alertas {reminders.length>0&&<span style={{fontSize:12,color:"#dc2626"}}>({reminders.length})</span>}</h3>{reminders.length>0&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Desliza una alerta a un lado para quitarla</div>}</div>
                 {reminders.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>setView("reminders")}>Ver todas →</button>}
@@ -1424,6 +1493,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <span style={{fontSize:18,color:"#cbd5e1"}}>›</span>
                 </div>
               )}
+            </div>
             </div>
           </div>
         )}
@@ -1822,7 +1892,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
                     <button className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setWeekBig(v=>!v)}>{weekBig?"🔽 Vista compacta":"⛶ Vista amplia"}</button>
                     <button className="btn ghost" style={{fontSize:11,padding:"6px 11px",color:"#0284c7"}} onClick={()=>setShowValoracion({date:activeDay})}>📋 + Valoración</button>
-                    <span style={{fontSize:10,color:"#94a3b8"}}>🔄 Gira el móvil para verla más ancha</span>
+                    {vw<768&&<span style={{fontSize:10,color:"#94a3b8"}}>🔄 Gira el móvil para verla más ancha</span>}
                   </div>
                   {/* Header row - days */}
                   <div style={{display:"grid",gridTemplateColumns:cols,gap:2}}>
@@ -2168,7 +2238,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView docked={canDock} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
@@ -2181,7 +2251,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
       {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
-      {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
+      {execData&&<SessionExecModal docked={canDock&&!quickView} client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} onClose={()=>setProgData(null)}/>}
@@ -3483,7 +3553,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -3492,8 +3562,9 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
   const auto = (!sess && blk) ? autoRoutineFor(client,date,sessions,annualBlocks) : null;
   const cw = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id && (w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   return(
-    <div className="ovl" onClick={onClose}>
+    <div className={"ovl"+(docked?" dock":"")} onClick={docked?undefined:onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
+        {docked&&<button className="btn ghost" onClick={onClose} title="Cerrar ficha" style={{float:"right",padding:"6px 11px",fontSize:14,marginLeft:8}}>✕</button>}
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
           {client.avatar_url
             ?<img src={client.avatar_url} style={{width:48,height:48,borderRadius:"50%",objectFit:"cover",border:`2px solid ${client.color}55`}}/>
@@ -3996,7 +4067,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
 }
 
 // ── EJECUTAR SESIÓN (registro de cargas durante el entreno) ────────────────
-function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
+function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,docked,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const baseExs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
   const wods=wodBlocks(baseExs);
@@ -4048,8 +4119,9 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
 
   const hechos=rows.filter(r=>r.done).length;
   return(
-    <div className="ovl" onClick={onClose}>
+    <div className={"ovl"+(docked?" dock":"")} onClick={docked?undefined:onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
+        {docked&&<button className="btn ghost" onClick={onClose} title="Cerrar" style={{float:"right",padding:"6px 11px",fontSize:14,marginLeft:8}}>✕</button>}
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
           {client.avatar_url
             ?<img src={client.avatar_url} style={{width:44,height:44,borderRadius:"50%",objectFit:"cover"}}/>
