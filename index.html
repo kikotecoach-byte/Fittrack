@@ -372,6 +372,25 @@ const bandKeys = (s) => String(s||"").split(",").map(x=>x.trim()).filter(Boolean
 const bandLabel = (s) => { const ks=bandKeys(s); if(!ks.length) return ""; return ks.map(k=>{const b=bandOf(k); return b?b[1]:"";}).join("")+" "+ks.map(k=>{const b=bandOf(k); return b?b[2]:k;}).join(" + "); };
 const toggleBandKey = (s,key) => { const ks=bandKeys(s); const i=ks.indexOf(key); if(i>=0)ks.splice(i,1); else ks.push(key); return BANDS.filter(b=>ks.includes(b[0])).map(b=>b[0]).join(","); };
 // Ejercicios sin carga externa (peso corporal) → por defecto se registran con goma.
+// ── ISOMÉTRICOS / READAPTACIÓN ──
+// Un ejercicio es isométrico si lleva el protocolo, su nombre lo indica o se
+// prescribe por tiempo (p. ej. "45s"). Fuera de los WOD.
+const ISO_RE = /isom[eé]tric|wall sit|colgado pasivo|dead hang|\bhold\b|plancha|hollow|copenhagen|squeeze/i;
+const isIsoRow = (e) => { if(!e) return false; const p=e.protocol||"", n=e.exercise_name||e.name||"", r=String(e.reps||"");
+  if(["amrap","emom","for_time","chipper","tabata","intervalos"].includes(p)) return false;
+  if(p!=="isometrico"&&/burpee|mountain|comba|sprint|carrera|bici|assault|remo erg|skierg|jumping|salto|battle|cuerdas/i.test(n)) return false;
+  return p==="isometrico" || ISO_RE.test(n) || /^\s*\d+(\s*-\s*\d+)?\s*(s|seg|")(\s*\/\s*lado)?\s*$/i.test(r); };
+// Segundos de una prescripción o registro ("45s", "30-45s", "45/45/40" → media).
+const secsOf = (t) => { const nums=String(t||"").match(/\d+(?:[.,]\d+)?/g); if(!nums) return null; const v=nums.map(x=>parseFloat(x.replace(",","."))); if(/-/.test(String(t))&&v.length===2) return Math.round((v[0]+v[1])/2); return Math.round(v.reduce((a,b)=>a+b,0)/v.length); };
+// Patología orientativa por ejercicio (para la evolución de readaptación).
+const ISO_HINTS = [[/medio muslo|imtp/i,"Fuerza máxima · test"],[/cu[aá]driceps|wall sit|en pared|spanish|sentadilla isom/i,"Tendinopatía rotuliana · rodilla"],[/gemelo|s[oó]leo|tobillo/i,"Tendinopatía aquílea · tobillo"],
+  [/aducci|squeeze|copenhagen/i,"Pubalgia · aductores"],[/rotaci[oó]n (externa|interna)|elevaci[oó]n lateral isom/i,"Hombro · manguito rotador"],[/mu[ñn]eca/i,"Epicondilitis / epitrocleítis"],
+  [/abducci/i,"Glúteo medio · cadera"],[/puente de isquios|curl femoral isom/i,"Isquiosurales"],[/zancada isom|split squat/i,"Rodilla · cadera"],[/lumbar|bird|dead bug|pallof|plancha|hollow/i,"Lumbalgia · control del core"],[/puente de gl/i,"Glúteo · lumbopélvico"],[/colgado|dead hang/i,"Hombro · descompresión"]];
+const isoHint = (name) => { const h=ISO_HINTS.find(([re])=>re.test(String(name||""))); return h?h[1]:""; };
+const LOAD_TYPES = [["pc","Peso corporal"],["pckg","PC + lastre"],["kg","Carga (kg)"],["goma","Goma"]];
+// Texto de la carga de un registro isométrico.
+const isoLoadTxt = (e) => { const t=e.load_type||(e.load_band?"goma":(e.actual_weight!=null?"kg":"pc")); const kg=e.actual_weight!=null?Number(e.actual_weight):null;
+  if(t==="goma") return bandLabel(e.load_band)||"Goma"; if(t==="pckg") return kg?`PC + ${kg} kg`:"PC"; if(t==="kg") return kg!=null?`${kg} kg`:"—"; return "PC"; };
 const isBodyweight = (name) => /domin|fondo|flexion|flexión|plancha|burpee|mountain climber|escalador|comba|salto a la|box jump|salto al caj|hollow|l-?sit|muscle ?up|remo invertido|sprint|pistol|zancada salt|abdominal|crunch|rueda abdominal|puente|elevaci[oó]n de pierna|superman|bird ?dog|monta[ñn]ista|jumping jack|sentadilla a una pierna/i.test(String(name||""));
 // Semana del año (1..53) para situar una fecha dentro del macrociclo.
 const macroWeek = (date=TODAY) => {
@@ -3078,7 +3097,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const cwOfSel=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const pickIt=async(it)=>{ const p=picker; setPicker(null); setBusy(true);
     if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
-    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
+    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
     await loadAll(); setBusy(false); };
   const finalizarPersona=async()=>{ if(!asig) return; setBusy(true); await sb.from("assigned_sessions").update({status:"done"}).eq("id",asig.id); await loadAll(); setBusy(false); notify(`${selClient.name.split(" ")[0]}: entreno registrado ✓`); };
   const cerrar=async()=>{ setBusy(true); await loadAll(); setBusy(false); onClose(); };
@@ -3122,7 +3141,9 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
             </button>
           ))}
               {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
-              {exs.map(ex=>{ const done=valOf(ex,"done"); return(
+              {exs.map(ex=>{ const done=valOf(ex,"done"); if(isIsoRow(ex)) return(
+                <IsoLogger key={ex.id+"|"+ex.exercise_name} ex={ex} clientId={sel} clientWeights={clientWeights} notify={notify} onDone={(d)=>setVal(ex,"done",d)} onSwap={()=>setPicker({mode:"swap",ex})}/>
+              ); return(
                 <div key={ex.id} style={{background:done?"#eef8dd":"#f8fafc",border:`1px solid ${done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                     <div style={{minWidth:0}}>
@@ -3344,13 +3365,14 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
   const [q,setQ]=React.useState("");
   const [mus,setMus]=React.useState("");
   const [onlyMine,setOnlyMine]=React.useState(true);
+  const [onlyIso,setOnlyIso]=React.useState(false);
   const [eqF,setEqF]=React.useState("");
   const [creating,setCreating]=React.useState(false);
   const [nw,setNw]=React.useState({name:"",muscles:[],equip:"",sets:3,reps:"10-12",rest:60,notes:"",cx:0});
   const [busy,setBusy]=React.useState(false);
   const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const subs=current?substitutesFor(current,10):[];
-  const list=exerciseCatalog().filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!mus||musclesOf(x.name).includes(mus))&&(!onlyMine||equipOk(x.name))&&(!eqF||equipmentOf(x.name)===eqF))
+  const list=exerciseCatalog().filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!mus||musclesOf(x.name).includes(mus))&&(!onlyMine||equipOk(x.name))&&(!eqF||equipmentOf(x.name)===eqF)&&(!onlyIso||isIsoRow({exercise_name:x.name,reps:x.reps})))
     .sort((a,b)=>(b.custom-a.custom)||a.name.localeCompare(b.name)).slice(0,80);
   const Row=({x,hint})=>(
     <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
@@ -3391,6 +3413,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center",margin:"4px 0 8px",flexWrap:"wrap",flexShrink:0}}>
             <label style={{fontSize:11,fontWeight:700,color:"#475569",display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}><input type="checkbox" checked={onlyMine} onChange={e=>setOnlyMine(e.target.checked)}/> Solo mi material</label>
+            {chip(onlyIso,"⏸️ Isométricos",()=>setOnlyIso(o=>!o),"_iso")}
             <select value={eqF} onChange={e=>setEqF(e.target.value)} style={{fontSize:11,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:8,padding:"4px 6px",background:"#fff",color:"#475569"}}>
               <option value="">Cualquier material</option>
               {EQUIP_KEYS.concat(["otros"]).map(k=><option key={k} value={k}>{EQUIP_LABEL[k]||k}</option>)}
@@ -3461,6 +3484,9 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
   const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
   const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
+  // Isométrico: se prescribe por segundos (y se registra tiempo, carga y dolor al ejecutarlo).
+  const toggleIso = (ex)=>w(async()=>{ const on=ex.protocol==="isometrico"; const upd=on?{protocol:""}:{protocol:"isometrico",...(secsOf(ex.reps)!=null&&/s|seg/i.test(String(ex.reps))?{}:{reps:"30s"})};
+    await sb.from("assigned_exercises").update(upd).eq("id",ex.id); notify(on?"Ya no es isométrico":"Isométrico ⏸️ (por segundos) ✓"); });
   // ── WOD: bloques metabólicos editables y orden de ejercicios ──
   const blocks = wodBlocks(exs);
   const inBlock = new Set(blocks.flatMap(b=>b.rows.map(r=>r.id)));
@@ -3479,7 +3505,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
   const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
-  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:wOf(it.name),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
+  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
   const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
@@ -3523,14 +3549,15 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                   </div>
                   <button onClick={()=>setPicker({mode:"swap",ex})} disabled={saving} title="Cambiar ejercicio (sustitutos, músculo, material o crear uno)" style={{flex:1,minWidth:0,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 9px"}}>
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
-                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span></span>
+                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
                   </button>
+                  <button className="btn ghost" title={ex.protocol==="isometrico"?"Quitar isométrico":"Hacer isométrico (por segundos)"} disabled={saving} onClick={()=>toggleIso(ex)} style={{padding:"6px 8px",fontSize:12,fontWeight:800,...(ex.protocol==="isometrico"?{background:"#e0ecfb",border:"1px solid #93c5fd",color:"#0369a1"}:{})}}>⏸️</button>
                   <button className="btn danger" style={{padding:"6px 9px"}} disabled={saving} onClick={()=>remove(ex)}>✕</button>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                   <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.sets} onBlur={e=>setField(ex,"sets",parseInt(e.target.value)||null)}/></div>
-                  <div><span className="lbl" style={{fontSize:9}}>REPS</span><input className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
-                  <div><span className="lbl" style={{fontSize:9}}>PESO (kg)</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"SEGUNDOS":"REPS"}</span><input key={ex.id+"|"+(ex.reps||"")} className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} placeholder={isIsoRow(ex)?"45s":""} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"CARGA / LASTRE (kg)":"PESO (kg)"}</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":isIsoRow(ex)?"PC":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>DESC. (s)</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.rest_seconds??""} onBlur={e=>setField(ex,"rest_seconds",parseInt(e.target.value)||null)}/></div>
                 </div>
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota / adaptación (p. ej. molestia rodilla → rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
@@ -4095,6 +4122,95 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   );
 }
 
+// ── REGISTRO DE UN ISOMÉTRICO (segundos, tipo de carga y dolor EVA 0-10) ──
+// Se guarda solo al cambiar cada campo. Sin docs/isometricos.sql se guardan
+// segundos y kg/goma, pero no el dolor ni el tipo de carga (avisa una vez).
+let ISO_SQL_WARNED = false;
+const painColor = (p) => p==null?"#94a3b8":p<=3?"#15803d":p<=6?"#b45309":"#b91c1c";
+function IsoLogger({ex,clientId,clientWeights,notify,onDone,onSwap}){
+  const init=()=>{ const hasKg=ex.actual_weight!=null||ex.prescribed_weight!=null;
+    const mode=ex.load_type||(ex.load_band?"goma":(hasKg?(isBodyweight(ex.exercise_name)?"pckg":"kg"):"pc"));
+    const s0=secsOf(ex.actual_reps), s1=secsOf(ex.reps);
+    return {secs:s0!=null?String(s0):(s1!=null?String(s1):""), mode, kg:ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:""), band:ex.load_band||"", pain:ex.pain!=null?ex.pain:null, done:!!ex.done}; };
+  const [v,setV]=React.useState(init);
+  React.useEffect(()=>{ setV(init()); },[ex.id,ex.exercise_name]);
+  const target=secsOf(ex.reps);
+  const kgOf=(x)=>(x.mode==="kg"||x.mode==="pckg")&&x.kg!==""&&x.kg!=null?parseFloat(String(x.kg).replace(",",".")):null;
+  const payload=(x)=>({actual_reps:x.secs!==""&&x.secs!=null?`${x.secs}s`:null, actual_weight:kgOf(x), load_band:x.mode==="goma"?(x.band||null):null, load_type:x.mode, pain:x.pain});
+  const save=async(x,extra)=>{
+    const p={...payload(x),...(extra||{})};
+    let {error}=await sb.from("assigned_exercises").update(p).eq("id",ex.id);
+    if(error){ const {load_type,pain,...rest}=p; const r=await sb.from("assigned_exercises").update(rest).eq("id",ex.id); error=r.error;
+      if(!error&&!ISO_SQL_WARNED){ ISO_SQL_WARNED=true; notify&&notify("Para guardar el dolor y el tipo de carga ejecuta docs/isometricos.sql","err"); } }
+    return !error;
+  };
+  const set=(patch,persist=true)=>{ const n={...v,...patch}; setV(n); if(persist) save(n); return n; };
+  // Cronómetro del mantenimiento: cuenta hasta el objetivo (pitido) y apunta los segundos al parar.
+  const [t0,setT0]=React.useState(null), [el,setEl]=React.useState(0);
+  const ac=React.useRef(null), beeped=React.useRef(false);
+  const beep=(f=880,d=0.18)=>{ try{ const a=ac.current; if(!a) return; const o=a.createOscillator(), g=a.createGain(); o.frequency.value=f; g.gain.setValueAtTime(0.25,a.currentTime); g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+d); o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+d); }catch(e){} };
+  React.useEffect(()=>{ if(t0==null) return; const id=setInterval(()=>{ const s=(Date.now()-t0)/1000; setEl(s);
+    if(target&&!beeped.current&&s>=target){ beeped.current=true; beep(1046,0.5); } }, 200); return ()=>clearInterval(id); },[t0]);
+  const startStop=()=>{ if(t0==null){ try{ ac.current=ac.current||new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} beeped.current=false; setEl(0); setT0(Date.now()); beep(660,0.12); }
+    else { const s=Math.round((Date.now()-t0)/1000); setT0(null); set({secs:String(s)}); } };
+  const toggle=async()=>{ const n={...v,done:!v.done}; setV(n);
+    const ok=await save(n,{done:n.done,done_at:n.done?new Date().toISOString():null});
+    if(!ok){ setV(v); notify&&notify("No se pudo guardar","err"); return; }
+    onDone&&onDone(n.done);
+    const kg=kgOf(n);
+    if(n.done&&kg!=null&&clientId){ await sb.from("client_weights").upsert({client_id:clientId,exercise_name:ex.exercise_name,weight:kg,updated_at:new Date().toISOString()},{onConflict:"client_id,exercise_name"}); }
+  };
+  const chip=(on,txt,onClick,key,col)=><button key={key} type="button" onClick={onClick} style={{flexShrink:0,fontSize:11,fontWeight:700,padding:"6px 9px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?(col||"#0284c7"):"#dbe2ec"}`,background:on?(col||"#0284c7"):"#fff",color:on?"#fff":"#475569"}}>{txt}</button>;
+  const hint=isoHint(ex.exercise_name);
+  const running=t0!=null, left=target?Math.max(0,target-el):null;
+  return(
+    <div data-iso={ex.exercise_name} style={{background:v.done?"#eef8dd":"#f8fafc",border:`1px solid ${v.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:8}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{ex.exercise_name} {onSwap&&<button onClick={onSwap} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button>}</div>
+          <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap",marginTop:3}}>
+            <span style={{fontSize:9,fontWeight:800,color:"#0369a1",background:"#e0ecfb",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px"}}>⏸️ ISOMÉTRICO</span>
+            {hint&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 7px"}}>🩹 {hint}</span>}
+          </div>
+        </div>
+        <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap",textAlign:"right"}}>plan: {ex.sets?`${ex.sets}×`:""}{ex.reps||"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}</div>
+      </div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:8,marginBottom:8}}>
+        <div style={{width:92}}>
+          <span className="lbl" style={{marginBottom:3}}>SEGUNDOS</span>
+          <input type="number" inputMode="numeric" className="inp" style={{padding:"8px 10px"}} value={v.secs} placeholder={target?String(target):"s"} onChange={e=>setV({...v,secs:e.target.value})} onBlur={()=>save(v)}/>
+        </div>
+        <button type="button" onClick={startStop} className={running?"btn sky":"btn ghost"} style={{flex:1,padding:"9px 10px",fontSize:13,justifyContent:"center",fontVariantNumeric:"tabular-nums"}} title="Cronómetro del mantenimiento">
+          {running?`■ ${Math.floor(el)}s${left!=null?(left>0?` · faltan ${Math.ceil(left)}`:" ✓"):""}`:`⏱ Cronometrar${target?` ${target}s`:""}`}
+        </button>
+        <button className={v.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} onClick={toggle} title="Hecho">{v.done?"✓":"○"}</button>
+      </div>
+      <span className="lbl" style={{marginBottom:4}}>CARGA</span>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:v.mode==="pc"?8:6}}>
+        {LOAD_TYPES.map(([k,l])=>chip(v.mode===k,l,()=>set({mode:k}),k))}
+      </div>
+      {(v.mode==="kg"||v.mode==="pckg")&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px",width:110}} value={v.kg} placeholder="kg" onChange={e=>setV({...v,kg:e.target.value})} onBlur={()=>save(v)}/>
+        <span style={{fontSize:11,color:"#64748b"}}>{v.mode==="pckg"?"kg de lastre sobre su peso corporal":"kg de carga externa"}</span>
+      </div>}
+      {v.mode==="goma"&&<div style={{display:"flex",gap:4,marginBottom:8}}>
+        {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(v.band).includes(k); return(
+          <button key={k} title={lbl} onClick={()=>set({band:toggleBandKey(v.band,k)})} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
+        );})}
+      </div>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <span className="lbl" style={{marginBottom:0}}>DOLOR (EVA 0-10)</span>
+        <span style={{fontSize:11,fontWeight:800,color:painColor(v.pain)}}>{v.pain==null?"sin registrar":`${v.pain}/10`}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(11,1fr)",gap:3}}>
+        {Array.from({length:11},(_,i)=>{ const on=v.pain===i, col=painColor(i); return(
+          <button key={i} type="button" onClick={()=>set({pain:on?null:i})} style={{padding:"7px 0",borderRadius:7,fontSize:12,fontWeight:800,cursor:"pointer",border:`1px solid ${on?col:"#e6ebf3"}`,background:on?col:"#fff",color:on?"#fff":col}}>{i}</button>
+        );})}
+      </div>
+    </div>
+  );
+}
+
 // ── EJECUTAR SESIÓN (registro de cargas durante el entreno) ────────────────
 function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,docked,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
@@ -4137,7 +4253,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   const cwOf=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const swapRow=async(row,it)=>{ const pw=cwOf(it.name); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
     setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg"}:x)); notify("Ejercicio cambiado ✓"); };
-  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
+  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
     if(error||!data) return notify("No se pudo añadir","err");
     setRows(rs=>[...rs,{id:data.id,name:data.exercise_name,sets:data.sets,reps:data.reps,protocol:"",prescribed:pw,w:pw!=null?pw:"",r:data.reps||"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg",done:false}]); notify("Ejercicio añadido ✓"); };
   const finalizar=async()=>{
@@ -4175,7 +4291,10 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
         {!sess||rows.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
-            {rows.map(row=>(
+            {rows.map(row=>isIsoRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})
+              ?<IsoLogger key={row.id+"|"+row.name} ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} clientWeights={clientWeights} notify={notify}
+                  onDone={(d)=>setField(row.id,"done",d)} onSwap={()=>setPicker({mode:"swap",row})}/>
+              :(
               <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                   <div style={{minWidth:0}}>
@@ -4512,6 +4631,98 @@ function WorkEvolution({client,history,assignedSessions,assignedExercises,annual
   );
 }
 
+// ── EVOLUCIÓN DE READAPTACIÓN (isométricos: tiempo, carga y dolor) ────────
+function isoHistory(client, assignedSessions, assignedExercises){
+  const ses=(assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date&&a.date<=TODAY);
+  const dateOf=Object.fromEntries(ses.map(a=>[a.id,a.date]));
+  const g={};
+  (assignedExercises||[]).forEach(e=>{
+    const d=dateOf[e.session_id]; if(!d||!isIsoRow(e)) return;
+    if(!(e.done||e.actual_reps!=null||e.pain!=null)) return; // solo lo realizado/registrado
+    const secs=secsOf(e.actual_reps)??secsOf(e.reps), sets=parseInt(e.sets)||1;
+    const k=e.exercise_name; (g[k]=g[k]||[]).push({date:d,sets,secs,tut:secs!=null?sets*secs:null,kg:e.actual_weight!=null?Number(e.actual_weight):null,load:isoLoadTxt(e),pain:e.pain!=null?Number(e.pain):null,type:e.load_type||(e.load_band?"goma":(e.actual_weight!=null?"kg":"pc"))});
+  });
+  return Object.entries(g).map(([name,pts])=>({name,hint:isoHint(name),pts:pts.sort((a,b)=>a.date.localeCompare(b.date))}))
+    .sort((a,b)=>b.pts[b.pts.length-1].date.localeCompare(a.pts[a.pts.length-1].date));
+}
+// Mini gráfico de una sola serie (no lleva leyenda: el título la nombra).
+function MiniLine({title,pts,yMax,fmt,dotColor,lineColor="#0284c7"}){
+  const W=150,H=64,pl=4,pr=26,pt=10,pb=12;
+  const vals=pts.filter(p=>p.v!=null); if(!vals.length) return null;
+  const max=yMax!=null?yMax:Math.max(1,...vals.map(p=>p.v))*1.15, n=pts.length;
+  const X=(i)=>pl+(n===1?(W-pl-pr)/2:i*(W-pl-pr)/(n-1)), Y=(v)=>pt+(H-pt-pb)*(1-v/max);
+  const path=pts.map((p,i)=>p.v==null?null:`${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).filter(Boolean).join(" ");
+  const last=[...pts].reverse().find(p=>p.v!=null), li=pts.lastIndexOf(last);
+  return(
+    <div style={{background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"6px 8px",minWidth:0}}>
+      <div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>{title}</div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}} role="img" aria-label={title}>
+        <line x1={pl} x2={W-pr} y1={H-pb} y2={H-pb} stroke="#c3c2b7" strokeWidth="1"/>
+        {vals.length>1&&<polyline points={path} fill="none" stroke={lineColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+        {pts.map((p,i)=>p.v==null?null:<circle key={i} cx={X(i)} cy={Y(p.v)} r="4" fill={dotColor?dotColor(p.v):lineColor} stroke="#fff" strokeWidth="2"><title>{`${fmtDate(p.date)}: ${fmt(p.v)}`}</title></circle>)}
+        <text x={X(li)+7} y={Y(last.v)+3} fontSize="10" fontWeight="800" fill="#0f172a">{fmt(last.v)}</text>
+        <text x={pl} y={H-1} fontSize="8" fill="#898781">{new Date(pts[0].date+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</text>
+        {n>1&&<text x={W-pr} y={H-1} fontSize="8" textAnchor="end" fill="#898781">{new Date(pts[n-1].date+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</text>}
+      </svg>
+    </div>
+  );
+}
+function IsoEvolution({client,assignedSessions,assignedExercises}){
+  const groups=React.useMemo(()=>isoHistory(client,assignedSessions,assignedExercises),[client&&client.id,assignedSessions,assignedExercises]);
+  const [hint,setHint]=React.useState("");
+  const [open,setOpen]=React.useState(null);
+  if(!groups.length) return <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",lineHeight:1.5}}>
+    Aún no hay isométricos registrados. Añade ejercicios de <b>Isométricos / Readaptación</b> (o marca cualquiera con <b>⏸️</b> al editar la sesión) y, al ejecutar, apunta los <b>segundos</b>, la <b>carga</b> y el <b>dolor 0-10</b>. Aquí verás su evolución.
+  </div>;
+  const hints=[...new Set(groups.map(g=>g.hint||"Otros"))];
+  const list=groups.filter(g=>!hint||(g.hint||"Otros")===hint);
+  const pct=(a,b)=>a&&b!=null?Math.round((b/a-1)*100):null;
+  return(
+    <div>
+      <span className="lbl">🩹 EN SEGUIMIENTO</span>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+        {[["","Todo"],...hints.map(h=>[h,h])].map(([k,l])=><button key={k||"_"} onClick={()=>setHint(k)} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:20,cursor:"pointer",border:`1px solid ${hint===k?"#7c3aed":"#e0d2f5"}`,background:hint===k?"#7c3aed":"#fff",color:hint===k?"#fff":"#6d28d9"}}>{l}{k?` · ${groups.filter(g=>(g.hint||"Otros")===k).length}`:""}</button>)}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {list.map(g=>{ const f=g.pts[0], l=g.pts[g.pts.length-1];
+          const firstPain=g.pts.find(p=>p.pain!=null), lastPain=[...g.pts].reverse().find(p=>p.pain!=null);
+          const hasKg=g.pts.some(p=>p.kg!=null);
+          const dS=pct(f.secs,l.secs);
+          return(
+          <div key={g.name} style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:12,padding:"10px 12px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{g.name}</div>
+                <div style={{fontSize:10,color:"#7c3aed",fontWeight:700,marginTop:1}}>{g.hint?`🩹 ${g.hint} · `:""}{g.pts.length} {g.pts.length!==1?"sesiones":"sesión"}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{l.sets}×{l.secs!=null?`${l.secs}s`:"—"}</div>
+                <div style={{fontSize:10,color:"#64748b"}}>{l.load}{l.pain!=null?<> · dolor <b style={{color:painColor(l.pain)}}>{l.pain}/10</b></>:""}</div>
+              </div>
+            </div>
+            {g.pts.length>1&&<div style={{fontSize:11,color:"#475569",marginTop:6,lineHeight:1.5}}>
+              Desde el {fmtDate(f.date)}: tiempo <b>{f.secs??"—"}s → {l.secs??"—"}s</b>{dS!=null&&dS!==0?` (${dS>0?"+":""}${dS} %)`:""}
+              {firstPain&&lastPain&&firstPain!==lastPain?<> · dolor <b style={{color:painColor(firstPain.pain)}}>{firstPain.pain}</b> → <b style={{color:painColor(lastPain.pain)}}>{lastPain.pain}</b></>:""}
+              {f.load!==l.load?<> · carga {f.load} → <b>{l.load}</b></>:""}
+            </div>}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:6,marginTop:8}}>
+              <MiniLine title="Segundos por serie" pts={g.pts.map(p=>({date:p.date,v:p.secs}))} fmt={(v)=>`${Math.round(v)}s`}/>
+              <MiniLine title="Dolor (0-10)" pts={g.pts.map(p=>({date:p.date,v:p.pain}))} yMax={10} fmt={(v)=>String(v)} dotColor={painColor} lineColor="#94a3b8"/>
+              {hasKg&&<MiniLine title="Carga / lastre (kg)" pts={g.pts.map(p=>({date:p.date,v:p.kg}))} fmt={(v)=>`${v}`}/>}
+            </div>
+            <button className="btn ghost" style={{width:"100%",fontSize:11,padding:6,marginTop:8}} onClick={()=>setOpen(open===g.name?null:g.name)}>{open===g.name?"▲ Ocultar registros":"▼ Ver registros"}</button>
+            {open===g.name&&<div style={{marginTop:6,border:"1px solid #e6ebf3",borderRadius:9,overflow:"hidden",background:"#fff"}}>
+              {[...g.pts].reverse().map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1fr .9fr 1.3fr .7fr",gap:6,padding:"6px 9px",borderTop:i?"1px solid #eef1f7":"none",fontSize:11,fontVariantNumeric:"tabular-nums"}}>
+                <span style={{color:"#475569"}}>{fmtDate(p.date)}</span><span style={{fontWeight:700}}>{p.sets}×{p.secs!=null?`${p.secs}s`:"—"}</span><span>{p.load}</span><span style={{textAlign:"right",fontWeight:800,color:painColor(p.pain)}}>{p.pain!=null?`${p.pain}/10`:"—"}</span>
+              </div>)}
+            </div>}
+          </div>); })}
+      </div>
+      <div style={{fontSize:10,color:"#94a3b8",marginTop:10,lineHeight:1.4}}>Orientativo: la patología se deduce del ejercicio. El dolor se apunta al ejecutar cada isométrico (0 = nada, 10 = máximo).</div>
+    </div>
+  );
+}
+
 function Sparkline({pts,color}) {
   if(!pts||!pts.length) return null;
   const n=pts.length, min=Math.min(...pts), max=Math.max(...pts), rng=(max-min)||1;
@@ -4548,12 +4759,13 @@ function ProgressionModal({client,clientWeights,weightHistory,records,history,as
             ?<img src={client.avatar_url} style={{width:44,height:44,borderRadius:"50%",objectFit:"cover"}}/>
             :<div className="ring" style={{width:44,height:44,background:client.color+"20",color:client.color,fontSize:14}}>{ini(client.name)}</div>}
           <div><h2 className="mono" style={{fontSize:16,fontWeight:700}}>Progresión · {client.name}</h2>
-          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Trabajo total, cargas y marcas</div></div>
+          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Trabajo total, readaptación, cargas y marcas</div></div>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12}}>
-          {[["work","📊 Trabajo total"],["loads","🏋️ Cargas y marcas"]].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{flex:1,fontSize:12,fontWeight:700,padding:"8px 6px",borderRadius:10,cursor:"pointer",border:`1px solid ${tab===k?"#0284c7":"#dbe2ec"}`,background:tab===k?"#0284c7":"#fff",color:tab===k?"#fff":"#475569"}}>{l}</button>)}
+          {[["work","📊 Trabajo total"],["iso","🩹 Readaptación"],["loads","🏋️ Cargas"]].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{flex:1,fontSize:12,fontWeight:700,padding:"8px 6px",borderRadius:10,cursor:"pointer",border:`1px solid ${tab===k?"#0284c7":"#dbe2ec"}`,background:tab===k?"#0284c7":"#fff",color:tab===k?"#fff":"#475569"}}>{l}</button>)}
         </div>
         {tab==="work"&&<div style={{maxHeight:"68vh",overflowY:"auto"}}><WorkEvolution client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks}/></div>}
+        {tab==="iso"&&<div style={{maxHeight:"68vh",overflowY:"auto"}}><IsoEvolution client={client} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/></div>}
         {tab==="loads"&&<>
 
         {names.length===0&&prs.length===0
@@ -6670,7 +6882,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
     series_planas:"Series planas",top_set_backoff:"Top Set + Back Off",
     ramp_up:"Ramp Up",amrap:"AMRAP",superset:"Superserie",
     drop_set:"Drop Set",rest_pause:"Rest Pause",cluster:"Cluster",
-    emom:"EMOM",leader:"LEADER",tabata:"TABATA"
+    emom:"EMOM",leader:"LEADER",tabata:"TABATA",isometrico:"Isométrico"
   };
 
   // Assign session to client
@@ -7296,6 +7508,13 @@ const setCustomExercises = (list) => { const m={}; (list||[]).forEach(e=>{ if(!e
 const MUSCLES=["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Cuádriceps","Isquios","Glúteo","Aductores","Gemelo","Core","Lumbar","Cuerpo completo","Cardio","Movilidad"];
 // Músculos por nombre (el primero que coincide gana; el primer músculo es el principal).
 const MUSCLE_RULES=[
+  [/medio muslo|imtp/i,["Isquios","Glúteo","Cuádriceps"]],
+  [/aducci[oó]n|squeeze/i,["Aductores"]],
+  [/rotaci[oó]n (externa|interna) de hombro|manguito/i,["Hombro"]],
+  [/colgado pasivo|dead hang/i,["Espalda","Antebrazo"]],
+  [/extensi[oó]n lumbar/i,["Lumbar","Glúteo"]],
+  [/puente de isquios|curl femoral isom/i,["Isquios","Glúteo"]],
+  [/spanish squat|wall sit|sentadilla isom/i,["Cuádriceps","Glúteo"]],
   [/remo ergómetro|remo ergometro|remo \(máquina\)|remo \(maquina\)|assault|bicicleta|skierg|carrera|cinta|comba|sprint|intervalos|amrap|emom|tabata/i,["Cardio","Cuerpo completo"]],
   [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|círculos de hombro|circulos de hombro|activación de glúteo|activacion de gluteo|sentadilla profunda/i,["Movilidad"]],
   [/thruster|wall ball/i,["Cuádriceps","Glúteo","Hombro"]],
@@ -7321,7 +7540,7 @@ const MUSCLE_RULES=[
   [/remo/i,["Espalda","Bíceps"]],
   [/plancha|crunch|rueda|hollow|pallof|woodchop|russian|elevación de piernas|toes to bar|v-ups|dead bug|bird/i,["Core"]],
 ];
-const CAT_MUSCLES={"Sentadilla / Cuádriceps":["Cuádriceps","Glúteo"],"Bisagra / Posterior":["Isquios","Glúteo","Lumbar"],"Empuje horizontal (pecho)":["Pecho","Tríceps","Hombro"],"Empuje vertical (hombro)":["Hombro","Tríceps"],
+const CAT_MUSCLES={"Isométricos / Readaptación":["Core"],"Sentadilla / Cuádriceps":["Cuádriceps","Glúteo"],"Bisagra / Posterior":["Isquios","Glúteo","Lumbar"],"Empuje horizontal (pecho)":["Pecho","Tríceps","Hombro"],"Empuje vertical (hombro)":["Hombro","Tríceps"],
   "Tracción vertical (dorsal)":["Espalda","Bíceps"],"Tracción horizontal (espalda)":["Espalda","Bíceps"],"Brazos":["Bíceps","Tríceps"],"Core / Estabilidad":["Core"],"Olímpicos / Potencia":["Cuerpo completo"],
   "Gemelo / Antebrazo":["Gemelo","Antebrazo"],"Movilidad / Calentamiento":["Movilidad"],"Cardio / Metcon":["Cardio"]};
 const MUSCLE_CAT={"Pecho":"Empuje horizontal (pecho)","Espalda":"Tracción horizontal (espalda)","Hombro":"Empuje vertical (hombro)","Bíceps":"Brazos","Tríceps":"Brazos","Antebrazo":"Gemelo / Antebrazo","Cuádriceps":"Sentadilla / Cuádriceps",
@@ -7546,6 +7765,31 @@ const EXERCISE_LIBRARY = {
     ["Curl de muñeca inverso",3,"15-20",45,false],
     ["Farmer hold (agarre)",3,"30-45s",60,false],
   ],
+  "Isométricos / Readaptación": [
+    ["Sentadilla isométrica en pared (wall sit)",5,"45s",120,false],
+    ["Spanish squat isométrica (correa)",5,"45s",120,false],
+    ["Extensión de cuádriceps isométrica (máquina)",5,"45s",120,false],
+    ["Elevación de gemelos isométrica (de pie)",5,"45s",120,false],
+    ["Elevación de gemelo isométrica a una pierna",4,"30s/lado",90,false],
+    ["Puente de glúteo isométrico",4,"30s",60,false],
+    ["Puente de isquios isométrico (talones en banco)",4,"30s",90,false],
+    ["Curl femoral isométrico (máquina)",4,"30s",90,false],
+    ["Zancada isométrica (split squat hold)",4,"30s/lado",90,false],
+    ["Aducción isométrica (squeeze con balón/rodillo)",4,"20s",60,false],
+    ["Copenhagen isométrico",3,"20s/lado",60,false],
+    ["Abducción de cadera isométrica (contra pared)",3,"30s/lado",60,false],
+    ["Tirón isométrico a medio muslo (IMTP)",5,"5s",120,false],
+    ["Rotación externa de hombro isométrica (polea)",4,"30s",60,false],
+    ["Rotación interna de hombro isométrica (polea)",4,"30s",60,false],
+    ["Elevación lateral isométrica (contra pared)",3,"30s",60,false],
+    ["Colgado pasivo en barra (dead hang)",3,"30s",60,false],
+    ["Press Pallof isométrico",3,"30s/lado",60,false],
+    ["Bird-dog isométrico",3,"20s/lado",45,false],
+    ["Dead bug isométrico",3,"30s",45,false],
+    ["Extensión lumbar isométrica (banco romano)",3,"30s",60,false],
+    ["Extensión de muñeca isométrica",4,"45s",60,false],
+    ["Flexión de muñeca isométrica",4,"45s",60,false],
+  ],
   "Movilidad / Calentamiento": [
     ["Movilidad de cadera",1,"8/lado",0,false],
     ["Movilidad torácica",1,"8/lado",0,false],
@@ -7609,6 +7853,7 @@ const PROTOCOL_INFO = {
   for_time:"Completar todo el trabajo lo más rápido posible, con tiempo límite (cap).",
   chipper:"Lista larga de ejercicios que se hace una sola vez, de arriba abajo, 'picando' las reps.",
   intervalos:"Bloques de trabajo continuo (p. ej. 1 km de carrera + estación) a ritmo de competición.",
+  isometrico:"Mantener la posición sin movimiento los segundos marcados (p. ej. 5×45 s al 70 % del esfuerzo, 2' de descanso). Se registra tiempo, carga (peso corporal, lastre, kg o goma) y dolor 0-10: útil en tendinopatías y readaptación.",
 };
 
 // ── GENERADOR DE RUTINA DIARIA ─────────────────────────────────────────────
@@ -7804,6 +8049,10 @@ const HYROX_REPS = {"SkiErg":"500 m","Sled push (empuje trineo)":"25-50 m","Sled
 // Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
 // Devuelve una CLAVE de equipo; la etiqueta visible está en EQUIP_LABEL.
 const EQUIP = [
+  [/wall sit|en pared|contra pared|squeeze|zancada isom|split squat hold|puente de (glúteo|gluteo|isquios) isom|bird-dog isom|dead bug isom|copenhagen isom|colgado pasivo|dead hang|gemelos? isom/i,"pesocorporal"],
+  [/spanish squat/i,"otros"],
+  [/medio muslo|imtp/i,"rackpines"],
+  [/mu[ñn]eca isom/i,"antebrazo"],
   [/remo ergómetro|remo ergometro|remo aeróbico|remo aerobico|remo \(máquina\)|remo \(maquina\)/i,"remo"],
   [/goblet.*mancuerna|mancuerna.*goblet/i,"mancuernas"],
   [/air squat|al aire|toes to bar|burpee broad|v-ups|hollow/i,"pesocorporal"],
@@ -7942,6 +8191,8 @@ const CX_NAME = {1:"sencillo",2:"medio",3:"técnico"};
 const complexityOf = (name) => {
   const n=String(name||""), c=CUSTOM_EX[n.toLowerCase()];
   if(c&&c.cx) return c.cx; // fijada por el entrenador al crear el ejercicio
+  if(/medio muslo|imtp/i.test(n)) return 2;
+  if(/isom[eé]tric|wall sit|colgado pasivo|dead hang/i.test(n)) return 1;
   if(/^(WOD |Hyrox|Bloque metab|Benchmark|Finisher|Circuito)/i.test(n)) return 1;
   if(/asistid|en máquina|en maquina|multipower|smith/i.test(n)&&!/pistol/i.test(n)) return /olímp|cargada|snatch/i.test(n)?2:1;
   if(/cargada|power clean|\bclean\b|snatch|arrancada|push jerk|muscle ?up|pistol|toes to bar|nordic|lastrad|d[eé]ficit|sumo|buenos d[ií]as|ssb|safety|thrusters con barra|push press|sentadilla frontal|con pausa|pendlay|elevación de piernas colgado|copenhagen|rueda abdominal|tirón alto|tiron alto|turkish|^dominadas|fondos en paralelas|comba \(dobles\)/i.test(n)) return 3;
