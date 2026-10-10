@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Kikote Gym</title>
 <link rel="manifest" href="/manifest.json">
 <meta name="apple-mobile-web-app-capable" content="yes">
@@ -34,7 +34,24 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .btn,.sb,.tab,.bnav-btn,.card{transition:transform .12s ease,background .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease;}
 .btn:active,.sb:active,.tab:active{transform:scale(.96);}
 .bnav-btn:active{transform:scale(.9);}
-@media(prefers-reduced-motion:reduce){.swipe,.fade{animation:none;}.btn,.sb,.tab,.bnav-btn{transition:none;}}
+/* ─ Iconos 3D y animaciones 3D (suaves: dan profundidad sin añadir ruido) ─ */
+.ico3d{display:inline-block;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 3px 4px rgba(15,23,42,.14));
+  transition:transform .35s cubic-bezier(.34,1.56,.64,1),filter .3s ease,opacity .3s ease;user-select:none;-webkit-user-drag:none;pointer-events:none;}
+.bnav-btn .ico3d,.ipad-side .nav .ico3d{opacity:.72;filter:drop-shadow(0 2px 3px rgba(15,23,42,.12)) saturate(.55);}
+.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{opacity:1;filter:drop-shadow(0 6px 8px rgba(2,132,199,.28)) saturate(1);animation:icoPop .55s cubic-bezier(.34,1.56,.64,1) both;}
+@keyframes icoPop{0%{transform:perspective(240px) rotateX(0) scale(1)}35%{transform:perspective(240px) rotateX(-28deg) translateY(-5px) scale(1.18)}70%{transform:perspective(240px) rotateX(8deg) translateY(-1px) scale(1.06)}100%{transform:perspective(240px) translateY(-2px) scale(1.1)}}
+.float3d{animation:float3d 5s ease-in-out infinite;}
+@keyframes float3d{0%,100%{transform:perspective(400px) translateY(0) rotateY(-10deg)}50%{transform:perspective(400px) translateY(-8px) rotateY(10deg)}}
+.view3d{animation:view3d .42s cubic-bezier(.22,.61,.36,1) both;transform-origin:50% 0;}
+@keyframes view3d{from{opacity:0;transform:perspective(1400px) rotateX(5deg) translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+.ovl>.mdl.fade{animation:mdl3d .34s cubic-bezier(.22,.61,.36,1) both;transform-origin:50% 100%;}
+@keyframes mdl3d{from{opacity:0;transform:perspective(1200px) rotateX(10deg) translateY(24px) scale(.97)}to{opacity:1;transform:none}}
+.ovl:not(.dock){animation:ovlIn .22s ease both;}
+@keyframes ovlIn{from{opacity:0}to{opacity:1}}
+.tilt{transform-style:preserve-3d;transition:transform .2s ease,box-shadow .2s ease;}
+.tilt:active{transform:perspective(900px) rotateX(3deg) scale(.975);box-shadow:0 1px 2px rgba(16,24,40,.05);}
+@media(hover:hover){.tilt:hover{transform:perspective(900px) translateY(-2px);box-shadow:0 10px 24px rgba(16,24,40,.08);}}
+@media(prefers-reduced-motion:reduce){.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
 
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
@@ -66,22 +83,61 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
   -webkit-tap-highlight-color:transparent;min-width:56px;
 }
 .bnav-btn.on{color:var(--sky);}
-.bnav-icon{font-size:22px;line-height:1.2;position:relative;display:inline-block;}
+.bnav-icon{font-size:22px;line-height:1;position:relative;display:inline-flex;height:28px;align-items:center;}
 .bnav-badge{position:absolute;top:-3px;right:-6px;background:#dc2626;color:#fff;
   border-radius:10px;font-size:9px;font-weight:700;padding:1px 4px;min-width:15px;text-align:center;}
 .admin-content{padding-bottom:calc(88px + env(safe-area-inset-bottom)) !important;}
 .mobile-topbar{
   display:flex !important;align-items:center;justify-content:space-between;
-  padding:12px 14px;border-bottom:1px solid #e6ebf3;
+  padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 12px calc(14px + env(safe-area-inset-left));border-bottom:1px solid #e6ebf3;
   background:var(--bg);position:sticky;top:0;z-index:50;
 }
 /* Móvil en horizontal (poca altura): barras más compactas para ganar espacio */
 @media(max-height:500px){
   .bottom-nav{padding:3px 0 calc(5px + env(safe-area-inset-bottom));}
   .bnav-btn{flex-direction:row;gap:6px;font-size:12px;padding:6px 12px;}
-  .bnav-icon{font-size:17px;}
+  .bnav-icon{font-size:17px;height:20px;}
+  .bnav-icon .ico3d{width:20px;height:20px;}
   .admin-content{padding-bottom:calc(56px + env(safe-area-inset-bottom)) !important;}
-  .mobile-topbar{padding:6px 14px;}
+  .mobile-topbar{padding:calc(6px + env(safe-area-inset-top)) 14px 6px;}
+}
+
+/* ─ iPad / tablet ─────────────────────────────────────────────────────────
+   ≥768px: más espacio y dos columnas en Inicio.
+   ≥1000px (iPad en horizontal, iPad Pro): barra lateral fija en lugar de la
+   inferior. ≥1100px: la ficha y el entreno se acoplan a la derecha y la
+   agenda sigue visible y usable al lado. */
+.ipad-side{display:none;}
+.tab-only{display:none !important;}
+@media(min-width:768px){
+  .tab-only{display:flex !important;}
+  .admin-content{padding-left:22px !important;padding-right:22px !important;padding-top:18px !important;}
+  .stats-grid{grid-template-columns:repeat(5,1fr) !important;}
+  .dash-cols{display:grid;grid-template-columns:minmax(0,1.3fr) minmax(0,1fr);grid-template-areas:"hoy fin" "hoy ale";grid-template-rows:auto 1fr;gap:14px;align-items:start;}
+  .dash-cols>*{margin-bottom:0 !important;}
+  .dash-fin{grid-area:fin;} .dash-hoy{grid-area:hoy;} .dash-ale{grid-area:ale;}
+  .clients-grid{grid-template-columns:repeat(auto-fill,minmax(320px,1fr)) !important;}
+  .bnav-btn{min-width:72px;font-size:12px;}
+  .mdl{max-width:560px;}
+  .btn{min-height:34px;}
+}
+@media(min-width:1000px){
+  .bottom-nav,.mobile-topbar{display:none !important;}
+  .ipad-side{display:flex;flex-direction:column;position:fixed;left:0;top:0;bottom:0;width:232px;z-index:100;
+    background:#fff;border-right:1px solid #e6ebf3;padding:calc(18px + env(safe-area-inset-top)) 12px calc(14px + env(safe-area-inset-bottom)) calc(12px + env(safe-area-inset-left));overflow-y:auto;}
+  .ipad-side .nav{font-size:14px;padding:11px 12px;border:1px solid transparent;}
+  .ipad-side .nav .cnt{margin-left:auto;background:#dc2626;color:#fff;border-radius:10px;font-size:10px;font-weight:800;padding:1px 6px;}
+  .admin-content{margin-left:232px;padding:22px 26px 30px !important;}
+  .admin-sub{margin-left:232px;}
+  .dash-cols{grid-template-columns:minmax(0,1.4fr) minmax(0,1fr);}
+}
+@media(min-width:1100px){
+  .has-dock .admin-content,.has-dock .admin-sub{margin-right:440px;}
+  .ovl.dock{left:auto;width:440px;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;padding:0;align-items:stretch;justify-content:stretch;z-index:160;}
+  .ovl.dock>.mdl{max-width:none !important;width:100%;height:100%;max-height:none;border-radius:0 !important;border:none;border-left:1px solid var(--border);
+    box-shadow:-10px 0 30px rgba(16,24,40,.08);padding:calc(18px + env(safe-area-inset-top)) 20px calc(18px + env(safe-area-inset-bottom));animation:none;}
+  .ovl.dock>.mdl.fade{animation:dock3d .34s cubic-bezier(.22,.61,.36,1) both;transform-origin:100% 50%;}
+  @keyframes dock3d{from{opacity:0;transform:perspective(1400px) rotateY(-9deg) translateX(28px)}to{opacity:1;transform:none}}
 }
 
 @media(max-width:640px){
@@ -103,7 +159,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 }
 
 /* ─ Shared components ─ */
-.card{background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:0 1px 3px rgba(16,24,40,.05);}
+.card{background:var(--card);border-radius:16px;border:1px solid #e3e9f2;padding:16px;box-shadow:0 1px 2px rgba(16,24,40,.04),0 4px 14px rgba(16,24,40,.035);}
 .btn{border:none;border-radius:9px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;
   font-weight:700;font-size:13px;transition:all .18s;-webkit-tap-highlight-color:transparent;}
 .sky{background:linear-gradient(135deg,#0369a1,#0284c7);color:#fff;padding:9px 16px;}
@@ -203,6 +259,14 @@ function clearSession() {
   try { localStorage.removeItem("kg_session"); } catch(e){}
 }
 const GYM_NAME = "Kikote Gym";
+// Iconos 3D (Fluent Emoji de Microsoft, licencia MIT, en /icons3d). Si una imagen
+// no carga se muestra el emoji equivalente.
+const ICO3D = {home:"🏠",agenda:"📅",clients:"💪",program:"📊",money:"💶",bell:"🔔",forum:"💬",logo:"🏋️",check:"✅",stopwatch:"⏱️",moneybag:"💰",calendar:"📆",palm:"🌴",phone:"📱",door:"🚪",chart:"📈",clipboard:"📋",gear:"⚙️"};
+function Ico({k,size=22,style,className}){
+  const [bad,setBad]=React.useState(false);
+  if(bad||!ICO3D[k]) return <span className={className} style={{fontSize:Math.round(size*0.86),lineHeight:1,display:"inline-block",...(style||{})}}>{ICO3D[k]||""}</span>;
+  return <img src={`/icons3d/${k}.png`} alt="" width={size} height={size} draggable={false} onError={()=>setBad(true)} className={"ico3d"+(className?" "+className:"")} style={style}/>;
+}
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const TODAY = new Date().toISOString().split("T")[0];
@@ -308,6 +372,25 @@ const bandKeys = (s) => String(s||"").split(",").map(x=>x.trim()).filter(Boolean
 const bandLabel = (s) => { const ks=bandKeys(s); if(!ks.length) return ""; return ks.map(k=>{const b=bandOf(k); return b?b[1]:"";}).join("")+" "+ks.map(k=>{const b=bandOf(k); return b?b[2]:k;}).join(" + "); };
 const toggleBandKey = (s,key) => { const ks=bandKeys(s); const i=ks.indexOf(key); if(i>=0)ks.splice(i,1); else ks.push(key); return BANDS.filter(b=>ks.includes(b[0])).map(b=>b[0]).join(","); };
 // Ejercicios sin carga externa (peso corporal) → por defecto se registran con goma.
+// ── ISOMÉTRICOS / READAPTACIÓN ──
+// Un ejercicio es isométrico si lleva el protocolo, su nombre lo indica o se
+// prescribe por tiempo (p. ej. "45s"). Fuera de los WOD.
+const ISO_RE = /isom[eé]tric|wall sit|colgado pasivo|dead hang|\bhold\b|plancha|hollow|copenhagen|squeeze/i;
+const isIsoRow = (e) => { if(!e) return false; const p=e.protocol||"", n=e.exercise_name||e.name||"", r=String(e.reps||"");
+  if(["amrap","emom","for_time","chipper","tabata","intervalos"].includes(p)) return false;
+  if(p!=="isometrico"&&/burpee|mountain|comba|sprint|carrera|bici|assault|remo erg|skierg|jumping|salto|battle|cuerdas/i.test(n)) return false;
+  return p==="isometrico" || ISO_RE.test(n) || /^\s*\d+(\s*-\s*\d+)?\s*(s|seg|")(\s*\/\s*lado)?\s*$/i.test(r); };
+// Segundos de una prescripción o registro ("45s", "30-45s", "45/45/40" → media).
+const secsOf = (t) => { const nums=String(t||"").match(/\d+(?:[.,]\d+)?/g); if(!nums) return null; const v=nums.map(x=>parseFloat(x.replace(",","."))); if(/-/.test(String(t))&&v.length===2) return Math.round((v[0]+v[1])/2); return Math.round(v.reduce((a,b)=>a+b,0)/v.length); };
+// Patología orientativa por ejercicio (para la evolución de readaptación).
+const ISO_HINTS = [[/medio muslo|imtp/i,"Fuerza máxima · test"],[/cu[aá]driceps|wall sit|en pared|spanish|sentadilla isom/i,"Tendinopatía rotuliana · rodilla"],[/gemelo|s[oó]leo|tobillo/i,"Tendinopatía aquílea · tobillo"],
+  [/aducci|squeeze|copenhagen/i,"Pubalgia · aductores"],[/rotaci[oó]n (externa|interna)|elevaci[oó]n lateral isom/i,"Hombro · manguito rotador"],[/mu[ñn]eca/i,"Epicondilitis / epitrocleítis"],
+  [/abducci/i,"Glúteo medio · cadera"],[/puente de isquios|curl femoral isom/i,"Isquiosurales"],[/zancada isom|split squat/i,"Rodilla · cadera"],[/lumbar|bird|dead bug|pallof|plancha|hollow/i,"Lumbalgia · control del core"],[/puente de gl/i,"Glúteo · lumbopélvico"],[/colgado|dead hang/i,"Hombro · descompresión"]];
+const isoHint = (name) => { const h=ISO_HINTS.find(([re])=>re.test(String(name||""))); return h?h[1]:""; };
+const LOAD_TYPES = [["pc","Peso corporal"],["pckg","PC + lastre"],["kg","Carga (kg)"],["goma","Goma"]];
+// Texto de la carga de un registro isométrico.
+const isoLoadTxt = (e) => { const t=e.load_type||(e.load_band?"goma":(e.actual_weight!=null?"kg":"pc")); const kg=e.actual_weight!=null?Number(e.actual_weight):null;
+  if(t==="goma") return bandLabel(e.load_band)||"Goma"; if(t==="pckg") return kg?`PC + ${kg} kg`:"PC"; if(t==="kg") return kg!=null?`${kg} kg`:"—"; return "PC"; };
 const isBodyweight = (name) => /domin|fondo|flexion|flexión|plancha|burpee|mountain climber|escalador|comba|salto a la|box jump|salto al caj|hollow|l-?sit|muscle ?up|remo invertido|sprint|pistol|zancada salt|abdominal|crunch|rueda abdominal|puente|elevaci[oó]n de pierna|superman|bird ?dog|monta[ñn]ista|jumping jack|sentadilla a una pierna/i.test(String(name||""));
 // Semana del año (1..53) para situar una fecha dentro del macrociclo.
 const macroWeek = (date=TODAY) => {
@@ -575,6 +658,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [dropKey,setDropKey] = React.useState(null); // "día|hora" bajo el dedo
   const [landedId,setLandedId] = React.useState(null); // sesión recién soltada (animación de aterrizaje)
   const [vw,setVw] = React.useState(()=>typeof window!=="undefined"?window.innerWidth:390);
+  const DOCK_W = 440; // ancho de la ficha acoplada (iPad en horizontal)
   const [vh,setVh] = React.useState(()=>typeof window!=="undefined"?window.innerHeight:780);
   React.useEffect(()=>{ const f=()=>{ setVw(window.innerWidth); setVh(window.visualViewport?window.visualViewport.height:window.innerHeight); };
     window.addEventListener("resize",f); window.addEventListener("orientationchange",f); if(window.visualViewport) window.visualViewport.addEventListener("resize",f);
@@ -740,6 +824,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     .sort((a,b)=>a.days-b.days || String(a.time).localeCompare(String(b.time)));
   const sessionReminders = allSessionReminders.filter(r=>!dismissed[alertKey(r)]);
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
+  // iPad en horizontal: la ficha / el entreno se acoplan a la derecha (sin tapar la agenda).
+  const canDock = vw>=1100;
+  const docked = canDock && !!(quickView||execData);
   // Lista de espera con hueco libre (para avisar al cliente).
   const allFreedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
     const taken=sessions.filter(s=>s.date===x.date&&s.time===x.time).length;
@@ -1078,22 +1165,48 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
 
   return (
-    <div style={{minHeight:"100vh"}}>
+    <div style={{minHeight:"100vh"}} className={docked?"has-dock":""}>
+      {/* Barra lateral (iPad en horizontal / pantallas anchas) */}
+      <aside className="ipad-side">
+        <div style={{display:"flex",alignItems:"center",gap:8,padding:"0 6px 16px"}}>
+          <Ico k="logo" size={30}/>
+          <span className="mono" style={{fontSize:15,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</span>
+        </div>
+        {[["dashboard","home","Inicio"],["schedule","agenda","Agenda"],["clients","clients","Clientes"],["programming","program","Programa"],["income","money","Finanzas"],["reminders","bell","Alertas",reminders.length],["forum","forum","Foro"]].map(([id,ic,l,n])=>(
+          <button key={id} className={"nav"+(view===id?" on":"")} onClick={()=>setView(id)} style={{marginBottom:3}}>
+            <Ico k={ic} size={26}/><span>{l}</span>{n>0&&<span className="cnt">{n}</span>}
+          </button>
+        ))}
+        <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",margin:"18px 8px 6px"}}>HOY · {todaySessions.length} SESIÓN{todaySessions.length===1?"":"ES"}</div>
+        <div style={{display:"flex",flexDirection:"column",gap:4}}>
+          {todaySessions.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"2px 8px"}}>Sin sesiones hoy</div>}
+          {[...todaySessions].sort((a,b)=>String(a.time).localeCompare(String(b.time))).slice(0,12).map(s=>{ const c=clients.find(x=>x.id===s.client_id); if(!c) return null; const done=s.status==="completed";
+            return <button key={s.id} onClick={()=>goToPerson(s,c)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",border:`1px solid ${quickView&&quickView.id===c.id?"#bcd3ee":"transparent"}`,background:quickView&&quickView.id===c.id?"#eef4fc":"none",borderRadius:9,padding:"6px 8px"}}>
+              <span className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",width:38,flexShrink:0}}>{s.time}</span>
+              <span style={{width:8,height:8,borderRadius:4,background:done?"#16a34a":c.color,flexShrink:0}}/>
+              <span style={{fontSize:13,fontWeight:600,color:done?"#16a34a":"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done?"✓ ":""}{c.name}</span>
+            </button>; })}
+        </div>
+        <div style={{marginTop:"auto",paddingTop:14,display:"flex",gap:8}}>
+          <button className="btn wa" style={{flex:1,fontSize:12,justifyContent:"center"}} onClick={()=>setShowBulkWA(true)}><Ico k="phone" size={18}/> WA masivo</button>
+          <button className="btn ghost" style={{fontSize:12,display:"inline-flex",alignItems:"center"}} onClick={onLogout} title="Salir"><Ico k="door" size={18}/></button>
+        </div>
+      </aside>
       {/* Mobile top bar */}
       <div className="mobile-topbar">
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:18}}>🏋️</span>
+          <Ico k="logo" size={26}/>
           <span className="mono" style={{fontSize:14,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</span>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button className="btn wa" style={{fontSize:11,padding:"7px 11px"}} onClick={()=>setShowBulkWA(true)}>📱</button>
-          <button className="btn ghost" style={{fontSize:11,padding:"7px 11px"}} onClick={onLogout}>⏏</button>
+          <button className="btn wa" style={{fontSize:11,padding:"6px 10px",display:"inline-flex",alignItems:"center"}} onClick={()=>setShowBulkWA(true)} title="WhatsApp masivo"><Ico k="phone" size={18}/></button>
+          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",display:"inline-flex",alignItems:"center"}} onClick={onLogout} title="Salir"><Ico k="door" size={18}/></button>
         </div>
       </div>
 
       {/* Secondary nav tabs */}
       {["forum","reminders","income"].includes(view)&&(
-        <div style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
+        <div className="admin-sub" style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
           {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Finanzas"]].map(([id,label])=>(
             <button key={id} className={"tab"+(view===id?" on":"")} onClick={()=>setView(id)} style={{flexShrink:0,fontSize:12}}>{label}</button>
           ))}
@@ -1104,14 +1217,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Bottom navigation - mobile only */}
       <nav className="bottom-nav">
         {[
-          {id:"dashboard",icon:"🏠",label:"Inicio"},
-          {id:"clients",icon:"👥",label:"Clientes"},
-          {id:"schedule",icon:"📅",label:"Agenda"},
-          {id:"programming",icon:"📊",label:"Programa"},
+          {id:"dashboard",icon:"home",label:"Inicio"},
+          {id:"clients",icon:"clients",label:"Clientes"},
+          {id:"schedule",icon:"agenda",label:"Agenda"},
+          {id:"programming",icon:"program",label:"Programa"},
+          {id:"income",icon:"money",label:"Finanzas",tab:true},
+          {id:"reminders",icon:"bell",label:"Alertas",tab:true,count:reminders.length},
         ].map(item=>(
-          <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")} onClick={()=>setView(item.id)}>
+          <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")+(item.tab?" tab-only":"")} onClick={()=>setView(item.id)}>
             <span className="bnav-icon">
-              {item.icon}
+              <Ico k={item.icon} size={28}/>
               {item.count>0&&<span className="bnav-badge">{item.count}</span>}
             </span>
             <span>{item.label}</span>
@@ -1123,7 +1238,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       {/* ── AGENDA A PANTALLA COMPLETA (día / semana sin scroll) ── */}
       {fitMode&&view==="schedule"&&(schedView==="day"||schedView==="week")&&(()=>{
-        const week=schedView==="week", W=vw, low=vh<500, headH=low?38:46, availH=Math.max(200,vh-headH-(low?4:10));
+        const week=schedView==="week", W=vw-(docked?DOCK_W:0), low=vh<500, headH=low?38:46, availH=Math.max(200,vh-headH-(low?4:10));
         const shift=(dir)=>{ const d=new Date(activeDay+"T12:00:00"); d.setDate(d.getDate()+(week?7:1)*dir); setActiveDay(d.toISOString().split("T")[0]); };
         const lbl=week?(()=>{ const wd=getWeekDays(mondayOfDate(activeDay)).slice(0,5); const o={day:"numeric",month:"short"}; return `${new Date(wd[0]+"T12:00:00").toLocaleDateString("es-ES",o)} — ${new Date(wd[4]+"T12:00:00").toLocaleDateString("es-ES",o)}`; })()
           :new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
@@ -1247,7 +1362,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           }
         }
         return(
-          <div data-fit="1" style={{position:"fixed",left:0,right:0,top:0,height:vh,zIndex:150,background:"#eef1f7",display:"flex",flexDirection:"column",padding:"0 6px",boxSizing:"border-box"}}
+          <div data-fit="1" style={{position:"fixed",left:0,right:docked?DOCK_W:0,top:0,height:vh,zIndex:150,background:"#eef1f7",display:"flex",flexDirection:"column",padding:"0 6px",boxSizing:"border-box"}}
             onTouchStart={e=>{ const t=e.touches[0]; fitSwipe.current={x:t.clientX,y:t.clientY,ts:Date.now()}; }}
             onTouchEnd={e=>{ const st=fitSwipe.current; fitSwipe.current=null; if(!st||dragRef.current||justDragged.current) return; const t=e.changedTouches[0]; const dx=t.clientX-st.x, dy=t.clientY-st.y;
               if(Math.abs(dx)>70&&Math.abs(dy)<60&&Date.now()-st.ts<700) shift(dx<0?1:-1); }}>
@@ -1276,29 +1391,31 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
 
       {/* Content */}
-      <div style={{padding:"14px 14px 80px",minHeight:"100vh",background:"#eef1f7"}} className="fade admin-content">
+      <div style={{padding:"14px 14px 80px",minHeight:"100vh",background:"#eef1f7"}} className="view3d admin-content" key={view}>
 
         {/* DASHBOARD */}
         {view==="dashboard"&&(
           <div>
             <div style={{marginBottom:24}}>
-              <h1 className="mono" style={{fontSize:20,fontWeight:700}}>{GYM_NAME} — Dashboard</h1>
+              <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="home" size={32}/>{GYM_NAME} — Dashboard</h1>
               <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+            <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
-                {label:"Clientes",val:clients.length,color:"#0284c7"},
-                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,color:"#16a34a"},
-                {label:"Alertas",val:reminders.length,color:"#ca8a04",go:"reminders"},
-                {label:"Sesiones hoy",val:todaySessions.length,color:"#a78bfa"},
-                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a",go:"income"},
+                {label:"Clientes",val:clients.length,ico:"clients",go:"clients"},
+                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,ico:"check"},
+                {label:"Alertas",val:reminders.length,ico:"bell",go:"reminders"},
+                {label:"Sesiones hoy",val:todaySessions.length,ico:"stopwatch",go:"schedule"},
+                {label:"Este mes",val:`${monthIncome}€`,ico:"moneybag",go:"income"},
               ].map(s=>(
-                <div key={s.label} className="card" onClick={s.go?()=>setView(s.go):undefined} style={s.go?{cursor:"pointer"}:undefined}>
-                  <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
-                  <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
+                <div key={s.label} className={"card"+(s.go?" tilt":"")} onClick={s.go?()=>setView(s.go):undefined} style={{padding:"12px 14px",...(s.go?{cursor:"pointer"}:{})}}>
+                  <Ico k={s.ico} size={30}/>
+                  <div style={{fontSize:22,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1.1}}>{s.val}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2,fontWeight:600}}>{s.label}</div>
                 </div>
               ))}
             </div>
+            <div className="dash-cols">
             {/* ── ACCESO DIRECTO A FINANZAS ── */}
             {(()=>{
               const ppS=(c)=>{ const t=parseInt(c&&c.total_sessions)||0; return t>0?(parseFloat(c.payment_amount)||0)/t:0; };
@@ -1310,8 +1427,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               const porHora=horas?gen/horas:0;
               const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
               return(
-                <div className="card" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
-                  <div style={{fontSize:28,flexShrink:0}}>💶</div>
+                <div className="card dash-fin tilt" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
+                  <Ico k="money" size={38}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
                     <div style={{fontSize:12,color:"#475569",marginTop:2}}>{lbl} <b style={{color:"#0f172a"}}>{eur(porHora)}/hora</b> · {eur(gen)} generados · {horas} h de clase</div>
@@ -1322,17 +1439,17 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               );
             })()}
             {/* ── RESUMEN DEL DÍA (protagonista) ── */}
-            <div className="card" style={{marginBottom:14,padding:0,overflow:"hidden"}}>
+            <div className="card dash-hoy" style={{marginBottom:14,padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
                 <div>
-                  <h3 style={{fontSize:15,fontWeight:800}}>Hoy · {todaySessions.length} sesión{todaySessions.length===1?"":"es"}</h3>
+                  <h3 style={{fontSize:15,fontWeight:800,display:"flex",alignItems:"center",gap:8}}><Ico k="calendar" size={24}/>Hoy · {todaySessions.length} sesión{todaySessions.length===1?"":"es"}</h3>
                   <div style={{fontSize:11,color:"#94a3b8",marginTop:2,textTransform:"capitalize"}}>{fmtLong(TODAY)}</div>
                 </div>
                 <button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>{setView("schedule");setShowNS(true);}}>+ Nueva</button>
               </div>
               {todaySessions.length===0
                 ?<div style={{textAlign:"center",padding:"40px 20px",color:"#94a3b8"}}>
-                  <div style={{fontSize:34,marginBottom:10}}>🗓️</div>
+                  <div style={{marginBottom:10}}><Ico k="calendar" size={64} className="float3d"/></div>
                   <div style={{fontSize:14,fontWeight:700,color:"#64748b",marginBottom:4}}>Sin sesiones hoy</div>
                   <div style={{fontSize:12}}>Toca <b style={{color:"#0284c7"}}>+ Nueva</b> o ve a la Agenda</div>
                 </div>
@@ -1387,14 +1504,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
 
             {/* ── ALERTAS (qué ocurre) ── */}
-            <div className="card" style={{padding:0,overflow:"hidden"}}>
+            <div className="card dash-ale" style={{padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
-                <div><h3 style={{fontSize:15,fontWeight:800}}>🔔 Alertas {reminders.length>0&&<span style={{fontSize:12,color:"#dc2626"}}>({reminders.length})</span>}</h3>{reminders.length>0&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Desliza una alerta a un lado para quitarla</div>}</div>
+                <div><h3 style={{fontSize:15,fontWeight:800,display:"flex",alignItems:"center",gap:8}}><Ico k="bell" size={24}/>Alertas {reminders.length>0&&<span style={{fontSize:12,color:"#dc2626"}}>({reminders.length})</span>}</h3>{reminders.length>0&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Desliza una alerta a un lado para quitarla</div>}</div>
                 {reminders.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>setView("reminders")}>Ver todas →</button>}
               </div>
               {reminders.length===0
                 ?<div style={{textAlign:"center",padding:"28px 20px"}}>
-                  <div style={{fontSize:28,marginBottom:6}}>✅</div>
+                  <div style={{marginBottom:6}}><Ico k="check" size={52} className="float3d"/></div>
                   <div style={{fontSize:13,fontWeight:700,color:"#16a34a"}}>Todo al día</div>
                 </div>
                 :reminders.slice(0,6).map((r,i)=>{
@@ -1424,6 +1541,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <span style={{fontSize:18,color:"#cbd5e1"}}>›</span>
                 </div>
               )}
+            </div>
             </div>
           </div>
         )}
@@ -1494,7 +1612,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="clients"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <div><h1 className="mono" style={{fontSize:20,fontWeight:700}}>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones${pend?` · ${pend} pendientes`:""}`:"";})()}</p></div>
+              <div><h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="clients" size={32}/>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones${pend?` · ${pend} pendientes`:""}`:"";})()}</p></div>
               <div style={{display:"flex",gap:8}}>
                 <button className="btn ghost" style={{fontWeight:700,position:"relative"}} onClick={()=>setShowLeads(true)}>📋 Valoraciones{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return pend?<span style={{position:"absolute",top:-6,right:-6,minWidth:18,height:18,borderRadius:9,background:"#dc2626",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{pend}</span>:null;})()}</button>
                 <button className="btn sky" onClick={()=>setShowNC(true)}>+ Nuevo</button>
@@ -1507,7 +1625,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const cHist=history.filter(h=>h.client_id===c.id);
                 const streak=calcStreak(cHist);
                 return(
-                  <div key={c.id} className="card" style={{cursor:"pointer",transition:"all .2s",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
+                  <div key={c.id} className={"card"+(open?"":" tilt")} style={{cursor:"pointer",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                       <div style={{display:"flex",gap:11,alignItems:"center"}}>
                         <div className="ring" style={{width:42,height:42,background:c.color+"18",color:c.color,border:`1.5px solid ${c.color}35`,fontSize:13}}>{ini(c.name)}</div>
@@ -1620,7 +1738,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           <div onTouchStart={onSchedTouchStart} onTouchEnd={onSchedTouchEnd}>
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <h1 className="mono" style={{fontSize:18,fontWeight:700}}>Agenda</h1>
+              <h1 className="mono" style={{fontSize:18,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="agenda" size={30}/>Agenda</h1>
               <div style={{display:"flex",gap:8}}>
                 <button className="btn ghost" style={{fontSize:12,padding:"8px 12px"}} onClick={()=>setShowSched(true)}>⚙️ Horario</button>
                 <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
@@ -1700,7 +1818,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const wknd=isWeekend(activeDay);
                 return(
                   <div className="card swipe" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,textAlign:"center",height:"calc(100dvh - 300px)",minHeight:300,maxHeight:660}}>
-                    <div style={{fontSize:42}}>{wknd?"🌴":"🚫"}</div>
+                    <div>{wknd?<Ico k="palm" size={84} className="float3d"/>:<span style={{fontSize:42}}>🚫</span>}</div>
                     <div style={{fontSize:16,fontWeight:700,color:wknd?"#16a34a":"#dc2626"}}>{wknd?"Fin de semana — libre":"Día no disponible"}</div>
                     <div style={{fontSize:12,color:"#64748b",maxWidth:240}}>{wknd?"No hay clases los sábados ni domingos.":"Este día está bloqueado (vacaciones)."}</div>
                     {!wknd&&<button className="btn ghost" style={{padding:"8px 14px",fontSize:12}} onClick={()=>toggleBlockDay(activeDay)}>Desbloquear día</button>}
@@ -1822,7 +1940,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
                     <button className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setWeekBig(v=>!v)}>{weekBig?"🔽 Vista compacta":"⛶ Vista amplia"}</button>
                     <button className="btn ghost" style={{fontSize:11,padding:"6px 11px",color:"#0284c7"}} onClick={()=>setShowValoracion({date:activeDay})}>📋 + Valoración</button>
-                    <span style={{fontSize:10,color:"#94a3b8"}}>🔄 Gira el móvil para verla más ancha</span>
+                    {vw<768&&<span style={{fontSize:10,color:"#94a3b8"}}>🔄 Gira el móvil para verla más ancha</span>}
                   </div>
                   {/* Header row - days */}
                   <div style={{display:"grid",gridTemplateColumns:cols,gap:2}}>
@@ -2044,7 +2162,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="reminders"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Alertas</h1>
+              <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="bell" size={32}/>Alertas</h1>
               <button className="btn wa" onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,margin:"-12px 0 14px",flexWrap:"wrap"}}>
@@ -2168,7 +2286,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView docked={canDock} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
@@ -2181,7 +2299,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
       {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
-      {execData&&<SessionExecModal client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
+      {execData&&<SessionExecModal docked={canDock&&!quickView} client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} onClose={()=>setProgData(null)}/>}
@@ -2688,7 +2806,7 @@ function FinanceView({clients,sessions,history,payments}) {
   const DOW=["D","L","M","X","J","V","S"];
   return(
     <div>
-      <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:12}}>Finanzas</h1>
+      <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:12,display:"flex",alignItems:"center",gap:10}}><Ico k="money" size={32}/>Finanzas</h1>
       {/* Filtros: periodo + navegación */}
       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
         <div style={{display:"flex",background:"#e6ebf3",borderRadius:10,padding:3}}>
@@ -2979,7 +3097,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const cwOfSel=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const pickIt=async(it)=>{ const p=picker; setPicker(null); setBusy(true);
     if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
-    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
+    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
     await loadAll(); setBusy(false); };
   const finalizarPersona=async()=>{ if(!asig) return; setBusy(true); await sb.from("assigned_sessions").update({status:"done"}).eq("id",asig.id); await loadAll(); setBusy(false); notify(`${selClient.name.split(" ")[0]}: entreno registrado ✓`); };
   const cerrar=async()=>{ setBusy(true); await loadAll(); setBusy(false); onClose(); };
@@ -3023,7 +3141,9 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
             </button>
           ))}
               {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
-              {exs.map(ex=>{ const done=valOf(ex,"done"); return(
+              {exs.map(ex=>{ const done=valOf(ex,"done"); if(isIsoRow(ex)) return(
+                <IsoLogger key={ex.id+"|"+ex.exercise_name} ex={ex} clientId={sel} clientWeights={clientWeights} notify={notify} onDone={(d)=>setVal(ex,"done",d)} onSwap={()=>setPicker({mode:"swap",ex})}/>
+              ); return(
                 <div key={ex.id} style={{background:done?"#eef8dd":"#f8fafc",border:`1px solid ${done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                     <div style={{minWidth:0}}>
@@ -3245,13 +3365,14 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
   const [q,setQ]=React.useState("");
   const [mus,setMus]=React.useState("");
   const [onlyMine,setOnlyMine]=React.useState(true);
+  const [onlyIso,setOnlyIso]=React.useState(false);
   const [eqF,setEqF]=React.useState("");
   const [creating,setCreating]=React.useState(false);
   const [nw,setNw]=React.useState({name:"",muscles:[],equip:"",sets:3,reps:"10-12",rest:60,notes:"",cx:0});
   const [busy,setBusy]=React.useState(false);
   const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const subs=current?substitutesFor(current,10):[];
-  const list=exerciseCatalog().filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!mus||musclesOf(x.name).includes(mus))&&(!onlyMine||equipOk(x.name))&&(!eqF||equipmentOf(x.name)===eqF))
+  const list=exerciseCatalog().filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!mus||musclesOf(x.name).includes(mus))&&(!onlyMine||equipOk(x.name))&&(!eqF||equipmentOf(x.name)===eqF)&&(!onlyIso||isIsoRow({exercise_name:x.name,reps:x.reps})))
     .sort((a,b)=>(b.custom-a.custom)||a.name.localeCompare(b.name)).slice(0,80);
   const Row=({x,hint})=>(
     <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
@@ -3292,6 +3413,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
           </div>
           <div style={{display:"flex",gap:6,alignItems:"center",margin:"4px 0 8px",flexWrap:"wrap",flexShrink:0}}>
             <label style={{fontSize:11,fontWeight:700,color:"#475569",display:"flex",alignItems:"center",gap:5,cursor:"pointer"}}><input type="checkbox" checked={onlyMine} onChange={e=>setOnlyMine(e.target.checked)}/> Solo mi material</label>
+            {chip(onlyIso,"⏸️ Isométricos",()=>setOnlyIso(o=>!o),"_iso")}
             <select value={eqF} onChange={e=>setEqF(e.target.value)} style={{fontSize:11,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:8,padding:"4px 6px",background:"#fff",color:"#475569"}}>
               <option value="">Cualquier material</option>
               {EQUIP_KEYS.concat(["otros"]).map(k=><option key={k} value={k}>{EQUIP_LABEL[k]||k}</option>)}
@@ -3362,6 +3484,9 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
   const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
   const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
+  // Isométrico: se prescribe por segundos (y se registra tiempo, carga y dolor al ejecutarlo).
+  const toggleIso = (ex)=>w(async()=>{ const on=ex.protocol==="isometrico"; const upd=on?{protocol:""}:{protocol:"isometrico",...(secsOf(ex.reps)!=null&&/s|seg/i.test(String(ex.reps))?{}:{reps:"30s"})};
+    await sb.from("assigned_exercises").update(upd).eq("id",ex.id); notify(on?"Ya no es isométrico":"Isométrico ⏸️ (por segundos) ✓"); });
   // ── WOD: bloques metabólicos editables y orden de ejercicios ──
   const blocks = wodBlocks(exs);
   const inBlock = new Set(blocks.flatMap(b=>b.rows.map(r=>r.id)));
@@ -3380,7 +3505,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
   const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
-  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:wOf(it.name),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
+  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
   const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
@@ -3424,14 +3549,15 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                   </div>
                   <button onClick={()=>setPicker({mode:"swap",ex})} disabled={saving} title="Cambiar ejercicio (sustitutos, músculo, material o crear uno)" style={{flex:1,minWidth:0,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 9px"}}>
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
-                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span></span>
+                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
                   </button>
+                  <button className="btn ghost" title={ex.protocol==="isometrico"?"Quitar isométrico":"Hacer isométrico (por segundos)"} disabled={saving} onClick={()=>toggleIso(ex)} style={{padding:"6px 8px",fontSize:12,fontWeight:800,...(ex.protocol==="isometrico"?{background:"#e0ecfb",border:"1px solid #93c5fd",color:"#0369a1"}:{})}}>⏸️</button>
                   <button className="btn danger" style={{padding:"6px 9px"}} disabled={saving} onClick={()=>remove(ex)}>✕</button>
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                   <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.sets} onBlur={e=>setField(ex,"sets",parseInt(e.target.value)||null)}/></div>
-                  <div><span className="lbl" style={{fontSize:9}}>REPS</span><input className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
-                  <div><span className="lbl" style={{fontSize:9}}>PESO (kg)</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"SEGUNDOS":"REPS"}</span><input key={ex.id+"|"+(ex.reps||"")} className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} placeholder={isIsoRow(ex)?"45s":""} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"CARGA / LASTRE (kg)":"PESO (kg)"}</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":isIsoRow(ex)?"PC":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>DESC. (s)</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.rest_seconds??""} onBlur={e=>setField(ex,"rest_seconds",parseInt(e.target.value)||null)}/></div>
                 </div>
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota / adaptación (p. ej. molestia rodilla → rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
@@ -3483,7 +3609,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -3492,8 +3618,9 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
   const auto = (!sess && blk) ? autoRoutineFor(client,date,sessions,annualBlocks) : null;
   const cw = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id && (w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   return(
-    <div className="ovl" onClick={onClose}>
+    <div className={"ovl"+(docked?" dock":"")} onClick={docked?undefined:onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
+        {docked&&<button className="btn ghost" onClick={onClose} title="Cerrar ficha" style={{float:"right",padding:"6px 11px",fontSize:14,marginLeft:8}}>✕</button>}
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:16}}>
           {client.avatar_url
             ?<img src={client.avatar_url} style={{width:48,height:48,borderRadius:"50%",objectFit:"cover",border:`2px solid ${client.color}55`}}/>
@@ -3995,8 +4122,97 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   );
 }
 
+// ── REGISTRO DE UN ISOMÉTRICO (segundos, tipo de carga y dolor EVA 0-10) ──
+// Se guarda solo al cambiar cada campo. Sin docs/isometricos.sql se guardan
+// segundos y kg/goma, pero no el dolor ni el tipo de carga (avisa una vez).
+let ISO_SQL_WARNED = false;
+const painColor = (p) => p==null?"#94a3b8":p<=3?"#15803d":p<=6?"#b45309":"#b91c1c";
+function IsoLogger({ex,clientId,clientWeights,notify,onDone,onSwap}){
+  const init=()=>{ const hasKg=ex.actual_weight!=null||ex.prescribed_weight!=null;
+    const mode=ex.load_type||(ex.load_band?"goma":(hasKg?(isBodyweight(ex.exercise_name)?"pckg":"kg"):"pc"));
+    const s0=secsOf(ex.actual_reps), s1=secsOf(ex.reps);
+    return {secs:s0!=null?String(s0):(s1!=null?String(s1):""), mode, kg:ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:""), band:ex.load_band||"", pain:ex.pain!=null?ex.pain:null, done:!!ex.done}; };
+  const [v,setV]=React.useState(init);
+  React.useEffect(()=>{ setV(init()); },[ex.id,ex.exercise_name]);
+  const target=secsOf(ex.reps);
+  const kgOf=(x)=>(x.mode==="kg"||x.mode==="pckg")&&x.kg!==""&&x.kg!=null?parseFloat(String(x.kg).replace(",",".")):null;
+  const payload=(x)=>({actual_reps:x.secs!==""&&x.secs!=null?`${x.secs}s`:null, actual_weight:kgOf(x), load_band:x.mode==="goma"?(x.band||null):null, load_type:x.mode, pain:x.pain});
+  const save=async(x,extra)=>{
+    const p={...payload(x),...(extra||{})};
+    let {error}=await sb.from("assigned_exercises").update(p).eq("id",ex.id);
+    if(error){ const {load_type,pain,...rest}=p; const r=await sb.from("assigned_exercises").update(rest).eq("id",ex.id); error=r.error;
+      if(!error&&!ISO_SQL_WARNED){ ISO_SQL_WARNED=true; notify&&notify("Para guardar el dolor y el tipo de carga ejecuta docs/isometricos.sql","err"); } }
+    return !error;
+  };
+  const set=(patch,persist=true)=>{ const n={...v,...patch}; setV(n); if(persist) save(n); return n; };
+  // Cronómetro del mantenimiento: cuenta hasta el objetivo (pitido) y apunta los segundos al parar.
+  const [t0,setT0]=React.useState(null), [el,setEl]=React.useState(0);
+  const ac=React.useRef(null), beeped=React.useRef(false);
+  const beep=(f=880,d=0.18)=>{ try{ const a=ac.current; if(!a) return; const o=a.createOscillator(), g=a.createGain(); o.frequency.value=f; g.gain.setValueAtTime(0.25,a.currentTime); g.gain.exponentialRampToValueAtTime(0.001,a.currentTime+d); o.connect(g); g.connect(a.destination); o.start(); o.stop(a.currentTime+d); }catch(e){} };
+  React.useEffect(()=>{ if(t0==null) return; const id=setInterval(()=>{ const s=(Date.now()-t0)/1000; setEl(s);
+    if(target&&!beeped.current&&s>=target){ beeped.current=true; beep(1046,0.5); } }, 200); return ()=>clearInterval(id); },[t0]);
+  const startStop=()=>{ if(t0==null){ try{ ac.current=ac.current||new (window.AudioContext||window.webkitAudioContext)(); }catch(e){} beeped.current=false; setEl(0); setT0(Date.now()); beep(660,0.12); }
+    else { const s=Math.round((Date.now()-t0)/1000); setT0(null); set({secs:String(s)}); } };
+  const toggle=async()=>{ const n={...v,done:!v.done}; setV(n);
+    const ok=await save(n,{done:n.done,done_at:n.done?new Date().toISOString():null});
+    if(!ok){ setV(v); notify&&notify("No se pudo guardar","err"); return; }
+    onDone&&onDone(n.done);
+    const kg=kgOf(n);
+    if(n.done&&kg!=null&&clientId){ await sb.from("client_weights").upsert({client_id:clientId,exercise_name:ex.exercise_name,weight:kg,updated_at:new Date().toISOString()},{onConflict:"client_id,exercise_name"}); }
+  };
+  const chip=(on,txt,onClick,key,col)=><button key={key} type="button" onClick={onClick} style={{flexShrink:0,fontSize:11,fontWeight:700,padding:"6px 9px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?(col||"#0284c7"):"#dbe2ec"}`,background:on?(col||"#0284c7"):"#fff",color:on?"#fff":"#475569"}}>{txt}</button>;
+  const hint=isoHint(ex.exercise_name);
+  const running=t0!=null, left=target?Math.max(0,target-el):null;
+  return(
+    <div data-iso={ex.exercise_name} style={{background:v.done?"#eef8dd":"#f8fafc",border:`1px solid ${v.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
+      <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:8}}>
+        <div style={{minWidth:0}}>
+          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{ex.exercise_name} {onSwap&&<button onClick={onSwap} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button>}</div>
+          <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap",marginTop:3}}>
+            <span style={{fontSize:9,fontWeight:800,color:"#0369a1",background:"#e0ecfb",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px"}}>⏸️ ISOMÉTRICO</span>
+            {hint&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 7px"}}>🩹 {hint}</span>}
+          </div>
+        </div>
+        <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap",textAlign:"right"}}>plan: {ex.sets?`${ex.sets}×`:""}{ex.reps||"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}</div>
+      </div>
+      <div style={{display:"flex",alignItems:"flex-end",gap:8,marginBottom:8}}>
+        <div style={{width:92}}>
+          <span className="lbl" style={{marginBottom:3}}>SEGUNDOS</span>
+          <input type="number" inputMode="numeric" className="inp" style={{padding:"8px 10px"}} value={v.secs} placeholder={target?String(target):"s"} onChange={e=>setV({...v,secs:e.target.value})} onBlur={()=>save(v)}/>
+        </div>
+        <button type="button" onClick={startStop} className={running?"btn sky":"btn ghost"} style={{flex:1,padding:"9px 10px",fontSize:13,justifyContent:"center",fontVariantNumeric:"tabular-nums"}} title="Cronómetro del mantenimiento">
+          {running?`■ ${Math.floor(el)}s${left!=null?(left>0?` · faltan ${Math.ceil(left)}`:" ✓"):""}`:`⏱ Cronometrar${target?` ${target}s`:""}`}
+        </button>
+        <button className={v.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} onClick={toggle} title="Hecho">{v.done?"✓":"○"}</button>
+      </div>
+      <span className="lbl" style={{marginBottom:4}}>CARGA</span>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:v.mode==="pc"?8:6}}>
+        {LOAD_TYPES.map(([k,l])=>chip(v.mode===k,l,()=>set({mode:k}),k))}
+      </div>
+      {(v.mode==="kg"||v.mode==="pckg")&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px",width:110}} value={v.kg} placeholder="kg" onChange={e=>setV({...v,kg:e.target.value})} onBlur={()=>save(v)}/>
+        <span style={{fontSize:11,color:"#64748b"}}>{v.mode==="pckg"?"kg de lastre sobre su peso corporal":"kg de carga externa"}</span>
+      </div>}
+      {v.mode==="goma"&&<div style={{display:"flex",gap:4,marginBottom:8}}>
+        {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(v.band).includes(k); return(
+          <button key={k} title={lbl} onClick={()=>set({band:toggleBandKey(v.band,k)})} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
+        );})}
+      </div>}
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
+        <span className="lbl" style={{marginBottom:0}}>DOLOR (EVA 0-10)</span>
+        <span style={{fontSize:11,fontWeight:800,color:painColor(v.pain)}}>{v.pain==null?"sin registrar":`${v.pain}/10`}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(11,1fr)",gap:3}}>
+        {Array.from({length:11},(_,i)=>{ const on=v.pain===i, col=painColor(i); return(
+          <button key={i} type="button" onClick={()=>set({pain:on?null:i})} style={{padding:"7px 0",borderRadius:7,fontSize:12,fontWeight:800,cursor:"pointer",border:`1px solid ${on?col:"#e6ebf3"}`,background:on?col:"#fff",color:on?"#fff":col}}>{i}</button>
+        );})}
+      </div>
+    </div>
+  );
+}
+
 // ── EJECUTAR SESIÓN (registro de cargas durante el entreno) ────────────────
-function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
+function SessionExecModal({client,date,assignedSessions,assignedExercises,clientWeights,docked,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const baseExs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
   const wods=wodBlocks(baseExs);
@@ -4037,7 +4253,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   const cwOf=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const swapRow=async(row,it)=>{ const pw=cwOf(it.name); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
     setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg"}:x)); notify("Ejercicio cambiado ✓"); };
-  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
+  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
     if(error||!data) return notify("No se pudo añadir","err");
     setRows(rs=>[...rs,{id:data.id,name:data.exercise_name,sets:data.sets,reps:data.reps,protocol:"",prescribed:pw,w:pw!=null?pw:"",r:data.reps||"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg",done:false}]); notify("Ejercicio añadido ✓"); };
   const finalizar=async()=>{
@@ -4048,8 +4264,9 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
 
   const hechos=rows.filter(r=>r.done).length;
   return(
-    <div className="ovl" onClick={onClose}>
+    <div className={"ovl"+(docked?" dock":"")} onClick={docked?undefined:onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
+        {docked&&<button className="btn ghost" onClick={onClose} title="Cerrar" style={{float:"right",padding:"6px 11px",fontSize:14,marginLeft:8}}>✕</button>}
         <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
           {client.avatar_url
             ?<img src={client.avatar_url} style={{width:44,height:44,borderRadius:"50%",objectFit:"cover"}}/>
@@ -4074,7 +4291,10 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
         {!sess||rows.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
-            {rows.map(row=>(
+            {rows.map(row=>isIsoRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})
+              ?<IsoLogger key={row.id+"|"+row.name} ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} clientWeights={clientWeights} notify={notify}
+                  onDone={(d)=>setField(row.id,"done",d)} onSwap={()=>setPicker({mode:"swap",row})}/>
+              :(
               <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                   <div style={{minWidth:0}}>
@@ -4411,6 +4631,98 @@ function WorkEvolution({client,history,assignedSessions,assignedExercises,annual
   );
 }
 
+// ── EVOLUCIÓN DE READAPTACIÓN (isométricos: tiempo, carga y dolor) ────────
+function isoHistory(client, assignedSessions, assignedExercises){
+  const ses=(assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date&&a.date<=TODAY);
+  const dateOf=Object.fromEntries(ses.map(a=>[a.id,a.date]));
+  const g={};
+  (assignedExercises||[]).forEach(e=>{
+    const d=dateOf[e.session_id]; if(!d||!isIsoRow(e)) return;
+    if(!(e.done||e.actual_reps!=null||e.pain!=null)) return; // solo lo realizado/registrado
+    const secs=secsOf(e.actual_reps)??secsOf(e.reps), sets=parseInt(e.sets)||1;
+    const k=e.exercise_name; (g[k]=g[k]||[]).push({date:d,sets,secs,tut:secs!=null?sets*secs:null,kg:e.actual_weight!=null?Number(e.actual_weight):null,load:isoLoadTxt(e),pain:e.pain!=null?Number(e.pain):null,type:e.load_type||(e.load_band?"goma":(e.actual_weight!=null?"kg":"pc"))});
+  });
+  return Object.entries(g).map(([name,pts])=>({name,hint:isoHint(name),pts:pts.sort((a,b)=>a.date.localeCompare(b.date))}))
+    .sort((a,b)=>b.pts[b.pts.length-1].date.localeCompare(a.pts[a.pts.length-1].date));
+}
+// Mini gráfico de una sola serie (no lleva leyenda: el título la nombra).
+function MiniLine({title,pts,yMax,fmt,dotColor,lineColor="#0284c7"}){
+  const W=150,H=64,pl=4,pr=26,pt=10,pb=12;
+  const vals=pts.filter(p=>p.v!=null); if(!vals.length) return null;
+  const max=yMax!=null?yMax:Math.max(1,...vals.map(p=>p.v))*1.15, n=pts.length;
+  const X=(i)=>pl+(n===1?(W-pl-pr)/2:i*(W-pl-pr)/(n-1)), Y=(v)=>pt+(H-pt-pb)*(1-v/max);
+  const path=pts.map((p,i)=>p.v==null?null:`${X(i).toFixed(1)},${Y(p.v).toFixed(1)}`).filter(Boolean).join(" ");
+  const last=[...pts].reverse().find(p=>p.v!=null), li=pts.lastIndexOf(last);
+  return(
+    <div style={{background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"6px 8px",minWidth:0}}>
+      <div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>{title}</div>
+      <svg viewBox={`0 0 ${W} ${H}`} style={{width:"100%",height:"auto",display:"block"}} role="img" aria-label={title}>
+        <line x1={pl} x2={W-pr} y1={H-pb} y2={H-pb} stroke="#c3c2b7" strokeWidth="1"/>
+        {vals.length>1&&<polyline points={path} fill="none" stroke={lineColor} strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"/>}
+        {pts.map((p,i)=>p.v==null?null:<circle key={i} cx={X(i)} cy={Y(p.v)} r="4" fill={dotColor?dotColor(p.v):lineColor} stroke="#fff" strokeWidth="2"><title>{`${fmtDate(p.date)}: ${fmt(p.v)}`}</title></circle>)}
+        <text x={X(li)+7} y={Y(last.v)+3} fontSize="10" fontWeight="800" fill="#0f172a">{fmt(last.v)}</text>
+        <text x={pl} y={H-1} fontSize="8" fill="#898781">{new Date(pts[0].date+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</text>
+        {n>1&&<text x={W-pr} y={H-1} fontSize="8" textAnchor="end" fill="#898781">{new Date(pts[n-1].date+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</text>}
+      </svg>
+    </div>
+  );
+}
+function IsoEvolution({client,assignedSessions,assignedExercises}){
+  const groups=React.useMemo(()=>isoHistory(client,assignedSessions,assignedExercises),[client&&client.id,assignedSessions,assignedExercises]);
+  const [hint,setHint]=React.useState("");
+  const [open,setOpen]=React.useState(null);
+  if(!groups.length) return <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",lineHeight:1.5}}>
+    Aún no hay isométricos registrados. Añade ejercicios de <b>Isométricos / Readaptación</b> (o marca cualquiera con <b>⏸️</b> al editar la sesión) y, al ejecutar, apunta los <b>segundos</b>, la <b>carga</b> y el <b>dolor 0-10</b>. Aquí verás su evolución.
+  </div>;
+  const hints=[...new Set(groups.map(g=>g.hint||"Otros"))];
+  const list=groups.filter(g=>!hint||(g.hint||"Otros")===hint);
+  const pct=(a,b)=>a&&b!=null?Math.round((b/a-1)*100):null;
+  return(
+    <div>
+      <span className="lbl">🩹 EN SEGUIMIENTO</span>
+      <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:10}}>
+        {[["","Todo"],...hints.map(h=>[h,h])].map(([k,l])=><button key={k||"_"} onClick={()=>setHint(k)} style={{fontSize:11,fontWeight:700,padding:"5px 10px",borderRadius:20,cursor:"pointer",border:`1px solid ${hint===k?"#7c3aed":"#e0d2f5"}`,background:hint===k?"#7c3aed":"#fff",color:hint===k?"#fff":"#6d28d9"}}>{l}{k?` · ${groups.filter(g=>(g.hint||"Otros")===k).length}`:""}</button>)}
+      </div>
+      <div style={{display:"flex",flexDirection:"column",gap:10}}>
+        {list.map(g=>{ const f=g.pts[0], l=g.pts[g.pts.length-1];
+          const firstPain=g.pts.find(p=>p.pain!=null), lastPain=[...g.pts].reverse().find(p=>p.pain!=null);
+          const hasKg=g.pts.some(p=>p.kg!=null);
+          const dS=pct(f.secs,l.secs);
+          return(
+          <div key={g.name} style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:12,padding:"10px 12px"}}>
+            <div style={{display:"flex",justifyContent:"space-between",gap:8,alignItems:"flex-start"}}>
+              <div style={{minWidth:0}}>
+                <div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{g.name}</div>
+                <div style={{fontSize:10,color:"#7c3aed",fontWeight:700,marginTop:1}}>{g.hint?`🩹 ${g.hint} · `:""}{g.pts.length} {g.pts.length!==1?"sesiones":"sesión"}</div>
+              </div>
+              <div style={{textAlign:"right",flexShrink:0}}>
+                <div className="mono" style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{l.sets}×{l.secs!=null?`${l.secs}s`:"—"}</div>
+                <div style={{fontSize:10,color:"#64748b"}}>{l.load}{l.pain!=null?<> · dolor <b style={{color:painColor(l.pain)}}>{l.pain}/10</b></>:""}</div>
+              </div>
+            </div>
+            {g.pts.length>1&&<div style={{fontSize:11,color:"#475569",marginTop:6,lineHeight:1.5}}>
+              Desde el {fmtDate(f.date)}: tiempo <b>{f.secs??"—"}s → {l.secs??"—"}s</b>{dS!=null&&dS!==0?` (${dS>0?"+":""}${dS} %)`:""}
+              {firstPain&&lastPain&&firstPain!==lastPain?<> · dolor <b style={{color:painColor(firstPain.pain)}}>{firstPain.pain}</b> → <b style={{color:painColor(lastPain.pain)}}>{lastPain.pain}</b></>:""}
+              {f.load!==l.load?<> · carga {f.load} → <b>{l.load}</b></>:""}
+            </div>}
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(120px,1fr))",gap:6,marginTop:8}}>
+              <MiniLine title="Segundos por serie" pts={g.pts.map(p=>({date:p.date,v:p.secs}))} fmt={(v)=>`${Math.round(v)}s`}/>
+              <MiniLine title="Dolor (0-10)" pts={g.pts.map(p=>({date:p.date,v:p.pain}))} yMax={10} fmt={(v)=>String(v)} dotColor={painColor} lineColor="#94a3b8"/>
+              {hasKg&&<MiniLine title="Carga / lastre (kg)" pts={g.pts.map(p=>({date:p.date,v:p.kg}))} fmt={(v)=>`${v}`}/>}
+            </div>
+            <button className="btn ghost" style={{width:"100%",fontSize:11,padding:6,marginTop:8}} onClick={()=>setOpen(open===g.name?null:g.name)}>{open===g.name?"▲ Ocultar registros":"▼ Ver registros"}</button>
+            {open===g.name&&<div style={{marginTop:6,border:"1px solid #e6ebf3",borderRadius:9,overflow:"hidden",background:"#fff"}}>
+              {[...g.pts].reverse().map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:"1fr .9fr 1.3fr .7fr",gap:6,padding:"6px 9px",borderTop:i?"1px solid #eef1f7":"none",fontSize:11,fontVariantNumeric:"tabular-nums"}}>
+                <span style={{color:"#475569"}}>{fmtDate(p.date)}</span><span style={{fontWeight:700}}>{p.sets}×{p.secs!=null?`${p.secs}s`:"—"}</span><span>{p.load}</span><span style={{textAlign:"right",fontWeight:800,color:painColor(p.pain)}}>{p.pain!=null?`${p.pain}/10`:"—"}</span>
+              </div>)}
+            </div>}
+          </div>); })}
+      </div>
+      <div style={{fontSize:10,color:"#94a3b8",marginTop:10,lineHeight:1.4}}>Orientativo: la patología se deduce del ejercicio. El dolor se apunta al ejecutar cada isométrico (0 = nada, 10 = máximo).</div>
+    </div>
+  );
+}
+
 function Sparkline({pts,color}) {
   if(!pts||!pts.length) return null;
   const n=pts.length, min=Math.min(...pts), max=Math.max(...pts), rng=(max-min)||1;
@@ -4447,12 +4759,13 @@ function ProgressionModal({client,clientWeights,weightHistory,records,history,as
             ?<img src={client.avatar_url} style={{width:44,height:44,borderRadius:"50%",objectFit:"cover"}}/>
             :<div className="ring" style={{width:44,height:44,background:client.color+"20",color:client.color,fontSize:14}}>{ini(client.name)}</div>}
           <div><h2 className="mono" style={{fontSize:16,fontWeight:700}}>Progresión · {client.name}</h2>
-          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Trabajo total, cargas y marcas</div></div>
+          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Trabajo total, readaptación, cargas y marcas</div></div>
         </div>
         <div style={{display:"flex",gap:6,marginBottom:12}}>
-          {[["work","📊 Trabajo total"],["loads","🏋️ Cargas y marcas"]].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{flex:1,fontSize:12,fontWeight:700,padding:"8px 6px",borderRadius:10,cursor:"pointer",border:`1px solid ${tab===k?"#0284c7":"#dbe2ec"}`,background:tab===k?"#0284c7":"#fff",color:tab===k?"#fff":"#475569"}}>{l}</button>)}
+          {[["work","📊 Trabajo total"],["iso","🩹 Readaptación"],["loads","🏋️ Cargas"]].map(([k,l])=><button key={k} onClick={()=>setTab(k)} style={{flex:1,fontSize:12,fontWeight:700,padding:"8px 6px",borderRadius:10,cursor:"pointer",border:`1px solid ${tab===k?"#0284c7":"#dbe2ec"}`,background:tab===k?"#0284c7":"#fff",color:tab===k?"#fff":"#475569"}}>{l}</button>)}
         </div>
         {tab==="work"&&<div style={{maxHeight:"68vh",overflowY:"auto"}}><WorkEvolution client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks}/></div>}
+        {tab==="iso"&&<div style={{maxHeight:"68vh",overflowY:"auto"}}><IsoEvolution client={client} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/></div>}
         {tab==="loads"&&<>
 
         {names.length===0&&prs.length===0
@@ -6569,7 +6882,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
     series_planas:"Series planas",top_set_backoff:"Top Set + Back Off",
     ramp_up:"Ramp Up",amrap:"AMRAP",superset:"Superserie",
     drop_set:"Drop Set",rest_pause:"Rest Pause",cluster:"Cluster",
-    emom:"EMOM",leader:"LEADER",tabata:"TABATA"
+    emom:"EMOM",leader:"LEADER",tabata:"TABATA",isometrico:"Isométrico"
   };
 
   // Assign session to client
@@ -6661,7 +6974,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
-        <h1 className="mono" style={{fontSize:16,fontWeight:700}}>📊 Programación</h1>
+        <h1 className="mono" style={{fontSize:16,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="program" size={30}/>Programación</h1>
         {currentBlock&&<span className="pill" style={{background:(BLOCK_COLORS[currentBlock.type]||"#94a3b8")+"20",color:BLOCK_COLORS[currentBlock.type]||"#64748b",border:`1px solid ${(BLOCK_COLORS[currentBlock.type]||"#94a3b8")}30`,fontSize:11,whiteSpace:"nowrap"}}>Sem {currentWeek} · {currentBlock.name}</span>}
       </div>
 
@@ -7195,6 +7508,13 @@ const setCustomExercises = (list) => { const m={}; (list||[]).forEach(e=>{ if(!e
 const MUSCLES=["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Cuádriceps","Isquios","Glúteo","Aductores","Gemelo","Core","Lumbar","Cuerpo completo","Cardio","Movilidad"];
 // Músculos por nombre (el primero que coincide gana; el primer músculo es el principal).
 const MUSCLE_RULES=[
+  [/medio muslo|imtp/i,["Isquios","Glúteo","Cuádriceps"]],
+  [/aducci[oó]n|squeeze/i,["Aductores"]],
+  [/rotaci[oó]n (externa|interna) de hombro|manguito/i,["Hombro"]],
+  [/colgado pasivo|dead hang/i,["Espalda","Antebrazo"]],
+  [/extensi[oó]n lumbar/i,["Lumbar","Glúteo"]],
+  [/puente de isquios|curl femoral isom/i,["Isquios","Glúteo"]],
+  [/spanish squat|wall sit|sentadilla isom/i,["Cuádriceps","Glúteo"]],
   [/remo ergómetro|remo ergometro|remo \(máquina\)|remo \(maquina\)|assault|bicicleta|skierg|carrera|cinta|comba|sprint|intervalos|amrap|emom|tabata/i,["Cardio","Cuerpo completo"]],
   [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|círculos de hombro|circulos de hombro|activación de glúteo|activacion de gluteo|sentadilla profunda/i,["Movilidad"]],
   [/thruster|wall ball/i,["Cuádriceps","Glúteo","Hombro"]],
@@ -7220,7 +7540,7 @@ const MUSCLE_RULES=[
   [/remo/i,["Espalda","Bíceps"]],
   [/plancha|crunch|rueda|hollow|pallof|woodchop|russian|elevación de piernas|toes to bar|v-ups|dead bug|bird/i,["Core"]],
 ];
-const CAT_MUSCLES={"Sentadilla / Cuádriceps":["Cuádriceps","Glúteo"],"Bisagra / Posterior":["Isquios","Glúteo","Lumbar"],"Empuje horizontal (pecho)":["Pecho","Tríceps","Hombro"],"Empuje vertical (hombro)":["Hombro","Tríceps"],
+const CAT_MUSCLES={"Isométricos / Readaptación":["Core"],"Sentadilla / Cuádriceps":["Cuádriceps","Glúteo"],"Bisagra / Posterior":["Isquios","Glúteo","Lumbar"],"Empuje horizontal (pecho)":["Pecho","Tríceps","Hombro"],"Empuje vertical (hombro)":["Hombro","Tríceps"],
   "Tracción vertical (dorsal)":["Espalda","Bíceps"],"Tracción horizontal (espalda)":["Espalda","Bíceps"],"Brazos":["Bíceps","Tríceps"],"Core / Estabilidad":["Core"],"Olímpicos / Potencia":["Cuerpo completo"],
   "Gemelo / Antebrazo":["Gemelo","Antebrazo"],"Movilidad / Calentamiento":["Movilidad"],"Cardio / Metcon":["Cardio"]};
 const MUSCLE_CAT={"Pecho":"Empuje horizontal (pecho)","Espalda":"Tracción horizontal (espalda)","Hombro":"Empuje vertical (hombro)","Bíceps":"Brazos","Tríceps":"Brazos","Antebrazo":"Gemelo / Antebrazo","Cuádriceps":"Sentadilla / Cuádriceps",
@@ -7445,6 +7765,31 @@ const EXERCISE_LIBRARY = {
     ["Curl de muñeca inverso",3,"15-20",45,false],
     ["Farmer hold (agarre)",3,"30-45s",60,false],
   ],
+  "Isométricos / Readaptación": [
+    ["Sentadilla isométrica en pared (wall sit)",5,"45s",120,false],
+    ["Spanish squat isométrica (correa)",5,"45s",120,false],
+    ["Extensión de cuádriceps isométrica (máquina)",5,"45s",120,false],
+    ["Elevación de gemelos isométrica (de pie)",5,"45s",120,false],
+    ["Elevación de gemelo isométrica a una pierna",4,"30s/lado",90,false],
+    ["Puente de glúteo isométrico",4,"30s",60,false],
+    ["Puente de isquios isométrico (talones en banco)",4,"30s",90,false],
+    ["Curl femoral isométrico (máquina)",4,"30s",90,false],
+    ["Zancada isométrica (split squat hold)",4,"30s/lado",90,false],
+    ["Aducción isométrica (squeeze con balón/rodillo)",4,"20s",60,false],
+    ["Copenhagen isométrico",3,"20s/lado",60,false],
+    ["Abducción de cadera isométrica (contra pared)",3,"30s/lado",60,false],
+    ["Tirón isométrico a medio muslo (IMTP)",5,"5s",120,false],
+    ["Rotación externa de hombro isométrica (polea)",4,"30s",60,false],
+    ["Rotación interna de hombro isométrica (polea)",4,"30s",60,false],
+    ["Elevación lateral isométrica (contra pared)",3,"30s",60,false],
+    ["Colgado pasivo en barra (dead hang)",3,"30s",60,false],
+    ["Press Pallof isométrico",3,"30s/lado",60,false],
+    ["Bird-dog isométrico",3,"20s/lado",45,false],
+    ["Dead bug isométrico",3,"30s",45,false],
+    ["Extensión lumbar isométrica (banco romano)",3,"30s",60,false],
+    ["Extensión de muñeca isométrica",4,"45s",60,false],
+    ["Flexión de muñeca isométrica",4,"45s",60,false],
+  ],
   "Movilidad / Calentamiento": [
     ["Movilidad de cadera",1,"8/lado",0,false],
     ["Movilidad torácica",1,"8/lado",0,false],
@@ -7508,6 +7853,7 @@ const PROTOCOL_INFO = {
   for_time:"Completar todo el trabajo lo más rápido posible, con tiempo límite (cap).",
   chipper:"Lista larga de ejercicios que se hace una sola vez, de arriba abajo, 'picando' las reps.",
   intervalos:"Bloques de trabajo continuo (p. ej. 1 km de carrera + estación) a ritmo de competición.",
+  isometrico:"Mantener la posición sin movimiento los segundos marcados (p. ej. 5×45 s al 70 % del esfuerzo, 2' de descanso). Se registra tiempo, carga (peso corporal, lastre, kg o goma) y dolor 0-10: útil en tendinopatías y readaptación.",
 };
 
 // ── GENERADOR DE RUTINA DIARIA ─────────────────────────────────────────────
@@ -7703,6 +8049,10 @@ const HYROX_REPS = {"SkiErg":"500 m","Sled push (empuje trineo)":"25-50 m","Sled
 // Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
 // Devuelve una CLAVE de equipo; la etiqueta visible está en EQUIP_LABEL.
 const EQUIP = [
+  [/wall sit|en pared|contra pared|squeeze|zancada isom|split squat hold|puente de (glúteo|gluteo|isquios) isom|bird-dog isom|dead bug isom|copenhagen isom|colgado pasivo|dead hang|gemelos? isom/i,"pesocorporal"],
+  [/spanish squat/i,"otros"],
+  [/medio muslo|imtp/i,"rackpines"],
+  [/mu[ñn]eca isom/i,"antebrazo"],
   [/remo ergómetro|remo ergometro|remo aeróbico|remo aerobico|remo \(máquina\)|remo \(maquina\)/i,"remo"],
   [/goblet.*mancuerna|mancuerna.*goblet/i,"mancuernas"],
   [/air squat|al aire|toes to bar|burpee broad|v-ups|hollow/i,"pesocorporal"],
@@ -7841,6 +8191,8 @@ const CX_NAME = {1:"sencillo",2:"medio",3:"técnico"};
 const complexityOf = (name) => {
   const n=String(name||""), c=CUSTOM_EX[n.toLowerCase()];
   if(c&&c.cx) return c.cx; // fijada por el entrenador al crear el ejercicio
+  if(/medio muslo|imtp/i.test(n)) return 2;
+  if(/isom[eé]tric|wall sit|colgado pasivo|dead hang/i.test(n)) return 1;
   if(/^(WOD |Hyrox|Bloque metab|Benchmark|Finisher|Circuito)/i.test(n)) return 1;
   if(/asistid|en máquina|en maquina|multipower|smith/i.test(n)&&!/pistol/i.test(n)) return /olímp|cargada|snatch/i.test(n)?2:1;
   if(/cargada|power clean|\bclean\b|snatch|arrancada|push jerk|muscle ?up|pistol|toes to bar|nordic|lastrad|d[eé]ficit|sumo|buenos d[ií]as|ssb|safety|thrusters con barra|push press|sentadilla frontal|con pausa|pendlay|elevación de piernas colgado|copenhagen|rueda abdominal|tirón alto|tiron alto|turkish|^dominadas|fondos en paralelas|comba \(dobles\)/i.test(n)) return 3;
