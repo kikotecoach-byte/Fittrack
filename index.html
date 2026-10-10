@@ -34,7 +34,24 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .btn,.sb,.tab,.bnav-btn,.card{transition:transform .12s ease,background .18s ease,border-color .18s ease,color .18s ease,opacity .18s ease;}
 .btn:active,.sb:active,.tab:active{transform:scale(.96);}
 .bnav-btn:active{transform:scale(.9);}
-@media(prefers-reduced-motion:reduce){.swipe,.fade{animation:none;}.btn,.sb,.tab,.bnav-btn{transition:none;}}
+/* ─ Iconos 3D y animaciones 3D (suaves: dan profundidad sin añadir ruido) ─ */
+.ico3d{display:inline-block;object-fit:contain;flex-shrink:0;filter:drop-shadow(0 3px 4px rgba(15,23,42,.14));
+  transition:transform .35s cubic-bezier(.34,1.56,.64,1),filter .3s ease,opacity .3s ease;user-select:none;-webkit-user-drag:none;pointer-events:none;}
+.bnav-btn .ico3d,.ipad-side .nav .ico3d{opacity:.72;filter:drop-shadow(0 2px 3px rgba(15,23,42,.12)) saturate(.55);}
+.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{opacity:1;filter:drop-shadow(0 6px 8px rgba(2,132,199,.28)) saturate(1);animation:icoPop .55s cubic-bezier(.34,1.56,.64,1) both;}
+@keyframes icoPop{0%{transform:perspective(240px) rotateX(0) scale(1)}35%{transform:perspective(240px) rotateX(-28deg) translateY(-5px) scale(1.18)}70%{transform:perspective(240px) rotateX(8deg) translateY(-1px) scale(1.06)}100%{transform:perspective(240px) translateY(-2px) scale(1.1)}}
+.float3d{animation:float3d 5s ease-in-out infinite;}
+@keyframes float3d{0%,100%{transform:perspective(400px) translateY(0) rotateY(-10deg)}50%{transform:perspective(400px) translateY(-8px) rotateY(10deg)}}
+.view3d{animation:view3d .42s cubic-bezier(.22,.61,.36,1) both;transform-origin:50% 0;}
+@keyframes view3d{from{opacity:0;transform:perspective(1400px) rotateX(5deg) translateY(16px) scale(.985)}to{opacity:1;transform:none}}
+.ovl>.mdl.fade{animation:mdl3d .34s cubic-bezier(.22,.61,.36,1) both;transform-origin:50% 100%;}
+@keyframes mdl3d{from{opacity:0;transform:perspective(1200px) rotateX(10deg) translateY(24px) scale(.97)}to{opacity:1;transform:none}}
+.ovl:not(.dock){animation:ovlIn .22s ease both;}
+@keyframes ovlIn{from{opacity:0}to{opacity:1}}
+.tilt{transform-style:preserve-3d;transition:transform .2s ease,box-shadow .2s ease;}
+.tilt:active{transform:perspective(900px) rotateX(3deg) scale(.975);box-shadow:0 1px 2px rgba(16,24,40,.05);}
+@media(hover:hover){.tilt:hover{transform:perspective(900px) translateY(-2px);box-shadow:0 10px 24px rgba(16,24,40,.08);}}
+@media(prefers-reduced-motion:reduce){.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
 
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
@@ -66,7 +83,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
   -webkit-tap-highlight-color:transparent;min-width:56px;
 }
 .bnav-btn.on{color:var(--sky);}
-.bnav-icon{font-size:22px;line-height:1.2;position:relative;display:inline-block;}
+.bnav-icon{font-size:22px;line-height:1;position:relative;display:inline-flex;height:28px;align-items:center;}
 .bnav-badge{position:absolute;top:-3px;right:-6px;background:#dc2626;color:#fff;
   border-radius:10px;font-size:9px;font-weight:700;padding:1px 4px;min-width:15px;text-align:center;}
 .admin-content{padding-bottom:calc(88px + env(safe-area-inset-bottom)) !important;}
@@ -79,7 +96,8 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 @media(max-height:500px){
   .bottom-nav{padding:3px 0 calc(5px + env(safe-area-inset-bottom));}
   .bnav-btn{flex-direction:row;gap:6px;font-size:12px;padding:6px 12px;}
-  .bnav-icon{font-size:17px;}
+  .bnav-icon{font-size:17px;height:20px;}
+  .bnav-icon .ico3d{width:20px;height:20px;}
   .admin-content{padding-bottom:calc(56px + env(safe-area-inset-bottom)) !important;}
   .mobile-topbar{padding:calc(6px + env(safe-area-inset-top)) 14px 6px;}
 }
@@ -118,6 +136,8 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
   .ovl.dock{left:auto;width:440px;background:none;backdrop-filter:none;-webkit-backdrop-filter:none;padding:0;align-items:stretch;justify-content:stretch;z-index:160;}
   .ovl.dock>.mdl{max-width:none !important;width:100%;height:100%;max-height:none;border-radius:0 !important;border:none;border-left:1px solid var(--border);
     box-shadow:-10px 0 30px rgba(16,24,40,.08);padding:calc(18px + env(safe-area-inset-top)) 20px calc(18px + env(safe-area-inset-bottom));animation:none;}
+  .ovl.dock>.mdl.fade{animation:dock3d .34s cubic-bezier(.22,.61,.36,1) both;transform-origin:100% 50%;}
+  @keyframes dock3d{from{opacity:0;transform:perspective(1400px) rotateY(-9deg) translateX(28px)}to{opacity:1;transform:none}}
 }
 
 @media(max-width:640px){
@@ -139,7 +159,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 }
 
 /* ─ Shared components ─ */
-.card{background:var(--card);border-radius:16px;border:1px solid var(--border);padding:16px;box-shadow:0 1px 3px rgba(16,24,40,.05);}
+.card{background:var(--card);border-radius:16px;border:1px solid #e3e9f2;padding:16px;box-shadow:0 1px 2px rgba(16,24,40,.04),0 4px 14px rgba(16,24,40,.035);}
 .btn{border:none;border-radius:9px;cursor:pointer;font-family:'Plus Jakarta Sans',sans-serif;
   font-weight:700;font-size:13px;transition:all .18s;-webkit-tap-highlight-color:transparent;}
 .sky{background:linear-gradient(135deg,#0369a1,#0284c7);color:#fff;padding:9px 16px;}
@@ -239,6 +259,14 @@ function clearSession() {
   try { localStorage.removeItem("kg_session"); } catch(e){}
 }
 const GYM_NAME = "Kikote Gym";
+// Iconos 3D (Fluent Emoji de Microsoft, licencia MIT, en /icons3d). Si una imagen
+// no carga se muestra el emoji equivalente.
+const ICO3D = {home:"🏠",agenda:"📅",clients:"💪",program:"📊",money:"💶",bell:"🔔",forum:"💬",logo:"🏋️",check:"✅",stopwatch:"⏱️",moneybag:"💰",calendar:"📆",palm:"🌴",phone:"📱",door:"🚪",chart:"📈",clipboard:"📋",gear:"⚙️"};
+function Ico({k,size=22,style,className}){
+  const [bad,setBad]=React.useState(false);
+  if(bad||!ICO3D[k]) return <span className={className} style={{fontSize:Math.round(size*0.86),lineHeight:1,display:"inline-block",...(style||{})}}>{ICO3D[k]||""}</span>;
+  return <img src={`/icons3d/${k}.png`} alt="" width={size} height={size} draggable={false} onError={()=>setBad(true)} className={"ico3d"+(className?" "+className:"")} style={style}/>;
+}
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const TODAY = new Date().toISOString().split("T")[0];
@@ -1122,12 +1150,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Barra lateral (iPad en horizontal / pantallas anchas) */}
       <aside className="ipad-side">
         <div style={{display:"flex",alignItems:"center",gap:8,padding:"0 6px 16px"}}>
-          <span style={{fontSize:22}}>🏋️</span>
+          <Ico k="logo" size={30}/>
           <span className="mono" style={{fontSize:15,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</span>
         </div>
-        {[["dashboard","🏠","Inicio"],["schedule","📅","Agenda"],["clients","👥","Clientes"],["programming","📊","Programa"],["income","💶","Finanzas"],["reminders","🔔","Alertas",reminders.length],["forum","💬","Foro"]].map(([id,ic,l,n])=>(
+        {[["dashboard","home","Inicio"],["schedule","agenda","Agenda"],["clients","clients","Clientes"],["programming","program","Programa"],["income","money","Finanzas"],["reminders","bell","Alertas",reminders.length],["forum","forum","Foro"]].map(([id,ic,l,n])=>(
           <button key={id} className={"nav"+(view===id?" on":"")} onClick={()=>setView(id)} style={{marginBottom:3}}>
-            <span style={{fontSize:18,width:24,textAlign:"center"}}>{ic}</span><span>{l}</span>{n>0&&<span className="cnt">{n}</span>}
+            <Ico k={ic} size={26}/><span>{l}</span>{n>0&&<span className="cnt">{n}</span>}
           </button>
         ))}
         <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",margin:"18px 8px 6px"}}>HOY · {todaySessions.length} SESIÓN{todaySessions.length===1?"":"ES"}</div>
@@ -1141,19 +1169,19 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </button>; })}
         </div>
         <div style={{marginTop:"auto",paddingTop:14,display:"flex",gap:8}}>
-          <button className="btn wa" style={{flex:1,fontSize:12,justifyContent:"center"}} onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
-          <button className="btn ghost" style={{fontSize:12}} onClick={onLogout} title="Salir">⏏</button>
+          <button className="btn wa" style={{flex:1,fontSize:12,justifyContent:"center"}} onClick={()=>setShowBulkWA(true)}><Ico k="phone" size={18}/> WA masivo</button>
+          <button className="btn ghost" style={{fontSize:12,display:"inline-flex",alignItems:"center"}} onClick={onLogout} title="Salir"><Ico k="door" size={18}/></button>
         </div>
       </aside>
       {/* Mobile top bar */}
       <div className="mobile-topbar">
         <div style={{display:"flex",alignItems:"center",gap:8}}>
-          <span style={{fontSize:18}}>🏋️</span>
+          <Ico k="logo" size={26}/>
           <span className="mono" style={{fontSize:14,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</span>
         </div>
         <div style={{display:"flex",gap:8}}>
-          <button className="btn wa" style={{fontSize:11,padding:"7px 11px"}} onClick={()=>setShowBulkWA(true)}>📱</button>
-          <button className="btn ghost" style={{fontSize:11,padding:"7px 11px"}} onClick={onLogout}>⏏</button>
+          <button className="btn wa" style={{fontSize:11,padding:"6px 10px",display:"inline-flex",alignItems:"center"}} onClick={()=>setShowBulkWA(true)} title="WhatsApp masivo"><Ico k="phone" size={18}/></button>
+          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",display:"inline-flex",alignItems:"center"}} onClick={onLogout} title="Salir"><Ico k="door" size={18}/></button>
         </div>
       </div>
 
@@ -1170,16 +1198,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Bottom navigation - mobile only */}
       <nav className="bottom-nav">
         {[
-          {id:"dashboard",icon:"🏠",label:"Inicio"},
-          {id:"clients",icon:"👥",label:"Clientes"},
-          {id:"schedule",icon:"📅",label:"Agenda"},
-          {id:"programming",icon:"📊",label:"Programa"},
-          {id:"income",icon:"💶",label:"Finanzas",tab:true},
-          {id:"reminders",icon:"🔔",label:"Alertas",tab:true,count:reminders.length},
+          {id:"dashboard",icon:"home",label:"Inicio"},
+          {id:"clients",icon:"clients",label:"Clientes"},
+          {id:"schedule",icon:"agenda",label:"Agenda"},
+          {id:"programming",icon:"program",label:"Programa"},
+          {id:"income",icon:"money",label:"Finanzas",tab:true},
+          {id:"reminders",icon:"bell",label:"Alertas",tab:true,count:reminders.length},
         ].map(item=>(
           <button key={item.id} className={"bnav-btn"+(view===item.id?" on":"")+(item.tab?" tab-only":"")} onClick={()=>setView(item.id)}>
             <span className="bnav-icon">
-              {item.icon}
+              <Ico k={item.icon} size={28}/>
               {item.count>0&&<span className="bnav-badge">{item.count}</span>}
             </span>
             <span>{item.label}</span>
@@ -1344,26 +1372,27 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
 
       {/* Content */}
-      <div style={{padding:"14px 14px 80px",minHeight:"100vh",background:"#eef1f7"}} className="fade admin-content">
+      <div style={{padding:"14px 14px 80px",minHeight:"100vh",background:"#eef1f7"}} className="view3d admin-content" key={view}>
 
         {/* DASHBOARD */}
         {view==="dashboard"&&(
           <div>
             <div style={{marginBottom:24}}>
-              <h1 className="mono" style={{fontSize:20,fontWeight:700}}>{GYM_NAME} — Dashboard</h1>
+              <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="home" size={32}/>{GYM_NAME} — Dashboard</h1>
               <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
             </div>
             <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
-                {label:"Clientes",val:clients.length,color:"#0284c7"},
-                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,color:"#16a34a"},
-                {label:"Alertas",val:reminders.length,color:"#ca8a04",go:"reminders"},
-                {label:"Sesiones hoy",val:todaySessions.length,color:"#a78bfa"},
-                {label:"Este mes",val:`${monthIncome}€`,color:"#16a34a",go:"income"},
+                {label:"Clientes",val:clients.length,ico:"clients",go:"clients"},
+                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,ico:"check"},
+                {label:"Alertas",val:reminders.length,ico:"bell",go:"reminders"},
+                {label:"Sesiones hoy",val:todaySessions.length,ico:"stopwatch",go:"schedule"},
+                {label:"Este mes",val:`${monthIncome}€`,ico:"moneybag",go:"income"},
               ].map(s=>(
-                <div key={s.label} className="card" onClick={s.go?()=>setView(s.go):undefined} style={s.go?{cursor:"pointer"}:undefined}>
-                  <div className="mono" style={{fontSize:22,fontWeight:700,color:s.color}}>{s.val}</div>
-                  <div style={{fontSize:10,color:"#94a3b8",marginTop:5,fontWeight:700}}>{s.label.toUpperCase()}</div>
+                <div key={s.label} className={"card"+(s.go?" tilt":"")} onClick={s.go?()=>setView(s.go):undefined} style={{padding:"12px 14px",...(s.go?{cursor:"pointer"}:{})}}>
+                  <Ico k={s.ico} size={30}/>
+                  <div style={{fontSize:22,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1.1}}>{s.val}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2,fontWeight:600}}>{s.label}</div>
                 </div>
               ))}
             </div>
@@ -1379,8 +1408,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               const porHora=horas?gen/horas:0;
               const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
               return(
-                <div className="card dash-fin" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
-                  <div style={{fontSize:28,flexShrink:0}}>💶</div>
+                <div className="card dash-fin tilt" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
+                  <Ico k="money" size={38}/>
                   <div style={{flex:1,minWidth:0}}>
                     <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
                     <div style={{fontSize:12,color:"#475569",marginTop:2}}>{lbl} <b style={{color:"#0f172a"}}>{eur(porHora)}/hora</b> · {eur(gen)} generados · {horas} h de clase</div>
@@ -1394,14 +1423,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <div className="card dash-hoy" style={{marginBottom:14,padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
                 <div>
-                  <h3 style={{fontSize:15,fontWeight:800}}>Hoy · {todaySessions.length} sesión{todaySessions.length===1?"":"es"}</h3>
+                  <h3 style={{fontSize:15,fontWeight:800,display:"flex",alignItems:"center",gap:8}}><Ico k="calendar" size={24}/>Hoy · {todaySessions.length} sesión{todaySessions.length===1?"":"es"}</h3>
                   <div style={{fontSize:11,color:"#94a3b8",marginTop:2,textTransform:"capitalize"}}>{fmtLong(TODAY)}</div>
                 </div>
                 <button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>{setView("schedule");setShowNS(true);}}>+ Nueva</button>
               </div>
               {todaySessions.length===0
                 ?<div style={{textAlign:"center",padding:"40px 20px",color:"#94a3b8"}}>
-                  <div style={{fontSize:34,marginBottom:10}}>🗓️</div>
+                  <div style={{marginBottom:10}}><Ico k="calendar" size={64} className="float3d"/></div>
                   <div style={{fontSize:14,fontWeight:700,color:"#64748b",marginBottom:4}}>Sin sesiones hoy</div>
                   <div style={{fontSize:12}}>Toca <b style={{color:"#0284c7"}}>+ Nueva</b> o ve a la Agenda</div>
                 </div>
@@ -1458,12 +1487,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             {/* ── ALERTAS (qué ocurre) ── */}
             <div className="card dash-ale" style={{padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
-                <div><h3 style={{fontSize:15,fontWeight:800}}>🔔 Alertas {reminders.length>0&&<span style={{fontSize:12,color:"#dc2626"}}>({reminders.length})</span>}</h3>{reminders.length>0&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Desliza una alerta a un lado para quitarla</div>}</div>
+                <div><h3 style={{fontSize:15,fontWeight:800,display:"flex",alignItems:"center",gap:8}}><Ico k="bell" size={24}/>Alertas {reminders.length>0&&<span style={{fontSize:12,color:"#dc2626"}}>({reminders.length})</span>}</h3>{reminders.length>0&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Desliza una alerta a un lado para quitarla</div>}</div>
                 {reminders.length>0&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>setView("reminders")}>Ver todas →</button>}
               </div>
               {reminders.length===0
                 ?<div style={{textAlign:"center",padding:"28px 20px"}}>
-                  <div style={{fontSize:28,marginBottom:6}}>✅</div>
+                  <div style={{marginBottom:6}}><Ico k="check" size={52} className="float3d"/></div>
                   <div style={{fontSize:13,fontWeight:700,color:"#16a34a"}}>Todo al día</div>
                 </div>
                 :reminders.slice(0,6).map((r,i)=>{
@@ -1564,7 +1593,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="clients"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <div><h1 className="mono" style={{fontSize:20,fontWeight:700}}>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones${pend?` · ${pend} pendientes`:""}`:"";})()}</p></div>
+              <div><h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="clients" size={32}/>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones${pend?` · ${pend} pendientes`:""}`:"";})()}</p></div>
               <div style={{display:"flex",gap:8}}>
                 <button className="btn ghost" style={{fontWeight:700,position:"relative"}} onClick={()=>setShowLeads(true)}>📋 Valoraciones{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return pend?<span style={{position:"absolute",top:-6,right:-6,minWidth:18,height:18,borderRadius:9,background:"#dc2626",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{pend}</span>:null;})()}</button>
                 <button className="btn sky" onClick={()=>setShowNC(true)}>+ Nuevo</button>
@@ -1577,7 +1606,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const cHist=history.filter(h=>h.client_id===c.id);
                 const streak=calcStreak(cHist);
                 return(
-                  <div key={c.id} className="card" style={{cursor:"pointer",transition:"all .2s",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
+                  <div key={c.id} className={"card"+(open?"":" tilt")} style={{cursor:"pointer",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                       <div style={{display:"flex",gap:11,alignItems:"center"}}>
                         <div className="ring" style={{width:42,height:42,background:c.color+"18",color:c.color,border:`1.5px solid ${c.color}35`,fontSize:13}}>{ini(c.name)}</div>
@@ -1690,7 +1719,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           <div onTouchStart={onSchedTouchStart} onTouchEnd={onSchedTouchEnd}>
             {/* Header */}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
-              <h1 className="mono" style={{fontSize:18,fontWeight:700}}>Agenda</h1>
+              <h1 className="mono" style={{fontSize:18,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="agenda" size={30}/>Agenda</h1>
               <div style={{display:"flex",gap:8}}>
                 <button className="btn ghost" style={{fontSize:12,padding:"8px 12px"}} onClick={()=>setShowSched(true)}>⚙️ Horario</button>
                 <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
@@ -1770,7 +1799,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const wknd=isWeekend(activeDay);
                 return(
                   <div className="card swipe" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,textAlign:"center",height:"calc(100dvh - 300px)",minHeight:300,maxHeight:660}}>
-                    <div style={{fontSize:42}}>{wknd?"🌴":"🚫"}</div>
+                    <div>{wknd?<Ico k="palm" size={84} className="float3d"/>:<span style={{fontSize:42}}>🚫</span>}</div>
                     <div style={{fontSize:16,fontWeight:700,color:wknd?"#16a34a":"#dc2626"}}>{wknd?"Fin de semana — libre":"Día no disponible"}</div>
                     <div style={{fontSize:12,color:"#64748b",maxWidth:240}}>{wknd?"No hay clases los sábados ni domingos.":"Este día está bloqueado (vacaciones)."}</div>
                     {!wknd&&<button className="btn ghost" style={{padding:"8px 14px",fontSize:12}} onClick={()=>toggleBlockDay(activeDay)}>Desbloquear día</button>}
@@ -2114,7 +2143,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="reminders"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Alertas</h1>
+              <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="bell" size={32}/>Alertas</h1>
               <button className="btn wa" onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
             </div>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,margin:"-12px 0 14px",flexWrap:"wrap"}}>
@@ -2758,7 +2787,7 @@ function FinanceView({clients,sessions,history,payments}) {
   const DOW=["D","L","M","X","J","V","S"];
   return(
     <div>
-      <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:12}}>Finanzas</h1>
+      <h1 className="mono" style={{fontSize:20,fontWeight:700,marginBottom:12,display:"flex",alignItems:"center",gap:10}}><Ico k="money" size={32}/>Finanzas</h1>
       {/* Filtros: periodo + navegación */}
       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:12,flexWrap:"wrap"}}>
         <div style={{display:"flex",background:"#e6ebf3",borderRadius:10,padding:3}}>
@@ -6733,7 +6762,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
 
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8,marginBottom:10}}>
-        <h1 className="mono" style={{fontSize:16,fontWeight:700}}>📊 Programación</h1>
+        <h1 className="mono" style={{fontSize:16,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="program" size={30}/>Programación</h1>
         {currentBlock&&<span className="pill" style={{background:(BLOCK_COLORS[currentBlock.type]||"#94a3b8")+"20",color:BLOCK_COLORS[currentBlock.type]||"#64748b",border:`1px solid ${(BLOCK_COLORS[currentBlock.type]||"#94a3b8")}30`,fontSize:11,whiteSpace:"nowrap"}}>Sem {currentWeek} · {currentBlock.name}</span>}
       </div>
 
