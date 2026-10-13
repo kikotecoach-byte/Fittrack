@@ -240,7 +240,13 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
 const SUPABASE_URL = "https://enknfffiyexuvodqlfmh.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImVua25mZmZpeWV4dXZvZHFsZm1oIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzY3MTE4NTUsImV4cCI6MjA5MjI4Nzg1NX0.9VvbzXpPiKBJAnbwHIbIivixfnhENoL4LR_s2KtX7yY";
 const TRAINER_PHONE = "34617248982";
-const ADMIN_PASS = "admin123";
+// Contraseña de Admin: solo se guarda su huella SHA-256 (con sal), nunca la contraseña.
+// Para cambiarla: sha256(ADMIN_SALT + "nueva contraseña") en hexadecimal → ADMIN_HASH.
+const ADMIN_SALT = "kikote-gym/admin/v2:";
+const ADMIN_HASH = "47c6fe0c4ffcecf9c0853035db68b8352febb068d48ffe8afa6cf284531bc909";
+const sha256Hex = async (t) => { const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); };
+// La sesión recordada de Admin va ligada a la contraseña actual: si se cambia, hay que volver a entrar.
+const ADMIN_KEY = ADMIN_HASH.slice(0,16);
 
 // ── REMEMBER ME ────────────────────────────────────────────────────────────
 function saveSession(type, data) {
@@ -538,7 +544,8 @@ function App() {
   React.useEffect(()=>{
     if(pendingSession && clients.length > 0) {
       if(pendingSession.type === "admin") {
-        setMode("admin");
+        if(pendingSession.data&&pendingSession.data.k===ADMIN_KEY) setMode("admin");
+        else clearSession(); // sesión de la contraseña antigua → volver a entrar
       } else if(pendingSession.type === "client") {
         const c = clients.find(x=>x.id===pendingSession.data.id);
         if(c) { setLoggedClient(c); setMode("client"); }
@@ -559,12 +566,18 @@ function App() {
     }
     else setLoginErr("Nombre o código incorrecto");
   };
-  const handleAdminLogin = (remember) => {
-    if(adminPass===ADMIN_PASS){
-      setMode("admin");setAdminPass("");setLoginErr("");
-      if(remember) saveSession("admin", {});
+  const adminFails = React.useRef({n:0,until:0});
+  const handleAdminLogin = async (remember) => {
+    const f=adminFails.current;
+    if(Date.now()<f.until){ setLoginErr(`Demasiados intentos. Espera ${Math.ceil((f.until-Date.now())/1000)} s`); return; }
+    let ok=false; try{ ok=(await sha256Hex(ADMIN_SALT+adminPass))===ADMIN_HASH; }catch(e){ setLoginErr("Este navegador no permite comprobar la contraseña (usa https)"); return; }
+    if(ok){
+      f.n=0; setMode("admin");setAdminPass("");setLoginErr("");
+      if(remember) saveSession("admin", {k:ADMIN_KEY});
+    } else {
+      f.n++; if(f.n>=5){ f.until=Date.now()+30000; f.n=0; }
+      setLoginErr("Contraseña incorrecta");
     }
-    else setLoginErr("Contraseña incorrecta");
   };
 
   if(loading) return (
