@@ -243,7 +243,7 @@ const TRAINER_PHONE = "34617248982";
 // Contraseña de Admin: solo se guarda su huella SHA-256 (con sal), nunca la contraseña.
 // Para cambiarla: sha256(ADMIN_SALT + "nueva contraseña") en hexadecimal → ADMIN_HASH.
 const ADMIN_SALT = "kikote-gym/admin/v2:";
-const ADMIN_HASH = "__HASH__";
+const ADMIN_HASH = "47c6fe0c4ffcecf9c0853035db68b8352febb068d48ffe8afa6cf284531bc909";
 const sha256Hex = async (t) => { const b=await crypto.subtle.digest("SHA-256", new TextEncoder().encode(t)); return [...new Uint8Array(b)].map(x=>x.toString(16).padStart(2,"0")).join(""); };
 // La sesión recordada de Admin va ligada a la contraseña actual: si se cambia, hay que volver a entrar.
 const ADMIN_KEY = ADMIN_HASH.slice(0,16);
