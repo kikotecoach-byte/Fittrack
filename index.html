@@ -1680,6 +1680,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
                         </div>
+                        <ClientGestureNotes client={c}/>
                         {/* Historial: sesiones por día/fecha y pagos (toca una sesión para ver cargas y replicar) */}
                         <div style={{marginBottom:14}}>
                           <ClientHistoryPanel client={c} history={history} payments={payments} assignedSessions={assignedSessions} sessionTemplates={sessionTemplates} onOpenSession={(h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}/>
@@ -3185,6 +3186,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
                     </div>
                     <button className={done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} onClick={()=>toggleDone(ex)}>{done?"✓":"○"}</button>
                   </div>
+                  <GestureNotes clientId={sel} exercise={ex.exercise_name} notify={notify} sessionNote={ex.notes}/>
                 </div>
               );})}
             </div>
@@ -3573,7 +3575,8 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                   <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"CARGA / LASTRE (kg)":"PESO (kg)"}</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":isIsoRow(ex)?"PC":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>DESC. (s)</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.rest_seconds??""} onBlur={e=>setField(ex,"rest_seconds",parseInt(e.target.value)||null)}/></div>
                 </div>
-                <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota / adaptación (p. ej. molestia rodilla → rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
+                <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota solo de esta sesión (p. ej. hoy rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
+                <GestureNotes clientId={client.id} exercise={ex.exercise_name} notify={notify}/>
               </div>
             ))}
             {/* WOD / bloques metabólicos */}
@@ -3674,6 +3677,8 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
           onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
 
+        {/* Notas de gestos (técnica, molestias, ajustes por ejercicio) */}
+        <ClientGestureNotes client={client}/>
         {/* Historial: sesiones por día/fecha y pagos */}
         <div style={{marginBottom:14}}>
           <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
@@ -4135,6 +4140,95 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   );
 }
 
+// ── NOTAS DEL GESTO (por cliente y ejercicio, con fecha) ──────────────────
+// Se guardan en exercise_notes (docs/notas.sql) y aparecen en cada sesión en
+// la que ese cliente haga ese ejercicio (editar, ejecutar, clase, ficha).
+const NOTES_CACHE = {}; // clientId → {list, loading, subs, missing}
+const notesKey = (n) => String(n||"").trim().toLowerCase();
+const notesStore = (cid) => NOTES_CACHE[cid] || (NOTES_CACHE[cid]={list:null,loading:null,subs:new Set(),missing:false});
+const notesPing = (st) => st.subs.forEach(f=>f());
+function loadNotes(cid){
+  const st=notesStore(cid); if(st.list||st.loading) return st.loading;
+  st.loading=sb.from("exercise_notes").select("*").eq("client_id",cid).order("created_at",{ascending:false})
+    .then(({data,error})=>{ st.list=error?[]:(data||[]).filter(n=>n.client_id===cid); st.missing=!!error; st.loading=null; notesPing(st); });
+  return st.loading;
+}
+function useClientNotes(cid){
+  const [,force]=React.useState(0);
+  React.useEffect(()=>{ if(!cid) return; const st=notesStore(cid), f=()=>force(x=>x+1); st.subs.add(f); loadNotes(cid); return ()=>{ st.subs.delete(f); }; },[cid]);
+  const st=cid?notesStore(cid):null, list=(st&&st.list)||[];
+  const of=(name)=>list.filter(n=>notesKey(n.exercise_name)===notesKey(name)).sort((a,b)=>String(b.created_at||"").localeCompare(String(a.created_at||"")));
+  const add=async(name,text,notify)=>{ const t=String(text||"").trim(); if(!t||!cid) return false;
+    const {data,error}=await sb.from("exercise_notes").insert({client_id:cid,exercise_name:name,note:t}).select().single();
+    if(error){ notify&&notify("Para guardar notas de gestos ejecuta docs/notas.sql en Supabase","err"); return false; }
+    const row=(data&&!Array.isArray(data)&&data.id)?data:{id:"tmp"+Date.now(),client_id:cid,exercise_name:name,note:t,created_at:new Date().toISOString()};
+    st.list=[row,...(st.list||[])]; notesPing(st); return true; };
+  const remove=async(id)=>{ await sb.from("exercise_notes").delete().eq("id",id); st.list=(st.list||[]).filter(n=>n.id!==id); notesPing(st); };
+  return {list,of,add,remove,missing:!!(st&&st.missing)};
+}
+const fmtNoteDate = (iso) => { if(!iso) return ""; const d=new Date(iso); return isNaN(d)?"":d.toLocaleDateString("es-ES",{day:"numeric",month:"short",year:d.getFullYear()!==new Date().getFullYear()?"numeric":undefined}); };
+const NOTE_QUICK = ["✅ Buena técnica","⚠️ Molestia","⬆️ Subir carga","⬇️ Bajar carga","↔️ Rango parcial","🐢 Más control / tempo","🎯 Corregir postura"];
+// Notas del gesto dentro de la tarjeta de un ejercicio. La última nota queda
+// siempre a la vista; al tocar se abre el historial y se añade otra.
+function GestureNotes({clientId,exercise,notify,sessionNote}){
+  const N=useClientNotes(clientId);
+  const [open,setOpen]=React.useState(false);
+  const [txt,setTxt]=React.useState("");
+  const [busy,setBusy]=React.useState(false);
+  if(!clientId||!exercise) return null;
+  const notes=N.of(exercise), last=notes[0];
+  const save=async()=>{ if(!txt.trim()) return; setBusy(true); const ok=await N.add(exercise,txt,notify); setBusy(false); if(ok){ setTxt(""); notify&&notify("Nota del gesto guardada ✓"); } };
+  return(
+    <div style={{marginTop:8}} onClick={e=>e.stopPropagation()}>
+      {sessionNote&&<div style={{fontSize:11,color:"#475569",background:"#f1f5f9",border:"1px solid #e2e8f0",borderRadius:8,padding:"5px 8px",marginBottom:5}}><b>Hoy:</b> {sessionNote}</div>}
+      <button type="button" onClick={()=>setOpen(o=>!o)} style={{display:"flex",alignItems:"flex-start",gap:7,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",
+        background:last?"#fffbeb":"transparent",border:`1px ${last?"solid":"dashed"} ${last?"#fde68a":"#d6dde8"}`,borderRadius:9,padding:"6px 9px"}}>
+        <span style={{fontSize:13,lineHeight:1.3}}>📝</span>
+        <span style={{flex:1,minWidth:0,fontSize:12,lineHeight:1.35,color:last?"#713f12":"#94a3b8"}}>
+          {last?<>{last.note} <span style={{fontSize:10,color:"#a16207",whiteSpace:"nowrap"}}>· {fmtNoteDate(last.created_at)}</span></>:"Anotar el gesto (técnica, molestias, ajustes…)"}
+        </span>
+        {notes.length>1&&<span style={{flexShrink:0,fontSize:10,fontWeight:800,color:"#a16207",background:"#fef3c7",borderRadius:20,padding:"1px 7px"}}>{notes.length}</span>}
+        <span style={{flexShrink:0,fontSize:11,color:"#94a3b8"}}>{open?"▴":"▾"}</span>
+      </button>
+      {open&&<div style={{marginTop:6,background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:8}}>
+        <div style={{display:"flex",gap:4,overflowX:"auto",paddingBottom:5}}>
+          {NOTE_QUICK.map(q=><button key={q} type="button" onClick={()=>setTxt(t=>t?(t+" · "+q):q)} style={{flexShrink:0,fontSize:11,fontWeight:600,padding:"4px 9px",borderRadius:20,cursor:"pointer",border:"1px solid #e6ebf3",background:"#f8fafc",color:"#475569"}}>{q}</button>)}
+        </div>
+        <textarea className="inp" rows={2} value={txt} onChange={e=>setTxt(e.target.value)} placeholder={`Nota sobre ${exercise} (p. ej. rodilla en valgo al bajar → cajón más alto)`} style={{resize:"vertical",fontSize:13}}/>
+        <button className="btn sky" style={{width:"100%",marginTop:6,padding:8,fontSize:12,justifyContent:"center"}} disabled={busy||!txt.trim()} onClick={save}>{busy?"Guardando…":"Guardar nota del gesto"}</button>
+        {notes.length>0&&<div style={{marginTop:8,display:"flex",flexDirection:"column",gap:5}}>
+          {notes.map(n=><div key={n.id} style={{display:"flex",gap:8,alignItems:"flex-start",fontSize:12,borderTop:"1px solid #f1f4f8",paddingTop:5}}>
+            <span style={{flexShrink:0,width:56,fontSize:10,fontWeight:700,color:"#94a3b8",paddingTop:1}}>{fmtNoteDate(n.created_at)}</span>
+            <span style={{flex:1,minWidth:0,color:"#0f172a",whiteSpace:"pre-wrap"}}>{n.note}</span>
+            <button type="button" title="Borrar nota" onClick={()=>{ if(window.confirm("¿Borrar esta nota?")) N.remove(n.id); }} style={{flexShrink:0,border:"none",background:"none",color:"#cbd5e1",cursor:"pointer",fontSize:13}}>✕</button>
+          </div>)}
+        </div>}
+      </div>}
+    </div>
+  );
+}
+// Resumen de todas las notas de gestos de un cliente (última por ejercicio).
+function ClientGestureNotes({client}){
+  const N=useClientNotes(client&&client.id);
+  const [open,setOpen]=React.useState(false);
+  const byEx={}; N.list.forEach(n=>{ const k=notesKey(n.exercise_name); if(!byEx[k]||String(n.created_at)>String(byEx[k].created_at)) byEx[k]=n; });
+  const items=Object.values(byEx).sort((a,b)=>String(b.created_at).localeCompare(String(a.created_at)));
+  if(!items.length) return null;
+  const shown=open?items:items.slice(0,3);
+  return(
+    <div style={{marginBottom:14}}>
+      <span className="lbl">📝 NOTAS DE GESTOS ({items.length})</span>
+      <div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:10,padding:"6px 10px"}}>
+        {shown.map((n,i)=><div key={n.id} style={{padding:"5px 0",borderTop:i?"1px solid #fdecc0":"none"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#0f172a"}}>{n.exercise_name} <span style={{fontSize:10,fontWeight:600,color:"#a16207"}}>· {fmtNoteDate(n.created_at)}{N.of(n.exercise_name).length>1?` · ${N.of(n.exercise_name).length} notas`:""}</span></div>
+          <div style={{fontSize:12,color:"#713f12",whiteSpace:"pre-wrap"}}>{n.note}</div>
+        </div>)}
+        {items.length>3&&<button className="btn ghost" style={{width:"100%",fontSize:11,padding:6,marginTop:4}} onClick={()=>setOpen(o=>!o)}>{open?"▲ Ver menos":`▼ Ver las ${items.length}`}</button>}
+      </div>
+    </div>
+  );
+}
+
 // ── REGISTRO DE UN ISOMÉTRICO (segundos, tipo de carga y dolor EVA 0-10) ──
 // Se guarda solo al cambiar cada campo. Sin docs/isometricos.sql se guardan
 // segundos y kg/goma, pero no el dolor ni el tipo de carga (avisa una vez).
@@ -4220,6 +4314,7 @@ function IsoLogger({ex,clientId,clientWeights,notify,onDone,onSwap}){
           <button key={i} type="button" onClick={()=>set({pain:on?null:i})} style={{padding:"7px 0",borderRadius:7,fontSize:12,fontWeight:800,cursor:"pointer",border:`1px solid ${on?col:"#e6ebf3"}`,background:on?col:"#fff",color:on?"#fff":col}}>{i}</button>
         );})}
       </div>
+      <GestureNotes clientId={clientId} exercise={ex.exercise_name} notify={notify} sessionNote={ex.notes}/>
     </div>
   );
 }
@@ -4336,6 +4431,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
                   </div>
                   <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
                 </div>
+                <GestureNotes clientId={client.id} exercise={row.name} notify={notify} sessionNote={(baseExs.find(e=>e.id===row.id)||{}).notes}/>
               </div>
             ))}
           </div>
