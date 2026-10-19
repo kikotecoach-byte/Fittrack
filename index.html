@@ -4041,8 +4041,8 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   const exsOf=(a)=>a?(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0)):[];
   const loadTxt=(e,done)=>e.load_band?bandLabel(e.load_band):(done&&e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
   // Organizar los días pendientes con un split.
-  const SPLITS=[["auto","⚡ Automático (A/B)"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
-  const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
+  const SPLITS=[["auto","⚡ Automático (A/B)"],["fbp","🧩 Fullbody"],["fullbody","🔥 Fullbody metab."],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
+  const SEQ={fbp:["fullbodyF"],fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
   const okReplace=()=>!pending.some(hasAsig)||window.confirm("Se reemplazarán los entrenos ya generados de los días pendientes. ¿Continuar?");
   const applySplit=(key)=>{
     if(!pending.length||!onPlanWeek||!okReplace()) return;
@@ -8429,7 +8429,7 @@ const DAY_TYPES = [
   ["fuerzaA","💪 Fuerza · Tren inferior"],["fuerzaB","💪 Fuerza · Tren superior"],
   ["push","🟦 Push (empuje)"],["pull","🟩 Pull (tracción)"],["legs","🦵 Legs (pierna)"],
   ["upper","⬆️ Torso completo"],["lower","⬇️ Pierna completa"],
-  ["small","🎯 Small muscles"],["fullbody","🔥 Fullbody metabólico"],
+  ["small","🎯 Small muscles"],["fullbodyF","🧩 Fullbody · todos los patrones"],["fullbody","🔥 Fullbody metabólico"],
   ["hiit","⚡ HIIT / Cardio"],["crossfit","🏋️ WOD CrossFit (metabólico)"],["hyrox","🏃 Hyrox (carrera + estaciones)"],
   ["mobility","🧘 Movilidad / Regeneración"],
 ];
@@ -8575,20 +8575,20 @@ function weekPlanFor(block, days, weekNo, goal){
   const ab = isTestBlock(block) ? "A" : waveOf(block, weekNo).ab;
   const plans = {
     acondicionamiento:{
-      A:{3:["fullbody","upper","lower"],4:["fullbody","upper","lower","crossfit"],5:["fullbody","upper","lower","crossfit","mobility"]},
-      B:{3:["upper","crossfit","lower"],4:["upper","lower","hyrox","fullbody"],5:["upper","lower","hyrox","fullbody","mobility"]}},
+      A:{2:["fullbodyF","fullbodyF"],3:["fullbody","upper","lower"],4:["fullbody","upper","lower","crossfit"],5:["fullbody","upper","lower","crossfit","mobility"]},
+      B:{2:["fullbodyF","fullbodyF"],3:["upper","crossfit","lower"],4:["upper","lower","hyrox","fullbody"],5:["upper","lower","hyrox","fullbody","mobility"]}},
     fuerza:{
-      A:{3:["fuerzaA","fuerzaB","fullbody"],4:["fuerzaA","fuerzaB","small","crossfit"],5:["fuerzaA","fuerzaB","upper","lower","small"]},
-      B:{3:["lower","upper","crossfit"],4:["lower","upper","fullbody","hyrox"],5:["lower","upper","fuerzaA","fuerzaB","crossfit"]}},
+      A:{2:["fullbodyF","fullbodyF"],3:["fuerzaA","fuerzaB","fullbody"],4:["fuerzaA","fuerzaB","small","crossfit"],5:["fuerzaA","fuerzaB","upper","lower","small"]},
+      B:{2:["fullbodyF","fullbodyF"],3:["lower","upper","crossfit"],4:["lower","upper","fullbody","hyrox"],5:["lower","upper","fuerzaA","fuerzaB","crossfit"]}},
     hipertrofia:{
-      A:{3:["push","pull","legs"],4:["push","pull","legs","small"],5:["push","pull","legs","small","crossfit"]},
-      B:{3:["upper","lower","fullbody"],4:["upper","lower","small","crossfit"],5:["upper","lower","push","pull","hyrox"]}},
+      A:{2:["fullbodyF","fullbodyF"],3:["push","pull","legs"],4:["push","pull","legs","small"],5:["push","pull","legs","small","crossfit"]},
+      B:{2:["fullbodyF","fullbodyF"],3:["upper","lower","fullbody"],4:["upper","lower","small","crossfit"],5:["upper","lower","push","pull","hyrox"]}},
     hibrido:{
-      A:{3:["fullbody","crossfit","small"],4:["fullbody","crossfit","upper","lower"],5:["fullbody","crossfit","upper","lower","hyrox"]},
-      B:{3:["upper","hyrox","lower"],4:["upper","hyrox","lower","crossfit"],5:["upper","hyrox","lower","crossfit","mobility"]}},
+      A:{2:["fullbodyF","crossfit"],3:["fullbody","crossfit","small"],4:["fullbody","crossfit","upper","lower"],5:["fullbody","crossfit","upper","lower","hyrox"]},
+      B:{2:["fullbodyF","crossfit"],3:["upper","hyrox","lower"],4:["upper","hyrox","lower","crossfit"],5:["upper","hyrox","lower","crossfit","mobility"]}},
     descarga:{
-      A:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]},
-      B:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]}},
+      A:{2:["mobility","fullbodyF"],3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]},
+      B:{2:["mobility","fullbodyF"],3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]}},
   };
   const byType = (plans[t] || plans.fuerza)[ab];
   let base = byType[n] || byType[4] || byType[3] || WEEK_PLAN;
@@ -8732,10 +8732,12 @@ function adaptToLevel(rows, level, ctx={}){
   const work=out.filter(r=>!isMetaRow(r[0],r[4]));
   if(!test&&work.length>=3){
     const mains=work.filter(r=>r[5]), accs=work.filter(r=>!r[5]);
-    if(!soft) mains.forEach(r=>{ r[1]=L.mainSets; });
+    // Fullbody: se mantienen los patrones (el volumen se reparte con menos series).
+    const fb=dayType==="fullbodyF", mainSets=fb?Math.max(2,L.mainSets-1):L.mainSets, maxEx=fb?({principiante:7,intermedio:8,avanzado:8}[level]||8):L.maxEx;
+    if(!soft) mains.forEach(r=>{ r[1]=mainSets; });
     accs.forEach(r=>{ r[1]=Math.max(2,Math.min(parseInt(r[1])||3,L.accMax)); });
     // Tope de ejercicios: quita los últimos accesorios.
-    let drop=work.length-L.maxEx;
+    let drop=work.length-maxEx;
     for(let i=accs.length-1;i>=0&&drop>0;i--,drop--){ const r=accs[i]; out=out.filter(x=>x!==r); accs.splice(i,1); }
     const {min,max}=levelTarget(level,block,goal);
     const total=()=>mains.concat(accs).reduce((s,r)=>s+(parseInt(r[1])||0),0);
@@ -8751,7 +8753,7 @@ function adaptToLevel(rows, level, ctx={}){
     while(total()<min&&guard--){
       const a=accs.filter(r=>r[1]<accCap).sort((x,y)=>x[1]-y[1])[0];
       if(a){ a[1]++; continue; }
-      const m=mains.filter(r=>r[1]<(soft?3:L.mainSets+1)).sort((x,y)=>x[1]-y[1])[0];
+      const m=mains.filter(r=>r[1]<(soft?3:mainSets+1)).sort((x,y)=>x[1]-y[1])[0];
       if(m){ m[1]++; continue; } break;
     }
   }
@@ -8846,6 +8848,30 @@ function baseDayRoutine(dayType, block, goal, weekNo){
     add(pick(EX_POOLS.calf,4),aS,"12-20",45,accProto,false);
     add(pick(EX_POOLS.forearm,5),aS,"12-20",45,accProto,false);
     add(pick(EX_POOLS.core,6),aS,"12-15",45,accProto,false);
+  } else if(dayType==="fullbodyF"){
+    // Fullbody: UN ejercicio por patrón de movimiento (todo el cuerpo). El
+    // protocolo, las reps y los descansos cambian con la fase del macrociclo;
+    // la semana B sube reps (volumen) y la A trabaja más pesado.
+    const B=wv.ab==="B"&&!test;
+    const PH={
+      fuerza:{main:isEspecifico?"ramp_up":"top_set_backoff",mR:rep,acc:"series_planas",aR:B?"8-10":"6-8",mRest:150,aRest:120},
+      hipertrofia:{main:isEspecifico?"rest_pause":"series_planas",mR:rep,acc:"superset",aR:B?"12-15":"10-12",mRest:120,aRest:75},
+      acondicionamiento:{main:"series_planas",mR:B?"12-15":"10-12",acc:"superset",aR:"12-15",mRest:75,aRest:45},
+      hibrido:{main:"series_planas",mR:rep,acc:"superset",aR:"10-12",mRest:90,aRest:60},
+      descarga:{main:"series_planas",mR:"8-10",acc:"series_planas",aR:"10-12",mRest:90,aRest:60},
+      test:{main:"ramp_up",mR:"3-5 (test)",acc:"series_planas",aR:"8-10",mRest:180,aRest:90},
+    };
+    const P=PH[test?"test":bt]||PH.fuerza;
+    const ms=bt==="descarga"?2:3, as=bt==="descarga"?2:3;
+    add(pick(EX_POOLS.squat,0),ms,P.mR,P.mRest,P.main,true);      // rodilla dominante
+    add(pick(EX_POOLS.hinge,1),ms,P.mR,P.mRest,P.main,true);      // cadera dominante
+    add(pick(EX_POOLS.hpush,2),as,P.aR,P.aRest,P.acc,false);      // empuje horizontal
+    add(pick(EX_POOLS.hpull,3),as,P.aR,P.aRest,P.acc,false);      // tracción horizontal
+    add(pick(EX_POOLS.vpull,4),as,P.aR,P.aRest,P.acc,false);      // tracción vertical
+    add(pick(EX_POOLS.lunge,5),as,`${P.aR}/lado`,P.aRest,P.acc,false); // unilateral
+    const core=pick(EX_POOLS.core,6); add(core,as,ISO_RE.test(core||"")?"30-40s":"10-12",45,"series_planas",false); // core
+    add(pick(EX_POOLS.vpush,7),as,P.aR,P.aRest,P.acc,false);      // empuje vertical
+    return r; // orden por patrón (sin reordenar por material ni finisher)
   } else if(dayType==="hiit"){ // HIIT / cardio: EMOM aeróbico + Tabata
     return buildMetcon("hiit",block,goal,weekNo);
   } else if(dayType==="crossfit"){ // fuerza/técnica + WOD según la fase
