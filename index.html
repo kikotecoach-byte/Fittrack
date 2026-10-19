@@ -3582,7 +3582,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                 </div>
                 {isRmRow(ex)&&(()=>{ const rm=rmFor(rmHist,ex.exercise_name), r=repsLow(ex.reps), t=ex.rir!=null?Number(ex.rir):null, kgS=rm&&r&&t!=null?loadFor(rm,r,t):null, pct=r&&t!=null?Math.round(pctRM(r+t)*100):null;
                   return <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,flexWrap:"wrap"}}>
-                    <span className="lbl" style={{fontSize:9,marginBottom:0}}>RIR OBJETIVO</span>
+                    <span className="lbl" style={{fontSize:9,marginBottom:0}}>RIR OBJETIVO</span><RirHelp notify={notify} highlight={t} label="Guía"/>
                     <select value={t==null?"":t} disabled={saving} onChange={e=>setRir(ex,e.target.value===""?null:parseInt(e.target.value,10))} style={{fontSize:12,fontWeight:700,border:"1px solid #cfd8e6",borderRadius:8,padding:"5px 8px",background:"#fff",color:"#0f172a"}}>
                       <option value="">—</option>{RIR_OPTS.map(v=><option key={v} value={v}>{v===0?"0 (fallo)":v===5?"5+":v}</option>)}
                     </select>
@@ -4846,6 +4846,121 @@ function IsoEvolution({client,assignedSessions,assignedExercises}){
   );
 }
 
+// ── GUÍA VISUAL DEL RIR (para explicárselo a los clientes) ─────────────────
+// Escala ordinal: un solo tono que se oscurece cuanto más cerca del fallo.
+const RIR_GUIDE = [
+  {v:0, name:"Al fallo",  quote:"No podías hacer ni una más.",        feel:"La última repetición casi no sale. Esfuerzo máximo.",        use:"Solo en tests o al final de algún accesorio.", bg:"#7c2d12", fg:"#ffffff"},
+  {v:1, name:"Muy duro",  quote:"Te quedaba 1 como mucho.",           feel:"Las últimas repeticiones van muy lentas y cuestan mucho.",   use:"Series pesadas de fuerza.",                     bg:"#b43c10", fg:"#ffffff"},
+  {v:2, name:"Duro",      quote:"Podrías haber hecho 2 más.",         feel:"Al final cuesta y baja la velocidad, pero con control.",     use:"La zona principal de fuerza e hipertrofia.",    bg:"#e05a1c", fg:"#ffffff"},
+  {v:3, name:"Exigente",  quote:"Te quedaban 3 en el depósito.",      feel:"Notas el esfuerzo, pero mantienes ritmo y técnica.",         use:"Volumen, técnica y personas que empiezan.",     bg:"#f59a5b", fg:"#431407"},
+  {v:4, name:"Moderado",  quote:"Te quedaban 4.",                     feel:"Cómodo, la barra/mancuerna se mueve rápida.",                use:"Semanas de descarga y series de aproximación.", bg:"#f9c9a3", fg:"#431407"},
+  {v:5, name:"Fácil",     quote:"Podrías hacer 5 o más.",             feel:"Sin apenas esfuerzo.",                                        use:"Calentamiento y movilidad.",                    bg:"#fde9d9", fg:"#431407"},
+];
+const RIR_TIPS = ["La técnica manda: si la técnica se rompe, esa repetición no cuenta.","Sé sincero: mejor quedarte corto que pasarte.","Cuanto más cerca del fallo, menos RIR y más intenso."];
+// Ejemplo con fichas: hechas (llenas) + en reserva (vacías).
+function RirDots({done,left,size=16}){
+  return <span style={{display:"inline-flex",gap:4,flexWrap:"wrap",alignItems:"center"}}>
+    {Array.from({length:done},(_,i)=><span key={"d"+i} style={{width:size,height:size,borderRadius:"50%",background:"#0f172a"}}/>)}
+    {Array.from({length:left},(_,i)=><span key={"l"+i} style={{width:size,height:size,borderRadius:"50%",border:"2px dashed #e05a1c",boxSizing:"border-box"}}/>)}
+  </span>;
+}
+// Dibuja la guía en un canvas (1080 px de ancho) para compartirla como imagen.
+function drawRirGuide(){
+  const W=1080, P=64;
+  const c=document.createElement("canvas"); const g=c.getContext("2d");
+  const F=(w,s)=>`${w} ${s}px 'Plus Jakarta Sans', -apple-system, 'Segoe UI', Roboto, sans-serif`;
+  const lines=(t,font,maxW)=>{ g.font=font; const out=[]; let line=""; String(t).split(" ").forEach(w=>{ const test=line?line+" "+w:w; if(g.measureText(test).width>maxW&&line){ out.push(line); line=w; } else line=test; }); if(line) out.push(line); return out; };
+  const tx=P+160, mw=W-P-tx-24;
+  const rows=RIR_GUIDE.map(r=>{ const q=lines(`“${r.quote}”`,F(700,28),mw), f=lines(r.feel,F(500,24),mw), u=lines("Se usa en: "+r.use,F(500,22),mw); return {r,q,f,u,h:Math.max(150,30+40+q.length*36+f.length*30+u.length*28+22)}; });
+  const tips=RIR_TIPS.map(t=>lines("•  "+t,F(600,26),W-2*P));
+  const H=P+170+120+rows.reduce((a,x)=>a+x.h+14,0)+244+tips.reduce((a,l)=>a+l.length*36+12,0)+70;
+  c.width=W; c.height=H;
+  const rr=(x,y,w,h,r,fill)=>{ g.beginPath(); g.moveTo(x+r,y); g.arcTo(x+w,y,x+w,y+h,r); g.arcTo(x+w,y+h,x,y+h,r); g.arcTo(x,y+h,x,y,r); g.arcTo(x,y,x+w,y,r); g.closePath(); g.fillStyle=fill; g.fill(); };
+  const text=(t,x,y,font,col)=>{ g.font=font; g.fillStyle=col; g.fillText(t,x,y); };
+  g.fillStyle="#ffffff"; g.fillRect(0,0,W,H);
+  let y=P;
+  text("RIR · Repeticiones en reserva",P,y+56,F(800,60),"#0f172a");
+  lines("¿Cuántas repeticiones más podrías haber hecho con buena técnica?",F(500,32),W-2*P).forEach((l,i)=>text(l,P,y+110+i*42,F(500,32),"#475569"));
+  y+=180;
+  // Barra de esfuerzo (de fácil a fallo), segmentos con 6 px de separación.
+  const segW=(W-2*P-5*6)/6;
+  [...RIR_GUIDE].reverse().forEach((r,i)=>{ const x=P+i*(segW+6); rr(x,y,segW,48,(i===0||i===5)?16:5,r.bg); const t=r.v===5?"5+":String(r.v); g.font=F(800,28); g.fillStyle=r.fg; g.fillText(t,x+segW/2-g.measureText(t).width/2,y+34); });
+  text("Fácil",P,y+84,F(600,24),"#64748b"); g.font=F(600,24); text("Fallo",W-P-g.measureText("Fallo").width,y+84,F(600,24),"#64748b");
+  y+=120;
+  rows.forEach(({r,q,f,u,h})=>{
+    rr(P,y,W-2*P,h,24,"#f8fafc");
+    rr(P+22,y+22,110,110,22,r.bg); const t=r.v===5?"5+":String(r.v); g.font=F(800,58); g.fillStyle=r.fg; g.fillText(t,P+77-g.measureText(t).width/2,y+98);
+    let yy=y+56; text(r.name,tx,yy,F(800,36),"#0f172a"); yy+=40;
+    q.forEach(l=>{ text(l,tx,yy,F(700,28),"#9a3412"); yy+=36; });
+    f.forEach(l=>{ text(l,tx,yy,F(500,24),"#334155"); yy+=30; });
+    u.forEach(l=>{ text(l,tx,yy,F(500,22),"#64748b"); yy+=28; });
+    y+=h+14;
+  });
+  // Ejemplo con fichas
+  y+=6; rr(P,y,W-2*P,180,24,"#fff7ed");
+  text("Ejemplo: 8 repeticiones con RIR 2",P+28,y+54,F(800,32),"#0f172a");
+  let dx=P+28; for(let i=0;i<10;i++){ g.beginPath(); g.arc(dx+20,y+104,20,0,Math.PI*2); if(i<8){ g.fillStyle="#0f172a"; g.fill(); } else { g.setLineDash([7,6]); g.lineWidth=4; g.strokeStyle="#e05a1c"; g.stroke(); g.setLineDash([]); } dx+=54; }
+  text("● hechas   ◌ en reserva  →  podrías haber llegado a 10",P+28,y+160,F(600,24),"#475569");
+  y+=244;
+  tips.forEach(ls=>{ ls.forEach(l=>{ text(l,P,y,F(600,26),"#334155"); y+=36; }); y+=12; });
+  text(`${GYM_NAME} · RIR 0 = RPE 10 · RIR 1 = RPE 9 · RIR 2 = RPE 8 · RIR 3 = RPE 7`,P,H-36,F(600,22),"#94a3b8");
+  return c;
+}
+async function shareRirGuide(notify){
+  try{
+    const c=drawRirGuide(); const blob=await new Promise(r=>c.toBlob(r,"image/png"));
+    const file=new File([blob],"guia-rir-kikote.png",{type:"image/png"});
+    if(navigator.canShare&&navigator.canShare({files:[file]})){ await navigator.share({files:[file],title:"Guía RIR",text:"Así funciona el RIR (repeticiones en reserva)"}); return; }
+    const a=document.createElement("a"); a.href=URL.createObjectURL(blob); a.download="guia-rir-kikote.png"; document.body.appendChild(a); a.click(); a.remove();
+    notify&&notify("Imagen descargada ✓");
+  }catch(e){ if(e&&e.name!=="AbortError") notify&&notify("No se pudo crear la imagen","err"); }
+}
+function RirGuide({onClose,notify,highlight}){
+  return(
+    <div className="ovl" style={{zIndex:1600}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:560}}>
+        <h2 style={{fontSize:20,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>RIR · Repeticiones en reserva</h2>
+        <p style={{fontSize:13,color:"#475569",marginTop:4,marginBottom:12}}>¿Cuántas repeticiones <b>más</b> podrías haber hecho con <b>buena técnica</b>?</p>
+        {/* Barra de esfuerzo */}
+        <div style={{display:"grid",gridTemplateColumns:"repeat(6,1fr)",gap:3}}>
+          {[...RIR_GUIDE].reverse().map((r,i)=><div key={r.v} style={{background:r.bg,color:r.fg,textAlign:"center",fontWeight:800,fontSize:14,padding:"8px 0",borderRadius:i===0?"10px 3px 3px 10px":i===5?"3px 10px 10px 3px":3,outline:highlight===r.v?"3px solid #0284c7":"none",outlineOffset:2}}>{r.v===5?"5+":r.v}</div>)}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:11,fontWeight:700,color:"#64748b",margin:"4px 2px 12px"}}><span>Fácil</span><span>Más intenso →</span><span>Fallo</span></div>
+        <div style={{display:"flex",flexDirection:"column",gap:7}}>
+          {RIR_GUIDE.map(r=><div key={r.v} style={{display:"flex",gap:12,alignItems:"center",background:highlight===r.v?"#eff6ff":"#f8fafc",border:`1px solid ${highlight===r.v?"#93c5fd":"#e6ebf3"}`,borderRadius:12,padding:"9px 11px"}}>
+            <div style={{width:50,height:50,flexShrink:0,borderRadius:12,background:r.bg,color:r.fg,display:"flex",alignItems:"center",justifyContent:"center",fontSize:24,fontWeight:800}}>{r.v===5?"5+":r.v}</div>
+            <div style={{minWidth:0,flex:1}}>
+              <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}><span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{r.name}</span><span style={{fontSize:13,fontWeight:700,color:"#9a3412"}}>“{r.quote}”</span></div>
+              <div style={{fontSize:12,color:"#475569",marginTop:2}}>{r.feel}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>Se usa en: {r.use}</div>
+              {r.v<5&&<div style={{marginTop:5}}><RirDots done={6} left={r.v} size={11}/></div>}
+            </div>
+          </div>)}
+        </div>
+        <div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:12,padding:"11px 12px",marginTop:10}}>
+          <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:6}}>Ejemplo: 8 repeticiones con RIR 2</div>
+          <RirDots done={8} left={2} size={18}/>
+          <div style={{fontSize:12,color:"#475569",marginTop:6}}>● hechas · ◌ en reserva → hiciste 8 y podrías haber llegado a 10.</div>
+        </div>
+        <ul style={{margin:"10px 0 0 18px",padding:0,fontSize:12,color:"#334155",lineHeight:1.55}}>{RIR_TIPS.map(t=><li key={t}>{t}</li>)}</ul>
+        <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Equivalencia: RIR 0 = RPE 10 · RIR 1 = RPE 9 · RIR 2 = RPE 8 · RIR 3 = RPE 7</div>
+        <div style={{display:"flex",gap:8,marginTop:14}}>
+          <button className="btn wa" style={{flex:1,padding:11,justifyContent:"center"}} onClick={()=>shareRirGuide(notify)}>📤 Compartir como imagen</button>
+          <button className="btn ghost" style={{padding:"11px 16px"}} onClick={onClose}>Cerrar</button>
+        </div>
+      </div>
+    </div>
+  );
+}
+// Botón «¿Qué es el RIR?» que abre la guía.
+function RirHelp({notify,highlight,label="¿Qué es el RIR?"}){
+  const [open,setOpen]=React.useState(false);
+  return <>
+    <button type="button" onClick={e=>{ e.stopPropagation(); setOpen(true); }} style={{border:"none",background:"none",color:"#0284c7",fontSize:11,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline",textUnderlineOffset:2}}>ⓘ {label}</button>
+    {open&&<RirGuide onClose={()=>setOpen(false)} notify={notify} highlight={highlight}/>}
+  </>;
+}
+
 // ── RM ESTIMADO: evolución por ejercicio, tabla de cargas y tests ─────────
 function RmEvolution({client,assignedSessions,assignedExercises,notify}){
   const T=useRmTests(client.id);
@@ -4867,6 +4982,7 @@ function RmEvolution({client,assignedSessions,assignedExercises,notify}){
   return(
     <div>
       <div style={{fontSize:11,color:"#64748b",lineHeight:1.45,marginBottom:10}}>
+        <div style={{marginBottom:4}}><RirHelp notify={notify} label="Guía del RIR para enseñar al cliente"/></div>
         RM estimado (e1RM) de cada serie hecha: <b>kg ÷ %RM de (reps + RIR)</b>. Se toma el mejor de las últimas 6 semanas. Si no se apuntó el RIR se asume {RIR_DEFAULT_UNKNOWN} (<b>~</b>).
       </div>
       {!form
@@ -8437,7 +8553,7 @@ function RirBar({ex,kg,reps,rm,notify,onRir}){
   return(
     <div style={{marginTop:8}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6,marginBottom:4,flexWrap:"wrap"}}>
-        <span className="lbl" style={{marginBottom:0}}>RIR REAL{target!=null?<span style={{color:"#0284c7"}}> · OBJETIVO {target}</span>:""}</span>
+        <span style={{display:"flex",alignItems:"center",gap:8}}><span className="lbl" style={{marginBottom:0}}>RIR REAL{target!=null?<span style={{color:"#0284c7"}}> · OBJETIVO {target}</span>:""}</span><RirHelp notify={notify} highlight={rir!=null?rir:target} label="Guía"/></span>
         <span style={{fontSize:11,color:"#475569"}}>
           {sug!=null&&<span title="Carga para hacer las reps del plan con el RIR objetivo">🎯 <b>{fmtKgN(sug)} kg</b> · </span>}
           {est?<span title="RM estimado de esta serie">e1RM <b style={{color:"#0f172a"}}>{fmtKgN(est)} kg</b>{rir==null&&target==null?" ~":""}</span>:<span style={{color:"#94a3b8"}}>pon kg y reps para el e1RM</span>}
@@ -9082,6 +9198,7 @@ function ExerciseCard({ae, index, onComplete, saving}) {
             <div style={{display:"flex",gap:8,marginTop:2}}>
               <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
               {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+              {ae.rir!=null&&<span style={{fontSize:11,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:20,padding:"0 7px"}}>RIR {ae.rir}</span>}
               {ae.rest_seconds&&<span style={{fontSize:11,color:"#94a3b8"}}>⏱{ae.rest_seconds}s</span>}
             </div>
           </div>
@@ -9090,6 +9207,7 @@ function ExerciseCard({ae, index, onComplete, saving}) {
       </div>
 
       {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
+      {ae.rir!=null&&<div style={{marginTop:4,paddingLeft:32}} onClick={e=>e.stopPropagation()}><RirHelp highlight={Number(ae.rir)} label={`RIR ${ae.rir}: deja ${ae.rir===0?"0 (al fallo)":ae.rir} repetici${Number(ae.rir)===1?"ón":"ones"} en reserva`}/></div>}
 
       {expanded&&(
         <div style={{marginTop:10,paddingLeft:32,display:"flex",flexDirection:"column",gap:10}}>
