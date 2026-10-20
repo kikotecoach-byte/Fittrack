@@ -783,6 +783,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [execData,setExecData] = React.useState(null);
   const [showMeasures,setShowMeasures] = React.useState(null);
   const [showSummary,setShowSummary] = React.useState(null);
+  const [viewAs,setViewAs] = React.useState(null); // ver la app tal y como la ve un cliente
   const [classExec,setClassExec] = React.useState(null); // {date,time} ejecutar la clase entera
   const [assignData,setAssignData] = React.useState(null);
   const [progData,setProgData] = React.useState(null);
@@ -1678,6 +1679,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowPhotos(c)}>📸 Fotos</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowMeasures(c)}>📏 Medidas</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700}} onClick={()=>setShowSummary(c)}>⭐ Resumen</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700}} onClick={()=>setViewAs(c)}>👁 Ver como cliente</button>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
@@ -2302,7 +2304,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
@@ -2314,6 +2316,17 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {showMeasures&&<MeasuresModal client={showMeasures} progress={progress} loadAll={loadAll} notify={notify} onClose={()=>setShowMeasures(null)}/>}
+      {viewAs&&(()=>{ const c=clients.find(x=>x.id===viewAs.id)||viewAs; return(
+        <div style={{position:"fixed",inset:0,zIndex:300,background:"#eef1f7",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
+          <div style={{position:"sticky",top:0,zIndex:5,display:"flex",alignItems:"center",gap:10,padding:"calc(8px + env(safe-area-inset-top)) 14px 8px",background:"#7c3aed",color:"#fff"}}>
+            <span style={{fontSize:13,fontWeight:700,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>👁 Vista de {c.name} · así ve su app</span>
+            <button className="btn" style={{background:"#fff",color:"#6d28d9",fontSize:12,padding:"6px 12px",flexShrink:0}} onClick={()=>setViewAs(null)}>✕ Cerrar</button>
+          </div>
+          <ClientPortal preview client={c} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans}
+            myProgress={(progress||[]).filter(p=>p.client_id===c.id)} myRecords={(records||[]).filter(r=>r.client_id===c.id)} myAchievements={(achievements||[]).filter(a=>a.client_id===c.id)}
+            myAssignedSessions={assignedSessions.filter(s=>s.client_id===c.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===c.id)} annualBlocks={annualBlocks}
+            loadAll={loadAll} notify={notify} onLogout={()=>setViewAs(null)}/>
+        </div>); })()}
       {showSummary&&<ClientSummaryModal client={showSummary} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} progress={progress} annualBlocks={annualBlocks} sessions={sessions} onClose={()=>setShowSummary(null)}/>}
       {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
       {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
@@ -3852,7 +3865,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -3909,6 +3922,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
           {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
           {onPhotos&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onPhotos}>📸 Fotos</button>}
         </div>}
+        {onViewAs&&<button className="btn ghost" style={{width:"100%",fontSize:12,padding:"8px 6px",marginTop:-8,marginBottom:14,color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onViewAs}>👁 Ver su app como la ve {client.name.split(" ")[0]}</button>}
         {/* Notas de gestos (técnica, molestias, ajustes por ejercicio) */}
         <ClientGestureNotes client={client}/>
         {/* Historial: sesiones por día/fecha y pagos */}
@@ -5824,7 +5838,7 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
+function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("resumen");
   const [ppView,setPpView]=React.useState("plan"); // sub-vista de "Plan y progreso"
   const [saving,setSaving]=React.useState(false);
@@ -5875,7 +5889,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           <span style={{fontSize:18}}>🏋️</span>
           <div className="mono" style={{fontSize:13,fontWeight:700,color:"#0284c7"}}>{GYM_NAME}</div>
         </div>
-        <button className="btn ghost" style={{fontSize:12,padding:"6px 11px"}} onClick={onLogout}>Salir</button>
+        <button className={preview?"btn sky":"btn ghost"} style={{fontSize:12,padding:"6px 11px"}} onClick={onLogout}>{preview?"← Volver al panel":"Salir"}</button>
       </div>
 
       {/* Welcome message */}
