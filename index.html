@@ -781,6 +781,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     setTimeout(()=>setFocusSlot(f=>(f&&f.date===s.date&&f.time===s.time)?null:f),6000);
   };
   const [execData,setExecData] = React.useState(null);
+  const [showMeasures,setShowMeasures] = React.useState(null);
+  const [showSummary,setShowSummary] = React.useState(null);
   const [classExec,setClassExec] = React.useState(null); // {date,time} ejecutar la clase entera
   const [assignData,setAssignData] = React.useState(null);
   const [progData,setProgData] = React.useState(null);
@@ -1674,6 +1676,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7",border:"1px solid #bcd3ee",fontWeight:700}} onClick={()=>setProgData(c)}>📈 Evolución</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={()=>{setLeadsClient(c);setShowLeads(true);}}>📋 Valoración</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowPhotos(c)}>📸 Fotos</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowMeasures(c)}>📏 Medidas</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700}} onClick={()=>setShowSummary(c)}>⭐ Resumen</button>
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
@@ -2298,7 +2302,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView docked={canDock} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
@@ -2309,6 +2313,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
+      {showMeasures&&<MeasuresModal client={showMeasures} progress={progress} loadAll={loadAll} notify={notify} onClose={()=>setShowMeasures(null)}/>}
+      {showSummary&&<ClientSummaryModal client={showSummary} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} progress={progress} annualBlocks={annualBlocks} sessions={sessions} onClose={()=>setShowSummary(null)}/>}
       {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
       {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
       {execData&&<SessionExecModal docked={canDock&&!quickView} client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
@@ -2589,56 +2595,262 @@ function LeadsModal({leads,client,onOpen,onNew,onClose}) {
   );
 }
 
-// ── FOTOS DEL CLIENTE (antes / después) ────────────────────────────────────
-function PhotosModal({client,loadAll,notify,onClose}) {
-  const [photos,setPhotos]=React.useState([]);
+// ── MEDIDAS CORPORALES (coach y cliente) ───────────────────────────────────
+// good: "down" mejor si baja · "up" mejor si sube · null depende del objetivo.
+const MEASURES = [
+  {k:"weight",l:"Peso",u:"kg",good:null,ph:"75.5"},
+  {k:"body_fat",l:"% Grasa",u:"%",good:"down",ph:"18.5"},
+  {k:"muscle_mass",l:"Masa muscular",u:"kg",good:"up",ph:"35"},
+  {k:"waist",l:"Cintura",u:"cm",good:"down",ph:"80"},
+  {k:"hip",l:"Cadera",u:"cm",good:"down",ph:"98"},
+  {k:"chest",l:"Pecho",u:"cm",good:null,ph:"100"},
+  {k:"arm",l:"Brazo",u:"cm",good:"up",ph:"32"},
+  {k:"thigh",l:"Muslo",u:"cm",good:null,ph:"56"},
+];
+const MEASURE_BASE = ["weight","body_fat","waist"]; // columnas originales de progress
+const num = (v) => v===""||v==null?null:(isNaN(parseFloat(String(v).replace(",",".")))?null:parseFloat(String(v).replace(",",".")));
+// ¿El cambio es una mejora? Según la medida y el objetivo del cliente.
+const changeTone = (m,d,goal) => { if(!d) return "flat"; let g=m.good; if(!g&&m.k==="weight") g=goal==="estetica"?null:"down"; if(!g&&(m.k==="chest"||m.k==="thigh")) g=goal==="estetica"?"up":null; if(!g) return "neutral"; return (g==="down"?d<0:d>0)?"good":"bad"; };
+const TONE_COL = {good:"#15803d",bad:"#b45309",neutral:"#475569",flat:"#94a3b8"};
+const fmtD = (d) => { if(!d) return ""; const x=new Date(d+"T12:00:00"); return x.toLocaleDateString("es-ES",{day:"numeric",month:"short",...(x.getFullYear()!==new Date().getFullYear()?{year:"2-digit"}:{})}); };
+function MeasuresPanel({client,progress,loadAll,notify,canDelete}){
+  const rows=(progress||[]).filter(p=>p.client_id===client.id&&p.date).sort((a,b)=>a.date.localeCompare(b.date));
+  const [form,setForm]=React.useState(null);
   const [busy,setBusy]=React.useState(false);
-  const load=React.useCallback(async()=>{ const {data,error}=await sb.from("client_photos").select("*").eq("client_id",client.id).order("taken_on",{ascending:true}); if(!error) setPhotos(data||[]); },[client.id]);
-  React.useEffect(()=>{ load(); },[load]);
-  const upload=async(file)=>{ if(!file) return; setBusy(true);
-    const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
-    const path=`fotos/${client.id}/${Date.now()}.${ext}`;
-    const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
-    if(upErr){ notify("Error subiendo foto","err"); setBusy(false); return; }
-    const {data}=sb.storage.from("avatars").getPublicUrl(path);
-    const {error}=await sb.from("client_photos").insert({client_id:client.id,url:data.publicUrl,taken_on:TODAY,note:""});
-    if(error){ notify("Crea la tabla client_photos (docs/fotos.sql)","err"); setBusy(false); return; }
-    await load(); setBusy(false); notify("Foto guardada ✓");
+  const [showAll,setShowAll]=React.useState(false);
+  const save=async()=>{
+    const vals={}; MEASURES.forEach(m=>{ const v=num(form[m.k]); if(v!=null) vals[m.k]=v; });
+    if(!Object.keys(vals).length) return notify&&notify("Introduce al menos una medida","err");
+    setBusy(true);
+    const row={client_id:client.id,date:form.date||TODAY,notes:form.notes||"",...vals};
+    let {error}=await sb.from("progress").insert(row);
+    if(error){ const base={client_id:row.client_id,date:row.date,notes:row.notes}; MEASURE_BASE.forEach(k=>{ if(vals[k]!=null) base[k]=vals[k]; });
+      const r2=await sb.from("progress").insert(base); error=r2.error;
+      if(!error) notify&&notify("Guardado peso, % grasa y cintura. Para el resto ejecuta docs/medidas.sql","err"); }
+    if(!error&&!rows.length) await sb.from("achievements").insert({client_id:client.id,type:"first_log",title:"Primera medición",description:"Registraste tu primer dato de progreso",emoji:"📊"});
+    setBusy(false);
+    if(error) return notify&&notify("No se pudo guardar","err");
+    setForm(null); loadAll&&await loadAll(); notify&&notify("Medidas guardadas ✓");
   };
+  const del=async(p)=>{ if(!window.confirm(`¿Borrar la medición del ${fmtD(p.date)}?`)) return; await sb.from("progress").delete().eq("id",p.id); loadAll&&await loadAll(); };
+  const used=MEASURES.filter(m=>rows.some(r=>r[m.k]!=null));
+  return(
+    <div>
+      {!form
+        ?<button className="btn sky" style={{width:"100%",padding:10,fontSize:13,justifyContent:"center",marginBottom:12}} onClick={()=>setForm({date:TODAY})}>＋ Registrar medidas</button>
+        :<div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:12,padding:10,marginBottom:12}}>
+          <span className="lbl">FECHA</span>
+          <input type="date" className="inp" value={form.date} onChange={e=>setForm({...form,date:e.target.value})} style={{marginBottom:8}}/>
+          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+            {MEASURES.map(m=><div key={m.k}><span className="lbl">{m.l.toUpperCase()} ({m.u})</span><input type="number" inputMode="decimal" className="inp" placeholder={m.ph} value={form[m.k]||""} onChange={e=>setForm({...form,[m.k]:e.target.value})}/></div>)}
+          </div>
+          <span className="lbl" style={{marginTop:8}}>NOTA (opcional)</span>
+          <input className="inp" value={form.notes||""} placeholder="Cómo se encuentra, en ayunas…" onChange={e=>setForm({...form,notes:e.target.value})} style={{marginBottom:8}}/>
+          <div style={{display:"flex",gap:6}}>
+            <button className="btn grn" style={{flex:1,padding:10,justifyContent:"center"}} disabled={busy} onClick={save}>{busy?"Guardando…":"Guardar"}</button>
+            <button className="btn ghost" style={{padding:"10px 14px"}} onClick={()=>setForm(null)}>Cancelar</button>
+          </div>
+        </div>}
+      {!rows.length&&!form&&<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin medidas aún. Registra la primera para tener el punto de partida.</div>}
+      {used.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:8}}>
+        {used.map(m=>{ const pts=rows.filter(r=>r[m.k]!=null), f=pts[0], l=pts[pts.length-1], d=pts.length>1?Math.round((l[m.k]-f[m.k])*10)/10:0, tone=changeTone(m,d,client.goal);
+          return <div key={m.k} style={{background:"#fff",border:"1px solid #e6ebf3",borderRadius:12,padding:"9px 10px"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{m.l}</div>
+            <div style={{display:"flex",alignItems:"baseline",gap:6}}>
+              <span style={{fontSize:20,fontWeight:800,color:"#0f172a"}}>{fmtKgN(l[m.k])}</span><span style={{fontSize:11,color:"#64748b"}}>{m.u}</span>
+              {pts.length>1&&<span style={{marginLeft:"auto",fontSize:12,fontWeight:800,color:TONE_COL[tone]}}>{d>0?"▲ +":d<0?"▼ ":"= "}{d!==0?fmtKgN(Math.abs(d)):""}</span>}
+            </div>
+            <div style={{fontSize:10,color:"#94a3b8"}}>{pts.length>1?`desde ${fmtD(f.date)}`:fmtD(l.date)}</div>
+            {pts.length>1&&<Sparkline pts={pts.map(p=>Number(p[m.k]))} color={tone==="good"?"#15803d":tone==="bad"?"#b45309":"#0284c7"}/>}
+          </div>; })}
+      </div>}
+      {rows.length>0&&<>
+        <button className="btn ghost" style={{width:"100%",fontSize:11,padding:7,marginTop:10}} onClick={()=>setShowAll(s=>!s)}>{showAll?"▲ Ocultar historial":`▼ Historial (${rows.length} mediciones)`}</button>
+        {showAll&&<div style={{marginTop:6,border:"1px solid #e6ebf3",borderRadius:10,overflow:"hidden",background:"#fff"}}>
+          {[...rows].reverse().map((p,i)=><div key={p.id||i} style={{display:"flex",gap:8,alignItems:"flex-start",padding:"7px 10px",borderTop:i?"1px solid #f1f4f8":"none",fontSize:12}}>
+            <span style={{width:64,flexShrink:0,fontWeight:700,color:"#475569"}}>{fmtD(p.date)}</span>
+            <span style={{flex:1,minWidth:0,color:"#0f172a"}}>{MEASURES.filter(m=>p[m.k]!=null).map(m=>`${m.l} ${fmtKgN(p[m.k])}${m.u}`).join(" · ")}{p.notes?<div style={{fontSize:11,color:"#94a3b8"}}>{p.notes}</div>:null}</span>
+            {canDelete&&<button title="Borrar" onClick={()=>del(p)} style={{border:"none",background:"none",color:"#cbd5e1",cursor:"pointer"}}>✕</button>}
+          </div>)}
+        </div>}
+      </>}
+    </div>
+  );
+}
+function MeasuresModal({client,progress,loadAll,notify,onClose}){
+  return <div className="ovl" onClick={onClose}><div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
+    <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:10}}>📏 Medidas · {client.name}</h2>
+    <MeasuresPanel client={client} progress={progress} loadAll={loadAll} notify={notify} canDelete/>
+    <button className="btn ghost" style={{width:"100%",padding:11,marginTop:12}} onClick={onClose}>Cerrar</button>
+  </div></div>;
+}
+
+// ── FOTOS DE PROGRESO (coach y cliente) + comparador antes / después ──────
+function useClientPhotos(clientId){
+  const [photos,setPhotos]=React.useState([]);
+  const [ok,setOk]=React.useState(true);
+  const load=React.useCallback(async()=>{ if(!clientId) return; const {data,error}=await sb.from("client_photos").select("*").eq("client_id",clientId).order("taken_on",{ascending:true}); if(error) setOk(false); else setPhotos((data||[]).filter(p=>p.client_id===clientId).sort((a,b)=>String(a.taken_on||"").localeCompare(String(b.taken_on||"")))); },[clientId]);
+  React.useEffect(()=>{ load(); },[load]);
+  return {photos,load,ok};
+}
+async function uploadClientPhoto(clientId,file,note,notify){
+  const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
+  const path=`fotos/${clientId}/${Date.now()}.${ext}`;
+  const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
+  if(upErr){ notify&&notify("Error subiendo foto","err"); return false; }
+  const {data}=sb.storage.from("avatars").getPublicUrl(path);
+  const {error}=await sb.from("client_photos").insert({client_id:clientId,url:data.publicUrl,taken_on:TODAY,note:note||""});
+  if(error){ notify&&notify("Crea la tabla client_photos (docs/fotos.sql)","err"); return false; }
+  return true;
+}
+function PhotoCompare({photos,size=220}){
+  const [a,setA]=React.useState(0), [b,setB]=React.useState(Math.max(0,photos.length-1));
+  React.useEffect(()=>{ setA(0); setB(Math.max(0,photos.length-1)); },[photos.length]);
+  if(photos.length<2) return null;
+  const pa=photos[Math.min(a,photos.length-1)], pb=photos[Math.min(b,photos.length-1)];
+  const days=pa.taken_on&&pb.taken_on?Math.round((new Date(pb.taken_on)-new Date(pa.taken_on))/86400000):null;
+  const Side=({p,label,val,set})=><div style={{flex:1,minWidth:0}}>
+    <div style={{position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
+      <img src={p.url} alt={label} style={{width:"100%",height:size,objectFit:"cover",display:"block"}}/>
+      <span style={{position:"absolute",top:6,left:6,fontSize:10,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.65)",borderRadius:20,padding:"2px 9px"}}>{label}</span>
+    </div>
+    <select value={val} onChange={e=>set(parseInt(e.target.value,10))} style={{width:"100%",marginTop:5,fontSize:12,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:8,padding:"5px 6px",background:"#fff"}}>
+      {photos.map((x,i)=><option key={x.id} value={i}>{fmtD(x.taken_on)||`Foto ${i+1}`}{x.note?` · ${x.note.slice(0,18)}`:""}</option>)}
+    </select>
+  </div>;
+  return <div>
+    <div style={{display:"flex",gap:8}}><Side p={pa} label="ANTES" val={a} set={setA}/><Side p={pb} label="DESPUÉS" val={b} set={setB}/></div>
+    {days!=null&&days>0&&<div style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#475569",marginTop:6}}>{days>=60?`${Math.round(days/30)} meses`:days>=14?`${Math.round(days/7)} semanas`:`${days} días`} de diferencia</div>}
+  </div>;
+}
+function PhotosPanel({client,notify,canDelete}){
+  const {photos,load}=useClientPhotos(client.id);
+  const [busy,setBusy]=React.useState(false);
+  const [mode,setMode]=React.useState("compare");
+  const upload=async(file)=>{ if(!file) return; setBusy(true); const ok=await uploadClientPhoto(client.id,file,"",notify); if(ok){ await load(); notify&&notify("Foto guardada ✓"); } setBusy(false); };
   const saveNote=(p,note)=>{ sb.from("client_photos").update({note}).eq("id",p.id); };
   const saveDate=(p,d)=>{ sb.from("client_photos").update({taken_on:d}).eq("id",p.id).then(load); };
   const del=async(p)=>{ if(!window.confirm("¿Eliminar esta foto?"))return; await sb.from("client_photos").delete().eq("id",p.id); await load(); };
   return(
+    <div>
+      <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}>
+        {photos.length>1&&<div className="seg" style={{flex:1}}>{[["compare","↔️ Comparar"],["grid","🖼 Todas"]].map(([k,l])=><button key={k} className={"sb"+(mode===k?" on":"")} onClick={()=>setMode(k)} style={{fontSize:12}}>{l}</button>)}</div>}
+        <label className="btn sky" style={{fontSize:12,padding:"8px 12px",cursor:"pointer",marginLeft:photos.length>1?0:"auto",whiteSpace:"nowrap"}}>
+          {busy?"Subiendo…":"📸 Añadir foto"}
+          <input type="file" accept="image/*" style={{display:"none"}} disabled={busy} onChange={e=>{upload(e.target.files[0]);e.target.value="";}}/>
+        </label>
+      </div>
+      {photos.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:20,background:"#f8fafc",borderRadius:10,border:"1px dashed #dbe2ec"}}>Sin fotos aún. Haz la primera (frente, perfil y espalda, misma luz) para tener tu «antes».</div>}
+      {photos.length===1&&<img src={photos[0].url} style={{width:"100%",maxHeight:320,objectFit:"cover",borderRadius:12}}/>}
+      {photos.length>1&&mode==="compare"&&<PhotoCompare photos={photos}/>}
+      {photos.length>1&&mode==="grid"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
+        {photos.map((p,i)=><div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
+          <div style={{position:"relative"}}>
+            <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
+            <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:700,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{i===0?"ANTES":i===photos.length-1?"ACTUAL":`#${i+1}`}</span>
+            {canDelete&&<button onClick={()=>del(p)} style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>}
+          </div>
+          <div style={{padding:"6px 8px"}}>
+            <input type="date" className="inp" style={{padding:"4px 6px",fontSize:11}} defaultValue={p.taken_on||TODAY} onChange={e=>saveDate(p,e.target.value)}/>
+            <input className="inp" style={{padding:"4px 6px",fontSize:11,marginTop:4}} placeholder="Nota (frente, perfil, peso…)" defaultValue={p.note||""} onBlur={e=>saveNote(p,e.target.value)}/>
+          </div>
+        </div>)}
+      </div>}
+    </div>
+  );
+}
+
+// ── MI RESUMEN (lo esencial para el cliente, sencillo y visual) ───────────
+const PHASE_TXT = {
+  fuerza:"Estamos ganando fuerza: menos repeticiones y más carga en los ejercicios principales.",
+  hipertrofia:"Estamos construyendo músculo: más series y repeticiones con cargas moderadas.",
+  acondicionamiento:"Estamos mejorando tu forma física general: ritmo, resistencia y técnica.",
+  hibrido:"Combinamos fuerza y trabajo metabólico para rendir y gastar más energía.",
+  descarga:"Semana de descarga: bajamos la intensidad para recuperarte y volver más fuerte.",
+};
+function ClientSummary({client,history,assignedSessions,assignedExercises,progress,annualBlocks,sessions}){
+  const T=useRmTests(client.id);
+  const {photos}=useClientPhotos(client.id);
+  const hist=(history||[]).filter(h=>h.client_id===client.id&&h.date&&h.date<=TODAY);
+  const days=[...new Set(hist.map(h=>h.date))].sort();
+  const monthKey=TODAY.slice(0,7), thisMonth=days.filter(d=>d.startsWith(monthKey)).length;
+  const prevKey=(()=>{ const d=new Date(TODAY+"T12:00:00"); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); })(), prevMonth=days.filter(d=>d.startsWith(prevKey)).length;
+  const streak=calcStreak(hist);
+  // Constancia: sesiones por semana en las últimas 8 semanas.
+  const mon=mondayOfDate(TODAY), weeks=Array.from({length:8},(_,i)=>addDays(mon,-7*(7-i)));
+  const perWeek=weeks.map(w=>days.filter(d=>d>=w&&d<addDays(w,7)).length), maxW=Math.max(1,...perWeek);
+  // Fuerza: los 3 ejercicios con más registros, RM estimado ahora vs. el primero.
+  const rm=rmHistory(client.id,assignedSessions,assignedExercises,T.list);
+  const lifts=Object.values(rm).filter(g=>g.pts.length>=1).sort((a,b)=>b.pts.length-a.pts.length).slice(0,3)
+    .map(g=>{ const f=g.pts[0], cur=currentRM(g.pts); return {name:g.name,cur,first:f.e1rm,since:f.date,pct:f.e1rm?Math.round((cur/f.e1rm-1)*100):0}; });
+  // Cuerpo
+  const pr=(progress||[]).filter(p=>p.client_id===client.id&&p.date).sort((a,b)=>a.date.localeCompare(b.date));
+  const body=MEASURES.map(m=>{ const pts=pr.filter(p=>p[m.k]!=null); if(!pts.length) return null; const f=pts[0], l=pts[pts.length-1], d=Math.round((l[m.k]-f[m.k])*10)/10; return {m,l:l[m.k],d,n:pts.length,tone:changeTone(m,d,client.goal),since:f.date}; }).filter(Boolean).slice(0,4);
+  const blk=blockForDate(annualBlocks,TODAY);
+  const next=(sessions||[]).filter(s=>s.client_id===client.id&&s.date>=TODAY&&s.status!=="completed"&&!s.requested).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
+  const Card=({icon,title,children})=><div className="card" style={{marginBottom:12,padding:"14px 14px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><Ico k={icon} size={26}/><span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</span></div>{children}</div>;
+  const Big=({v,l,sub})=><div style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"10px 10px",textAlign:"center"}}>
+    <div style={{fontSize:24,fontWeight:800,color:"#0f172a",lineHeight:1.1}}>{v}</div><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:2}}>{l}</div>{sub&&<div style={{fontSize:10,color:"#94a3b8"}}>{sub}</div>}</div>;
+  return(
+    <div>
+      <div style={{marginBottom:14}}>
+        <div style={{fontSize:22,fontWeight:800,color:"#0f172a"}}>¡Hola, {client.name.split(" ")[0]}! 👋</div>
+        <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{days.length?`Llevas ${days.length} entrenamiento${days.length!==1?"s":""} conmigo.`:"Aquí verás tu evolución en cuanto empieces."}{next?` Próximo: ${new Date(next.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric"})} a las ${next.time}.`:""}</div>
+      </div>
+      <Card icon="calendar" title="Tu constancia">
+        <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+          <Big v={thisMonth} l="este mes" sub={prevMonth?`${prevMonth} el mes pasado`:null}/>
+          <Big v={streak} l={streak===1?"semana seguida":"semanas seguidas"}/>
+          <Big v={days.length} l="en total"/>
+        </div>
+        <div style={{display:"flex",alignItems:"flex-end",gap:6,height:70}} aria-label="Entrenos por semana, últimas 8 semanas">
+          {perWeek.map((n,i)=><div key={i} title={`Semana del ${fmtD(weeks[i])}: ${n}`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+            <span style={{fontSize:10,fontWeight:700,color:n?"#0f172a":"#cbd5e1"}}>{n}</span>
+            <div style={{width:"100%",maxWidth:24,height:Math.max(3,n/maxW*46),background:i===7?"#0284c7":"#bfdcf2",borderRadius:"4px 4px 0 0"}}/>
+          </div>)}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginTop:4}}><span>hace 8 semanas</span><span>esta semana</span></div>
+      </Card>
+      {lifts.length>0&&<Card icon="chart" title="Tu fuerza">
+        {lifts.map(x=><div key={x.name} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:"1px solid #f1f4f8"}}>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{x.name}</div><div style={{fontSize:11,color:"#94a3b8"}}>desde {fmtD(x.since)}</div></div>
+          <div style={{textAlign:"right"}}><div style={{fontSize:16,fontWeight:800,color:"#0f172a"}}>{fmtKgN(x.cur)} kg</div>{x.pct!==0&&<div style={{fontSize:12,fontWeight:800,color:x.pct>0?"#15803d":"#b45309"}}>{x.pct>0?"▲ +":"▼ "}{Math.abs(x.pct)} %</div>}</div>
+        </div>)}
+        <div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Fuerza máxima estimada (1 repetición) según lo que levantas en tus series.</div>
+      </Card>}
+      {body.length>0&&<Card icon="check" title="Tu cuerpo">
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
+          {body.map(b=><div key={b.m.k} style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"9px 10px"}}>
+            <div style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{b.m.l}</div>
+            <div style={{fontSize:19,fontWeight:800,color:"#0f172a"}}>{fmtKgN(b.l)} <span style={{fontSize:11,fontWeight:600,color:"#64748b"}}>{b.m.u}</span></div>
+            {b.n>1&&<div style={{fontSize:12,fontWeight:800,color:TONE_COL[b.tone]}}>{b.d>0?"▲ +":b.d<0?"▼ ":"= "}{b.d!==0?`${fmtKgN(Math.abs(b.d))} ${b.m.u}`:"igual"}<span style={{fontWeight:600,color:"#94a3b8"}}> · desde {fmtD(b.since)}</span></div>}
+          </div>)}
+        </div>
+      </Card>}
+      {photos.length>=2&&<Card icon="clipboard" title="Tu cambio"><PhotoCompare photos={photos} size={200}/></Card>}
+      {blk&&<Card icon="program" title="En qué estamos ahora">
+        <div style={{fontSize:13,fontWeight:700,color:"#0284c7"}}>{blk.name}</div>
+        <div style={{fontSize:13,color:"#475569",marginTop:3,lineHeight:1.45}}>{isTestBlock(blk)?"Semana de test: medimos cuánto has mejorado.":(PHASE_TXT[blk.type]||"")}</div>
+      </Card>}
+      {!days.length&&!body.length&&!lifts.length&&<div style={{fontSize:13,color:"#64748b",textAlign:"center",padding:20}}>Todavía no hay datos. ¡Vamos a por el primer entreno! 💪</div>}
+    </div>
+  );
+}
+function ClientSummaryModal({onClose,...props}){
+  return <div className="ovl" onClick={onClose}><div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520,background:"#eef1f7"}}>
+    <ClientSummary {...props}/>
+    <button className="btn ghost" style={{width:"100%",padding:11,background:"#fff"}} onClick={onClose}>Cerrar</button>
+  </div></div>;
+}
+
+// ── FOTOS DEL CLIENTE (antes / después) ────────────────────────────────────
+function PhotosModal({client,loadAll,notify,onClose}) {
+  return(
     <div className="ovl" onClick={onClose}>
-      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
-        <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:8}}>
-          <h2 className="mono" style={{fontSize:16,fontWeight:700}}>📸 Fotos · {client.name.split(" ")[0]}</h2>
-          <label className="btn sky" style={{fontSize:12,padding:"7px 12px",cursor:"pointer"}}>
-            {busy?"Subiendo…":"+ Añadir"}
-            <input type="file" accept="image/*" style={{display:"none"}} disabled={busy} onChange={e=>{upload(e.target.files[0]);e.target.value="";}}/>
-          </label>
-        </div>
-        <p style={{fontSize:11,color:"#64748b",marginBottom:10}}>Ordenadas por fecha (antes → después). Toca la fecha para ajustarla y añade una nota.</p>
-        <div style={{flex:1,overflowY:"auto",minHeight:0}}>
-          {photos.length===0
-            ?<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:24}}>Sin fotos aún. Sube la primera para el "antes".</div>
-            :<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-              {photos.map((p,i)=>(
-                <div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
-                  <div style={{position:"relative"}}>
-                    <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
-                    <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:700,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{i===0?"ANTES":i===photos.length-1?"ACTUAL":`#${i+1}`}</span>
-                    <button onClick={()=>del(p)} style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>
-                  </div>
-                  <div style={{padding:"6px 8px"}}>
-                    <input type="date" className="inp" style={{padding:"4px 6px",fontSize:11}} defaultValue={p.taken_on||TODAY} onChange={e=>saveDate(p,e.target.value)}/>
-                    <input className="inp" style={{padding:"4px 6px",fontSize:11,marginTop:4}} placeholder="Nota (peso, test, semana…)" defaultValue={p.note||""} onBlur={e=>saveNote(p,e.target.value)}/>
-                  </div>
-                </div>
-              ))}
-            </div>
-          }
-        </div>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:10}}>📸 Fotos · {client.name.split(" ")[0]}</h2>
+        <div style={{flex:1,overflowY:"auto",minHeight:0}}><PhotosPanel client={client} notify={notify} canDelete/></div>
         <button className="btn ghost" style={{width:"100%",padding:11,marginTop:10,flexShrink:0}} onClick={onClose}>Cerrar</button>
       </div>
     </div>
@@ -3640,7 +3852,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -3692,6 +3904,11 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
           onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
 
+        {(onSummary||onMeasures||onPhotos)&&<div style={{display:"flex",gap:6,marginBottom:14}}>
+          {onSummary&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onSummary}>⭐ Resumen</button>}
+          {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
+          {onPhotos&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onPhotos}>📸 Fotos</button>}
+        </div>}
         {/* Notas de gestos (técnica, molestias, ajustes por ejercicio) */}
         <ClientGestureNotes client={client}/>
         {/* Historial: sesiones por día/fecha y pagos */}
@@ -4041,8 +4258,8 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   const exsOf=(a)=>a?(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0)):[];
   const loadTxt=(e,done)=>e.load_band?bandLabel(e.load_band):(done&&e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
   // Organizar los días pendientes con un split.
-  const SPLITS=[["auto","⚡ Automático (A/B)"],["fullbody","🔥 Fullbody"],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
-  const SEQ={fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
+  const SPLITS=[["auto","⚡ Automático (A/B)"],["fbp","🧩 Fullbody"],["fullbody","🔥 Fullbody metab."],["tp","⬆️⬇️ Torso/Pierna"],["ppl","Push/Pull/Legs"],["fza","💪 Fuerza inf/sup"],["meta","🏃 Fuerza + CF/Hyrox"]];
+  const SEQ={fbp:["fullbodyF"],fullbody:["fullbody"],tp:["upper","lower"],ppl:["push","pull","legs"],fza:["fuerzaA","fuerzaB"],meta:["upper","crossfit","lower","hyrox"]};
   const okReplace=()=>!pending.some(hasAsig)||window.confirm("Se reemplazarán los entrenos ya generados de los días pendientes. ¿Continuar?");
   const applySplit=(key)=>{
     if(!pending.length||!onPlanWeek||!okReplace()) return;
@@ -5608,7 +5825,7 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
 function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout}) {
-  const [tab,setTab]=React.useState("clases");
+  const [tab,setTab]=React.useState("resumen");
   const [ppView,setPpView]=React.useState("plan"); // sub-vista de "Plan y progreso"
   const [saving,setSaving]=React.useState(false);
   const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
@@ -5771,11 +5988,12 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:16,paddingBottom:4}}>
-        {[["clases","📅 Mis clases"],["planprog","📈 Plan y progreso"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
+        {[["resumen","⭐ Mi resumen"],["clases","📅 Mis clases"],["planprog","📈 Plan y progreso"],["forum","💬 Comunidad"],["history","📋 Historial"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
 
+      {tab==="resumen"&&<ClientSummary client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>}
       {tab==="clases"&&(
         <div>
           {/* HOY: entrenamiento del día */}
@@ -6746,42 +6964,13 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
   return(
     <div>
       <div className="seg" style={{marginBottom:14}}>
-        {[["stats","📊 Medidas"],["records","🏆 Marcas"],["badges","🎖 Logros"]].map(([id,label])=>(
+        {[["stats","📏 Medidas"],["photos","📸 Fotos"],["records","🏆 Marcas"],["badges","🎖 Logros"]].map(([id,label])=>(
           <button key={id} className={"sb"+(view===id?" on":"")} onClick={()=>setView(id)} style={{fontSize:12}}>{label}</button>
         ))}
       </div>
 
-      {view==="stats"&&(
-        <div>
-          <div style={{display:"flex",gap:8,marginBottom:14}}>
-            <button className="btn sky" style={{flex:1,padding:10,fontSize:12}} onClick={()=>setShowLog(true)}>+ Registrar medidas</button>
-          </div>
-          {latest?(
-            <div>
-              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>ÚLTIMA MEDICIÓN — {latest.date}</div>
-              <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
-                <StatCard label="Peso" value={latest.weight} unit="kg" diffVal={diff("weight")}/>
-                <StatCard label="% Grasa" value={latest.body_fat} unit="%" diffVal={diff("body_fat")}/>
-                <StatCard label="Cintura" value={latest.waist} unit="cm" diffVal={diff("waist")}/>
-              </div>
-              {latest.notes&&<div style={{fontSize:12,color:"#64748b",padding:"10px 12px",background:"#f1f4fa",borderRadius:10,marginBottom:14}}>{latest.notes}</div>}
-              <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:10}}>HISTORIAL</div>
-              {myProgress.map(p=>(
-                <div key={p.id} style={{display:"flex",justifyContent:"space-between",padding:"8px 0",borderBottom:"1px solid #e6ebf3",fontSize:12}}>
-                  <span style={{color:"#64748b"}}>{p.date}</span>
-                  <span>{p.weight?`${p.weight}kg`:""} {p.body_fat?`${p.body_fat}%`:""} {p.waist?`${p.waist}cm`:""}</span>
-                </div>
-              ))}
-            </div>
-          ):(
-            <div className="card" style={{textAlign:"center",padding:36}}>
-              <div style={{fontSize:28,marginBottom:8}}>📊</div>
-              <div style={{color:"#64748b",fontSize:13,marginBottom:14}}>Sin mediciones aún. ¡Empieza hoy!</div>
-              <button className="btn sky" style={{padding:"10px 20px"}} onClick={()=>setShowLog(true)}>Registrar primera medición</button>
-            </div>
-          )}
-        </div>
-      )}
+      {view==="stats"&&<MeasuresPanel client={client} progress={myProgress} loadAll={loadAll} notify={notify}/>}
+      {view==="photos"&&<PhotosPanel client={client} notify={notify}/>}
 
       {view==="records"&&(
         <div>
@@ -8429,7 +8618,7 @@ const DAY_TYPES = [
   ["fuerzaA","💪 Fuerza · Tren inferior"],["fuerzaB","💪 Fuerza · Tren superior"],
   ["push","🟦 Push (empuje)"],["pull","🟩 Pull (tracción)"],["legs","🦵 Legs (pierna)"],
   ["upper","⬆️ Torso completo"],["lower","⬇️ Pierna completa"],
-  ["small","🎯 Small muscles"],["fullbody","🔥 Fullbody metabólico"],
+  ["small","🎯 Small muscles"],["fullbodyF","🧩 Fullbody · todos los patrones"],["fullbody","🔥 Fullbody metabólico"],
   ["hiit","⚡ HIIT / Cardio"],["crossfit","🏋️ WOD CrossFit (metabólico)"],["hyrox","🏃 Hyrox (carrera + estaciones)"],
   ["mobility","🧘 Movilidad / Regeneración"],
 ];
@@ -8575,20 +8764,20 @@ function weekPlanFor(block, days, weekNo, goal){
   const ab = isTestBlock(block) ? "A" : waveOf(block, weekNo).ab;
   const plans = {
     acondicionamiento:{
-      A:{3:["fullbody","upper","lower"],4:["fullbody","upper","lower","crossfit"],5:["fullbody","upper","lower","crossfit","mobility"]},
-      B:{3:["upper","crossfit","lower"],4:["upper","lower","hyrox","fullbody"],5:["upper","lower","hyrox","fullbody","mobility"]}},
+      A:{2:["fullbodyF","fullbodyF"],3:["fullbody","upper","lower"],4:["fullbody","upper","lower","crossfit"],5:["fullbody","upper","lower","crossfit","mobility"]},
+      B:{2:["fullbodyF","fullbodyF"],3:["upper","crossfit","lower"],4:["upper","lower","hyrox","fullbody"],5:["upper","lower","hyrox","fullbody","mobility"]}},
     fuerza:{
-      A:{3:["fuerzaA","fuerzaB","fullbody"],4:["fuerzaA","fuerzaB","small","crossfit"],5:["fuerzaA","fuerzaB","upper","lower","small"]},
-      B:{3:["lower","upper","crossfit"],4:["lower","upper","fullbody","hyrox"],5:["lower","upper","fuerzaA","fuerzaB","crossfit"]}},
+      A:{2:["fullbodyF","fullbodyF"],3:["fuerzaA","fuerzaB","fullbody"],4:["fuerzaA","fuerzaB","small","crossfit"],5:["fuerzaA","fuerzaB","upper","lower","small"]},
+      B:{2:["fullbodyF","fullbodyF"],3:["lower","upper","crossfit"],4:["lower","upper","fullbody","hyrox"],5:["lower","upper","fuerzaA","fuerzaB","crossfit"]}},
     hipertrofia:{
-      A:{3:["push","pull","legs"],4:["push","pull","legs","small"],5:["push","pull","legs","small","crossfit"]},
-      B:{3:["upper","lower","fullbody"],4:["upper","lower","small","crossfit"],5:["upper","lower","push","pull","hyrox"]}},
+      A:{2:["fullbodyF","fullbodyF"],3:["push","pull","legs"],4:["push","pull","legs","small"],5:["push","pull","legs","small","crossfit"]},
+      B:{2:["fullbodyF","fullbodyF"],3:["upper","lower","fullbody"],4:["upper","lower","small","crossfit"],5:["upper","lower","push","pull","hyrox"]}},
     hibrido:{
-      A:{3:["fullbody","crossfit","small"],4:["fullbody","crossfit","upper","lower"],5:["fullbody","crossfit","upper","lower","hyrox"]},
-      B:{3:["upper","hyrox","lower"],4:["upper","hyrox","lower","crossfit"],5:["upper","hyrox","lower","crossfit","mobility"]}},
+      A:{2:["fullbodyF","crossfit"],3:["fullbody","crossfit","small"],4:["fullbody","crossfit","upper","lower"],5:["fullbody","crossfit","upper","lower","hyrox"]},
+      B:{2:["fullbodyF","crossfit"],3:["upper","hyrox","lower"],4:["upper","hyrox","lower","crossfit"],5:["upper","hyrox","lower","crossfit","mobility"]}},
     descarga:{
-      A:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]},
-      B:{3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]}},
+      A:{2:["mobility","fullbodyF"],3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]},
+      B:{2:["mobility","fullbodyF"],3:["mobility","fullbody","mobility"],4:["mobility","fullbody","mobility","fullbody"],5:["mobility","fullbody","upper","mobility","lower"]}},
   };
   const byType = (plans[t] || plans.fuerza)[ab];
   let base = byType[n] || byType[4] || byType[3] || WEEK_PLAN;
@@ -8732,10 +8921,12 @@ function adaptToLevel(rows, level, ctx={}){
   const work=out.filter(r=>!isMetaRow(r[0],r[4]));
   if(!test&&work.length>=3){
     const mains=work.filter(r=>r[5]), accs=work.filter(r=>!r[5]);
-    if(!soft) mains.forEach(r=>{ r[1]=L.mainSets; });
+    // Fullbody: se mantienen los patrones (el volumen se reparte con menos series).
+    const fb=dayType==="fullbodyF", mainSets=fb?Math.max(2,L.mainSets-1):L.mainSets, maxEx=fb?({principiante:7,intermedio:8,avanzado:8}[level]||8):L.maxEx;
+    if(!soft) mains.forEach(r=>{ r[1]=mainSets; });
     accs.forEach(r=>{ r[1]=Math.max(2,Math.min(parseInt(r[1])||3,L.accMax)); });
     // Tope de ejercicios: quita los últimos accesorios.
-    let drop=work.length-L.maxEx;
+    let drop=work.length-maxEx;
     for(let i=accs.length-1;i>=0&&drop>0;i--,drop--){ const r=accs[i]; out=out.filter(x=>x!==r); accs.splice(i,1); }
     const {min,max}=levelTarget(level,block,goal);
     const total=()=>mains.concat(accs).reduce((s,r)=>s+(parseInt(r[1])||0),0);
@@ -8751,7 +8942,7 @@ function adaptToLevel(rows, level, ctx={}){
     while(total()<min&&guard--){
       const a=accs.filter(r=>r[1]<accCap).sort((x,y)=>x[1]-y[1])[0];
       if(a){ a[1]++; continue; }
-      const m=mains.filter(r=>r[1]<(soft?3:L.mainSets+1)).sort((x,y)=>x[1]-y[1])[0];
+      const m=mains.filter(r=>r[1]<(soft?3:mainSets+1)).sort((x,y)=>x[1]-y[1])[0];
       if(m){ m[1]++; continue; } break;
     }
   }
@@ -8846,6 +9037,30 @@ function baseDayRoutine(dayType, block, goal, weekNo){
     add(pick(EX_POOLS.calf,4),aS,"12-20",45,accProto,false);
     add(pick(EX_POOLS.forearm,5),aS,"12-20",45,accProto,false);
     add(pick(EX_POOLS.core,6),aS,"12-15",45,accProto,false);
+  } else if(dayType==="fullbodyF"){
+    // Fullbody: UN ejercicio por patrón de movimiento (todo el cuerpo). El
+    // protocolo, las reps y los descansos cambian con la fase del macrociclo;
+    // la semana B sube reps (volumen) y la A trabaja más pesado.
+    const B=wv.ab==="B"&&!test;
+    const PH={
+      fuerza:{main:isEspecifico?"ramp_up":"top_set_backoff",mR:rep,acc:"series_planas",aR:B?"8-10":"6-8",mRest:150,aRest:120},
+      hipertrofia:{main:isEspecifico?"rest_pause":"series_planas",mR:rep,acc:"superset",aR:B?"12-15":"10-12",mRest:120,aRest:75},
+      acondicionamiento:{main:"series_planas",mR:B?"12-15":"10-12",acc:"superset",aR:"12-15",mRest:75,aRest:45},
+      hibrido:{main:"series_planas",mR:rep,acc:"superset",aR:"10-12",mRest:90,aRest:60},
+      descarga:{main:"series_planas",mR:"8-10",acc:"series_planas",aR:"10-12",mRest:90,aRest:60},
+      test:{main:"ramp_up",mR:"3-5 (test)",acc:"series_planas",aR:"8-10",mRest:180,aRest:90},
+    };
+    const P=PH[test?"test":bt]||PH.fuerza;
+    const ms=bt==="descarga"?2:3, as=bt==="descarga"?2:3;
+    add(pick(EX_POOLS.squat,0),ms,P.mR,P.mRest,P.main,true);      // rodilla dominante
+    add(pick(EX_POOLS.hinge,1),ms,P.mR,P.mRest,P.main,true);      // cadera dominante
+    add(pick(EX_POOLS.hpush,2),as,P.aR,P.aRest,P.acc,false);      // empuje horizontal
+    add(pick(EX_POOLS.hpull,3),as,P.aR,P.aRest,P.acc,false);      // tracción horizontal
+    add(pick(EX_POOLS.vpull,4),as,P.aR,P.aRest,P.acc,false);      // tracción vertical
+    add(pick(EX_POOLS.lunge,5),as,`${P.aR}/lado`,P.aRest,P.acc,false); // unilateral
+    const core=pick(EX_POOLS.core,6); add(core,as,ISO_RE.test(core||"")?"30-40s":"10-12",45,"series_planas",false); // core
+    add(pick(EX_POOLS.vpush,7),as,P.aR,P.aRest,P.acc,false);      // empuje vertical
+    return r; // orden por patrón (sin reordenar por material ni finisher)
   } else if(dayType==="hiit"){ // HIIT / cardio: EMOM aeróbico + Tabata
     return buildMetcon("hiit",block,goal,weekNo);
   } else if(dayType==="crossfit"){ // fuerza/técnica + WOD según la fase
