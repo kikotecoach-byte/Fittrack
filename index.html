@@ -923,6 +923,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showMeasures,setShowMeasures] = React.useState(null);
   const [showSummary,setShowSummary] = React.useState(null);
   const [viewAs,setViewAs] = React.useState(null); // ver la app tal y como la ve un cliente
+  // Desde la agenda/ficha: abre el perfil completo del cliente (Clientes, desplegado).
+  const goToProfile = (c) => { if(!c) return; setQuickView(null); setExecData(null); setView("clients"); setExpanded(c.id);
+    let n=0; const f=()=>{ const el=document.querySelector(`[data-client="${c.id}"]`); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); else if(n++<20) setTimeout(f,120); }; setTimeout(f,150); };
   const [classExec,setClassExec] = React.useState(null); // {date,time} ejecutar la clase entera
   const [assignData,setAssignData] = React.useState(null);
   const [progData,setProgData] = React.useState(null);
@@ -1782,7 +1785,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const cHist=history.filter(h=>h.client_id===c.id);
                 const streak=calcStreak(cHist);
                 return(
-                  <div key={c.id} className={"card"+(open?"":" tilt")} style={{cursor:"pointer",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
+                  <div key={c.id} data-client={c.id} className={"card"+(open?"":" tilt")} style={{cursor:"pointer",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                       <div style={{display:"flex",gap:11,alignItems:"center"}}>
                         <div className="ring" style={{width:42,height:42,background:c.color+"18",color:c.color,border:`1.5px solid ${c.color}35`,fontSize:13}}>{ini(c.name)}</div>
@@ -2453,7 +2456,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
@@ -2464,6 +2467,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
+      <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
       {showMeasures&&<MeasuresModal client={showMeasures} progress={progress} loadAll={loadAll} notify={notify} onClose={()=>setShowMeasures(null)}/>}
       {viewAs&&(()=>{ const c=clients.find(x=>x.id===viewAs.id)||viewAs; return(
         <div style={{position:"fixed",inset:0,zIndex:300,background:"#eef1f7",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
@@ -3407,7 +3411,7 @@ function HistorySessionModal({client,date,type,time,assignedSessions,assignedExe
               {exs.map((e,i)=>{ const load=loadTxt(e); return(
                 <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderTop:i>0?"1px solid #eef1f7":"none",background:e.done?"#f4faf6":"#fff"}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.done?"✓ ":""}{e.exercise_name}</div>
+                    <div style={{fontSize:13,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.done?"✓ ":""}<ExName client={client} name={e.exercise_name}/></div>
                     <div className="mono" style={{fontSize:11,color:"#94a3b8"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${e.actual_reps||e.reps}`:""}{e.protocol?` · ${e.protocol}`:""}</div>
                   </div>
                   {load&&<span style={{fontSize:12,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{load}</span>}
@@ -3530,12 +3534,12 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
           ))}
               {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
               {exs.map(ex=>{ const done=valOf(ex,"done"); if(isIsoRow(ex)) return(
-                <IsoLogger key={ex.id+"|"+ex.exercise_name} ex={ex} clientId={sel} clientWeights={clientWeights} notify={notify} onDone={(d)=>setVal(ex,"done",d)} onSwap={()=>setPicker({mode:"swap",ex})}/>
+                <IsoLogger key={ex.id+"|"+ex.exercise_name} ex={ex} clientId={sel} client={selClient} clientWeights={clientWeights} notify={notify} onDone={(d)=>setVal(ex,"done",d)} onSwap={()=>setPicker({mode:"swap",ex})}/>
               ); return(
                 <div key={ex.id} style={{background:done?"#eef8dd":"#f8fafc",border:`1px solid ${done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                     <div style={{minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ex.exercise_name} <button onClick={()=>setPicker({mode:"swap",ex})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
+                      <div style={{fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selClient?<ExName client={selClient} name={ex.exercise_name}/>:ex.exercise_name} <button onClick={()=>setPicker({mode:"swap",ex})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
                       <MuscleTags name={ex.exercise_name}/>
                     </div>
                     <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {ex.sets&&ex.reps?`${ex.sets}×${ex.reps}`:"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}{ex.rir!=null?` · RIR ${ex.rir}`:""}</div>
@@ -3945,6 +3949,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
                     <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
                   </button>
+                  <button className="btn ghost" title="Cargas y evolución de este ejercicio" onClick={()=>openExHistory(client,ex.exercise_name)} style={{padding:"6px 8px",fontSize:12}}>📈</button>
                   <button className="btn ghost" title={ex.protocol==="isometrico"?"Quitar isométrico":"Hacer isométrico (por segundos)"} disabled={saving} onClick={()=>toggleIso(ex)} style={{padding:"6px 8px",fontSize:12,fontWeight:800,...(ex.protocol==="isometrico"?{background:"#e0ecfb",border:"1px solid #93c5fd",color:"#0369a1"}:{})}}>⏸️</button>
                   <button className="btn danger" style={{padding:"6px 9px"}} disabled={saving} onClick={()=>remove(ex)}>✕</button>
                 </div>
@@ -4014,7 +4019,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -4066,6 +4071,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
           onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
 
+        {onProfile&&<button className="btn sky" style={{width:"100%",fontSize:13,padding:"9px 6px",marginBottom:8,justifyContent:"center",fontWeight:700}} onClick={onProfile}>👤 Ver perfil completo</button>}
         {(onSummary||onMeasures||onPhotos)&&<div style={{display:"flex",gap:6,marginBottom:14}}>
           {onSummary&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onSummary}>⭐ Resumen</button>}
           {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
@@ -4092,7 +4098,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
                 ?<div style={{fontSize:12,color:"#64748b"}}>Sesión asignada (sin ejercicios detallados).</div>
                 :exs.map((e,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i>0?"1px solid #e6ebf3":"none"}}>
-                    <div style={{fontSize:12,color:"#0f172a",fontWeight:600}}>{e.exercise_name}</div>
+                    <div style={{fontSize:12,color:"#0f172a",fontWeight:600}}><ExName client={client} name={e.exercise_name}/></div>
                     <div className="mono" style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap",textAlign:"right"}}>
                       {e.sets&&e.reps?`${e.sets}×${e.reps}`:""}{e.load_band?` · ${bandLabel(e.load_band)}`:e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}{e.protocol?` · ${e.protocol}`:""}
                     </div>
@@ -4490,7 +4496,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
                   {exs.length>0
                     ?exs.map((e,j)=>{ const ld=loadTxt(e,done); return(
                       <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:j>0?"1px solid #eef1f7":"none"}}>
-                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}{e.exercise_name}</span>
+                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}<ExName client={client} name={e.exercise_name}/></span>
                         <span className="mono" style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${done&&e.actual_reps?e.actual_reps:e.reps}`:""}</span>
                         {ld&&<span style={{fontSize:11,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{ld}</span>}
                       </div>
@@ -4629,7 +4635,7 @@ function ClientGestureNotes({client}){
 // segundos y kg/goma, pero no el dolor ni el tipo de carga (avisa una vez).
 let ISO_SQL_WARNED = false;
 const painColor = (p) => p==null?"#94a3b8":p<=3?"#15803d":p<=6?"#b45309":"#b91c1c";
-function IsoLogger({ex,clientId,clientWeights,notify,onDone,onSwap}){
+function IsoLogger({ex,clientId,client,clientWeights,notify,onDone,onSwap}){
   const init=()=>{ const hasKg=ex.actual_weight!=null||ex.prescribed_weight!=null;
     const mode=ex.load_type||(ex.load_band?"goma":(hasKg?(isBodyweight(ex.exercise_name)?"pckg":"kg"):"pc"));
     const s0=secsOf(ex.actual_reps), s1=secsOf(ex.reps);
@@ -4669,7 +4675,7 @@ function IsoLogger({ex,clientId,clientWeights,notify,onDone,onSwap}){
     <div data-iso={ex.exercise_name} style={{background:v.done?"#eef8dd":"#f8fafc",border:`1px solid ${v.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:8}}>
         <div style={{minWidth:0}}>
-          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{ex.exercise_name} {onSwap&&<button onClick={onSwap} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button>}</div>
+          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{client?<ExName client={client} name={ex.exercise_name}/>:ex.exercise_name} {onSwap&&<button onClick={onSwap} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button>}</div>
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap",marginTop:3}}>
             <span style={{fontSize:9,fontWeight:800,color:"#0369a1",background:"#e0ecfb",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px"}}>⏸️ ISOMÉTRICO</span>
             {hint&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 7px"}}>🩹 {hint}</span>}
@@ -4797,13 +4803,13 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
             {rows.map(row=>isIsoRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})
-              ?<IsoLogger key={row.id+"|"+row.name} ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} clientWeights={clientWeights} notify={notify}
+              ?<IsoLogger key={row.id+"|"+row.name} ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} client={client} clientWeights={clientWeights} notify={notify}
                   onDone={(d)=>setField(row.id,"done",d)} onSwap={()=>setPicker({mode:"swap",row})}/>
               :(
               <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                   <div style={{minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{row.name} <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
+                    <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}><ExName client={client} name={row.name}/> <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
                     <MuscleTags name={row.name}/>
                   </div>
                   <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}{(baseExs.find(e=>e.id===row.id)||{}).rir!=null?` · RIR ${(baseExs.find(e=>e.id===row.id)||{}).rir}`:""}</div>
@@ -5339,6 +5345,93 @@ function RirHelp({notify,highlight,label="¿Qué es el RIR?"}){
     <button type="button" onClick={e=>{ e.stopPropagation(); setOpen(true); }} style={{border:"none",background:"none",color:"#0284c7",fontSize:11,fontWeight:700,cursor:"pointer",padding:0,textDecoration:"underline",textUnderlineOffset:2}}>ⓘ {label}</button>
     {open&&<RirGuide onClose={()=>setOpen(false)} notify={notify} highlight={highlight}/>}
   </>;
+}
+
+// ── HISTORIAL DE UN EJERCICIO (cargas realizadas y evolución) ─────────────
+// Se abre al tocar el nombre de un ejercicio en cualquier pantalla. Un solo
+// visor activo (el último montado: panel del coach o portal del atleta).
+const EXH = {cur:null, hosts:[]};
+const exhPing = () => EXH.hosts.forEach(h=>h.f());
+const openExHistory = (client, name) => { if(!client||!name) return; EXH.cur={client,name}; exhPing(); };
+function ExName({client,name,children,style}){
+  return <span role="button" tabIndex={0} title="Ver cargas y evolución de este ejercicio"
+    onClick={e=>{ e.stopPropagation(); openExHistory(client,name); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.stopPropagation(); openExHistory(client,name); } }}
+    style={{cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted",textDecorationColor:"#94a3b8",textUnderlineOffset:3,...(style||{})}}>{children||name}</span>;
+}
+function exHistory(clientId, name, assignedSessions, assignedExercises){
+  const dateOf=Object.fromEntries((assignedSessions||[]).filter(a=>a.client_id===clientId).map(a=>[a.id,a.date]));
+  const k=notesKey(name);
+  return (assignedExercises||[]).filter(e=>dateOf[e.session_id]&&dateOf[e.session_id]<=TODAY&&notesKey(e.exercise_name)===k&&(e.done||e.actual_weight!=null||e.actual_reps!=null||e.load_band))
+    .map(e=>{ const d=dateOf[e.session_id], kg=e.actual_weight!=null?Number(e.actual_weight):(e.done&&e.prescribed_weight!=null?Number(e.prescribed_weight):null);
+      const reps=e.actual_reps!=null?e.actual_reps:e.reps, rl=repsLow(reps), rir=e.actual_rir!=null?Number(e.actual_rir):(e.rir!=null?Number(e.rir):null);
+      return {date:d,sets:parseInt(e.sets)||null,reps,kg,band:e.load_band,rir,done:!!e.done,iso:isIsoRow(e),secs:secsOf(e.actual_reps!=null?e.actual_reps:e.reps),pain:e.pain!=null?Number(e.pain):null,load:isIsoRow(e)?isoLoadTxt(e):null,
+        e1rm:kg&&rl?e1rmOf(kg,rl,rir!=null?rir:RIR_DEFAULT_UNKNOWN):null}; })
+    .sort((a,b)=>a.date.localeCompare(b.date));
+}
+function ExerciseHistoryModal({client,name,assignedSessions,assignedExercises,coach,notify,onClose}){
+  const T=useRmTests(client.id);
+  const pts=exHistory(client.id,name,assignedSessions,assignedExercises);
+  const tests=(T.list||[]).filter(t=>notesKey(t.exercise_name)===notesKey(name)).sort((a,b)=>String(a.tested_on).localeCompare(String(b.tested_on)));
+  const iso=pts.some(p=>p.iso)||isIsoRow({exercise_name:name});
+  // un punto por día (la mejor carga / RM de ese día)
+  const byDay={}; pts.forEach(p=>{ const x=byDay[p.date]||(byDay[p.date]={date:p.date,kg:null,e1rm:null,secs:null,pain:null}); if(p.kg!=null) x.kg=Math.max(x.kg||0,p.kg); if(p.e1rm) x.e1rm=Math.max(x.e1rm||0,p.e1rm); if(p.secs!=null) x.secs=Math.max(x.secs||0,p.secs); if(p.pain!=null) x.pain=p.pain; });
+  tests.forEach(t=>{ const v=e1rmOf(t.kg,t.reps||1,t.rir||0); const x=byDay[t.tested_on]||(byDay[t.tested_on]={date:t.tested_on,kg:null,e1rm:null}); if(v) x.e1rm=Math.max(x.e1rm||0,v); });
+  const days=Object.values(byDay).sort((a,b)=>a.date.localeCompare(b.date));
+  const kgDays=days.filter(d=>d.kg!=null), rmDays=days.filter(d=>d.e1rm);
+  const last=pts[pts.length-1], best=kgDays.length?Math.max(...kgDays.map(d=>d.kg)):null;
+  const rmNow=rmDays.length?currentRM(rmDays.map(d=>({date:d.date,e1rm:d.e1rm}))):null;
+  const prog=kgDays.length>1&&kgDays[0].kg?Math.round((kgDays[kgDays.length-1].kg/kgDays[0].kg-1)*100):null;
+  const loadTxt=(p)=>p.iso?p.load:(p.band?bandLabel(p.band):(p.kg!=null?`${fmtKgN(p.kg)} kg`:"—"));
+  const Tile=({l,v,sub})=><div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>{l}</div><div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{v}</div>{sub&&<div style={{fontSize:10,color:"#94a3b8"}}>{sub}</div>}</div>;
+  return(
+    <div className="ovl" style={{zIndex:1400}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
+        <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{name}</h2>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",margin:"4px 0 12px"}}><span style={{fontSize:12,color:"#64748b"}}>{client.name}</span><MuscleTags name={name}/><CxTag name={name}/></div>
+        {!pts.length&&!tests.length
+          ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Aún no hay registros de este ejercicio. Aparecerán al marcarlo como hecho con su carga.</div>
+          :<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+              {last&&<Tile l="Último registro" v={iso?`${last.sets||""}${last.sets?"×":""}${last.secs!=null?last.secs+"s":"—"}`:`${loadTxt(last)}`} sub={`${fmtD(last.date)}${!iso&&last.reps?` · ${last.sets?last.sets+"×":""}${last.reps}`:""}${last.rir!=null?` · RIR ${last.rir}`:""}`}/>}
+              {!iso&&<Tile l="Mejor carga" v={best!=null?`${fmtKgN(best)} kg`:"—"} sub={prog!=null&&prog!==0?`${prog>0?"▲ +":"▼ "}${Math.abs(prog)} % desde el inicio`:`${pts.length} registro${pts.length!==1?"s":""}`}/>}
+              {!iso&&<Tile l="RM estimado" v={rmNow?`${fmtKgN(rmNow)} kg`:"—"} sub="mejor de las últimas 6 semanas"/>}
+              {iso&&<Tile l="Dolor último" v={last&&last.pain!=null?`${last.pain}/10`:"—"} sub={`${pts.length} registro${pts.length!==1?"s":""}`}/>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:6,marginBottom:10}}>
+              {!iso&&kgDays.length>1&&<MiniLine title="Carga por sesión (kg)" pts={kgDays.map(d=>({date:d.date,v:d.kg}))} yMin={Math.floor(Math.min(...kgDays.map(d=>d.kg))*0.9)} yMax={Math.ceil(Math.max(...kgDays.map(d=>d.kg))*1.05)} fmt={(v)=>fmtKgN(v)}/>}
+              {!iso&&rmDays.length>1&&<MiniLine title="RM estimado (kg)" pts={rmDays.map(d=>({date:d.date,v:Math.round(d.e1rm*10)/10}))} yMin={Math.floor(Math.min(...rmDays.map(d=>d.e1rm))*0.92)} yMax={Math.ceil(Math.max(...rmDays.map(d=>d.e1rm))*1.03)} fmt={(v)=>fmtKgN(v)}/>}
+              {iso&&days.filter(d=>d.secs!=null).length>1&&<MiniLine title="Segundos" pts={days.filter(d=>d.secs!=null).map(d=>({date:d.date,v:d.secs}))} fmt={(v)=>`${v}s`}/>}
+              {iso&&days.filter(d=>d.pain!=null).length>1&&<MiniLine title="Dolor (0-10)" pts={days.filter(d=>d.pain!=null).map(d=>({date:d.date,v:d.pain}))} yMax={10} fmt={(v)=>String(v)} dotColor={painColor} lineColor="#94a3b8"/>}
+            </div>
+            <span className="lbl">REGISTROS</span>
+            <div style={{border:"1px solid #e6ebf3",borderRadius:10,overflow:"hidden",background:"#fff",maxHeight:"38vh",overflowY:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",background:"#f8fafc",fontSize:9,fontWeight:800,color:"#64748b",position:"sticky",top:0}}>
+                <span>FECHA</span><span>SERIES</span><span>CARGA</span>{iso?<span style={{textAlign:"right"}}>DOLOR</span>:<><span style={{textAlign:"right"}}>RIR</span><span style={{textAlign:"right"}}>e1RM</span></>}
+              </div>
+              {[...pts].reverse().map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,fontVariantNumeric:"tabular-nums",color:"#0f172a"}}>
+                <span style={{color:"#475569"}}>{fmtD(p.date)}{!p.done?<span style={{color:"#94a3b8"}}> ·</span>:""}</span>
+                <span>{p.sets?`${p.sets}×`:""}{iso?(p.secs!=null?`${p.secs}s`:"—"):(p.reps||"—")}</span>
+                <span style={{fontWeight:700}}>{loadTxt(p)}</span>
+                {iso?<span style={{textAlign:"right",fontWeight:800,color:painColor(p.pain)}}>{p.pain!=null?`${p.pain}/10`:"—"}</span>
+                  :<><span style={{textAlign:"right",color:"#475569"}}>{p.rir!=null?p.rir:"—"}</span><span style={{textAlign:"right",fontWeight:700}}>{p.e1rm?fmtKgN(p.e1rm):"—"}</span></>}
+              </div>)}
+              {tests.map(t=><div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,background:"#fffbeb"}}>
+                <span style={{color:"#475569"}}>{fmtD(t.tested_on)} · test</span><span>1×{t.reps||1}</span><span style={{fontWeight:700}}>{fmtKgN(t.kg)} kg</span><span style={{textAlign:"right"}}>{t.rir||0}</span><span style={{textAlign:"right",fontWeight:700}}>{fmtKgN(e1rmOf(t.kg,t.reps||1,t.rir||0))}</span>
+              </div>)}
+            </div>
+          </>}
+        {coach&&<GestureNotes clientId={client.id} exercise={name} notify={notify}/>}
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:12}} onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  );
+}
+function ExerciseHistoryHost({assignedSessions,assignedExercises,coach,notify}){
+  const [,force]=React.useState(0);
+  const me=React.useRef({f:()=>force(x=>x+1)});
+  React.useEffect(()=>{ EXH.hosts.push(me.current); return ()=>{ EXH.hosts=EXH.hosts.filter(h=>h!==me.current); }; },[]);
+  if(!EXH.cur||EXH.hosts[EXH.hosts.length-1]!==me.current) return null;
+  return <ExerciseHistoryModal client={EXH.cur.client} name={EXH.cur.name} assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach={coach} notify={notify} onClose={()=>{ EXH.cur=null; exhPing(); }}/>;
 }
 
 // ── RM ESTIMADO: evolución por ejercicio, tabla de cargas y tests ─────────
@@ -6035,6 +6128,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
   return(
     <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"22px 16px"}} className="fade">
+      <ExerciseHistoryHost assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} notify={notify}/>
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -9537,7 +9631,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
             </div>
 
             {sessExes.map((ae,i)=>(
-              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving}/>
+              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving} client={client}/>
             ))}
 
             {sess.notes&&(
@@ -9553,7 +9647,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 }
 
 // ── EXERCISE CARD (client registers completion) ────────────────────────────
-function ExerciseCard({ae, index, onComplete, saving}) {
+function ExerciseCard({ae, index, onComplete, saving, client}) {
   const [expanded,setExpanded] = React.useState(false);
   const [actualWeight,setActualWeight] = React.useState(ae.prescribed_weight||"");
   const [actualReps,setActualReps] = React.useState(ae.reps||"");
@@ -9578,7 +9672,7 @@ function ExerciseCard({ae, index, onComplete, saving}) {
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           <div style={{width:22,height:22,borderRadius:6,background:"#e6f0fb",border:"1px solid #bcd3ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#0284c7",flexShrink:0}}>{index+1}</div>
           <div>
-            <div style={{fontSize:13,fontWeight:600}}>{ae.exercise_name}</div>
+            <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
             <div style={{display:"flex",gap:8,marginTop:2}}>
               <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
               {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
