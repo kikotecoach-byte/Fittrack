@@ -274,6 +274,14 @@ function Ico({k,size=22,style,className}){
   return <img src={`/icons3d/${k}.png`} alt="" width={size} height={size} draggable={false} onError={()=>setBad(true)} className={"ico3d"+(className?" "+className:"")} style={style}/>;
 }
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ── ACCESO SEGURO (Supabase Auth) ──────────────────────────────────────────
+// Coach: email + contraseña. Atleta: código + contraseña propia (la cuenta usa
+// un email interno derivado del código; el atleta nunca lo ve).
+const ATHLETE_DOMAIN = "atleta.kikotegym.app";
+const athleteEmail = (code) => String(code||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"")+"@"+ATHLETE_DOMAIN;
+// Paso 1 de seguridad: el acceso antiguo sigue disponible mientras se configura
+// el nuevo. Tras ejecutar docs/seguridad-2.sql se pone a false.
+const LEGACY_LOGIN = true;
 
 const TODAY = new Date().toISOString().split("T")[0];
 const TIME_SLOTS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00"];
@@ -459,6 +467,9 @@ function calcStreak(history) {
 // ── ROOT ───────────────────────────────────────────────────────────────────
 function App() {
   const [mode, setMode] = React.useState("login");
+  const authKind = React.useRef(null); // "admin" | "client" con sesión segura
+  const [roster, setRoster] = React.useState(null);   // aforo (atleta): quién hay en cada clase
+  const [members, setMembers] = React.useState(null); // comunidad (atleta): nombre e inicial
   const [clients, setClients] = React.useState([]);
   const [sessions, setSessions] = React.useState([]);
   const [history, setHistory] = React.useState([]);
@@ -528,16 +539,45 @@ function App() {
       setWaitlist(wl.data||[]);
       // Leads/valoraciones: fetch aparte para no romper si aún no existe la tabla.
       try { const lq=await sb.from("leads").select("*").order("created_at",{ascending:false}); if(!lq.error) setLeads(lq.data||[]); } catch(e){}
+      if(authKind.current==="client") await loadCommunity();
+      setLoading(false);
+      return {clients:c.data||[]};
     } catch(e) { notify("Error de conexión","err"); }
     setLoading(false);
+    return {clients:[]};
   },[]);
+  // Aforo y comunidad para el atleta (funciones seguras: no exponen datos privados).
+  const loadCommunity = async () => {
+    try{
+      const r=await sb.rpc("slot_roster",{p_from:addDays(TODAY,-7),p_to:addDays(TODAY,120)});
+      if(!r.error) setRoster((r.data||[]).map(x=>({...x,time:String(x.time||"").slice(0,5),date:String(x.date||"").slice(0,10)})));
+      const m=await sb.rpc("community_members"); if(!m.error) setMembers(m.data||[]);
+    }catch(e){}
+  };
+  const clearData = () => { [setClients,setSessions,setHistory,setPayments,setForum,setProgress,setRecords,setAchievements,setClientWeights,setAssignedSessions,setAssignedExercises,setWeightHistory,setWaitlist,setLeads,setClientPlans].forEach(f=>f([])); setRoster(null); setMembers(null); };
+  // Entra con la sesión segura: decide si es coach o atleta (lo dice el servidor).
+  const enterWithAuth = async () => {
+    const a=await sb.rpc("is_admin");
+    if(a.error){ await sb.auth.signOut(); setLoading(false); setLoginErr("Falta preparar la seguridad en Supabase (docs/seguridad-1.sql)."); return false; }
+    if(a.data===true){ authKind.current="admin"; await loadAll(); setMode("admin"); return true; }
+    const m=await sb.rpc("my_client_id");
+    if(m.data){ authKind.current="client"; const {clients:cl}=await loadAll(); const me=cl.find(c=>c.id===m.data); if(me){ setLoggedClient(me); setMode("client"); return true; } }
+    authKind.current=null; await sb.auth.signOut(); setLoading(false);
+    setLoginErr("Esta cuenta no tiene acceso. Activa tu cuenta o habla con tu coach.");
+    return false;
+  };
+  const doLogout = async () => { try{ await sb.auth.signOut(); }catch(e){} authKind.current=null; clearSession(); clearData(); setLoggedClient(null); setMode("login"); };
 
   React.useEffect(()=>{
-    loadAll().then(()=>{
-      // Restore saved session
-      const s = loadSession();
-      if(s) setPendingSession(s);
-    });
+    (async()=>{
+      // Con sesión segura guardada: entra directo. Sin ella NO se descarga ningún dato.
+      try{ const {data}=await sb.auth.getSession(); if(data&&data.session&&await enterWithAuth()) return; }catch(e){}
+      const legacy = LEGACY_LOGIN ? loadSession() : null;
+      if(legacy){ await loadAll(); setPendingSession(legacy); }
+      else { clearSession(); setLoading(false); }
+    })();
+    const {data:sub}=sb.auth.onAuthStateChange((ev)=>{ if(ev==="SIGNED_OUT"&&authKind.current){ authKind.current=null; clearData(); setLoggedClient(null); setMode("login"); } });
+    return ()=>{ try{ sub&&sub.subscription&&sub.subscription.unsubscribe(); }catch(e){} };
   },[]);
 
   // Apply pending session once clients are loaded
@@ -558,8 +598,44 @@ function App() {
     if(loggedClient) { const u=clients.find(c=>c.id===loggedClient.id); if(u) setLoggedClient(u); }
   },[clients]);
 
-  const handleClientLogin = (remember) => {
-    const c = clients.find(x=>x.name.toLowerCase().trim()===loginName.toLowerCase().trim()&&x.code===loginCode.trim());
+  // ── Acceso seguro ──
+  const handleAthleteLogin = async (code, pass) => {
+    setLoginErr("");
+    if(!String(code||"").trim()||!pass) return setLoginErr("Escribe tu código y tu contraseña");
+    const {error}=await sb.auth.signInWithPassword({email:athleteEmail(code),password:pass});
+    if(error) return setLoginErr(/invalid login/i.test(error.message)?"Código o contraseña incorrectos. ¿Ya activaste tu cuenta?":error.message);
+    setLoading(true); await enterWithAuth();
+  };
+  const handleAthleteActivate = async (name, code, pass, pass2) => {
+    setLoginErr("");
+    if(!String(name||"").trim()||!String(code||"").trim()) return setLoginErr("Escribe tu nombre completo y tu código");
+    if(String(pass||"").length<8) return setLoginErr("La contraseña debe tener al menos 8 caracteres");
+    if(pass!==pass2) return setLoginErr("Las contraseñas no coinciden");
+    const email=athleteEmail(code);
+    let r=await sb.auth.signUp({email,password:pass});
+    if(r.error){
+      if(!/registered|already|exists/i.test(r.error.message)) return setLoginErr(r.error.message);
+      const s2=await sb.auth.signInWithPassword({email,password:pass}); // ya la había creado antes
+      if(s2.error) return setLoginErr("Este código ya tiene cuenta. Entra con tu contraseña o pide a tu coach que restablezca tu acceso.");
+    } else if(!r.data||!r.data.session){
+      return setLoginErr("Falta un ajuste en Supabase: desactiva «Confirm email» (Authentication → Providers → Email).");
+    }
+    const c=await sb.rpc("claim_client",{p_name:String(name).trim(),p_code:String(code).trim()});
+    if(c.error){ await sb.auth.signOut(); return setLoginErr(/intentos/i.test(c.error.message)?"Demasiados intentos. Prueba dentro de una hora.":"No se pudo activar: "+c.error.message); }
+    if(!c.data){ const m=await sb.rpc("my_client_id"); if(!m.data){ await sb.auth.signOut(); return setLoginErr("El nombre o el código no coinciden. Escríbelos tal como te los dio tu coach."); } }
+    setLoading(true); if(await enterWithAuth()) notify("¡Cuenta activada! A partir de ahora entra con tu código y tu contraseña 💪");
+  };
+  const handleCoachLogin = async (email, pass) => {
+    setLoginErr("");
+    if(!String(email||"").trim()||!pass) return setLoginErr("Escribe tu email y tu contraseña");
+    const {error}=await sb.auth.signInWithPassword({email:String(email).trim(),password:pass});
+    if(error) return setLoginErr(/invalid login/i.test(error.message)?"Email o contraseña incorrectos":error.message);
+    setLoading(true); await enterWithAuth();
+  };
+  // ── Acceso antiguo (temporal, solo mientras LEGACY_LOGIN) ──
+  const handleClientLogin = async (remember) => {
+    const {clients:cl}=await loadAll();
+    const c = cl.find(x=>x.name.toLowerCase().trim()===loginName.toLowerCase().trim()&&x.code===loginCode.trim());
     if(c){
       setLoggedClient(c);setMode("client");setLoginErr("");
       if(remember) saveSession("client", {id:c.id});
@@ -572,13 +648,25 @@ function App() {
     if(Date.now()<f.until){ setLoginErr(`Demasiados intentos. Espera ${Math.ceil((f.until-Date.now())/1000)} s`); return; }
     let ok=false; try{ ok=(await sha256Hex(ADMIN_SALT+adminPass))===ADMIN_HASH; }catch(e){ setLoginErr("Este navegador no permite comprobar la contraseña (usa https)"); return; }
     if(ok){
-      f.n=0; setMode("admin");setAdminPass("");setLoginErr("");
+      f.n=0; await loadAll(); setMode("admin");setAdminPass("");setLoginErr("");
       if(remember) saveSession("admin", {k:ADMIN_KEY});
     } else {
       f.n++; if(f.n>=5){ f.until=Date.now()+30000; f.n=0; }
       setLoginErr("Contraseña incorrecta");
     }
   };
+
+  // Atleta con sesión segura: sus reservas + el aforo de los demás (sin datos privados).
+  const portalSessions = React.useMemo(()=>{
+    if(mode!=="client"||!loggedClient||!roster) return sessions;
+    const mine=sessions.filter(s=>s.client_id===loggedClient.id);
+    const others=roster.filter(r=>r.client_id!==loggedClient.id).map((r,i)=>({id:"r"+i,client_id:r.client_id,date:r.date,time:r.time,status:"confirmed"}));
+    return [...mine,...others];
+  },[mode,loggedClient,roster,sessions]);
+  const portalClients = React.useMemo(()=>{
+    if(mode!=="client"||!loggedClient||!members) return clients;
+    return [...members.filter(m=>m.id!==loggedClient.id),loggedClient];
+  },[mode,loggedClient,members,clients]);
 
   if(loading) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
@@ -591,60 +679,111 @@ function App() {
   return (
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
-      {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
+      {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
 
 // ── LOGIN ──────────────────────────────────────────────────────────────────
-function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}) {
+function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}) {
   const [remember, setRemember] = React.useState(true);
+  const [sub, setSub] = React.useState("login");       // atleta: login | activate
+  const [legacy, setLegacy] = React.useState(false);   // acceso antiguo (temporal)
+  const [f, setF] = React.useState({code:"",pass:"",pass2:"",name:"",email:""});
+  const [busy, setBusy] = React.useState(false);
+  const [show, setShow] = React.useState(false);
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  const run=async(fn)=>{ if(busy) return; setBusy(true); try{ await fn(); } finally { setBusy(false); } };
+  const tab=(t)=>{ setLoginTab(t); setLoginErr(""); setSub("login"); };
   const RememberBox = ({id}) => (
     <div style={{display:"flex",alignItems:"center",gap:10,padding:"2px 0"}}>
       <input type="checkbox" id={id} checked={remember} onChange={e=>setRemember(e.target.checked)} style={{accentColor:"#0284c7",width:18,height:18,cursor:"pointer"}}/>
       <label htmlFor={id} style={{fontSize:13,color:"#64748b",cursor:"pointer"}}>Recordarme en este dispositivo</label>
     </div>
   );
+  const passInput=(k,onEnter,ph)=>(
+    <div style={{position:"relative"}}>
+      <input className="inp" type={show?"text":"password"} autoComplete={k==="pass"&&sub!=="activate"?"current-password":"new-password"} placeholder={ph||"••••••••"} value={f[k]} onChange={e=>set(k,e.target.value)} onKeyDown={e=>e.key==="Enter"&&onEnter&&onEnter()} style={{paddingRight:44}}/>
+      <button type="button" onClick={()=>setShow(x=>!x)} title={show?"Ocultar":"Mostrar"} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",fontSize:15,color:"#94a3b8"}}>{show?"🙈":"👁"}</button>
+    </div>
+  );
+  const err=loginErr?<p style={{fontSize:12,color:"#dc2626",lineHeight:1.4}}>{loginErr}</p>:null;
+  const athleteLogin=()=>run(()=>handleAthleteLogin(f.code,f.pass));
+  const activate=()=>run(()=>handleAthleteActivate(f.name,f.code,f.pass,f.pass2));
+  const coachLogin=()=>run(()=>handleCoachLogin(f.email,f.pass));
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(ellipse at 50% 0%,#dcebfb,#eef1f7 60%)"}}>
       <div style={{width:"100%",maxWidth:380}} className="fade">
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:38,marginBottom:8}}>🏋️</div>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{marginBottom:8}}><Ico k="logo" size={52}/></div>
           <div className="mono" style={{fontSize:28,fontWeight:700,color:"#0284c7",letterSpacing:-1}}>{GYM_NAME}</div>
           <div style={{color:"#94a3b8",fontSize:13,marginTop:5}}>Tu centro de entrenamiento personal</div>
         </div>
-        <div className="seg" style={{marginBottom:20}}>
-          <button className={`sb ${loginTab==="client"?"on":""}`} onClick={()=>{setLoginTab("client");setLoginErr("");}}>Soy cliente</button>
-          <button className={`sb ${loginTab==="admin"?"on":""}`} onClick={()=>{setLoginTab("admin");setLoginErr("");}}>Admin</button>
+        <div className="seg" style={{marginBottom:18}}>
+          <button className={`sb ${loginTab==="client"?"on":""}`} onClick={()=>tab("client")}>Soy atleta</button>
+          <button className={`sb ${loginTab==="admin"?"on":""}`} onClick={()=>tab("admin")}>Coach</button>
         </div>
-        <div className="card" style={{padding:26}}>
-          {loginTab==="client"?(
+        <div className="card" style={{padding:24}}>
+          {!legacy&&loginTab==="client"&&sub==="login"&&(
+            <form onSubmit={e=>{e.preventDefault();athleteLogin();}} style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><span className="lbl">TU CÓDIGO</span>
+                <input className="inp mono" autoComplete="username" placeholder="Ej. 1000" value={f.code} onChange={e=>set("code",e.target.value)} style={{letterSpacing:4,fontSize:18,textAlign:"center"}}/>
+              </div>
+              <div><span className="lbl">CONTRASEÑA</span>{passInput("pass",athleteLogin)}</div>
+              {err}
+              <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Entrando…":"Entrar"}</button>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:11,fontSize:13,color:"#0284c7"}} onClick={()=>{setSub("activate");setLoginErr("");}}>¿Primera vez? Activa tu cuenta</button>
+              <p style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>¿Olvidaste la contraseña? Pide a tu coach que restablezca tu acceso.</p>
+            </form>
+          )}
+          {!legacy&&loginTab==="client"&&sub==="activate"&&(
+            <form onSubmit={e=>{e.preventDefault();activate();}} style={{display:"flex",flexDirection:"column",gap:12}}>
+              <p style={{fontSize:13,color:"#475569",lineHeight:1.45}}>Solo la primera vez: escribe tu nombre y el código que te dio tu coach, y elige tu contraseña.</p>
+              <div><span className="lbl">NOMBRE COMPLETO</span><input className="inp" autoComplete="name" placeholder="Ej. Ana Gómez" value={f.name} onChange={e=>set("name",e.target.value)}/></div>
+              <div><span className="lbl">TU CÓDIGO</span><input className="inp mono" autoComplete="username" placeholder="Ej. 1000" value={f.code} onChange={e=>set("code",e.target.value)} style={{letterSpacing:4,textAlign:"center"}}/></div>
+              <div><span className="lbl">NUEVA CONTRASEÑA (mín. 8)</span>{passInput("pass")}</div>
+              <div><span className="lbl">REPITE LA CONTRASEÑA</span>{passInput("pass2",activate)}</div>
+              {err}
+              <button type="submit" className="btn grn" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Activando…":"Activar mi cuenta"}</button>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:10,fontSize:12}} onClick={()=>{setSub("login");setLoginErr("");}}>← Ya tengo cuenta</button>
+            </form>
+          )}
+          {!legacy&&loginTab==="admin"&&(
+            <form onSubmit={e=>{e.preventDefault();coachLogin();}} style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><span className="lbl">EMAIL</span><input className="inp" type="email" autoComplete="username" placeholder="tu@email.com" value={f.email} onChange={e=>set("email",e.target.value)}/></div>
+              <div><span className="lbl">CONTRASEÑA</span>{passInput("pass",coachLogin)}</div>
+              {err}
+              <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Entrando…":"Entrar al panel"}</button>
+            </form>
+          )}
+          {legacy&&(loginTab==="client"?(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <p style={{fontSize:13,color:"#64748b",marginBottom:4}}>Ingresa tu nombre y el código de acceso.</p>
+              <p style={{fontSize:12,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:9,padding:"8px 10px"}}>Acceso antiguo (temporal). Activa tu cuenta nueva cuanto antes.</p>
               <div><span className="lbl">NOMBRE COMPLETO</span>
-                <input className="inp" placeholder="Ej. Carlos Mendoza" value={loginName} onChange={e=>setLoginName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)}/>
+                <input className="inp" placeholder="Ej. Carlos Mendoza" value={loginName} onChange={e=>setLoginName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&run(()=>handleClientLogin(remember))}/>
               </div>
               <div><span className="lbl">CÓDIGO</span>
-                <input className="inp mono" placeholder="••••" maxLength={4} value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)} style={{letterSpacing:8,fontSize:20,textAlign:"center"}}/>
+                <input className="inp mono" placeholder="••••" maxLength={8} value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&run(()=>handleClientLogin(remember))} style={{letterSpacing:8,fontSize:20,textAlign:"center"}}/>
               </div>
-              {loginErr&&<p style={{fontSize:12,color:"#dc2626"}}>{loginErr}</p>}
+              {err}
               <RememberBox id="remC"/>
-              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleClientLogin(remember)}>Entrar a mi portal</button>
-              <p style={{fontSize:11,color:"#bcd3ee",textAlign:"center"}}>¿Sin código? Escribe a tu trainer 📱</p>
+              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy} onClick={()=>run(()=>handleClientLogin(remember))}>Entrar a mi portal</button>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <p style={{fontSize:12,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:9,padding:"8px 10px"}}>Acceso antiguo (temporal). Crea tu usuario de coach en Supabase y entra con email.</p>
               <div><span className="lbl">CONTRASEÑA</span>
-                <input className="inp" type="password" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminLogin(remember)}/>
+                <input className="inp" type="password" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&run(()=>handleAdminLogin(remember))}/>
               </div>
-              {loginErr&&<p style={{fontSize:12,color:"#dc2626"}}>{loginErr}</p>}
+              {err}
               <RememberBox id="remA"/>
-              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleAdminLogin(remember)}>Entrar al panel</button>
+              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy} onClick={()=>run(()=>handleAdminLogin(remember))}>Entrar al panel</button>
             </div>
-          )}
+          ))}
         </div>
+        {LEGACY_LOGIN&&<button type="button" onClick={()=>{setLegacy(x=>!x);setLoginErr("");}} style={{display:"block",margin:"14px auto 0",border:"none",background:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",textDecoration:"underline"}}>{legacy?"← Volver al acceso seguro":"Acceso antiguo (temporal)"}</button>}
       </div>
     </div>
   );
@@ -869,8 +1008,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
   const addClient = () => w(async()=>{
     if(!nc.name||!nc.code||!nc.nextPayment) return notify("Completa los campos requeridos","err");
-    if(nc.code.length!==4) return notify("El código debe tener 4 dígitos","err");
-    if(clients.find(c=>c.code===nc.code)) return notify("Ese código ya existe","err");
+    if(!/^[A-Za-z0-9]{4,8}$/.test(nc.code)) return notify("El código debe tener de 4 a 8 letras o números","err");
+    if(clients.find(c=>String(c.code).toUpperCase()===nc.code.toUpperCase())) return notify("Ese código ya existe","err");
     const color=COLORS[clients.length%COLORS.length];
     const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal,days_week:(nc.trainDays&&nc.trainDays.length)||4,train_days:(nc.trainDays||[]).join(",")});
     if(error) return notify("Error: "+error.message,"err");
@@ -985,6 +1124,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     await sb.from("clients").update({sessions_left:tot-owed}).eq("id",client.id);
     notify(owed?`Bono renovado ✓ · descontadas ${owed} sesión(es) que debía`:"Sesiones renovadas ✓");
   });
+  // Restablece el acceso a la app de un atleta (olvidó la contraseña, cambió de móvil…).
+  const resetAccess = (c) => { if(!window.confirm(`¿Restablecer el acceso de ${c.name}? Tendrá que volver a activar su cuenta con su nombre y su código.`)) return;
+    w(async()=>{ const {error}=await sb.rpc("admin_reset_access",{p_client:c.id}); notify(error?("No se pudo: "+error.message):"Acceso restablecido ✓ · ya puede activar su cuenta de nuevo",error?"err":undefined); }); };
+  const accessMsg = (c) => `Hola ${String(c.name||"").split(" ")[0]} 👋 Ya puedes entrar en tu app de ${GYM_NAME}: ${location.origin}\n\n1️⃣ Pulsa «Soy atleta» → «¿Primera vez? Activa tu cuenta».\n2️⃣ Escribe tu nombre (${c.name}) y tu código: ${c.code}\n3️⃣ Elige tu contraseña (mín. 8 caracteres).\n\nDespués entrarás siempre con tu código y tu contraseña. ¡No la compartas! 💪`;
   const deleteClient = (id) => w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); });
   // ── Valoraciones / Leads ──
   const saveLead = (data) => w(async()=>{
@@ -1680,10 +1823,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowMeasures(c)}>📏 Medidas</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700}} onClick={()=>setShowSummary(c)}>⭐ Resumen</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700}} onClick={()=>setViewAs(c)}>👁 Ver como cliente</button>
+
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
                         </div>
+                        {"auth_user_id" in c&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:c.auth_user_id?"#f0fdf4":"#fffbeb",border:`1px solid ${c.auth_user_id?"#bbf7d0":"#fde68a"}`,borderRadius:10,padding:"8px 10px",marginBottom:14}}>
+                          <span style={{fontSize:12,fontWeight:700,color:c.auth_user_id?"#15803d":"#b45309",flex:1,minWidth:150}}>{c.auth_user_id?"🔐 App activada (entra con su código y su contraseña)":`⏳ Aún no ha activado su cuenta · código ${c.code}`}</span>
+                          {c.phone&&<a className="btn wa" style={{fontSize:11,padding:"6px 10px",textDecoration:"none"}} href={waLink(c.phone,accessMsg(c))} target="_blank" rel="noreferrer">📲 Enviar acceso</a>}
+                          {c.auth_user_id&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>resetAccess(c)}>🔑 Restablecer acceso</button>}
+                        </div>}
                         <ClientGestureNotes client={c}/>
                         {/* Historial: sesiones por día/fecha y pagos (toca una sesión para ver cargas y replicar) */}
                         <div style={{marginBottom:14}}>
@@ -5652,11 +5801,14 @@ function ClientModal({nc,setNc,onSave,onClose}) {
       <div className="mdl fade" onClick={e=>e.stopPropagation()}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Nuevo cliente</h2>
         <div style={{display:"flex",flexDirection:"column",gap:13}}>
-          {[{k:"name",l:"NOMBRE *",p:"María García",t:"text"},{k:"code",l:"CÓDIGO 4 DÍGITOS *",p:"0000",t:"text",mono:true},{k:"phone",l:"TELÉFONO WA",p:"34600000000",t:"text"},{k:"email",l:"EMAIL",p:"cliente@email.com",t:"email"}].map(f=>(
+          {[{k:"name",l:"NOMBRE *",p:"María García",t:"text"},{k:"code",l:"CÓDIGO DE ACCESO * (4-8 letras/números)",p:"AB12CD",t:"text",mono:true},{k:"phone",l:"TELÉFONO WA",p:"34600000000",t:"text"},{k:"email",l:"EMAIL",p:"cliente@email.com",t:"email"}].map(f=>(
             <div key={f.k}><span className="lbl">{f.l}</span>
-              <input type={f.t} className={`inp${f.mono?" mono":""}`} placeholder={f.p} maxLength={f.k==="code"?4:undefined}
-                value={nc[f.k]} onChange={e=>setNc(c=>({...c,[f.k]:e.target.value}))}
-                style={f.mono?{letterSpacing:8,fontSize:20,textAlign:"center"}:{}}/>
+              <div style={{display:"flex",gap:6}}>
+                <input type={f.t} className={`inp${f.mono?" mono":""}`} placeholder={f.p} maxLength={f.k==="code"?8:undefined}
+                  value={nc[f.k]} onChange={e=>setNc(c=>({...c,[f.k]:f.k==="code"?e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""):e.target.value}))}
+                  style={f.mono?{letterSpacing:6,fontSize:20,textAlign:"center"}:{}}/>
+                {f.k==="code"&&<button type="button" className="btn ghost" title="Generar código" style={{padding:"0 12px",fontSize:16}} onClick={()=>{ const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const r=new Uint32Array(6); crypto.getRandomValues(r); setNc(c=>({...c,code:[...r].map(x=>A[x%A.length]).join("")})); }}>🎲</button>}
+              </div>
             </div>
           ))}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -6490,6 +6642,9 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
   };
 
   const toggleLike = async(post) => {
+    // Función segura: permite dar «me gusta» sin poder editar publicaciones ajenas.
+    const r = await sb.rpc("toggle_like",{p_post:post.id});
+    if(!r.error){ await loadAll(); return; }
     const liked = (post.liked_by||[]).includes(client.id);
     const newLikedBy = liked
       ? post.liked_by.filter(id=>id!==client.id)
