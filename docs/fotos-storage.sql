@@ -30,6 +30,7 @@ create table if not exists public.client_photos (
   taken_on   date,
   created_at timestamptz not null default now()
 );
+alter table public.client_photos add column if not exists pose text; -- frente · perfil · espalda · otra
 alter table public.client_photos enable row level security;
 do $$ begin
   if not exists (select 1 from pg_policies where schemaname = 'public' and tablename = 'client_photos') then

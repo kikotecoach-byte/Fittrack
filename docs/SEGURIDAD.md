@@ -40,9 +40,13 @@
 Mientras tanto sigue disponible «Acceso antiguo (temporal)» debajo del formulario.
 
 ### Paso 2 — cerrar la base de datos
-Cuando entres bien como coach:
+Cuando entres bien como coach (el Inicio te avisa con «🔓 Falta el último paso de seguridad»):
 1. SQL Editor: ejecuta `docs/seguridad-2.sql`.
-2. Se publica la versión sin «Acceso antiguo».
+2. Nada más: el «Acceso antiguo» desaparece solo en cuanto la base de datos está cerrada,
+   y el aviso del Inicio también.
+
+No hace falta esperar a que todos los atletas hayan activado su app: podrán activarla
+después igual (Clientes → atleta → «📲 Enviar acceso»).
 
 Al final de `seguridad-2.sql` hay una **vuelta atrás** por si algo fallara.
 

@@ -282,6 +282,9 @@ const athleteEmail = (code) => String(code||"").trim().toLowerCase().replace(/[^
 // Paso 1 de seguridad: el acceso antiguo sigue disponible mientras se configura
 // el nuevo. Tras ejecutar docs/seguridad-2.sql se pone a false.
 const LEGACY_LOGIN = true;
+// Comprobación sin sesión: ¿la base de datos sigue abierta a cualquiera? (paso 2 pendiente)
+const sbAnon = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:"kg-anon-check"}});
+async function dbIsOpen(){ try{ const {data,error}=await sbAnon.from("clients").select("id").limit(1); return !error&&Array.isArray(data)&&data.length>0; }catch(e){ return false; } }
 
 const TODAY = new Date().toISOString().split("T")[0];
 const TIME_SLOTS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00"];
@@ -412,7 +415,30 @@ const macroWeek = (date=TODAY) => {
   return Math.ceil(((d - soy)/86400000 + soy.getDay()+1)/7);
 };
 // Bloque del macrociclo que corresponde a una fecha (según su semana del año).
-const blockForDate = (blocks,date=TODAY) => { const w=macroWeek(date); return (blocks||[]).find(b=>w>=b.start_week&&w<=b.end_week); };
+// Con `client`: si es un cliente nuevo, sus primeras semanas son de adaptación
+// (aunque el gimnasio esté en otra fase). Sin bloque a final de año (semanas
+// 49-53): transición metabólica y descarga para empezar enero recuperados.
+const SYN_BLOCKS = new Map(); // bloques sintéticos (misma referencia en cada llamada)
+const synBlock = (key, b) => { if(!SYN_BLOCKS.has(key)) SYN_BLOCKS.set(key,{...b,synthetic:true}); return SYN_BLOCKS.get(key); };
+const ADAPT_WEEKS = {principiante:4, intermedio:3, avanzado:2};
+const clientStart = (c) => c&&c.created_at ? String(c.created_at).slice(0,10) : null;
+const adaptBlockFor = (client, date) => {
+  const st=clientStart(client); if(!st||date<st) return null;
+  const n=ADAPT_WEEKS[levelOf(client)]||3, m0=mondayOfDate(st), idx=Math.floor((new Date(mondayOfDate(date)+"T12:00:00")-new Date(m0+"T12:00:00"))/(7*86400000));
+  if(idx<0||idx>=n) return null;
+  const w0=macroWeek(m0), half=Math.ceil(n/2);
+  return idx<half
+    ? synBlock(`ad1|${client.id}|${m0}|${n}`,{id:"adapt1-"+client.id,name:"Adaptación · Volumen",type:"acondicionamiento",rep_range:"12-15",start_week:w0,end_week:w0+half-1,adapt:true})
+    : synBlock(`ad2|${client.id}|${m0}|${n}`,{id:"adapt2-"+client.id,name:"Adaptación · Intensidad",type:"acondicionamiento",rep_range:"8-12",start_week:w0+half,end_week:w0+n-1,adapt:true});
+};
+const blockForDate = (blocks,date=TODAY,client) => {
+  const ad=client?adaptBlockFor(client,date):null; if(ad) return ad;
+  const w=macroWeek(date), b=(blocks||[]).find(b=>w>=b.start_week&&w<=b.end_week); if(b) return b;
+  const last=Math.max(0,...(blocks||[]).map(x=>x.end_week||0));
+  if(last&&w>last&&w>=45){ return w<=51 ? synBlock("fin1",{id:"fin-transicion",name:"Transición · Fin de año",type:"hibrido",rep_range:"var",start_week:Math.max(last+1,49),end_week:51})
+                                       : synBlock("fin2",{id:"fin-descarga",name:"Descarga · Fin de año",type:"descarga",rep_range:"8-10",start_week:52,end_week:53}); }
+  return undefined;
+};
 // Lunes de la semana de una fecha.
 const mondayOfDate = (d) => { const x=new Date(d+"T12:00:00"); const g=x.getDay(); x.setDate(x.getDate()+(g===0?-6:1-g)); return x.toISOString().split("T")[0]; };
 // Días de la semana (getDay: 0=Dom..6=Sáb) en orden Lun→Dom para la interfaz.
@@ -428,7 +454,7 @@ const dayTypeLabel = (id) => (DAY_LABEL&&DAY_LABEL[id]) || "Sesión";
 // (sus reservas). Los días habituales de la ficha solo marcan el tamaño mínimo
 // del microciclo.
 function autoRoutineFor(client, date, sessions, annualBlocks){
-  const blk = blockForDate(annualBlocks, date);
+  const blk = blockForDate(annualBlocks, date, client);
   const td = parseDays(client.train_days);
   const wd = getWeekDays(mondayOfDate(date));
   const days = [...new Set((sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date))];
@@ -438,7 +464,8 @@ function autoRoutineFor(client, date, sessions, annualBlocks){
   const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, nDays, macroWeek(date), client.goal) : WEEK_PLAN;
   const idx = days.indexOf(date);
   const dayType = plan[idx % plan.length];
-  return { dayType, label:dayTypeLabel(dayType), blk, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date), levelOf(client)) };
+  const variant = days.slice(0,idx).filter((d,i)=>plan[i%plan.length]===dayType).length; // 2º día igual → variantes
+  return { dayType, label:dayTypeLabel(dayType), blk, variant, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date), levelOf(client), variant) };
 }
 
 function getMonthDays(year, month) {
@@ -680,7 +707,7 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} onLogout={doLogout}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
@@ -694,6 +721,8 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
   const [f, setF] = React.useState({code:"",pass:"",pass2:"",name:"",email:""});
   const [busy, setBusy] = React.useState(false);
   const [show, setShow] = React.useState(false);
+  const [dbOpen, setDbOpen] = React.useState(false); // el acceso antiguo solo existe mientras la base de datos está abierta
+  React.useEffect(()=>{ if(LEGACY_LOGIN) dbIsOpen().then(setDbOpen); },[]);
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
   const run=async(fn)=>{ if(busy) return; setBusy(true); try{ await fn(); } finally { setBusy(false); } };
   const tab=(t)=>{ setLoginTab(t); setLoginErr(""); setSub("login"); };
@@ -783,14 +812,14 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
             </div>
           ))}
         </div>
-        {LEGACY_LOGIN&&<button type="button" onClick={()=>{setLegacy(x=>!x);setLoginErr("");}} style={{display:"block",margin:"14px auto 0",border:"none",background:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",textDecoration:"underline"}}>{legacy?"← Volver al acceso seguro":"Acceso antiguo (temporal)"}</button>}
+        {LEGACY_LOGIN&&dbOpen&&<button type="button" onClick={()=>{setLegacy(x=>!x);setLoginErr("");}} style={{display:"block",margin:"14px auto 0",border:"none",background:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",textDecoration:"underline"}}>{legacy?"← Volver al acceso seguro":"Acceso antiguo (temporal)"}</button>}
       </div>
     </div>
   );
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify,onLogout}) {
+function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify,onLogout,secure}) {
   setCustomExercises(exercises); // ejercicios propios (músculos y material) para buscador y generador
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
@@ -923,6 +952,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showMeasures,setShowMeasures] = React.useState(null);
   const [showSummary,setShowSummary] = React.useState(null);
   const [viewAs,setViewAs] = React.useState(null); // ver la app tal y como la ve un cliente
+  // Estado de la seguridad (para avisar al coach de qué paso falta).
+  const [dbOpenNow,setDbOpenNow] = React.useState(false);
+  React.useEffect(()=>{ dbIsOpen().then(setDbOpenNow); },[]);
   // Desde la agenda/ficha: abre el perfil completo del cliente (Clientes, desplegado).
   const goToProfile = (c) => { if(!c) return; setQuickView(null); setExecData(null); setView("clients"); setExpanded(c.id);
     let n=0; const f=()=>{ const el=document.querySelector(`[data-client="${c.id}"]`); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); else if(n++<20) setTimeout(f,120); }; setTimeout(f,150); };
@@ -1045,7 +1077,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     const a=(assignedSessions||[]).find(s=>s.client_id===clientId&&s.date===date);
     const n=asigName(a,sessionTemplates); if(n) return n;
     const c=clients.find(x=>x.id===clientId);
-    if(c&&blockForDate(annualBlocks,date)){ const au=autoRoutineFor(c,date,sessions,annualBlocks); if(au&&au.label) return au.label; }
+    if(c&&blockForDate(annualBlocks,date,c)){ const au=autoRoutineFor(c,date,sessions,annualBlocks); if(au&&au.label) return au.label; }
     return (fallback&&fallback!=="Sesión")?fallback:"Sesión";
   };
 
@@ -1181,9 +1213,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   // Núcleo: crea (o reemplaza) el entreno de un día con un tipo concreto o el automático.
   // Devuelve "ok", "noblock" (sin bloque del macrociclo) o "err".
   const _materialize = async (client, date, dayType) => {
-    const blk=blockForDate(annualBlocks,date);
+    const blk=blockForDate(annualBlocks,date,client);
     const auto = dayType ? null : autoRoutineFor(client, date, sessions, annualBlocks);
-    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date), levelOf(client)) : (auto?auto.routine:[]);
+    const variant = dayType ? sameTypeBefore(assignedSessions, client.id, date, dayType) : 0;
+    const routine = dayType ? buildDayRoutine(dayType, blk, client.goal, macroWeek(date), levelOf(client), variant) : (auto?auto.routine:[]);
     const dt = dayType || (auto&&auto.dayType) || null;
     if(!routine.length) return "noblock";
     const existing=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
@@ -1221,7 +1254,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const _adjustSession = async (client, asig, levelOverride) => {
     const exs=assignedExercises.filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
     if(!exs.length) return 0;
-    const blk=blockForDate(annualBlocks,asig.date);
+    const blk=blockForDate(annualBlocks,asig.date,client);
     const rows=exs.map(e=>[e.exercise_name,parseInt(e.sets)||1,e.reps||"",e.rest_seconds||0,e.protocol||"",isMainRow(e),e.id]);
     const res=adaptToLevel(rows,levelOverride||levelOf(client),{block:blk,dayType:asig.day_type,goal:client.goal});
     const byId=Object.fromEntries(exs.map(e=>[e.id,e])), keep=new Set();
@@ -1510,7 +1543,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       {shown.map(it=>{ if(it.t==="v") return <ValChip key={it.l.id} l={it.l} fs={fs}/>;
                         const s=it.s, nm=s.client.name.split(" ");
                         const asig=assignedSessions.find(a=>a.client_id===s.client_id&&a.date===activeDay);
-                        const au=!asig&&blockForDate(annualBlocks,activeDay)?autoRoutineFor(s.client,activeDay,sessions,annualBlocks):null;
+                        const au=!asig&&blockForDate(annualBlocks,activeDay,s.client)?autoRoutineFor(s.client,activeDay,sessions,annualBlocks):null;
                         const plan=short(asig?asigName(asig,sessionTemplates):(au?au.label:""));
                         return <Chip key={s.id} s={s} fs={fs} label={initial&&nm[1]?`${nm[0]} ${nm[1][0]}.`:nm[0]} sub={withSub?plan:""} line2={twoLine?(plan||(asig?"Entreno asignado":"Sin entreno")):null}/>; })}
                       {extra>0&&<div style={{fontSize:Math.max(9,fs-2),fontWeight:800,color:"#475569"}}>+{extra}</div>}
@@ -1560,6 +1593,17 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="home" size={32}/>{GYM_NAME} — Dashboard</h1>
               <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
             </div>
+            {/* ── Aviso de seguridad pendiente ── */}
+            {(!secure||dbOpenNow)&&(()=>{ const act=clients.filter(c=>c.auth_user_id).length; const hasCol=clients.some(c=>"auth_user_id" in c); return(
+              <div className="card" style={{marginBottom:14,padding:"12px 14px",border:"1px solid #fde68a",background:"#fffbeb"}}>
+                <div style={{fontSize:14,fontWeight:800,color:"#92400e"}}>{!secure?"🔐 Estás entrando con el acceso antiguo":"🔓 Falta el último paso de seguridad"}</div>
+                <div style={{fontSize:12,color:"#78350f",marginTop:4,lineHeight:1.5}}>
+                  {!secure
+                    ?<>Para proteger los datos crea tu usuario de coach: en Supabase desactiva «Confirm email», ejecuta <b>docs/seguridad-1.sql</b>, crea tu usuario en Authentication → Users y hazte coach. Luego entra con tu email.</>
+                    :<>Tu base de datos todavía se puede leer sin iniciar sesión. Ejecuta <b>docs/seguridad-2.sql</b> en Supabase para cerrarla: no hace falta esperar a que todos activen su app (podrán activarla después igual).</>}
+                </div>
+                {secure&&hasCol&&<div style={{fontSize:12,fontWeight:700,color:"#92400e",marginTop:6}}>📲 {act} de {clients.length} atletas han activado su app · envía el acceso desde Clientes → atleta → «📲 Enviar acceso».</div>}
+              </div>); })()}
             <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
               {[
                 {label:"Clientes",val:clients.length,ico:"clients",go:"clients"},
@@ -1619,7 +1663,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     const asig=assignedSessions.find(a=>a.client_id===c.id&&a.date===TODAY);
                     const tmpl=asig&&sessionTemplates.find(t=>t.id===asig.template_id);
                     const nEx=asig?assignedExercises.filter(e=>e.session_id===asig.id).length:0;
-                    const blk=blockForDate(annualBlocks,TODAY);
+                    const blk=blockForDate(annualBlocks,TODAY,c);
                     const done=s.status==="completed";
                     const autoPlan = (!asig&&blk)?autoRoutineFor(c,TODAY,sessions,annualBlocks):null;
                     const hist=history.find(h=>h.client_id===c.id&&h.date===TODAY);
@@ -2023,7 +2067,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   const asig=assignedSessions.find(a=>a.client_id===s.client_id&&a.date===activeDay);
                                   const tmpl=asig&&sessionTemplates.find(t=>t.id===asig.template_id);
                                   const nEx=asig?assignedExercises.filter(e=>e.session_id===asig.id).length:0;
-                                  const au=(!asig&&blockForDate(annualBlocks,activeDay))?autoRoutineFor(s.client,activeDay,sessions,annualBlocks):null;
+                                  const au=(!asig&&blockForDate(annualBlocks,activeDay,s.client))?autoRoutineFor(s.client,activeDay,sessions,annualBlocks):null;
                                   const planLbl=asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")+(nEx?` · ${nEx} ej`:"")):(au?`${au.label} · previsto`:"Sin plan");
                                   return(
                                   <div key={s.id} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":s.client.color+"14",border:`1px solid ${done?"#16a34a":s.client.color+"40"}`,borderRadius:12,padding:"8px 9px"}}>
@@ -2891,63 +2935,116 @@ async function uploadImage(bucket, pathNoExt, file, notify){
   return data&&data.publicUrl;
 }
 
-async function uploadClientPhoto(clientId,file,note,notify){
+// Postura de cada foto (frente, perfil, espalda…) para comparar lo mismo con lo mismo.
+const POSES = [["frente","Frente"],["perfil","Perfil"],["espalda","Espalda"],["otra","Otra"]];
+const POSE_LABEL = Object.fromEntries(POSES);
+const poseOf = (p) => { if(p&&p.pose&&POSE_LABEL[p.pose]) return p.pose; const n=String((p&&p.note)||"");
+  return /frente|frontal/i.test(n)?"frente":/perfil|lateral|lado/i.test(n)?"perfil":/espalda|detr[aá]s/i.test(n)?"espalda":"otra"; };
+async function uploadClientPhoto(clientId,file,opts,notify){
+  const o=typeof opts==="string"?{note:opts}:(opts||{});
   const url=await uploadImage("avatars",`fotos/${clientId}/${Date.now()}`,file,notify);
   if(!url) return false;
-  const {error}=await sb.from("client_photos").insert({client_id:clientId,url,taken_on:TODAY,note:note||""});
+  const row={client_id:clientId,url,taken_on:o.date||TODAY,note:o.note||"",pose:o.pose||null};
+  let {error}=await sb.from("client_photos").insert(row);
+  if(error&&/pose/i.test(error.message||"")){ const {pose,...rest}=row; const r2=await sb.from("client_photos").insert({...rest,note:[POSE_LABEL[pose]||"",rest.note].filter(Boolean).join(" · ")}); error=r2.error; }
   if(error){ notify&&notify(/does not exist|relation|schema cache/i.test(error.message||"")?"Falta la tabla de fotos en Supabase. Ejecuta docs/fotos-storage.sql.":"La foto se subió pero no se pudo guardar: "+error.message,"err"); return false; }
   return true;
 }
+const daysTxt = (a,b) => { if(!a||!b) return ""; const d=Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/86400000); if(d<=0) return ""; return d>=60?`${Math.round(d/30)} meses`:d>=14?`${Math.round(d/7)} semanas`:`${d} días`; };
+// Comparador por FECHAS: eliges dos fechas y se enfrenta cada postura (frente con frente…).
 function PhotoCompare({photos,size=220}){
-  const [a,setA]=React.useState(0), [b,setB]=React.useState(Math.max(0,photos.length-1));
-  React.useEffect(()=>{ setA(0); setB(Math.max(0,photos.length-1)); },[photos.length]);
-  if(photos.length<2) return null;
-  const pa=photos[Math.min(a,photos.length-1)], pb=photos[Math.min(b,photos.length-1)];
-  const days=pa.taken_on&&pb.taken_on?Math.round((new Date(pb.taken_on)-new Date(pa.taken_on))/86400000):null;
-  const Side=({p,label,val,set})=><div style={{flex:1,minWidth:0}}>
-    <div style={{position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
-      <img src={p.url} alt={label} style={{width:"100%",height:size,objectFit:"cover",display:"block"}}/>
-      <span style={{position:"absolute",top:6,left:6,fontSize:10,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.65)",borderRadius:20,padding:"2px 9px"}}>{label}</span>
-    </div>
-    <select value={val} onChange={e=>set(parseInt(e.target.value,10))} style={{width:"100%",marginTop:5,fontSize:12,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:8,padding:"5px 6px",background:"#fff"}}>
-      {photos.map((x,i)=><option key={x.id} value={i}>{fmtD(x.taken_on)||`Foto ${i+1}`}{x.note?` · ${x.note.slice(0,18)}`:""}</option>)}
+  const dates=[...new Set(photos.map(p=>p.taken_on).filter(Boolean))].sort();
+  const [a,setA]=React.useState(dates[0]), [b,setB]=React.useState(dates[dates.length-1]);
+  React.useEffect(()=>{ if(!dates.includes(a)) setA(dates[0]); if(!dates.includes(b)) setB(dates[dates.length-1]); },[dates.join("|")]);
+  if(dates.length<2) return photos.length?<div style={{fontSize:12,color:"#64748b",textAlign:"center",padding:"10px 8px",background:"#f8fafc",borderRadius:10}}>Hay fotos de una sola fecha. Sube fotos de otro día para comparar.</div>:null;
+  const of=(d)=>photos.filter(p=>p.taken_on===d);
+  const poses=POSES.map(x=>x[0]).filter(k=>of(a).some(p=>poseOf(p)===k)||of(b).some(p=>poseOf(p)===k));
+  const pick=(d,k)=>of(d).find(p=>poseOf(p)===k);
+  const sel=(val,set,label)=><label style={{flex:1,minWidth:0}}>
+    <span style={{display:"block",fontSize:10,fontWeight:800,color:"#64748b",marginBottom:3}}>{label}</span>
+    <select value={val} onChange={e=>set(e.target.value)} style={{width:"100%",fontSize:13,fontWeight:700,border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 8px",background:"#fff",color:"#0f172a"}}>
+      {dates.map(d=><option key={d} value={d}>{fmtD(d)} · {of(d).length} foto{of(d).length!==1?"s":""}</option>)}
     </select>
+  </label>;
+  const Img=({p,label})=><div style={{flex:1,minWidth:0}}>
+    {p?<a href={p.url} target="_blank" rel="noreferrer" style={{display:"block",position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
+        <img src={p.url} alt={label} style={{width:"100%",height:size,objectFit:"cover",display:"block"}}/>
+        <span style={{position:"absolute",top:6,left:6,fontSize:10,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.65)",borderRadius:20,padding:"2px 9px"}}>{label}</span>
+      </a>
+      :<div style={{height:size,borderRadius:12,border:"1px dashed #cfd8e6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#94a3b8",textAlign:"center",padding:8}}>Sin foto de esta postura</div>}
   </div>;
+  const quick=[["Primera ↔ última",dates[0],dates[dates.length-1]]];
+  if(dates.length>2) quick.push(["Anterior ↔ última",dates[dates.length-2],dates[dates.length-1]]);
   return <div>
-    <div style={{display:"flex",gap:8}}><Side p={pa} label="ANTES" val={a} set={setA}/><Side p={pb} label="DESPUÉS" val={b} set={setB}/></div>
-    {days!=null&&days>0&&<div style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#475569",marginTop:6}}>{days>=60?`${Math.round(days/30)} meses`:days>=14?`${Math.round(days/7)} semanas`:`${days} días`} de diferencia</div>}
+    <div style={{display:"flex",gap:8,marginBottom:6}}>{sel(a,setA,"ANTES")}{sel(b,setB,"DESPUÉS")}</div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+      {quick.map(([l,x,y])=>{ const on=a===x&&b===y; return <button key={l} type="button" onClick={()=>{setA(x);setB(y);}} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{l}</button>; })}
+      {daysTxt(a,b)&&<span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"#475569",alignSelf:"center"}}>{daysTxt(a,b)} de diferencia</span>}
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {poses.map(k=><div key={k}>
+        <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginBottom:4}}>{POSE_LABEL[k]}</div>
+        <div style={{display:"flex",gap:8}}><Img p={pick(a,k)} label={fmtD(a)}/><Img p={pick(b,k)} label={fmtD(b)}/></div>
+      </div>)}
+    </div>
   </div>;
 }
 function PhotosPanel({client,notify,canDelete}){
   const {photos,load}=useClientPhotos(client.id);
-  const [busy,setBusy]=React.useState(false);
+  const [busy,setBusy]=React.useState("");
   const [mode,setMode]=React.useState("compare");
-  const upload=async(file)=>{ if(!file) return; setBusy(true); const ok=await uploadClientPhoto(client.id,file,"",notify); if(ok){ await load(); notify&&notify("Foto guardada ✓"); } setBusy(false); };
-  const saveNote=(p,note)=>{ sb.from("client_photos").update({note}).eq("id",p.id); };
-  const saveDate=(p,d)=>{ sb.from("client_photos").update({taken_on:d}).eq("id",p.id).then(load); };
+  const [up,setUp]=React.useState(null); // {date, pose}
+  const fileRef=React.useRef(null);
+  const ORDER=["frente","perfil","espalda"];
+  const uploadMany=async(files)=>{ const list=[...(files||[])]; if(!list.length) return;
+    let ok=0; for(let i=0;i<list.length;i++){ setBusy(`Subiendo ${i+1}/${list.length}…`);
+      const pose=up.pose==="auto"?(list.length===1?"frente":(ORDER[i]||"otra")):up.pose;
+      if(await uploadClientPhoto(client.id,list[i],{date:up.date,pose},notify)) ok++; }
+    setBusy(""); await load(); if(ok){ notify&&notify(`${ok} foto${ok>1?"s":""} guardada${ok>1?"s":""} del ${fmtD(up.date)} ✓`); setUp(null); setMode("compare"); } };
+  const upd=(p,patch)=>{ sb.from("client_photos").update(patch).eq("id",p.id).then(({error})=>{ if(error&&patch.pose){ sb.from("client_photos").update({note:[POSE_LABEL[patch.pose],p.note].filter(Boolean).join(" · ")}).eq("id",p.id).then(load); } else load(); }); };
   const del=async(p)=>{ if(!window.confirm("¿Eliminar esta foto?"))return; await sb.from("client_photos").delete().eq("id",p.id); await load(); };
+  const dates=[...new Set(photos.map(p=>p.taken_on||""))].sort().reverse();
+  const chip=(on,txt,onClick,key)=><button key={key} type="button" onClick={onClick} style={{fontSize:12,fontWeight:700,padding:"6px 11px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{txt}</button>;
   return(
     <div>
       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}>
-        {photos.length>1&&<div className="seg" style={{flex:1}}>{[["compare","↔️ Comparar"],["grid","🖼 Todas"]].map(([k,l])=><button key={k} className={"sb"+(mode===k?" on":"")} onClick={()=>setMode(k)} style={{fontSize:12}}>{l}</button>)}</div>}
-        <label className="btn sky" style={{fontSize:12,padding:"8px 12px",cursor:"pointer",marginLeft:photos.length>1?0:"auto",whiteSpace:"nowrap"}}>
-          {busy?"Subiendo…":"📸 Añadir foto"}
-          <input type="file" accept="image/*" style={{display:"none"}} disabled={busy} onChange={e=>{upload(e.target.files[0]);e.target.value="";}}/>
-        </label>
+        {photos.length>1&&<div className="seg" style={{flex:1}}>{[["compare","↔️ Comparar"],["grid","🖼 Por fechas"]].map(([k,l])=><button key={k} className={"sb"+(mode===k?" on":"")} onClick={()=>setMode(k)} style={{fontSize:12}}>{l}</button>)}</div>}
+        {!up&&<button className="btn sky" style={{fontSize:12,padding:"8px 12px",marginLeft:photos.length>1?0:"auto",whiteSpace:"nowrap"}} onClick={()=>setUp({date:TODAY,pose:"auto"})}>📸 Añadir fotos</button>}
       </div>
-      {photos.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:20,background:"#f8fafc",borderRadius:10,border:"1px dashed #dbe2ec"}}>Sin fotos aún. Haz la primera (frente, perfil y espalda, misma luz) para tener tu «antes».</div>}
+      {up&&<div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:12,padding:10,marginBottom:12}}>
+        <span className="lbl">FECHA DE LAS FOTOS</span>
+        <input type="date" className="inp" value={up.date} max={TODAY} onChange={e=>setUp({...up,date:e.target.value||TODAY})} style={{marginBottom:8}}/>
+        <span className="lbl">POSTURA</span>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+          {chip(up.pose==="auto","Varias: frente, perfil, espalda",()=>setUp({...up,pose:"auto"}),"auto")}
+          {POSES.map(([k,l])=>chip(up.pose===k,l,()=>setUp({...up,pose:k}),k))}
+        </div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:8,lineHeight:1.4}}>{up.pose==="auto"?"Elige varias a la vez y se guardan en ese orden: 1ª frente, 2ª perfil, 3ª espalda.":`Todas las que elijas se guardan como «${POSE_LABEL[up.pose]}».`} Misma luz y misma distancia para que se compare bien.</div>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} disabled={!!busy} onChange={e=>{ uploadMany(e.target.files); e.target.value=""; }}/>
+        <div style={{display:"flex",gap:6}}>
+          <button className="btn grn" style={{flex:1,padding:10,justifyContent:"center"}} disabled={!!busy} onClick={()=>fileRef.current&&fileRef.current.click()}>{busy||"Elegir fotos"}</button>
+          <button className="btn ghost" style={{padding:"10px 14px"}} disabled={!!busy} onClick={()=>setUp(null)}>Cancelar</button>
+        </div>
+      </div>}
+      {photos.length===0&&!up&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:20,background:"#f8fafc",borderRadius:10,border:"1px dashed #dbe2ec"}}>Sin fotos aún. Haz las primeras (frente, perfil y espalda, misma luz) para tener tu «antes».</div>}
       {photos.length===1&&<img src={photos[0].url} style={{width:"100%",maxHeight:320,objectFit:"cover",borderRadius:12}}/>}
       {photos.length>1&&mode==="compare"&&<PhotoCompare photos={photos}/>}
-      {photos.length>1&&mode==="grid"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        {photos.map((p,i)=><div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
-          <div style={{position:"relative"}}>
-            <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
-            <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:700,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{i===0?"ANTES":i===photos.length-1?"ACTUAL":`#${i+1}`}</span>
-            {canDelete&&<button onClick={()=>del(p)} style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>}
-          </div>
-          <div style={{padding:"6px 8px"}}>
-            <input type="date" className="inp" style={{padding:"4px 6px",fontSize:11}} defaultValue={p.taken_on||TODAY} onChange={e=>saveDate(p,e.target.value)}/>
-            <input className="inp" style={{padding:"4px 6px",fontSize:11,marginTop:4}} placeholder="Nota (frente, perfil, peso…)" defaultValue={p.note||""} onBlur={e=>saveNote(p,e.target.value)}/>
+      {photos.length>1&&mode==="grid"&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {dates.map(d=><div key={d||"sin"}>
+          <div style={{fontSize:12,fontWeight:800,color:"#0f172a",marginBottom:6}}>{d?fmtD(d):"Sin fecha"} <span style={{fontWeight:600,color:"#94a3b8"}}>· {photos.filter(p=>(p.taken_on||"")===d).length} foto{photos.filter(p=>(p.taken_on||"")===d).length!==1?"s":""}</span></div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8}}>
+            {photos.filter(p=>(p.taken_on||"")===d).map(p=><div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
+              <div style={{position:"relative"}}>
+                <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
+                <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{POSE_LABEL[poseOf(p)]}</span>
+                {canDelete&&<button onClick={()=>del(p)} title="Eliminar" style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>}
+              </div>
+              <div style={{padding:"6px 8px",display:"flex",flexDirection:"column",gap:4}}>
+                <input type="date" className="inp" style={{padding:"4px 6px",fontSize:11}} defaultValue={p.taken_on||TODAY} max={TODAY} onChange={e=>e.target.value&&upd(p,{taken_on:e.target.value})}/>
+                <select value={poseOf(p)} onChange={e=>upd(p,{pose:e.target.value})} style={{fontSize:11,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:7,padding:"4px 6px",background:"#fff"}}>{POSES.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
+                <input className="inp" style={{padding:"4px 6px",fontSize:11}} placeholder="Nota (peso, semana…)" defaultValue={p.note||""} onBlur={e=>upd(p,{note:e.target.value})}/>
+              </div>
+            </div>)}
           </div>
         </div>)}
       </div>}
@@ -2981,7 +3078,7 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
   // Cuerpo
   const pr=(progress||[]).filter(p=>p.client_id===client.id&&p.date).sort((a,b)=>a.date.localeCompare(b.date));
   const body=MEASURES.map(m=>{ const pts=pr.filter(p=>p[m.k]!=null); if(!pts.length) return null; const f=pts[0], l=pts[pts.length-1], d=Math.round((l[m.k]-f[m.k])*10)/10; return {m,l:l[m.k],d,n:pts.length,tone:changeTone(m,d,client.goal),since:f.date}; }).filter(Boolean).slice(0,4);
-  const blk=blockForDate(annualBlocks,TODAY);
+  const blk=blockForDate(annualBlocks,TODAY,client);
   const next=(sessions||[]).filter(s=>s.client_id===client.id&&s.date>=TODAY&&s.status!=="completed"&&!s.requested).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
   const Card=({icon,title,children})=><div className="card" style={{marginBottom:12,padding:"14px 14px"}}>
     <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><Ico k={icon} size={26}/><span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</span></div>{children}</div>;
@@ -3023,7 +3120,7 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
           </div>)}
         </div>
       </Card>}
-      {photos.length>=2&&<Card icon="clipboard" title="Tu cambio"><PhotoCompare photos={photos} size={200}/></Card>}
+      {new Set(photos.map(p=>p.taken_on).filter(Boolean)).size>=2&&<Card icon="clipboard" title="Tu cambio"><PhotoCompare photos={photos} size={180}/></Card>}
       {blk&&<Card icon="program" title="En qué estamos ahora">
         <div style={{fontSize:13,fontWeight:700,color:"#0284c7"}}>{blk.name}</div>
         <div style={{fontSize:13,color:"#475569",marginTop:3,lineHeight:1.45}}>{isTestBlock(blk)?"Semana de test: medimos cuánto has mejorado.":(PHASE_TXT[blk.type]||"")}</div>
@@ -3490,7 +3587,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const rmHistC=React.useMemo(()=>sel?rmHistory(sel,assignedSessions,assignedExercises,rmTestsC):{},[sel,assignedSessions,assignedExercises,rmTestsC]);
   const valOf=(ex,k)=>{ const e=edited[ex.id]; if(e&&e[k]!==undefined) return e[k];
     if(k==="w") return ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:"");
-    if(k==="r") return ex.actual_reps!=null?ex.actual_reps:(ex.reps!=null?ex.reps:"");
+    if(k==="r") return ex.actual_reps!=null?ex.actual_reps:(ex.protocol==="test_amrap"?"":(ex.reps!=null?ex.reps:""));
     if(k==="band") return ex.load_band||"";
     if(k==="mode") return ex.load_band?"goma":(isBodyweight(ex.exercise_name)&&ex.prescribed_weight==null?"goma":"kg");
     return !!ex.done; };
@@ -3899,7 +3996,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const [addName,setAddName]=React.useState("");
   const [picker,setPicker]=React.useState(null); // {mode:"swap",ex} | {mode:"add"}
   const exs = sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
-  const auto = (!sess&&blockForDate(annualBlocks,date))?autoRoutineFor(client,date,sessions,annualBlocks):null;
+  const auto = (!sess&&blockForDate(annualBlocks,date,client))?autoRoutineFor(client,date,sessions,annualBlocks):null;
   const libItems = Object.entries(EXERCISE_LIBRARY).map(([cat,list])=>[cat,list.filter(x=>equipOk(x[0]))]).filter(([c,l])=>l.length);
   const inLib = (name)=>Object.values(EXERCISE_LIBRARY).some(list=>list.some(x=>x[0]===name));
   const wOf = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
@@ -3942,7 +4039,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
         <div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 10px",marginBottom:12}}>
           <div style={{fontSize:10,fontWeight:800,color:"#64748b",marginBottom:6}}>🎚 NIVEL · COMPLEJIDAD Y VOLUMEN DE SERIES</div>
           <LevelPicker value={lv} onChange={(l)=>{ setLv(l); if(onSetLevel) onSetLevel(client,l); }}/>
-          {sess&&exs.length>0&&<VolumeBadge items={exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))} level={lv} block={blockForDate(annualBlocks,date)} goal={client.goal} style={{marginTop:8}}/>}
+          {sess&&exs.length>0&&<VolumeBadge items={exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))} level={lv} block={blockForDate(annualBlocks,date,client)} goal={client.goal} style={{marginTop:8}}/>}
           {sess&&exs.length>0&&onAdjust&&<button className="btn sky" style={{width:"100%",marginTop:8,padding:"9px",fontSize:12,fontWeight:700,justifyContent:"center"}} disabled={saving} onClick={()=>onAdjust(lv)}>🎚 Ajustar a su nivel ({LEVEL_LABEL[lv]})</button>}
           <div style={{fontSize:10,color:"#94a3b8",marginTop:6,lineHeight:1.4}}>Cambia lo demasiado técnico por un ejercicio del mismo patrón, ajusta series y nº de ejercicios al objetivo del nivel y escala el WOD.</div>
         </div>
@@ -4052,7 +4149,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
-  const blk=blockForDate(annualBlocks,date); // momento del macrociclo para esta fecha
+  const blk=blockForDate(annualBlocks,date,client); // momento del macrociclo para esta fecha (o su adaptación)
   // Entreno previsto automático (si no hay uno asignado ya).
   const auto = (!sess && blk) ? autoRoutineFor(client,date,sessions,annualBlocks) : null;
   const cw = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id && (w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
@@ -4478,7 +4575,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   return(
     <div style={{marginBottom:14}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-        <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()}{(()=>{const b=blockForDate(annualBlocks,anchor); return b&&!isTestBlock(b)?` (${waveOf(b,macroWeek(anchor)).ab})`:"";})()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
+        <span className="lbl" style={{marginBottom:0}}>🗓️ {wLabel.toUpperCase()}{(()=>{const b=blockForDate(annualBlocks,anchor,client); return b&&!isTestBlock(b)?` (${waveOf(b,macroWeek(anchor)).ab})`:"";})()} · {bookedN} reservada{bookedN!==1?"s":""} · {doneN} hecha{doneN!==1?"s":""}</span>
         <div style={{display:"flex",gap:4}}>
           <button className="btn ghost" style={{fontSize:13,padding:"3px 9px"}} onClick={()=>{setWkOff(w=>w-1);setOpenDay(null);}}>‹</button>
           {wkOff!==0&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={()=>{setWkOff(0);setOpenDay(null);}}>Hoy</button>}
@@ -4492,7 +4589,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
           const booking=mine(sessions).find(s=>s.date===d);
           const asig=mine(assignedSessions).find(a=>a.date===d);
           const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
-          const au=blockForDate(annualBlocks,d)?autoRoutineFor(client,d,sessions,annualBlocks):null;
+          const au=blockForDate(annualBlocks,d,client)?autoRoutineFor(client,d,sessions,annualBlocks):null;
           const hist=mine(history).find(h=>h.date===d);
           const done=isDone(d);
           const label=done?(hist?sessionName(hist,assignedSessions,sessionTemplates):"Hecho"):(asig?(((asig.day_type&&DAY_LABEL[asig.day_type])||(tmpl&&tmpl.name)||"Entreno")):(au?au.label:"—"));
@@ -4516,7 +4613,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
                       {!curType&&<option value="">{isReal?"— elegir tipo —":"＋ asignar entreno"}</option>}
                       {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
                     </select>}
-                {exs.length>0&&(()=>{ const v=sessionVolume(exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))); const t=levelTarget(lvl,blockForDate(annualBlocks,d),client.goal); const ok=v.ex<3||(v.sets>=t.min&&v.sets<=t.max); return v.sets>0&&<span title={`Series de trabajo (objetivo ${t.min}-${t.max})`} className="mono" style={{flexShrink:0,fontSize:10,fontWeight:800,color:ok?"#15803d":"#b45309",background:ok?"#f0fdf4":"#fffbeb",border:`1px solid ${ok?"#bbf7d0":"#fde68a"}`,borderRadius:20,padding:"1px 6px"}}>{v.sets} ser.</span>; })()}
+                {exs.length>0&&(()=>{ const v=sessionVolume(exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))); const t=levelTarget(lvl,blockForDate(annualBlocks,d,client),client.goal); const ok=v.ex<3||(v.sets>=t.min&&v.sets<=t.max); return v.sets>0&&<span title={`Series de trabajo (objetivo ${t.min}-${t.max})`} className="mono" style={{flexShrink:0,fontSize:10,fontWeight:800,color:ok?"#15803d":"#b45309",background:ok?"#f0fdf4":"#fffbeb",border:`1px solid ${ok?"#bbf7d0":"#fde68a"}`,borderRadius:20,padding:"1px 6px"}}>{v.sets} ser.</span>; })()}
                 <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:isReal?"sin reserva":"libre"}</div>
                 <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
               </div>
@@ -4562,7 +4659,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
       )}
       {weekAsig.length>0&&(
         <div style={{marginTop:8,display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",fontSize:11,color:"#475569",background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
-          <span style={{flex:1,minWidth:150}}>📊 <b>{weekSets}</b> series de trabajo esta semana · {LEVEL_LABEL[lvl]} ({levelTarget(lvl,blockForDate(annualBlocks,anchor),client.goal).min}-{levelTarget(lvl,blockForDate(annualBlocks,anchor),client.goal).max}/sesión)</span>
+          <span style={{flex:1,minWidth:150}}>📊 <b>{weekSets}</b> series de trabajo esta semana · {LEVEL_LABEL[lvl]} ({levelTarget(lvl,blockForDate(annualBlocks,anchor,client),client.goal).min}-{levelTarget(lvl,blockForDate(annualBlocks,anchor,client),client.goal).max}/sesión)</span>
           {onAdjust&&adjustable.length>0&&<button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>onAdjust(adjustable)}>🎚 Ajustar {adjustable.length} día{adjustable.length>1?"s":""} a su nivel</button>}
         </div>
       )}
@@ -4760,7 +4857,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   const [rows,setRows]=React.useState(()=>baseExs.filter(e=>!isWodHeader(e)).map(e=>({
     id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
     w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
-    r:(e.actual_reps!=null?e.actual_reps:(e.reps!=null?e.reps:"")),
+    r:(e.actual_reps!=null?e.actual_reps:(e.protocol==="test_amrap"?"":(e.reps!=null?e.reps:""))),
     band:e.load_band||"",
     mode:(e.load_band?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
     done:!!e.done,
@@ -4888,7 +4985,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
   const [saving,setSaving]=React.useState(false);
   const existing=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const goalTag=client.goal==="estetica"?"Masa":"Salud";
-  const blk=blockForDate(annualBlocks,date); // bloque del momento para esta fecha
+  const blk=blockForDate(annualBlocks,date,client); // bloque del momento para esta fecha (o su adaptación)
   const blockName=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?b.name:"";};
   const blockOrder=(id)=>{const b=(annualBlocks||[]).find(x=>x.id===id);return b?(b.order_index||0):999;};
   const matchesGoal=(t)=>String(t.name||"").endsWith("· "+goalTag);
@@ -4938,7 +5035,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     if(ins.error) ins=await sb.from("assigned_sessions").insert({client_id:client.id,date,status:"pending"}).select().single(); // sin columna day_type
     const {data:sess,error}=ins;
     if(error){ notify("Error al generar","err"); setSaving(false); return; }
-    const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date),levelOf(client));
+    const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date),levelOf(client),sameTypeBefore(assignedSessions,client.id,date,dayType));
     const rows=prescribeRows(routine,{client,blk,date,clientWeights,assignedSessions,assignedExercises,sessionId:sess.id});
     await insertExRows(rows);
     if(DAY_LABEL[dayType]) await sb.from("history").update({type:DAY_LABEL[dayType]}).eq("client_id",client.id).eq("date",date);
@@ -5046,13 +5143,13 @@ function WorkEvolution({client,history,assignedSessions,assignedExercises,annual
   const data=React.useMemo(()=>workByWeek(client,{history,assignedSessions,assignedExercises,annualBlocks}),[client&&client.id,history,assignedSessions,assignedExercises]);
   const nowMon=mondayOfDate(TODAY);
   const keys=Object.keys(data).sort();
-  const curBlk=blockForDate(annualBlocks,TODAY);
+  const curBlk=blockForDate(annualBlocks,TODAY,client);
   // Rango de semanas (incluye las semanas sin entreno: los huecos también cuentan).
   let start=addDays(nowMon,-7*11);
   if(range==="all") start=keys[0]&&keys[0]<start?keys[0]:start;
-  if(range==="block"&&curBlk){ let s=nowMon; for(let i=0;i<60;i++){ const p=addDays(s,-7); if(blockForDate(annualBlocks,p)!==curBlk) break; s=p; } start=s; }
+  if(range==="block"&&curBlk){ let s=nowMon; for(let i=0;i<60;i++){ const p=addDays(s,-7); if(blockForDate(annualBlocks,p,client)!==curBlk) break; s=p; } start=s; }
   if(keys[0]&&keys[0]>start) start=keys[0]; // sin las semanas de antes de empezar a entrenar
-  const weeks=[]; for(let d=start, i=0; d<=nowMon&&i<80; d=addDays(d,7), i++) weeks.push({...(data[d]||{mon:d,sessions:0,sets:0,tonnage:0,wodMin:0,muscles:{}}),blk:blockForDate(annualBlocks,d)});
+  const weeks=[]; for(let d=start, i=0; d<=nowMon&&i<80; d=addDays(d,7), i++) weeks.push({...(data[d]||{mon:d,sessions:0,sets:0,tonnage:0,wodMin:0,muscles:{}}),blk:blockForDate(annualBlocks,d,client)});
   const M=WORK_METRICS.find(m=>m[0]===metric), fmt=M[2];
   const vals=weeks.map(w=>w[metric]);
   const total=(k)=>weeks.reduce((s,w)=>s+w[k],0);
@@ -7486,6 +7583,14 @@ const MACRO_RECOMP = [
    note:"Segunda ventana de resensibilización antes de cerrar el año. Variedad, densidad, unilaterales y protocolos poco habituales. En salud, prioridad a la condición física (HIIT/interválico/circuitos).",
    tpls:{salud:[["HIIT / Cardio","hiit"],["Circuito AMRAP","amrap"],["Fullbody metabólico","emom"],["Movilidad / Regeneración","series_planas"]],
          estetica:[["Superserie antagonistas","superset"],["Cluster","cluster"],["Small muscles","drop_set"],["Fullbody metabólico","amrap"]]}},
+  {name:"Transición · Fin de año", type:"hibrido", weeks:3, rep:"var",
+   note:"Cierre del año: trabajo metabólico y variado, menos carga en los básicos. Mantener la forma en fechas con menos asistencia.",
+   tpls:{salud:[["HIIT / Cardio","hiit"],["Fullbody metabólico","emom"],["Movilidad / Regeneración","series_planas"]],
+         estetica:[["Superserie antagonistas","superset"],["Small muscles","series_planas"],["Fullbody metabólico","amrap"]]}},
+  {name:"Descarga · Fin de año", type:"descarga", weeks:1, rep:"8-10",
+   note:"Descarga antes de empezar el nuevo macrociclo en enero: ~50-60 % del volumen, movilidad y recuperación.",
+   tpls:{salud:[["Movilidad / Regeneración","series_planas"],["Descarga Fullbody","series_planas"]],
+         estetica:[["Descarga Fullbody","series_planas"],["Small muscles","series_planas"]]}},
 ];
 
 // Ejercicios precargados por tipo de sesión (según el nombre base de la plantilla).
@@ -7583,7 +7688,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
   // vez; las plantillas se añaden etiquetadas por objetivo (Salud / Masa).
   const generarMacro = async(goal)=>{
     const tag = goal==="salud"?"Salud":"Masa";
-    if(!window.confirm(`Se generará el macrociclo de Recomposición (48 semanas) con plantillas para ${GOAL_LABEL[goal]}. Los bloques se crean una vez; puedes generar también el otro objetivo. ¿Continuar?`)) return;
+    if(!window.confirm(`Se generará el macrociclo de Recomposición (52 semanas) con plantillas para ${GOAL_LABEL[goal]}. Los bloques se crean una vez; puedes generar también el otro objetivo. ¿Continuar?`)) return;
     setGenMacro(true);
     let wk = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.end_week||0))+1 : 1;
     let order = annualBlocks.length ? Math.max(...annualBlocks.map(b=>b.order_index||0)) : 0;
@@ -7681,7 +7786,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
     series_planas:"Series planas",top_set_backoff:"Top Set + Back Off",
     ramp_up:"Ramp Up",amrap:"AMRAP",superset:"Superserie",
     drop_set:"Drop Set",rest_pause:"Rest Pause",cluster:"Cluster",
-    emom:"EMOM",leader:"LEADER",tabata:"TABATA",isometrico:"Isométrico"
+    emom:"EMOM",leader:"LEADER",tabata:"TABATA",isometrico:"Isométrico",test_amrap:"Test AMRAP"
   };
 
   // Assign session to client
@@ -7807,7 +7912,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
             <div className="card" style={{marginBottom:14,textAlign:"center",padding:20}}>
               <div style={{fontSize:30,marginBottom:8}}>🗓️</div>
               <div style={{fontWeight:700,marginBottom:4}}>Aún no tienes el año programado</div>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:14,lineHeight:1.5}}>Genera el macrociclo de <b>Recomposición</b> (48 semanas). Elige el objetivo — puedes generar los dos y luego asignar a cada cliente el que le toque:<br/><b style={{color:"#16a34a"}}>🩺 Salud</b> = concurrente (fuerza + cardio/circuitos) · <b style={{color:"#0284c7"}}>💪 Estética/Masa</b> = más volumen de fuerza/hipertrofia y estabilidad.</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:14,lineHeight:1.5}}>Genera el macrociclo de <b>Recomposición</b> (52 semanas). Elige el objetivo — puedes generar los dos y luego asignar a cada cliente el que le toque:<br/><b style={{color:"#16a34a"}}>🩺 Salud</b> = concurrente (fuerza + cardio/circuitos) · <b style={{color:"#0284c7"}}>💪 Estética/Masa</b> = más volumen de fuerza/hipertrofia y estabilidad.</div>
               <div style={{display:"flex",gap:8,justifyContent:"center",flexWrap:"wrap"}}>
                 <button className="btn grn" style={{padding:"10px 16px"}} disabled={genMacro} onClick={()=>generarMacro("salud")}>{genMacro?"Generando…":"🩺 Generar (Salud)"}</button>
                 <button className="btn sky" style={{padding:"10px 16px"}} disabled={genMacro} onClick={()=>generarMacro("estetica")}>{genMacro?"Generando…":"💪 Generar (Estética/Masa)"}</button>
@@ -8652,6 +8757,7 @@ const PROTOCOL_INFO = {
   for_time:"Completar todo el trabajo lo más rápido posible, con tiempo límite (cap).",
   chipper:"Lista larga de ejercicios que se hace una sola vez, de arriba abajo, 'picando' las reps.",
   intervalos:"Bloques de trabajo continuo (p. ej. 1 km de carrera + estación) a ritmo de competición.",
+  test_amrap:"Semana de test: calienta subiendo poco a poco y haz 1 serie con el máximo de repeticiones posibles con buena técnica (3-8). Apunta las reps hechas: la app recalcula su RM y ajusta las cargas del siguiente bloque.",
   isometrico:"Mantener la posición sin movimiento los segundos marcados (p. ej. 5×45 s al 70 % del esfuerzo, 2' de descanso). Se registra tiempo, carga (peso corporal, lastre, kg o goma) y dolor 0-10: útil en tendinopatías y readaptación.",
 };
 
@@ -8751,11 +8857,11 @@ const MET_PLAN = {
 };
 // kind: "crossfit" (fuerza + WOD) · "hyrox" · "hiit" · "circuit" (fullbody
 // metabólico) · "finisher". Devuelve filas [nombre,series,reps,descanso,protocolo,principal].
-function buildMetcon(kind, block, goal, weekNo){
+function buildMetcon(kind, block, goal, weekNo, variant=0){
   const bt=block?block.type:"fuerza", wv=waveOf(block,weekNo), test=isTestBlock(block);
   const plan=MET_PLAN[bt]||MET_PLAN.fuerza;
   const esp=isEspecificoBlock(block);
-  const seed=(block?(block.start_week||0):Math.floor((weekNo||0)/8))+(wv.ab==="B"?3:0);
+  const seed=(block?(block.start_week||0):Math.floor((weekNo||0)/8))+(wv.ab==="B"?3:0)+(variant||0)*5;
   const prog=(bt==="descarga"||test)?0:Math.min(wv.step,2); // ciclos dentro del bloque
   const soft=bt==="descarga";
   const used=[], rows=[];
@@ -8954,7 +9060,7 @@ const fmtKgN = (v) => v==null?"—":(Math.round(v*10)/10).toLocaleString("es-ES"
 // RIR objetivo por defecto según la fase, el nivel y si es un básico.
 const defaultRir = (block,level,main) => {
   const bt=block?block.type:"fuerza";
-  if(block&&/test/i.test(block.name||"")) return main?0:2;
+  if(block&&/test/i.test(block.name||"")) return main?(level==="principiante"?1:0):2;
   if(bt==="descarga") return 4;
   let r = bt==="fuerza"?2 : bt==="hipertrofia"?(main?2:1) : 3;
   if(level==="principiante") r=Math.max(r,3);
@@ -9005,7 +9111,7 @@ function prescribeRows(routine,{client,blk,date,clientWeights,assignedSessions,a
   return routine.map((e,i)=>{
     const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
     const row={session_id:sessionId,exercise_name:e[0],prescribed_weight:suggestLoad(cw,e[5],blk,date),sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i};
-    if(isRmRow(row)){ row.rir=defaultRir(blk,lvl,e[5]); const rm=rmFor(hist,e[0]); const kg=rm?loadFor(rm,repsLow(e[2]),row.rir):null; if(kg) row.prescribed_weight=(blk&&blk.type==="descarga")?roundLoad(kg*0.85):kg; }
+    if(isRmRow(row)){ row.rir=defaultRir(blk,lvl,e[5]); const rm=rmFor(hist,e[0]); const kg=rm?(row.protocol==="test_amrap"?loadFor(rm,5,0):loadFor(rm,repsLow(e[2]),row.rir)):null; if(kg) row.prescribed_weight=(blk&&blk.type==="descarga")?roundLoad(kg*0.85):kg; }
     return row;
   });
 }
@@ -9125,7 +9231,7 @@ const sessionVolume = (items) => {
     wod:(items||[]).some(x=>x&&isMetaRow(x.name,x.proto)), cx:cx.length?Math.round(cx.reduce((a,b)=>a+b,0)/cx.length*10)/10:0 };
 };
 // ¿Es un básico? (en la sesión guardada no hay marca: protocolo de fuerza o descanso largo).
-const isMainRow = (e) => !META_PROTOS.includes(e.protocol) && (["top_set_backoff","ramp_up","rest_pause","cluster"].includes(e.protocol) || (parseInt(e.rest_seconds)||0)>=120);
+const isMainRow = (e) => !META_PROTOS.includes(e.protocol) && (["top_set_backoff","ramp_up","rest_pause","cluster","test_amrap"].includes(e.protocol) || (parseInt(e.rest_seconds)||0)>=120);
 // Adapta una sesión al nivel. rows: [nombre, series, reps, descanso, protocolo, principal, id?]
 // (el 7º campo opcional es el id de la fila guardada; las filas quitadas no vuelven).
 function adaptToLevel(rows, level, ctx={}){
@@ -9236,34 +9342,38 @@ function adaptToLevel(rows, level, ctx={}){
   return out;
 }
 // Rutina del día ya adaptada al nivel del cliente (si se indica).
-function buildDayRoutine(dayType, block, goal, weekNo, level){
-  const rows=baseDayRoutine(dayType, block, goal, weekNo);
+// Cuántos días del mismo tipo tiene ya ese cliente antes en la misma semana.
+const sameTypeBefore = (assignedSessions, clientId, date, dayType) => { const wd=getWeekDays(mondayOfDate(date)); return (assignedSessions||[]).filter(a=>a.client_id===clientId&&a.day_type===dayType&&a.date<date&&wd.includes(a.date)).length; };
+// variant: 2º día del mismo tipo en la misma semana → otras variantes de los mismos patrones.
+function buildDayRoutine(dayType, block, goal, weekNo, level, variant=0){
+  const rows=baseDayRoutine(dayType, block, goal, weekNo, variant);
   return level ? adaptToLevel(rows, level, {block, dayType, goal}) : rows;
 }
 // Reps para principales según fase del bloque (usa el rango del bloque si existe).
-function baseDayRoutine(dayType, block, goal, weekNo){
+function baseDayRoutine(dayType, block, goal, weekNo, variant=0){
   const bt = block?block.type:"fuerza";
   const wv = waveOf(block, weekNo); // semana A/B y ciclo dentro del bloque
   const test = isTestBlock(block);
   const shiftRange=(r,d)=>{ const m=String(r).match(/^(\d+)\s*-\s*(\d+)$/); return m?`${+m[1]+d}-${+m[2]+d}`:r; };
   const baseRep = (block&&block.rep_range&&block.rep_range!=="var")?block.rep_range:"6-10";
   // Ondulación: la semana B trabaja más reps (volumen) que la A (intensidad).
-  const rep = (wv.ab==="B" && bt!=="descarga" && !test) ? shiftRange(baseRep,2) : baseRep;
+  // Semana TEST: los básicos a 1 serie AMRAP (máximas reps con buena técnica) para recalcular el RM.
+  const rep = test ? `AMRAP ${baseRep}` : (wv.ab==="B" && bt!=="descarga") ? shiftRange(baseRep,2) : baseRep;
   const estetica = goal==="estetica";
   const salud = !estetica;
   // Ejercicios fijos dentro del bloque para cada split A/B (se repiten cada dos
   // semanas y así se puede progresar la carga); cambian al cambiar de bloque.
-  const wk = (block?(block.start_week||0):Math.floor((weekNo||0)/8)) + (wv.ab==="B"?3:0);
+  const wk = (block?(block.start_week||0):Math.floor((weekNo||0)/8)) + (wv.ab==="B"?3:0) + (variant||0)*5;
   // Protocolo del ejercicio principal según fase.
   const isEspecifico = isEspecificoBlock(block);
-  const mainProto = bt==="fuerza" ? (isEspecifico?"ramp_up":"top_set_backoff")
+  const mainProto = test ? "test_amrap" : bt==="fuerza" ? (isEspecifico?"ramp_up":"top_set_backoff")
                   : bt==="hipertrofia" ? (isEspecifico?"rest_pause":"series_planas")
                   : "series_planas";
   const accProto = bt==="hipertrofia"&&isEspecifico ? "drop_set" : "series_planas";
   const accReps = bt==="hipertrofia" ? "10-15" : "8-12";
   // Progresión de volumen: +1 serie de accesorios desde el 2º ciclo (hipertrofia/acondicionamiento).
   const volUp = ((bt==="hipertrofia"||bt==="acondicionamiento")&&wv.step>=1&&!test)?1:0;
-  const mS = bt==="descarga"?2:4, aS = bt==="descarga"?2:3+volUp;
+  const mS = bt==="descarga"?2:(test?1:4), aS = bt==="descarga"||test?2:3+volUp;
   const volBoost = estetica?1:0; // más volumen en estética
   const r=[]; const add=(name,sets,reps,rest,proto,main)=>{ if(name) r.push([name,sets,reps,rest,proto,!!main]); };
   // Elige respetando el material disponible y SIN repetir ejercicios ya añadidos;
@@ -9335,10 +9445,10 @@ function baseDayRoutine(dayType, block, goal, weekNo){
       acondicionamiento:{main:"series_planas",mR:B?"12-15":"10-12",acc:"superset",aR:"12-15",mRest:75,aRest:45},
       hibrido:{main:"series_planas",mR:rep,acc:"superset",aR:"10-12",mRest:90,aRest:60},
       descarga:{main:"series_planas",mR:"8-10",acc:"series_planas",aR:"10-12",mRest:90,aRest:60},
-      test:{main:"ramp_up",mR:"3-5 (test)",acc:"series_planas",aR:"8-10",mRest:180,aRest:90},
+      test:{main:"test_amrap",mR:`AMRAP ${baseRep}`,acc:"series_planas",aR:"8-10",mRest:180,aRest:90},
     };
     const P=PH[test?"test":bt]||PH.fuerza;
-    const ms=bt==="descarga"?2:3, as=bt==="descarga"?2:3;
+    const ms=bt==="descarga"?2:(test?1:3), as=bt==="descarga"||test?2:3;
     add(pick(EX_POOLS.squat,0),ms,P.mR,P.mRest,P.main,true);      // rodilla dominante
     add(pick(EX_POOLS.hinge,1),ms,P.mR,P.mRest,P.main,true);      // cadera dominante
     add(pick(EX_POOLS.hpush,2),as,P.aR,P.aRest,P.acc,false);      // empuje horizontal
@@ -9349,18 +9459,18 @@ function baseDayRoutine(dayType, block, goal, weekNo){
     add(pick(EX_POOLS.vpush,7),as,P.aR,P.aRest,P.acc,false);      // empuje vertical
     return r; // orden por patrón (sin reordenar por material ni finisher)
   } else if(dayType==="hiit"){ // HIIT / cardio: EMOM aeróbico + Tabata
-    return buildMetcon("hiit",block,goal,weekNo);
+    return buildMetcon("hiit",block,goal,weekNo,variant);
   } else if(dayType==="crossfit"){ // fuerza/técnica + WOD según la fase
-    return buildMetcon("crossfit",block,goal,weekNo);
+    return buildMetcon("crossfit",block,goal,weekNo,variant);
   } else if(dayType==="hyrox"){ // remo/carrera + estaciones
-    return buildMetcon("hyrox",block,goal,weekNo);
+    return buildMetcon("hyrox",block,goal,weekNo,variant);
   } else if(dayType==="mobility"){ // movilidad / regeneración
     add(pick(EX_POOLS.mobility,0),2,"8-10",0,"series_planas",false);
     add(pick(EX_POOLS.mobility,2),2,"8-10",0,"series_planas",false);
     add(pick(EX_POOLS.core,1),3,"30-45s",30,"series_planas",false);
     add(pick(EX_POOLS.cardio,0),1,"15-20 min",0,"series_planas",false);
   } else { // fullbody metabólico: circuito de fuerza-resistencia por rondas
-    return buildMetcon("circuit",block,goal,weekNo);
+    return buildMetcon("circuit",block,goal,weekNo,variant);
   }
   // Orden final: primero los principales, luego por prioridad de material
   // (barra/rack/multipower primero) para descongestionar los racks al inicio.
