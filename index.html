@@ -2935,63 +2935,116 @@ async function uploadImage(bucket, pathNoExt, file, notify){
   return data&&data.publicUrl;
 }
 
-async function uploadClientPhoto(clientId,file,note,notify){
+// Postura de cada foto (frente, perfil, espalda…) para comparar lo mismo con lo mismo.
+const POSES = [["frente","Frente"],["perfil","Perfil"],["espalda","Espalda"],["otra","Otra"]];
+const POSE_LABEL = Object.fromEntries(POSES);
+const poseOf = (p) => { if(p&&p.pose&&POSE_LABEL[p.pose]) return p.pose; const n=String((p&&p.note)||"");
+  return /frente|frontal/i.test(n)?"frente":/perfil|lateral|lado/i.test(n)?"perfil":/espalda|detr[aá]s/i.test(n)?"espalda":"otra"; };
+async function uploadClientPhoto(clientId,file,opts,notify){
+  const o=typeof opts==="string"?{note:opts}:(opts||{});
   const url=await uploadImage("avatars",`fotos/${clientId}/${Date.now()}`,file,notify);
   if(!url) return false;
-  const {error}=await sb.from("client_photos").insert({client_id:clientId,url,taken_on:TODAY,note:note||""});
+  const row={client_id:clientId,url,taken_on:o.date||TODAY,note:o.note||"",pose:o.pose||null};
+  let {error}=await sb.from("client_photos").insert(row);
+  if(error&&/pose/i.test(error.message||"")){ const {pose,...rest}=row; const r2=await sb.from("client_photos").insert({...rest,note:[POSE_LABEL[pose]||"",rest.note].filter(Boolean).join(" · ")}); error=r2.error; }
   if(error){ notify&&notify(/does not exist|relation|schema cache/i.test(error.message||"")?"Falta la tabla de fotos en Supabase. Ejecuta docs/fotos-storage.sql.":"La foto se subió pero no se pudo guardar: "+error.message,"err"); return false; }
   return true;
 }
+const daysTxt = (a,b) => { if(!a||!b) return ""; const d=Math.round((new Date(b+"T12:00:00")-new Date(a+"T12:00:00"))/86400000); if(d<=0) return ""; return d>=60?`${Math.round(d/30)} meses`:d>=14?`${Math.round(d/7)} semanas`:`${d} días`; };
+// Comparador por FECHAS: eliges dos fechas y se enfrenta cada postura (frente con frente…).
 function PhotoCompare({photos,size=220}){
-  const [a,setA]=React.useState(0), [b,setB]=React.useState(Math.max(0,photos.length-1));
-  React.useEffect(()=>{ setA(0); setB(Math.max(0,photos.length-1)); },[photos.length]);
-  if(photos.length<2) return null;
-  const pa=photos[Math.min(a,photos.length-1)], pb=photos[Math.min(b,photos.length-1)];
-  const days=pa.taken_on&&pb.taken_on?Math.round((new Date(pb.taken_on)-new Date(pa.taken_on))/86400000):null;
-  const Side=({p,label,val,set})=><div style={{flex:1,minWidth:0}}>
-    <div style={{position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
-      <img src={p.url} alt={label} style={{width:"100%",height:size,objectFit:"cover",display:"block"}}/>
-      <span style={{position:"absolute",top:6,left:6,fontSize:10,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.65)",borderRadius:20,padding:"2px 9px"}}>{label}</span>
-    </div>
-    <select value={val} onChange={e=>set(parseInt(e.target.value,10))} style={{width:"100%",marginTop:5,fontSize:12,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:8,padding:"5px 6px",background:"#fff"}}>
-      {photos.map((x,i)=><option key={x.id} value={i}>{fmtD(x.taken_on)||`Foto ${i+1}`}{x.note?` · ${x.note.slice(0,18)}`:""}</option>)}
+  const dates=[...new Set(photos.map(p=>p.taken_on).filter(Boolean))].sort();
+  const [a,setA]=React.useState(dates[0]), [b,setB]=React.useState(dates[dates.length-1]);
+  React.useEffect(()=>{ if(!dates.includes(a)) setA(dates[0]); if(!dates.includes(b)) setB(dates[dates.length-1]); },[dates.join("|")]);
+  if(dates.length<2) return photos.length?<div style={{fontSize:12,color:"#64748b",textAlign:"center",padding:"10px 8px",background:"#f8fafc",borderRadius:10}}>Hay fotos de una sola fecha. Sube fotos de otro día para comparar.</div>:null;
+  const of=(d)=>photos.filter(p=>p.taken_on===d);
+  const poses=POSES.map(x=>x[0]).filter(k=>of(a).some(p=>poseOf(p)===k)||of(b).some(p=>poseOf(p)===k));
+  const pick=(d,k)=>of(d).find(p=>poseOf(p)===k);
+  const sel=(val,set,label)=><label style={{flex:1,minWidth:0}}>
+    <span style={{display:"block",fontSize:10,fontWeight:800,color:"#64748b",marginBottom:3}}>{label}</span>
+    <select value={val} onChange={e=>set(e.target.value)} style={{width:"100%",fontSize:13,fontWeight:700,border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 8px",background:"#fff",color:"#0f172a"}}>
+      {dates.map(d=><option key={d} value={d}>{fmtD(d)} · {of(d).length} foto{of(d).length!==1?"s":""}</option>)}
     </select>
+  </label>;
+  const Img=({p,label})=><div style={{flex:1,minWidth:0}}>
+    {p?<a href={p.url} target="_blank" rel="noreferrer" style={{display:"block",position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
+        <img src={p.url} alt={label} style={{width:"100%",height:size,objectFit:"cover",display:"block"}}/>
+        <span style={{position:"absolute",top:6,left:6,fontSize:10,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.65)",borderRadius:20,padding:"2px 9px"}}>{label}</span>
+      </a>
+      :<div style={{height:size,borderRadius:12,border:"1px dashed #cfd8e6",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,color:"#94a3b8",textAlign:"center",padding:8}}>Sin foto de esta postura</div>}
   </div>;
+  const quick=[["Primera ↔ última",dates[0],dates[dates.length-1]]];
+  if(dates.length>2) quick.push(["Anterior ↔ última",dates[dates.length-2],dates[dates.length-1]]);
   return <div>
-    <div style={{display:"flex",gap:8}}><Side p={pa} label="ANTES" val={a} set={setA}/><Side p={pb} label="DESPUÉS" val={b} set={setB}/></div>
-    {days!=null&&days>0&&<div style={{textAlign:"center",fontSize:12,fontWeight:700,color:"#475569",marginTop:6}}>{days>=60?`${Math.round(days/30)} meses`:days>=14?`${Math.round(days/7)} semanas`:`${days} días`} de diferencia</div>}
+    <div style={{display:"flex",gap:8,marginBottom:6}}>{sel(a,setA,"ANTES")}{sel(b,setB,"DESPUÉS")}</div>
+    <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+      {quick.map(([l,x,y])=>{ const on=a===x&&b===y; return <button key={l} type="button" onClick={()=>{setA(x);setB(y);}} style={{fontSize:11,fontWeight:700,padding:"4px 10px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{l}</button>; })}
+      {daysTxt(a,b)&&<span style={{marginLeft:"auto",fontSize:12,fontWeight:700,color:"#475569",alignSelf:"center"}}>{daysTxt(a,b)} de diferencia</span>}
+    </div>
+    <div style={{display:"flex",flexDirection:"column",gap:10}}>
+      {poses.map(k=><div key={k}>
+        <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginBottom:4}}>{POSE_LABEL[k]}</div>
+        <div style={{display:"flex",gap:8}}><Img p={pick(a,k)} label={fmtD(a)}/><Img p={pick(b,k)} label={fmtD(b)}/></div>
+      </div>)}
+    </div>
   </div>;
 }
 function PhotosPanel({client,notify,canDelete}){
   const {photos,load}=useClientPhotos(client.id);
-  const [busy,setBusy]=React.useState(false);
+  const [busy,setBusy]=React.useState("");
   const [mode,setMode]=React.useState("compare");
-  const upload=async(file)=>{ if(!file) return; setBusy(true); const ok=await uploadClientPhoto(client.id,file,"",notify); if(ok){ await load(); notify&&notify("Foto guardada ✓"); } setBusy(false); };
-  const saveNote=(p,note)=>{ sb.from("client_photos").update({note}).eq("id",p.id); };
-  const saveDate=(p,d)=>{ sb.from("client_photos").update({taken_on:d}).eq("id",p.id).then(load); };
+  const [up,setUp]=React.useState(null); // {date, pose}
+  const fileRef=React.useRef(null);
+  const ORDER=["frente","perfil","espalda"];
+  const uploadMany=async(files)=>{ const list=[...(files||[])]; if(!list.length) return;
+    let ok=0; for(let i=0;i<list.length;i++){ setBusy(`Subiendo ${i+1}/${list.length}…`);
+      const pose=up.pose==="auto"?(list.length===1?"frente":(ORDER[i]||"otra")):up.pose;
+      if(await uploadClientPhoto(client.id,list[i],{date:up.date,pose},notify)) ok++; }
+    setBusy(""); await load(); if(ok){ notify&&notify(`${ok} foto${ok>1?"s":""} guardada${ok>1?"s":""} del ${fmtD(up.date)} ✓`); setUp(null); setMode("compare"); } };
+  const upd=(p,patch)=>{ sb.from("client_photos").update(patch).eq("id",p.id).then(({error})=>{ if(error&&patch.pose){ sb.from("client_photos").update({note:[POSE_LABEL[patch.pose],p.note].filter(Boolean).join(" · ")}).eq("id",p.id).then(load); } else load(); }); };
   const del=async(p)=>{ if(!window.confirm("¿Eliminar esta foto?"))return; await sb.from("client_photos").delete().eq("id",p.id); await load(); };
+  const dates=[...new Set(photos.map(p=>p.taken_on||""))].sort().reverse();
+  const chip=(on,txt,onClick,key)=><button key={key} type="button" onClick={onClick} style={{fontSize:12,fontWeight:700,padding:"6px 11px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{txt}</button>;
   return(
     <div>
       <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:10}}>
-        {photos.length>1&&<div className="seg" style={{flex:1}}>{[["compare","↔️ Comparar"],["grid","🖼 Todas"]].map(([k,l])=><button key={k} className={"sb"+(mode===k?" on":"")} onClick={()=>setMode(k)} style={{fontSize:12}}>{l}</button>)}</div>}
-        <label className="btn sky" style={{fontSize:12,padding:"8px 12px",cursor:"pointer",marginLeft:photos.length>1?0:"auto",whiteSpace:"nowrap"}}>
-          {busy?"Subiendo…":"📸 Añadir foto"}
-          <input type="file" accept="image/*" style={{display:"none"}} disabled={busy} onChange={e=>{upload(e.target.files[0]);e.target.value="";}}/>
-        </label>
+        {photos.length>1&&<div className="seg" style={{flex:1}}>{[["compare","↔️ Comparar"],["grid","🖼 Por fechas"]].map(([k,l])=><button key={k} className={"sb"+(mode===k?" on":"")} onClick={()=>setMode(k)} style={{fontSize:12}}>{l}</button>)}</div>}
+        {!up&&<button className="btn sky" style={{fontSize:12,padding:"8px 12px",marginLeft:photos.length>1?0:"auto",whiteSpace:"nowrap"}} onClick={()=>setUp({date:TODAY,pose:"auto"})}>📸 Añadir fotos</button>}
       </div>
-      {photos.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:20,background:"#f8fafc",borderRadius:10,border:"1px dashed #dbe2ec"}}>Sin fotos aún. Haz la primera (frente, perfil y espalda, misma luz) para tener tu «antes».</div>}
+      {up&&<div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:12,padding:10,marginBottom:12}}>
+        <span className="lbl">FECHA DE LAS FOTOS</span>
+        <input type="date" className="inp" value={up.date} max={TODAY} onChange={e=>setUp({...up,date:e.target.value||TODAY})} style={{marginBottom:8}}/>
+        <span className="lbl">POSTURA</span>
+        <div style={{display:"flex",gap:5,flexWrap:"wrap",marginBottom:6}}>
+          {chip(up.pose==="auto","Varias: frente, perfil, espalda",()=>setUp({...up,pose:"auto"}),"auto")}
+          {POSES.map(([k,l])=>chip(up.pose===k,l,()=>setUp({...up,pose:k}),k))}
+        </div>
+        <div style={{fontSize:11,color:"#64748b",marginBottom:8,lineHeight:1.4}}>{up.pose==="auto"?"Elige varias a la vez y se guardan en ese orden: 1ª frente, 2ª perfil, 3ª espalda.":`Todas las que elijas se guardan como «${POSE_LABEL[up.pose]}».`} Misma luz y misma distancia para que se compare bien.</div>
+        <input ref={fileRef} type="file" accept="image/*" multiple style={{display:"none"}} disabled={!!busy} onChange={e=>{ uploadMany(e.target.files); e.target.value=""; }}/>
+        <div style={{display:"flex",gap:6}}>
+          <button className="btn grn" style={{flex:1,padding:10,justifyContent:"center"}} disabled={!!busy} onClick={()=>fileRef.current&&fileRef.current.click()}>{busy||"Elegir fotos"}</button>
+          <button className="btn ghost" style={{padding:"10px 14px"}} disabled={!!busy} onClick={()=>setUp(null)}>Cancelar</button>
+        </div>
+      </div>}
+      {photos.length===0&&!up&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:20,background:"#f8fafc",borderRadius:10,border:"1px dashed #dbe2ec"}}>Sin fotos aún. Haz las primeras (frente, perfil y espalda, misma luz) para tener tu «antes».</div>}
       {photos.length===1&&<img src={photos[0].url} style={{width:"100%",maxHeight:320,objectFit:"cover",borderRadius:12}}/>}
       {photos.length>1&&mode==="compare"&&<PhotoCompare photos={photos}/>}
-      {photos.length>1&&mode==="grid"&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-        {photos.map((p,i)=><div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
-          <div style={{position:"relative"}}>
-            <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
-            <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:700,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{i===0?"ANTES":i===photos.length-1?"ACTUAL":`#${i+1}`}</span>
-            {canDelete&&<button onClick={()=>del(p)} style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>}
-          </div>
-          <div style={{padding:"6px 8px"}}>
-            <input type="date" className="inp" style={{padding:"4px 6px",fontSize:11}} defaultValue={p.taken_on||TODAY} onChange={e=>saveDate(p,e.target.value)}/>
-            <input className="inp" style={{padding:"4px 6px",fontSize:11,marginTop:4}} placeholder="Nota (frente, perfil, peso…)" defaultValue={p.note||""} onBlur={e=>saveNote(p,e.target.value)}/>
+      {photos.length>1&&mode==="grid"&&<div style={{display:"flex",flexDirection:"column",gap:14}}>
+        {dates.map(d=><div key={d||"sin"}>
+          <div style={{fontSize:12,fontWeight:800,color:"#0f172a",marginBottom:6}}>{d?fmtD(d):"Sin fecha"} <span style={{fontWeight:600,color:"#94a3b8"}}>· {photos.filter(p=>(p.taken_on||"")===d).length} foto{photos.filter(p=>(p.taken_on||"")===d).length!==1?"s":""}</span></div>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8}}>
+            {photos.filter(p=>(p.taken_on||"")===d).map(p=><div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
+              <div style={{position:"relative"}}>
+                <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
+                <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{POSE_LABEL[poseOf(p)]}</span>
+                {canDelete&&<button onClick={()=>del(p)} title="Eliminar" style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>}
+              </div>
+              <div style={{padding:"6px 8px",display:"flex",flexDirection:"column",gap:4}}>
+                <input type="date" className="inp" style={{padding:"4px 6px",fontSize:11}} defaultValue={p.taken_on||TODAY} max={TODAY} onChange={e=>e.target.value&&upd(p,{taken_on:e.target.value})}/>
+                <select value={poseOf(p)} onChange={e=>upd(p,{pose:e.target.value})} style={{fontSize:11,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:7,padding:"4px 6px",background:"#fff"}}>{POSES.map(([k,l])=><option key={k} value={k}>{l}</option>)}</select>
+                <input className="inp" style={{padding:"4px 6px",fontSize:11}} placeholder="Nota (peso, semana…)" defaultValue={p.note||""} onBlur={e=>upd(p,{note:e.target.value})}/>
+              </div>
+            </div>)}
           </div>
         </div>)}
       </div>}
@@ -3067,7 +3120,7 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
           </div>)}
         </div>
       </Card>}
-      {photos.length>=2&&<Card icon="clipboard" title="Tu cambio"><PhotoCompare photos={photos} size={200}/></Card>}
+      {new Set(photos.map(p=>p.taken_on).filter(Boolean)).size>=2&&<Card icon="clipboard" title="Tu cambio"><PhotoCompare photos={photos} size={180}/></Card>}
       {blk&&<Card icon="program" title="En qué estamos ahora">
         <div style={{fontSize:13,fontWeight:700,color:"#0284c7"}}>{blk.name}</div>
         <div style={{fontSize:13,color:"#475569",marginTop:3,lineHeight:1.45}}>{isTestBlock(blk)?"Semana de test: medimos cuánto has mejorado.":(PHASE_TXT[blk.type]||"")}</div>
