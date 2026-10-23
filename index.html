@@ -274,6 +274,14 @@ function Ico({k,size=22,style,className}){
   return <img src={`/icons3d/${k}.png`} alt="" width={size} height={size} draggable={false} onError={()=>setBad(true)} className={"ico3d"+(className?" "+className:"")} style={style}/>;
 }
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+// ── ACCESO SEGURO (Supabase Auth) ──────────────────────────────────────────
+// Coach: email + contraseña. Atleta: código + contraseña propia (la cuenta usa
+// un email interno derivado del código; el atleta nunca lo ve).
+const ATHLETE_DOMAIN = "atleta.kikotegym.app";
+const athleteEmail = (code) => String(code||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"")+"@"+ATHLETE_DOMAIN;
+// Paso 1 de seguridad: el acceso antiguo sigue disponible mientras se configura
+// el nuevo. Tras ejecutar docs/seguridad-2.sql se pone a false.
+const LEGACY_LOGIN = true;
 
 const TODAY = new Date().toISOString().split("T")[0];
 const TIME_SLOTS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00"];
@@ -459,6 +467,9 @@ function calcStreak(history) {
 // ── ROOT ───────────────────────────────────────────────────────────────────
 function App() {
   const [mode, setMode] = React.useState("login");
+  const authKind = React.useRef(null); // "admin" | "client" con sesión segura
+  const [roster, setRoster] = React.useState(null);   // aforo (atleta): quién hay en cada clase
+  const [members, setMembers] = React.useState(null); // comunidad (atleta): nombre e inicial
   const [clients, setClients] = React.useState([]);
   const [sessions, setSessions] = React.useState([]);
   const [history, setHistory] = React.useState([]);
@@ -528,16 +539,45 @@ function App() {
       setWaitlist(wl.data||[]);
       // Leads/valoraciones: fetch aparte para no romper si aún no existe la tabla.
       try { const lq=await sb.from("leads").select("*").order("created_at",{ascending:false}); if(!lq.error) setLeads(lq.data||[]); } catch(e){}
+      if(authKind.current==="client") await loadCommunity();
+      setLoading(false);
+      return {clients:c.data||[]};
     } catch(e) { notify("Error de conexión","err"); }
     setLoading(false);
+    return {clients:[]};
   },[]);
+  // Aforo y comunidad para el atleta (funciones seguras: no exponen datos privados).
+  const loadCommunity = async () => {
+    try{
+      const r=await sb.rpc("slot_roster",{p_from:addDays(TODAY,-7),p_to:addDays(TODAY,120)});
+      if(!r.error) setRoster((r.data||[]).map(x=>({...x,time:String(x.time||"").slice(0,5),date:String(x.date||"").slice(0,10)})));
+      const m=await sb.rpc("community_members"); if(!m.error) setMembers(m.data||[]);
+    }catch(e){}
+  };
+  const clearData = () => { [setClients,setSessions,setHistory,setPayments,setForum,setProgress,setRecords,setAchievements,setClientWeights,setAssignedSessions,setAssignedExercises,setWeightHistory,setWaitlist,setLeads,setClientPlans].forEach(f=>f([])); setRoster(null); setMembers(null); };
+  // Entra con la sesión segura: decide si es coach o atleta (lo dice el servidor).
+  const enterWithAuth = async () => {
+    const a=await sb.rpc("is_admin");
+    if(a.error){ await sb.auth.signOut(); setLoading(false); setLoginErr("Falta preparar la seguridad en Supabase (docs/seguridad-1.sql)."); return false; }
+    if(a.data===true){ authKind.current="admin"; await loadAll(); setMode("admin"); return true; }
+    const m=await sb.rpc("my_client_id");
+    if(m.data){ authKind.current="client"; const {clients:cl}=await loadAll(); const me=cl.find(c=>c.id===m.data); if(me){ setLoggedClient(me); setMode("client"); return true; } }
+    authKind.current=null; await sb.auth.signOut(); setLoading(false);
+    setLoginErr("Esta cuenta no tiene acceso. Activa tu cuenta o habla con tu coach.");
+    return false;
+  };
+  const doLogout = async () => { try{ await sb.auth.signOut(); }catch(e){} authKind.current=null; clearSession(); clearData(); setLoggedClient(null); setMode("login"); };
 
   React.useEffect(()=>{
-    loadAll().then(()=>{
-      // Restore saved session
-      const s = loadSession();
-      if(s) setPendingSession(s);
-    });
+    (async()=>{
+      // Con sesión segura guardada: entra directo. Sin ella NO se descarga ningún dato.
+      try{ const {data}=await sb.auth.getSession(); if(data&&data.session&&await enterWithAuth()) return; }catch(e){}
+      const legacy = LEGACY_LOGIN ? loadSession() : null;
+      if(legacy){ await loadAll(); setPendingSession(legacy); }
+      else { clearSession(); setLoading(false); }
+    })();
+    const {data:sub}=sb.auth.onAuthStateChange((ev)=>{ if(ev==="SIGNED_OUT"&&authKind.current){ authKind.current=null; clearData(); setLoggedClient(null); setMode("login"); } });
+    return ()=>{ try{ sub&&sub.subscription&&sub.subscription.unsubscribe(); }catch(e){} };
   },[]);
 
   // Apply pending session once clients are loaded
@@ -558,8 +598,44 @@ function App() {
     if(loggedClient) { const u=clients.find(c=>c.id===loggedClient.id); if(u) setLoggedClient(u); }
   },[clients]);
 
-  const handleClientLogin = (remember) => {
-    const c = clients.find(x=>x.name.toLowerCase().trim()===loginName.toLowerCase().trim()&&x.code===loginCode.trim());
+  // ── Acceso seguro ──
+  const handleAthleteLogin = async (code, pass) => {
+    setLoginErr("");
+    if(!String(code||"").trim()||!pass) return setLoginErr("Escribe tu código y tu contraseña");
+    const {error}=await sb.auth.signInWithPassword({email:athleteEmail(code),password:pass});
+    if(error) return setLoginErr(/invalid login/i.test(error.message)?"Código o contraseña incorrectos. ¿Ya activaste tu cuenta?":error.message);
+    setLoading(true); await enterWithAuth();
+  };
+  const handleAthleteActivate = async (name, code, pass, pass2) => {
+    setLoginErr("");
+    if(!String(name||"").trim()||!String(code||"").trim()) return setLoginErr("Escribe tu nombre completo y tu código");
+    if(String(pass||"").length<8) return setLoginErr("La contraseña debe tener al menos 8 caracteres");
+    if(pass!==pass2) return setLoginErr("Las contraseñas no coinciden");
+    const email=athleteEmail(code);
+    let r=await sb.auth.signUp({email,password:pass});
+    if(r.error){
+      if(!/registered|already|exists/i.test(r.error.message)) return setLoginErr(r.error.message);
+      const s2=await sb.auth.signInWithPassword({email,password:pass}); // ya la había creado antes
+      if(s2.error) return setLoginErr("Este código ya tiene cuenta. Entra con tu contraseña o pide a tu coach que restablezca tu acceso.");
+    } else if(!r.data||!r.data.session){
+      return setLoginErr("Falta un ajuste en Supabase: desactiva «Confirm email» (Authentication → Providers → Email).");
+    }
+    const c=await sb.rpc("claim_client",{p_name:String(name).trim(),p_code:String(code).trim()});
+    if(c.error){ await sb.auth.signOut(); return setLoginErr(/intentos/i.test(c.error.message)?"Demasiados intentos. Prueba dentro de una hora.":"No se pudo activar: "+c.error.message); }
+    if(!c.data){ const m=await sb.rpc("my_client_id"); if(!m.data){ await sb.auth.signOut(); return setLoginErr("El nombre o el código no coinciden. Escríbelos tal como te los dio tu coach."); } }
+    setLoading(true); if(await enterWithAuth()) notify("¡Cuenta activada! A partir de ahora entra con tu código y tu contraseña 💪");
+  };
+  const handleCoachLogin = async (email, pass) => {
+    setLoginErr("");
+    if(!String(email||"").trim()||!pass) return setLoginErr("Escribe tu email y tu contraseña");
+    const {error}=await sb.auth.signInWithPassword({email:String(email).trim(),password:pass});
+    if(error) return setLoginErr(/invalid login/i.test(error.message)?"Email o contraseña incorrectos":error.message);
+    setLoading(true); await enterWithAuth();
+  };
+  // ── Acceso antiguo (temporal, solo mientras LEGACY_LOGIN) ──
+  const handleClientLogin = async (remember) => {
+    const {clients:cl}=await loadAll();
+    const c = cl.find(x=>x.name.toLowerCase().trim()===loginName.toLowerCase().trim()&&x.code===loginCode.trim());
     if(c){
       setLoggedClient(c);setMode("client");setLoginErr("");
       if(remember) saveSession("client", {id:c.id});
@@ -572,13 +648,25 @@ function App() {
     if(Date.now()<f.until){ setLoginErr(`Demasiados intentos. Espera ${Math.ceil((f.until-Date.now())/1000)} s`); return; }
     let ok=false; try{ ok=(await sha256Hex(ADMIN_SALT+adminPass))===ADMIN_HASH; }catch(e){ setLoginErr("Este navegador no permite comprobar la contraseña (usa https)"); return; }
     if(ok){
-      f.n=0; setMode("admin");setAdminPass("");setLoginErr("");
+      f.n=0; await loadAll(); setMode("admin");setAdminPass("");setLoginErr("");
       if(remember) saveSession("admin", {k:ADMIN_KEY});
     } else {
       f.n++; if(f.n>=5){ f.until=Date.now()+30000; f.n=0; }
       setLoginErr("Contraseña incorrecta");
     }
   };
+
+  // Atleta con sesión segura: sus reservas + el aforo de los demás (sin datos privados).
+  const portalSessions = React.useMemo(()=>{
+    if(mode!=="client"||!loggedClient||!roster) return sessions;
+    const mine=sessions.filter(s=>s.client_id===loggedClient.id);
+    const others=roster.filter(r=>r.client_id!==loggedClient.id).map((r,i)=>({id:"r"+i,client_id:r.client_id,date:r.date,time:r.time,status:"confirmed"}));
+    return [...mine,...others];
+  },[mode,loggedClient,roster,sessions]);
+  const portalClients = React.useMemo(()=>{
+    if(mode!=="client"||!loggedClient||!members) return clients;
+    return [...members.filter(m=>m.id!==loggedClient.id),loggedClient];
+  },[mode,loggedClient,members,clients]);
 
   if(loading) return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",flexDirection:"column",gap:16}}>
@@ -591,60 +679,111 @@ function App() {
   return (
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
-      {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} onLogout={()=>{clearSession();setMode("login");}}/>}
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={()=>{clearSession();setLoggedClient(null);setMode("login");}}/>}
+      {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
 
 // ── LOGIN ──────────────────────────────────────────────────────────────────
-function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin}) {
+function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}) {
   const [remember, setRemember] = React.useState(true);
+  const [sub, setSub] = React.useState("login");       // atleta: login | activate
+  const [legacy, setLegacy] = React.useState(false);   // acceso antiguo (temporal)
+  const [f, setF] = React.useState({code:"",pass:"",pass2:"",name:"",email:""});
+  const [busy, setBusy] = React.useState(false);
+  const [show, setShow] = React.useState(false);
+  const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  const run=async(fn)=>{ if(busy) return; setBusy(true); try{ await fn(); } finally { setBusy(false); } };
+  const tab=(t)=>{ setLoginTab(t); setLoginErr(""); setSub("login"); };
   const RememberBox = ({id}) => (
     <div style={{display:"flex",alignItems:"center",gap:10,padding:"2px 0"}}>
       <input type="checkbox" id={id} checked={remember} onChange={e=>setRemember(e.target.checked)} style={{accentColor:"#0284c7",width:18,height:18,cursor:"pointer"}}/>
       <label htmlFor={id} style={{fontSize:13,color:"#64748b",cursor:"pointer"}}>Recordarme en este dispositivo</label>
     </div>
   );
+  const passInput=(k,onEnter,ph)=>(
+    <div style={{position:"relative"}}>
+      <input className="inp" type={show?"text":"password"} autoComplete={k==="pass"&&sub!=="activate"?"current-password":"new-password"} placeholder={ph||"••••••••"} value={f[k]} onChange={e=>set(k,e.target.value)} onKeyDown={e=>e.key==="Enter"&&onEnter&&onEnter()} style={{paddingRight:44}}/>
+      <button type="button" onClick={()=>setShow(x=>!x)} title={show?"Ocultar":"Mostrar"} style={{position:"absolute",right:8,top:"50%",transform:"translateY(-50%)",border:"none",background:"none",cursor:"pointer",fontSize:15,color:"#94a3b8"}}>{show?"🙈":"👁"}</button>
+    </div>
+  );
+  const err=loginErr?<p style={{fontSize:12,color:"#dc2626",lineHeight:1.4}}>{loginErr}</p>:null;
+  const athleteLogin=()=>run(()=>handleAthleteLogin(f.code,f.pass));
+  const activate=()=>run(()=>handleAthleteActivate(f.name,f.code,f.pass,f.pass2));
+  const coachLogin=()=>run(()=>handleCoachLogin(f.email,f.pass));
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(ellipse at 50% 0%,#dcebfb,#eef1f7 60%)"}}>
       <div style={{width:"100%",maxWidth:380}} className="fade">
-        <div style={{textAlign:"center",marginBottom:32}}>
-          <div style={{fontSize:38,marginBottom:8}}>🏋️</div>
+        <div style={{textAlign:"center",marginBottom:28}}>
+          <div style={{marginBottom:8}}><Ico k="logo" size={52}/></div>
           <div className="mono" style={{fontSize:28,fontWeight:700,color:"#0284c7",letterSpacing:-1}}>{GYM_NAME}</div>
           <div style={{color:"#94a3b8",fontSize:13,marginTop:5}}>Tu centro de entrenamiento personal</div>
         </div>
-        <div className="seg" style={{marginBottom:20}}>
-          <button className={`sb ${loginTab==="client"?"on":""}`} onClick={()=>{setLoginTab("client");setLoginErr("");}}>Soy cliente</button>
-          <button className={`sb ${loginTab==="admin"?"on":""}`} onClick={()=>{setLoginTab("admin");setLoginErr("");}}>Admin</button>
+        <div className="seg" style={{marginBottom:18}}>
+          <button className={`sb ${loginTab==="client"?"on":""}`} onClick={()=>tab("client")}>Soy atleta</button>
+          <button className={`sb ${loginTab==="admin"?"on":""}`} onClick={()=>tab("admin")}>Coach</button>
         </div>
-        <div className="card" style={{padding:26}}>
-          {loginTab==="client"?(
+        <div className="card" style={{padding:24}}>
+          {!legacy&&loginTab==="client"&&sub==="login"&&(
+            <form onSubmit={e=>{e.preventDefault();athleteLogin();}} style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><span className="lbl">TU CÓDIGO</span>
+                <input className="inp mono" autoComplete="username" placeholder="Ej. 1000" value={f.code} onChange={e=>set("code",e.target.value)} style={{letterSpacing:4,fontSize:18,textAlign:"center"}}/>
+              </div>
+              <div><span className="lbl">CONTRASEÑA</span>{passInput("pass",athleteLogin)}</div>
+              {err}
+              <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Entrando…":"Entrar"}</button>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:11,fontSize:13,color:"#0284c7"}} onClick={()=>{setSub("activate");setLoginErr("");}}>¿Primera vez? Activa tu cuenta</button>
+              <p style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>¿Olvidaste la contraseña? Pide a tu coach que restablezca tu acceso.</p>
+            </form>
+          )}
+          {!legacy&&loginTab==="client"&&sub==="activate"&&(
+            <form onSubmit={e=>{e.preventDefault();activate();}} style={{display:"flex",flexDirection:"column",gap:12}}>
+              <p style={{fontSize:13,color:"#475569",lineHeight:1.45}}>Solo la primera vez: escribe tu nombre y el código que te dio tu coach, y elige tu contraseña.</p>
+              <div><span className="lbl">NOMBRE COMPLETO</span><input className="inp" autoComplete="name" placeholder="Ej. Ana Gómez" value={f.name} onChange={e=>set("name",e.target.value)}/></div>
+              <div><span className="lbl">TU CÓDIGO</span><input className="inp mono" autoComplete="username" placeholder="Ej. 1000" value={f.code} onChange={e=>set("code",e.target.value)} style={{letterSpacing:4,textAlign:"center"}}/></div>
+              <div><span className="lbl">NUEVA CONTRASEÑA (mín. 8)</span>{passInput("pass")}</div>
+              <div><span className="lbl">REPITE LA CONTRASEÑA</span>{passInput("pass2",activate)}</div>
+              {err}
+              <button type="submit" className="btn grn" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Activando…":"Activar mi cuenta"}</button>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:10,fontSize:12}} onClick={()=>{setSub("login");setLoginErr("");}}>← Ya tengo cuenta</button>
+            </form>
+          )}
+          {!legacy&&loginTab==="admin"&&(
+            <form onSubmit={e=>{e.preventDefault();coachLogin();}} style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><span className="lbl">EMAIL</span><input className="inp" type="email" autoComplete="username" placeholder="tu@email.com" value={f.email} onChange={e=>set("email",e.target.value)}/></div>
+              <div><span className="lbl">CONTRASEÑA</span>{passInput("pass",coachLogin)}</div>
+              {err}
+              <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Entrando…":"Entrar al panel"}</button>
+            </form>
+          )}
+          {legacy&&(loginTab==="client"?(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
-              <p style={{fontSize:13,color:"#64748b",marginBottom:4}}>Ingresa tu nombre y el código de acceso.</p>
+              <p style={{fontSize:12,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:9,padding:"8px 10px"}}>Acceso antiguo (temporal). Activa tu cuenta nueva cuanto antes.</p>
               <div><span className="lbl">NOMBRE COMPLETO</span>
-                <input className="inp" placeholder="Ej. Carlos Mendoza" value={loginName} onChange={e=>setLoginName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)}/>
+                <input className="inp" placeholder="Ej. Carlos Mendoza" value={loginName} onChange={e=>setLoginName(e.target.value)} onKeyDown={e=>e.key==="Enter"&&run(()=>handleClientLogin(remember))}/>
               </div>
               <div><span className="lbl">CÓDIGO</span>
-                <input className="inp mono" placeholder="••••" maxLength={4} value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleClientLogin(remember)} style={{letterSpacing:8,fontSize:20,textAlign:"center"}}/>
+                <input className="inp mono" placeholder="••••" maxLength={8} value={loginCode} onChange={e=>setLoginCode(e.target.value)} onKeyDown={e=>e.key==="Enter"&&run(()=>handleClientLogin(remember))} style={{letterSpacing:8,fontSize:20,textAlign:"center"}}/>
               </div>
-              {loginErr&&<p style={{fontSize:12,color:"#dc2626"}}>{loginErr}</p>}
+              {err}
               <RememberBox id="remC"/>
-              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleClientLogin(remember)}>Entrar a mi portal</button>
-              <p style={{fontSize:11,color:"#bcd3ee",textAlign:"center"}}>¿Sin código? Escribe a tu trainer 📱</p>
+              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy} onClick={()=>run(()=>handleClientLogin(remember))}>Entrar a mi portal</button>
             </div>
           ):(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
+              <p style={{fontSize:12,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:9,padding:"8px 10px"}}>Acceso antiguo (temporal). Crea tu usuario de coach en Supabase y entra con email.</p>
               <div><span className="lbl">CONTRASEÑA</span>
-                <input className="inp" type="password" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&handleAdminLogin(remember)}/>
+                <input className="inp" type="password" placeholder="••••••••" value={adminPass} onChange={e=>setAdminPass(e.target.value)} onKeyDown={e=>e.key==="Enter"&&run(()=>handleAdminLogin(remember))}/>
               </div>
-              {loginErr&&<p style={{fontSize:12,color:"#dc2626"}}>{loginErr}</p>}
+              {err}
               <RememberBox id="remA"/>
-              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} onClick={()=>handleAdminLogin(remember)}>Entrar al panel</button>
+              <button className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy} onClick={()=>run(()=>handleAdminLogin(remember))}>Entrar al panel</button>
             </div>
-          )}
+          ))}
         </div>
+        {LEGACY_LOGIN&&<button type="button" onClick={()=>{setLegacy(x=>!x);setLoginErr("");}} style={{display:"block",margin:"14px auto 0",border:"none",background:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",textDecoration:"underline"}}>{legacy?"← Volver al acceso seguro":"Acceso antiguo (temporal)"}</button>}
       </div>
     </div>
   );
@@ -784,6 +923,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [showMeasures,setShowMeasures] = React.useState(null);
   const [showSummary,setShowSummary] = React.useState(null);
   const [viewAs,setViewAs] = React.useState(null); // ver la app tal y como la ve un cliente
+  // Desde la agenda/ficha: abre el perfil completo del cliente (Clientes, desplegado).
+  const goToProfile = (c) => { if(!c) return; setQuickView(null); setExecData(null); setView("clients"); setExpanded(c.id);
+    let n=0; const f=()=>{ const el=document.querySelector(`[data-client="${c.id}"]`); if(el&&el.scrollIntoView) el.scrollIntoView({behavior:"smooth",block:"start"}); else if(n++<20) setTimeout(f,120); }; setTimeout(f,150); };
   const [classExec,setClassExec] = React.useState(null); // {date,time} ejecutar la clase entera
   const [assignData,setAssignData] = React.useState(null);
   const [progData,setProgData] = React.useState(null);
@@ -869,8 +1011,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
   const addClient = () => w(async()=>{
     if(!nc.name||!nc.code||!nc.nextPayment) return notify("Completa los campos requeridos","err");
-    if(nc.code.length!==4) return notify("El código debe tener 4 dígitos","err");
-    if(clients.find(c=>c.code===nc.code)) return notify("Ese código ya existe","err");
+    if(!/^[A-Za-z0-9]{4,8}$/.test(nc.code)) return notify("El código debe tener de 4 a 8 letras o números","err");
+    if(clients.find(c=>String(c.code).toUpperCase()===nc.code.toUpperCase())) return notify("Ese código ya existe","err");
     const color=COLORS[clients.length%COLORS.length];
     const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal,days_week:(nc.trainDays&&nc.trainDays.length)||4,train_days:(nc.trainDays||[]).join(",")});
     if(error) return notify("Error: "+error.message,"err");
@@ -985,6 +1127,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     await sb.from("clients").update({sessions_left:tot-owed}).eq("id",client.id);
     notify(owed?`Bono renovado ✓ · descontadas ${owed} sesión(es) que debía`:"Sesiones renovadas ✓");
   });
+  // Restablece el acceso a la app de un atleta (olvidó la contraseña, cambió de móvil…).
+  const resetAccess = (c) => { if(!window.confirm(`¿Restablecer el acceso de ${c.name}? Tendrá que volver a activar su cuenta con su nombre y su código.`)) return;
+    w(async()=>{ const {error}=await sb.rpc("admin_reset_access",{p_client:c.id}); notify(error?("No se pudo: "+error.message):"Acceso restablecido ✓ · ya puede activar su cuenta de nuevo",error?"err":undefined); }); };
+  const accessMsg = (c) => `Hola ${String(c.name||"").split(" ")[0]} 👋 Ya puedes entrar en tu app de ${GYM_NAME}: ${location.origin}\n\n1️⃣ Pulsa «Soy atleta» → «¿Primera vez? Activa tu cuenta».\n2️⃣ Escribe tu nombre (${c.name}) y tu código: ${c.code}\n3️⃣ Elige tu contraseña (mín. 8 caracteres).\n\nDespués entrarás siempre con tu código y tu contraseña. ¡No la compartas! 💪`;
   const deleteClient = (id) => w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); });
   // ── Valoraciones / Leads ──
   const saveLead = (data) => w(async()=>{
@@ -1639,7 +1785,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const cHist=history.filter(h=>h.client_id===c.id);
                 const streak=calcStreak(cHist);
                 return(
-                  <div key={c.id} className={"card"+(open?"":" tilt")} style={{cursor:"pointer",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
+                  <div key={c.id} data-client={c.id} className={"card"+(open?"":" tilt")} style={{cursor:"pointer",border:`1px solid ${open?"#bcd3ee":"var(--border)"}`}} onClick={()=>setExpanded(open?null:c.id)}>
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"flex-start",marginBottom:12}}>
                       <div style={{display:"flex",gap:11,alignItems:"center"}}>
                         <div className="ring" style={{width:42,height:42,background:c.color+"18",color:c.color,border:`1.5px solid ${c.color}35`,fontSize:13}}>{ini(c.name)}</div>
@@ -1680,10 +1826,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0891b2",border:"1px solid #bcd3ee"}} onClick={()=>setShowMeasures(c)}>📏 Medidas</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700}} onClick={()=>setShowSummary(c)}>⭐ Resumen</button>
                           <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700}} onClick={()=>setViewAs(c)}>👁 Ver como cliente</button>
+
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
                           <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
                         </div>
+                        {"auth_user_id" in c&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:c.auth_user_id?"#f0fdf4":"#fffbeb",border:`1px solid ${c.auth_user_id?"#bbf7d0":"#fde68a"}`,borderRadius:10,padding:"8px 10px",marginBottom:14}}>
+                          <span style={{fontSize:12,fontWeight:700,color:c.auth_user_id?"#15803d":"#b45309",flex:1,minWidth:150}}>{c.auth_user_id?"🔐 App activada (entra con su código y su contraseña)":`⏳ Aún no ha activado su cuenta · código ${c.code}`}</span>
+                          {c.phone&&<a className="btn wa" style={{fontSize:11,padding:"6px 10px",textDecoration:"none"}} href={waLink(c.phone,accessMsg(c))} target="_blank" rel="noreferrer">📲 Enviar acceso</a>}
+                          {c.auth_user_id&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>resetAccess(c)}>🔑 Restablecer acceso</button>}
+                        </div>}
                         <ClientGestureNotes client={c}/>
                         {/* Historial: sesiones por día/fecha y pagos (toca una sesión para ver cargas y replicar) */}
                         <div style={{marginBottom:14}}>
@@ -1700,13 +1852,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                             <div style={{flex:1}}>
                               <input type="file" accept="image/*" id={"av"+c.id} style={{display:"none"}}
                                 onChange={async(e)=>{
-                                  const file=e.target.files[0]; if(!file) return;
-                                  const ext=file.name.split(".").pop();
-                                  const path=`${c.id}.${ext}`;
-                                  const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
-                                  if(upErr){notify("Error subiendo foto","err");return;}
-                                  const {data}=sb.storage.from("avatars").getPublicUrl(path);
-                                  await sb.from("clients").update({avatar_url:data.publicUrl+"?t="+Date.now()}).eq("id",c.id);
+                                  const file=e.target.files[0]; e.target.value=""; if(!file) return;
+                                  const url=await uploadImage("avatars",`${c.id}`,file,notify);
+                                  if(!url) return;
+                                  await sb.from("clients").update({avatar_url:url+"?t="+Date.now()}).eq("id",c.id);
                                   await loadAll();
                                   notify("Foto actualizada ✓");
                                 }}
@@ -2304,7 +2453,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} blocked={isBlocked(slotMenu.date,slotMenu.time)}
@@ -2315,6 +2464,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
+      <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
       {showMeasures&&<MeasuresModal client={showMeasures} progress={progress} loadAll={loadAll} notify={notify} onClose={()=>setShowMeasures(null)}/>}
       {viewAs&&(()=>{ const c=clients.find(x=>x.id===viewAs.id)||viewAs; return(
         <div style={{position:"fixed",inset:0,zIndex:300,background:"#eef1f7",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
@@ -2706,14 +2856,46 @@ function useClientPhotos(clientId){
   React.useEffect(()=>{ load(); },[load]);
   return {photos,load,ok};
 }
+// ── SUBIDA DE IMÁGENES ─────────────────────────────────────────────────────
+// Las fotos del móvil (HEIC del iPhone, 3-8 MB) se convierten en el propio
+// dispositivo a JPEG de 1600 px como máximo (~200-400 KB): suben rápido y el
+// almacén las acepta siempre. Si el navegador no puede convertirla, se sube tal cual.
+async function prepImage(file, maxSide=1600, quality=0.82){
+  try{
+    let src, w, h, cleanup=()=>{};
+    if(window.createImageBitmap){ src=await createImageBitmap(file); w=src.width; h=src.height; cleanup=()=>{ try{src.close();}catch(e){} }; }
+    else { const url=URL.createObjectURL(file); src=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=url; }); w=src.naturalWidth; h=src.naturalHeight; cleanup=()=>URL.revokeObjectURL(url); }
+    const k=Math.min(1,maxSide/Math.max(w,h)), cw=Math.max(1,Math.round(w*k)), ch=Math.max(1,Math.round(h*k));
+    const c=document.createElement("canvas"); c.width=cw; c.height=ch; c.getContext("2d").drawImage(src,0,0,cw,ch); cleanup();
+    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",quality));
+    if(blob&&blob.size>0) return {blob,ext:"jpg",type:"image/jpeg"};
+  }catch(e){}
+  const ext=((file.name||"").split(".").pop()||"jpg").toLowerCase();
+  return {blob:file,ext,type:file.type||"image/jpeg"};
+}
+// Explica en claro por qué no se pudo subir una imagen.
+const uploadErrMsg = (err) => { const m=String((err&&(err.message||err.error||err.statusCode))||err||"");
+  if(/bucket not found/i.test(m)) return "No existe el almacén de fotos en Supabase. Ejecuta docs/fotos-storage.sql.";
+  if(/row-level security|unauthorized|not allowed|permission|403/i.test(m)) return "Supabase no da permiso para subir fotos. Ejecuta docs/fotos-storage.sql.";
+  if(/mime|content type|invalid.*type/i.test(m)) return "Supabase no acepta ese tipo de imagen. Ejecuta docs/fotos-storage.sql.";
+  if(/too large|size|payload/i.test(m)) return "La foto es demasiado grande para Supabase. Ejecuta docs/fotos-storage.sql.";
+  if(/fetch|network|failed/i.test(m)) return "Sin conexión al subir la foto. Revisa internet y vuelve a intentarlo.";
+  return "No se pudo subir la foto: "+m; };
+// Sube una imagen al bucket indicado y devuelve su URL pública (o null avisando el motivo).
+async function uploadImage(bucket, pathNoExt, file, notify){
+  const {blob,ext,type}=await prepImage(file);
+  const path=`${pathNoExt}.${ext}`;
+  const {error}=await sb.storage.from(bucket).upload(path,blob,{upsert:true,contentType:type,cacheControl:"3600"});
+  if(error){ notify&&notify(uploadErrMsg(error),"err"); return null; }
+  const {data}=sb.storage.from(bucket).getPublicUrl(path);
+  return data&&data.publicUrl;
+}
+
 async function uploadClientPhoto(clientId,file,note,notify){
-  const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
-  const path=`fotos/${clientId}/${Date.now()}.${ext}`;
-  const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
-  if(upErr){ notify&&notify("Error subiendo foto","err"); return false; }
-  const {data}=sb.storage.from("avatars").getPublicUrl(path);
-  const {error}=await sb.from("client_photos").insert({client_id:clientId,url:data.publicUrl,taken_on:TODAY,note:note||""});
-  if(error){ notify&&notify("Crea la tabla client_photos (docs/fotos.sql)","err"); return false; }
+  const url=await uploadImage("avatars",`fotos/${clientId}/${Date.now()}`,file,notify);
+  if(!url) return false;
+  const {error}=await sb.from("client_photos").insert({client_id:clientId,url,taken_on:TODAY,note:note||""});
+  if(error){ notify&&notify(/does not exist|relation|schema cache/i.test(error.message||"")?"Falta la tabla de fotos en Supabase. Ejecuta docs/fotos-storage.sql.":"La foto se subió pero no se pudo guardar: "+error.message,"err"); return false; }
   return true;
 }
 function PhotoCompare({photos,size=220}){
@@ -3258,7 +3440,7 @@ function HistorySessionModal({client,date,type,time,assignedSessions,assignedExe
               {exs.map((e,i)=>{ const load=loadTxt(e); return(
                 <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderTop:i>0?"1px solid #eef1f7":"none",background:e.done?"#f4faf6":"#fff"}}>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.done?"✓ ":""}{e.exercise_name}</div>
+                    <div style={{fontSize:13,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.done?"✓ ":""}<ExName client={client} name={e.exercise_name}/></div>
                     <div className="mono" style={{fontSize:11,color:"#94a3b8"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${e.actual_reps||e.reps}`:""}{e.protocol?` · ${e.protocol}`:""}</div>
                   </div>
                   {load&&<span style={{fontSize:12,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{load}</span>}
@@ -3381,12 +3563,12 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
           ))}
               {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
               {exs.map(ex=>{ const done=valOf(ex,"done"); if(isIsoRow(ex)) return(
-                <IsoLogger key={ex.id+"|"+ex.exercise_name} ex={ex} clientId={sel} clientWeights={clientWeights} notify={notify} onDone={(d)=>setVal(ex,"done",d)} onSwap={()=>setPicker({mode:"swap",ex})}/>
+                <IsoLogger key={ex.id+"|"+ex.exercise_name} ex={ex} clientId={sel} client={selClient} clientWeights={clientWeights} notify={notify} onDone={(d)=>setVal(ex,"done",d)} onSwap={()=>setPicker({mode:"swap",ex})}/>
               ); return(
                 <div key={ex.id} style={{background:done?"#eef8dd":"#f8fafc",border:`1px solid ${done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                     <div style={{minWidth:0}}>
-                      <div style={{fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ex.exercise_name} <button onClick={()=>setPicker({mode:"swap",ex})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
+                      <div style={{fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selClient?<ExName client={selClient} name={ex.exercise_name}/>:ex.exercise_name} <button onClick={()=>setPicker({mode:"swap",ex})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
                       <MuscleTags name={ex.exercise_name}/>
                     </div>
                     <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {ex.sets&&ex.reps?`${ex.sets}×${ex.reps}`:"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}{ex.rir!=null?` · RIR ${ex.rir}`:""}</div>
@@ -3796,6 +3978,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
                     <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
                   </button>
+                  <button className="btn ghost" title="Cargas y evolución de este ejercicio" onClick={()=>openExHistory(client,ex.exercise_name)} style={{padding:"6px 8px",fontSize:12}}>📈</button>
                   <button className="btn ghost" title={ex.protocol==="isometrico"?"Quitar isométrico":"Hacer isométrico (por segundos)"} disabled={saving} onClick={()=>toggleIso(ex)} style={{padding:"6px 8px",fontSize:12,fontWeight:800,...(ex.protocol==="isometrico"?{background:"#e0ecfb",border:"1px solid #93c5fd",color:"#0369a1"}:{})}}>⏸️</button>
                   <button className="btn danger" style={{padding:"6px 9px"}} disabled={saving} onClick={()=>remove(ex)}>✕</button>
                 </div>
@@ -3865,7 +4048,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -3917,6 +4100,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
           onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
 
+        {onProfile&&<button className="btn sky" style={{width:"100%",fontSize:13,padding:"9px 6px",marginBottom:8,justifyContent:"center",fontWeight:700}} onClick={onProfile}>👤 Ver perfil completo</button>}
         {(onSummary||onMeasures||onPhotos)&&<div style={{display:"flex",gap:6,marginBottom:14}}>
           {onSummary&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onSummary}>⭐ Resumen</button>}
           {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
@@ -3943,7 +4127,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
                 ?<div style={{fontSize:12,color:"#64748b"}}>Sesión asignada (sin ejercicios detallados).</div>
                 :exs.map((e,i)=>(
                   <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,padding:"6px 0",borderTop:i>0?"1px solid #e6ebf3":"none"}}>
-                    <div style={{fontSize:12,color:"#0f172a",fontWeight:600}}>{e.exercise_name}</div>
+                    <div style={{fontSize:12,color:"#0f172a",fontWeight:600}}><ExName client={client} name={e.exercise_name}/></div>
                     <div className="mono" style={{fontSize:11,color:"#64748b",whiteSpace:"nowrap",textAlign:"right"}}>
                       {e.sets&&e.reps?`${e.sets}×${e.reps}`:""}{e.load_band?` · ${bandLabel(e.load_band)}`:e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}{e.protocol?` · ${e.protocol}`:""}
                     </div>
@@ -4341,7 +4525,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
                   {exs.length>0
                     ?exs.map((e,j)=>{ const ld=loadTxt(e,done); return(
                       <div key={e.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:j>0?"1px solid #eef1f7":"none"}}>
-                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}{e.exercise_name}</span>
+                        <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:600,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done&&e.done?"✓ ":""}<ExName client={client} name={e.exercise_name}/></span>
                         <span className="mono" style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets}×${done&&e.actual_reps?e.actual_reps:e.reps}`:""}</span>
                         {ld&&<span style={{fontSize:11,fontWeight:700,color:e.load_band?"#0f172a":"#ca8a04",whiteSpace:"nowrap"}}>{ld}</span>}
                       </div>
@@ -4480,7 +4664,7 @@ function ClientGestureNotes({client}){
 // segundos y kg/goma, pero no el dolor ni el tipo de carga (avisa una vez).
 let ISO_SQL_WARNED = false;
 const painColor = (p) => p==null?"#94a3b8":p<=3?"#15803d":p<=6?"#b45309":"#b91c1c";
-function IsoLogger({ex,clientId,clientWeights,notify,onDone,onSwap}){
+function IsoLogger({ex,clientId,client,clientWeights,notify,onDone,onSwap}){
   const init=()=>{ const hasKg=ex.actual_weight!=null||ex.prescribed_weight!=null;
     const mode=ex.load_type||(ex.load_band?"goma":(hasKg?(isBodyweight(ex.exercise_name)?"pckg":"kg"):"pc"));
     const s0=secsOf(ex.actual_reps), s1=secsOf(ex.reps);
@@ -4520,7 +4704,7 @@ function IsoLogger({ex,clientId,clientWeights,notify,onDone,onSwap}){
     <div data-iso={ex.exercise_name} style={{background:v.done?"#eef8dd":"#f8fafc",border:`1px solid ${v.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:8}}>
         <div style={{minWidth:0}}>
-          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{ex.exercise_name} {onSwap&&<button onClick={onSwap} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button>}</div>
+          <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{client?<ExName client={client} name={ex.exercise_name}/>:ex.exercise_name} {onSwap&&<button onClick={onSwap} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button>}</div>
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap",marginTop:3}}>
             <span style={{fontSize:9,fontWeight:800,color:"#0369a1",background:"#e0ecfb",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px"}}>⏸️ ISOMÉTRICO</span>
             {hint&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 7px"}}>🩹 {hint}</span>}
@@ -4648,13 +4832,13 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
             {rows.map(row=>isIsoRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})
-              ?<IsoLogger key={row.id+"|"+row.name} ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} clientWeights={clientWeights} notify={notify}
+              ?<IsoLogger key={row.id+"|"+row.name} ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} client={client} clientWeights={clientWeights} notify={notify}
                   onDone={(d)=>setField(row.id,"done",d)} onSwap={()=>setPicker({mode:"swap",row})}/>
               :(
               <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                   <div style={{minWidth:0}}>
-                    <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{row.name} <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
+                    <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}><ExName client={client} name={row.name}/> <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
                     <MuscleTags name={row.name}/>
                   </div>
                   <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}{(baseExs.find(e=>e.id===row.id)||{}).rir!=null?` · RIR ${(baseExs.find(e=>e.id===row.id)||{}).rir}`:""}</div>
@@ -5192,6 +5376,93 @@ function RirHelp({notify,highlight,label="¿Qué es el RIR?"}){
   </>;
 }
 
+// ── HISTORIAL DE UN EJERCICIO (cargas realizadas y evolución) ─────────────
+// Se abre al tocar el nombre de un ejercicio en cualquier pantalla. Un solo
+// visor activo (el último montado: panel del coach o portal del atleta).
+const EXH = {cur:null, hosts:[]};
+const exhPing = () => EXH.hosts.forEach(h=>h.f());
+const openExHistory = (client, name) => { if(!client||!name) return; EXH.cur={client,name}; exhPing(); };
+function ExName({client,name,children,style}){
+  return <span role="button" tabIndex={0} title="Ver cargas y evolución de este ejercicio"
+    onClick={e=>{ e.stopPropagation(); openExHistory(client,name); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.stopPropagation(); openExHistory(client,name); } }}
+    style={{cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted",textDecorationColor:"#94a3b8",textUnderlineOffset:3,...(style||{})}}>{children||name}</span>;
+}
+function exHistory(clientId, name, assignedSessions, assignedExercises){
+  const dateOf=Object.fromEntries((assignedSessions||[]).filter(a=>a.client_id===clientId).map(a=>[a.id,a.date]));
+  const k=notesKey(name);
+  return (assignedExercises||[]).filter(e=>dateOf[e.session_id]&&dateOf[e.session_id]<=TODAY&&notesKey(e.exercise_name)===k&&(e.done||e.actual_weight!=null||e.actual_reps!=null||e.load_band))
+    .map(e=>{ const d=dateOf[e.session_id], kg=e.actual_weight!=null?Number(e.actual_weight):(e.done&&e.prescribed_weight!=null?Number(e.prescribed_weight):null);
+      const reps=e.actual_reps!=null?e.actual_reps:e.reps, rl=repsLow(reps), rir=e.actual_rir!=null?Number(e.actual_rir):(e.rir!=null?Number(e.rir):null);
+      return {date:d,sets:parseInt(e.sets)||null,reps,kg,band:e.load_band,rir,done:!!e.done,iso:isIsoRow(e),secs:secsOf(e.actual_reps!=null?e.actual_reps:e.reps),pain:e.pain!=null?Number(e.pain):null,load:isIsoRow(e)?isoLoadTxt(e):null,
+        e1rm:kg&&rl?e1rmOf(kg,rl,rir!=null?rir:RIR_DEFAULT_UNKNOWN):null}; })
+    .sort((a,b)=>a.date.localeCompare(b.date));
+}
+function ExerciseHistoryModal({client,name,assignedSessions,assignedExercises,coach,notify,onClose}){
+  const T=useRmTests(client.id);
+  const pts=exHistory(client.id,name,assignedSessions,assignedExercises);
+  const tests=(T.list||[]).filter(t=>notesKey(t.exercise_name)===notesKey(name)).sort((a,b)=>String(a.tested_on).localeCompare(String(b.tested_on)));
+  const iso=pts.some(p=>p.iso)||isIsoRow({exercise_name:name});
+  // un punto por día (la mejor carga / RM de ese día)
+  const byDay={}; pts.forEach(p=>{ const x=byDay[p.date]||(byDay[p.date]={date:p.date,kg:null,e1rm:null,secs:null,pain:null}); if(p.kg!=null) x.kg=Math.max(x.kg||0,p.kg); if(p.e1rm) x.e1rm=Math.max(x.e1rm||0,p.e1rm); if(p.secs!=null) x.secs=Math.max(x.secs||0,p.secs); if(p.pain!=null) x.pain=p.pain; });
+  tests.forEach(t=>{ const v=e1rmOf(t.kg,t.reps||1,t.rir||0); const x=byDay[t.tested_on]||(byDay[t.tested_on]={date:t.tested_on,kg:null,e1rm:null}); if(v) x.e1rm=Math.max(x.e1rm||0,v); });
+  const days=Object.values(byDay).sort((a,b)=>a.date.localeCompare(b.date));
+  const kgDays=days.filter(d=>d.kg!=null), rmDays=days.filter(d=>d.e1rm);
+  const last=pts[pts.length-1], best=kgDays.length?Math.max(...kgDays.map(d=>d.kg)):null;
+  const rmNow=rmDays.length?currentRM(rmDays.map(d=>({date:d.date,e1rm:d.e1rm}))):null;
+  const prog=kgDays.length>1&&kgDays[0].kg?Math.round((kgDays[kgDays.length-1].kg/kgDays[0].kg-1)*100):null;
+  const loadTxt=(p)=>p.iso?p.load:(p.band?bandLabel(p.band):(p.kg!=null?`${fmtKgN(p.kg)} kg`:"—"));
+  const Tile=({l,v,sub})=><div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>{l}</div><div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{v}</div>{sub&&<div style={{fontSize:10,color:"#94a3b8"}}>{sub}</div>}</div>;
+  return(
+    <div className="ovl" style={{zIndex:1400}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
+        <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{name}</h2>
+        <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",margin:"4px 0 12px"}}><span style={{fontSize:12,color:"#64748b"}}>{client.name}</span><MuscleTags name={name}/><CxTag name={name}/></div>
+        {!pts.length&&!tests.length
+          ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Aún no hay registros de este ejercicio. Aparecerán al marcarlo como hecho con su carga.</div>
+          :<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
+              {last&&<Tile l="Último registro" v={iso?`${last.sets||""}${last.sets?"×":""}${last.secs!=null?last.secs+"s":"—"}`:`${loadTxt(last)}`} sub={`${fmtD(last.date)}${!iso&&last.reps?` · ${last.sets?last.sets+"×":""}${last.reps}`:""}${last.rir!=null?` · RIR ${last.rir}`:""}`}/>}
+              {!iso&&<Tile l="Mejor carga" v={best!=null?`${fmtKgN(best)} kg`:"—"} sub={prog!=null&&prog!==0?`${prog>0?"▲ +":"▼ "}${Math.abs(prog)} % desde el inicio`:`${pts.length} registro${pts.length!==1?"s":""}`}/>}
+              {!iso&&<Tile l="RM estimado" v={rmNow?`${fmtKgN(rmNow)} kg`:"—"} sub="mejor de las últimas 6 semanas"/>}
+              {iso&&<Tile l="Dolor último" v={last&&last.pain!=null?`${last.pain}/10`:"—"} sub={`${pts.length} registro${pts.length!==1?"s":""}`}/>}
+            </div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:6,marginBottom:10}}>
+              {!iso&&kgDays.length>1&&<MiniLine title="Carga por sesión (kg)" pts={kgDays.map(d=>({date:d.date,v:d.kg}))} yMin={Math.floor(Math.min(...kgDays.map(d=>d.kg))*0.9)} yMax={Math.ceil(Math.max(...kgDays.map(d=>d.kg))*1.05)} fmt={(v)=>fmtKgN(v)}/>}
+              {!iso&&rmDays.length>1&&<MiniLine title="RM estimado (kg)" pts={rmDays.map(d=>({date:d.date,v:Math.round(d.e1rm*10)/10}))} yMin={Math.floor(Math.min(...rmDays.map(d=>d.e1rm))*0.92)} yMax={Math.ceil(Math.max(...rmDays.map(d=>d.e1rm))*1.03)} fmt={(v)=>fmtKgN(v)}/>}
+              {iso&&days.filter(d=>d.secs!=null).length>1&&<MiniLine title="Segundos" pts={days.filter(d=>d.secs!=null).map(d=>({date:d.date,v:d.secs}))} fmt={(v)=>`${v}s`}/>}
+              {iso&&days.filter(d=>d.pain!=null).length>1&&<MiniLine title="Dolor (0-10)" pts={days.filter(d=>d.pain!=null).map(d=>({date:d.date,v:d.pain}))} yMax={10} fmt={(v)=>String(v)} dotColor={painColor} lineColor="#94a3b8"/>}
+            </div>
+            <span className="lbl">REGISTROS</span>
+            <div style={{border:"1px solid #e6ebf3",borderRadius:10,overflow:"hidden",background:"#fff",maxHeight:"38vh",overflowY:"auto"}}>
+              <div style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",background:"#f8fafc",fontSize:9,fontWeight:800,color:"#64748b",position:"sticky",top:0}}>
+                <span>FECHA</span><span>SERIES</span><span>CARGA</span>{iso?<span style={{textAlign:"right"}}>DOLOR</span>:<><span style={{textAlign:"right"}}>RIR</span><span style={{textAlign:"right"}}>e1RM</span></>}
+              </div>
+              {[...pts].reverse().map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,fontVariantNumeric:"tabular-nums",color:"#0f172a"}}>
+                <span style={{color:"#475569"}}>{fmtD(p.date)}{!p.done?<span style={{color:"#94a3b8"}}> ·</span>:""}</span>
+                <span>{p.sets?`${p.sets}×`:""}{iso?(p.secs!=null?`${p.secs}s`:"—"):(p.reps||"—")}</span>
+                <span style={{fontWeight:700}}>{loadTxt(p)}</span>
+                {iso?<span style={{textAlign:"right",fontWeight:800,color:painColor(p.pain)}}>{p.pain!=null?`${p.pain}/10`:"—"}</span>
+                  :<><span style={{textAlign:"right",color:"#475569"}}>{p.rir!=null?p.rir:"—"}</span><span style={{textAlign:"right",fontWeight:700}}>{p.e1rm?fmtKgN(p.e1rm):"—"}</span></>}
+              </div>)}
+              {tests.map(t=><div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,background:"#fffbeb"}}>
+                <span style={{color:"#475569"}}>{fmtD(t.tested_on)} · test</span><span>1×{t.reps||1}</span><span style={{fontWeight:700}}>{fmtKgN(t.kg)} kg</span><span style={{textAlign:"right"}}>{t.rir||0}</span><span style={{textAlign:"right",fontWeight:700}}>{fmtKgN(e1rmOf(t.kg,t.reps||1,t.rir||0))}</span>
+              </div>)}
+            </div>
+          </>}
+        {coach&&<GestureNotes clientId={client.id} exercise={name} notify={notify}/>}
+        <button className="btn ghost" style={{width:"100%",padding:11,marginTop:12}} onClick={onClose}>Cerrar</button>
+      </div>
+    </div>
+  );
+}
+function ExerciseHistoryHost({assignedSessions,assignedExercises,coach,notify}){
+  const [,force]=React.useState(0);
+  const me=React.useRef({f:()=>force(x=>x+1)});
+  React.useEffect(()=>{ EXH.hosts.push(me.current); return ()=>{ EXH.hosts=EXH.hosts.filter(h=>h!==me.current); }; },[]);
+  if(!EXH.cur||EXH.hosts[EXH.hosts.length-1]!==me.current) return null;
+  return <ExerciseHistoryModal client={EXH.cur.client} name={EXH.cur.name} assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach={coach} notify={notify} onClose={()=>{ EXH.cur=null; exhPing(); }}/>;
+}
+
 // ── RM ESTIMADO: evolución por ejercicio, tabla de cargas y tests ─────────
 function RmEvolution({client,assignedSessions,assignedExercises,notify}){
   const T=useRmTests(client.id);
@@ -5652,11 +5923,14 @@ function ClientModal({nc,setNc,onSave,onClose}) {
       <div className="mdl fade" onClick={e=>e.stopPropagation()}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:18}}>Nuevo cliente</h2>
         <div style={{display:"flex",flexDirection:"column",gap:13}}>
-          {[{k:"name",l:"NOMBRE *",p:"María García",t:"text"},{k:"code",l:"CÓDIGO 4 DÍGITOS *",p:"0000",t:"text",mono:true},{k:"phone",l:"TELÉFONO WA",p:"34600000000",t:"text"},{k:"email",l:"EMAIL",p:"cliente@email.com",t:"email"}].map(f=>(
+          {[{k:"name",l:"NOMBRE *",p:"María García",t:"text"},{k:"code",l:"CÓDIGO DE ACCESO * (4-8 letras/números)",p:"AB12CD",t:"text",mono:true},{k:"phone",l:"TELÉFONO WA",p:"34600000000",t:"text"},{k:"email",l:"EMAIL",p:"cliente@email.com",t:"email"}].map(f=>(
             <div key={f.k}><span className="lbl">{f.l}</span>
-              <input type={f.t} className={`inp${f.mono?" mono":""}`} placeholder={f.p} maxLength={f.k==="code"?4:undefined}
-                value={nc[f.k]} onChange={e=>setNc(c=>({...c,[f.k]:e.target.value}))}
-                style={f.mono?{letterSpacing:8,fontSize:20,textAlign:"center"}:{}}/>
+              <div style={{display:"flex",gap:6}}>
+                <input type={f.t} className={`inp${f.mono?" mono":""}`} placeholder={f.p} maxLength={f.k==="code"?8:undefined}
+                  value={nc[f.k]} onChange={e=>setNc(c=>({...c,[f.k]:f.k==="code"?e.target.value.toUpperCase().replace(/[^A-Z0-9]/g,""):e.target.value}))}
+                  style={f.mono?{letterSpacing:6,fontSize:20,textAlign:"center"}:{}}/>
+                {f.k==="code"&&<button type="button" className="btn ghost" title="Generar código" style={{padding:"0 12px",fontSize:16}} onClick={()=>{ const A="ABCDEFGHJKLMNPQRSTUVWXYZ23456789"; const r=new Uint32Array(6); crypto.getRandomValues(r); setNc(c=>({...c,code:[...r].map(x=>A[x%A.length]).join("")})); }}>🎲</button>}
+              </div>
             </div>
           ))}
           <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
@@ -5883,6 +6157,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
   return(
     <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"22px 16px"}} className="fade">
+      <ExerciseHistoryHost assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} notify={notify}/>
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
         <div style={{display:"flex",alignItems:"center",gap:8}}>
@@ -6469,13 +6744,8 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
     setPosting(true);
     let image_url = null;
     if(imgFile) {
-      const ext = imgFile.name.split(".").pop();
-      const path = `${client.id}_${Date.now()}.${ext}`;
-      const {error:upErr} = await sb.storage.from("forum").upload(path, imgFile, {upsert:true});
-      if(!upErr) {
-        const {data} = sb.storage.from("forum").getPublicUrl(path);
-        image_url = data.publicUrl;
-      }
+      image_url = await uploadImage("forum", `${client.id}_${Date.now()}`, imgFile, notify);
+      if(!image_url){ setPosting(false); return; }
     }
     await sb.from("forum_posts").insert({
       client_id: client.id,
@@ -6490,6 +6760,9 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
   };
 
   const toggleLike = async(post) => {
+    // Función segura: permite dar «me gusta» sin poder editar publicaciones ajenas.
+    const r = await sb.rpc("toggle_like",{p_post:post.id});
+    if(!r.error){ await loadAll(); return; }
     const liked = (post.liked_by||[]).includes(client.id);
     const newLikedBy = liked
       ? post.liked_by.filter(id=>id!==client.id)
@@ -9382,7 +9655,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
             </div>
 
             {sessExes.map((ae,i)=>(
-              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving}/>
+              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving} client={client}/>
             ))}
 
             {sess.notes&&(
@@ -9398,7 +9671,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 }
 
 // ── EXERCISE CARD (client registers completion) ────────────────────────────
-function ExerciseCard({ae, index, onComplete, saving}) {
+function ExerciseCard({ae, index, onComplete, saving, client}) {
   const [expanded,setExpanded] = React.useState(false);
   const [actualWeight,setActualWeight] = React.useState(ae.prescribed_weight||"");
   const [actualReps,setActualReps] = React.useState(ae.reps||"");
@@ -9423,7 +9696,7 @@ function ExerciseCard({ae, index, onComplete, saving}) {
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           <div style={{width:22,height:22,borderRadius:6,background:"#e6f0fb",border:"1px solid #bcd3ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#0284c7",flexShrink:0}}>{index+1}</div>
           <div>
-            <div style={{fontSize:13,fontWeight:600}}>{ae.exercise_name}</div>
+            <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
             <div style={{display:"flex",gap:8,marginTop:2}}>
               <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
               {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
