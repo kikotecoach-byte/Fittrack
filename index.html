@@ -1852,13 +1852,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                             <div style={{flex:1}}>
                               <input type="file" accept="image/*" id={"av"+c.id} style={{display:"none"}}
                                 onChange={async(e)=>{
-                                  const file=e.target.files[0]; if(!file) return;
-                                  const ext=file.name.split(".").pop();
-                                  const path=`${c.id}.${ext}`;
-                                  const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
-                                  if(upErr){notify("Error subiendo foto","err");return;}
-                                  const {data}=sb.storage.from("avatars").getPublicUrl(path);
-                                  await sb.from("clients").update({avatar_url:data.publicUrl+"?t="+Date.now()}).eq("id",c.id);
+                                  const file=e.target.files[0]; e.target.value=""; if(!file) return;
+                                  const url=await uploadImage("avatars",`${c.id}`,file,notify);
+                                  if(!url) return;
+                                  await sb.from("clients").update({avatar_url:url+"?t="+Date.now()}).eq("id",c.id);
                                   await loadAll();
                                   notify("Foto actualizada ✓");
                                 }}
@@ -2859,14 +2856,46 @@ function useClientPhotos(clientId){
   React.useEffect(()=>{ load(); },[load]);
   return {photos,load,ok};
 }
+// ── SUBIDA DE IMÁGENES ─────────────────────────────────────────────────────
+// Las fotos del móvil (HEIC del iPhone, 3-8 MB) se convierten en el propio
+// dispositivo a JPEG de 1600 px como máximo (~200-400 KB): suben rápido y el
+// almacén las acepta siempre. Si el navegador no puede convertirla, se sube tal cual.
+async function prepImage(file, maxSide=1600, quality=0.82){
+  try{
+    let src, w, h, cleanup=()=>{};
+    if(window.createImageBitmap){ src=await createImageBitmap(file); w=src.width; h=src.height; cleanup=()=>{ try{src.close();}catch(e){} }; }
+    else { const url=URL.createObjectURL(file); src=await new Promise((res,rej)=>{ const im=new Image(); im.onload=()=>res(im); im.onerror=rej; im.src=url; }); w=src.naturalWidth; h=src.naturalHeight; cleanup=()=>URL.revokeObjectURL(url); }
+    const k=Math.min(1,maxSide/Math.max(w,h)), cw=Math.max(1,Math.round(w*k)), ch=Math.max(1,Math.round(h*k));
+    const c=document.createElement("canvas"); c.width=cw; c.height=ch; c.getContext("2d").drawImage(src,0,0,cw,ch); cleanup();
+    const blob=await new Promise(r=>c.toBlob(r,"image/jpeg",quality));
+    if(blob&&blob.size>0) return {blob,ext:"jpg",type:"image/jpeg"};
+  }catch(e){}
+  const ext=((file.name||"").split(".").pop()||"jpg").toLowerCase();
+  return {blob:file,ext,type:file.type||"image/jpeg"};
+}
+// Explica en claro por qué no se pudo subir una imagen.
+const uploadErrMsg = (err) => { const m=String((err&&(err.message||err.error||err.statusCode))||err||"");
+  if(/bucket not found/i.test(m)) return "No existe el almacén de fotos en Supabase. Ejecuta docs/fotos-storage.sql.";
+  if(/row-level security|unauthorized|not allowed|permission|403/i.test(m)) return "Supabase no da permiso para subir fotos. Ejecuta docs/fotos-storage.sql.";
+  if(/mime|content type|invalid.*type/i.test(m)) return "Supabase no acepta ese tipo de imagen. Ejecuta docs/fotos-storage.sql.";
+  if(/too large|size|payload/i.test(m)) return "La foto es demasiado grande para Supabase. Ejecuta docs/fotos-storage.sql.";
+  if(/fetch|network|failed/i.test(m)) return "Sin conexión al subir la foto. Revisa internet y vuelve a intentarlo.";
+  return "No se pudo subir la foto: "+m; };
+// Sube una imagen al bucket indicado y devuelve su URL pública (o null avisando el motivo).
+async function uploadImage(bucket, pathNoExt, file, notify){
+  const {blob,ext,type}=await prepImage(file);
+  const path=`${pathNoExt}.${ext}`;
+  const {error}=await sb.storage.from(bucket).upload(path,blob,{upsert:true,contentType:type,cacheControl:"3600"});
+  if(error){ notify&&notify(uploadErrMsg(error),"err"); return null; }
+  const {data}=sb.storage.from(bucket).getPublicUrl(path);
+  return data&&data.publicUrl;
+}
+
 async function uploadClientPhoto(clientId,file,note,notify){
-  const ext=(file.name.split(".").pop()||"jpg").toLowerCase();
-  const path=`fotos/${clientId}/${Date.now()}.${ext}`;
-  const {error:upErr}=await sb.storage.from("avatars").upload(path,file,{upsert:true});
-  if(upErr){ notify&&notify("Error subiendo foto","err"); return false; }
-  const {data}=sb.storage.from("avatars").getPublicUrl(path);
-  const {error}=await sb.from("client_photos").insert({client_id:clientId,url:data.publicUrl,taken_on:TODAY,note:note||""});
-  if(error){ notify&&notify("Crea la tabla client_photos (docs/fotos.sql)","err"); return false; }
+  const url=await uploadImage("avatars",`fotos/${clientId}/${Date.now()}`,file,notify);
+  if(!url) return false;
+  const {error}=await sb.from("client_photos").insert({client_id:clientId,url,taken_on:TODAY,note:note||""});
+  if(error){ notify&&notify(/does not exist|relation|schema cache/i.test(error.message||"")?"Falta la tabla de fotos en Supabase. Ejecuta docs/fotos-storage.sql.":"La foto se subió pero no se pudo guardar: "+error.message,"err"); return false; }
   return true;
 }
 function PhotoCompare({photos,size=220}){
@@ -6715,13 +6744,8 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
     setPosting(true);
     let image_url = null;
     if(imgFile) {
-      const ext = imgFile.name.split(".").pop();
-      const path = `${client.id}_${Date.now()}.${ext}`;
-      const {error:upErr} = await sb.storage.from("forum").upload(path, imgFile, {upsert:true});
-      if(!upErr) {
-        const {data} = sb.storage.from("forum").getPublicUrl(path);
-        image_url = data.publicUrl;
-      }
+      image_url = await uploadImage("forum", `${client.id}_${Date.now()}`, imgFile, notify);
+      if(!image_url){ setPosting(false); return; }
     }
     await sb.from("forum_posts").insert({
       client_id: client.id,
