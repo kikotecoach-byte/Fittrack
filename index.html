@@ -356,7 +356,10 @@ const bonoPosTxt = (client,pos) => { const tot=parseInt(client.total_sessions)||
 const statusOf = c => c.sessions_left<0?"owed":c.sessions_left<=0?"expired":c.sessions_left<=2?"alert":"active";
 const statusColor = s => s==="active"?"#16a34a":s==="alert"?"#ca8a04":s==="owed"?"#be123c":"#dc2626";
 const statusLabel = s => s==="active"?"Activo":s==="alert"?"Pocas sesiones":s==="owed"?"Debe sesiones":"Sin sesiones";
-const waLink = (phone,msg) => `https://wa.me/${phone}?text=${encodeURIComponent(msg)}`;
+// Teléfono para WhatsApp: solo dígitos, sin «+»/«00» y con prefijo 34 si es un número español de 9 cifras.
+const waPhone = (p) => { let d=String(p||"").replace(/\D/g,""); if(d.startsWith("00")) d=d.slice(2); if(d.length===9&&/^[6789]/.test(d)) d="34"+d; return d.length>=8?d:""; };
+// Sin teléfono válido abre WhatsApp para elegir el contacto con el mensaje ya escrito.
+const waLink = (phone,msg) => { const n=waPhone(phone); return `https://wa.me/${n}?text=${encodeURIComponent(msg)}`; };
 // Mensaje de recordatorio ya escrito según el tipo de alerta (para envío de 1 clic).
 const reminderWA = (r) => {
   const first = r.c.name.split(" ")[0];
@@ -1894,7 +1897,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         </div>
                         {"auth_user_id" in c&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:c.auth_user_id?"#f0fdf4":"#fffbeb",border:`1px solid ${c.auth_user_id?"#bbf7d0":"#fde68a"}`,borderRadius:10,padding:"8px 10px",marginBottom:14}}>
                           <span style={{fontSize:12,fontWeight:700,color:c.auth_user_id?"#15803d":"#b45309",flex:1,minWidth:150}}>{c.auth_user_id?"🔐 App activada (entra con su código y su contraseña)":`⏳ Aún no ha activado su cuenta · código ${c.code}`}</span>
-                          {c.phone&&<a className="btn wa" style={{fontSize:11,padding:"6px 10px",textDecoration:"none"}} href={waLink(c.phone,accessMsg(c))} target="_blank" rel="noreferrer">📲 Enviar acceso</a>}
+                          <a className="btn wa" style={{fontSize:11,padding:"6px 10px",textDecoration:"none"}} href={waLink(c.phone,accessMsg(c))} target="_blank" rel="noreferrer" title={waPhone(c.phone)?`WhatsApp a ${waPhone(c.phone)}`:"Sin teléfono: elige el contacto en WhatsApp"}>📲 Enviar acceso{waPhone(c.phone)?"":" (elegir contacto)"}</a>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>{ const t=accessMsg(c); (navigator.clipboard&&navigator.clipboard.writeText?navigator.clipboard.writeText(t):Promise.reject()).then(()=>notify("Instrucciones copiadas ✓ · pégalas donde quieras")).catch(()=>window.prompt("Copia el mensaje:",t)); }}>📋 Copiar</button>
                           {c.auth_user_id&&<button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>resetAccess(c)}>🔑 Restablecer acceso</button>}
                         </div>}
                         <ClientGestureNotes client={c}/>
