@@ -4,21 +4,33 @@
   "description": "Tu centro de entrenamiento personal",
   "start_url": "/",
   "display": "standalone",
-  "background_color": "#05080f",
-  "theme_color": "#0ea5e9",
+  "background_color": "#072540",
+  "theme_color": "#0b4f86",
   "orientation": "portrait",
   "icons": [
     {
       "src": "icon-192.png",
       "sizes": "192x192",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "icon-512.png",
       "sizes": "512x512",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
+    },
+    {
+      "src": "icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "maskable"
+    },
+    {
+      "src": "icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "maskable"
     }
   ]
 }
