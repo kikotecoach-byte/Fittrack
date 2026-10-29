@@ -70,7 +70,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .tilt{transform-style:preserve-3d;transition:transform .2s ease,box-shadow .2s ease;}
 .tilt:active{transform:perspective(900px) rotateX(3deg) scale(.975);box-shadow:0 1px 2px rgba(16,24,40,.05);}
 @media(hover:hover){.tilt:hover{transform:perspective(900px) translateY(-2px);box-shadow:0 10px 24px rgba(16,24,40,.08);}}
-@media(prefers-reduced-motion:reduce){.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
+@media(prefers-reduced-motion:reduce){.count-pop,.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
 
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
@@ -109,6 +109,8 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 /* Navegación inferior del atleta (siempre visible, centrada en pantallas grandes) */
 /* Solo opacidad: un transform haría que los modales (position:fixed) quedasen bajo la barra. */
 .portal-root.fade{animation:fadeIn .25s ease backwards;}
+.count-pop{display:inline-block;animation:countPop .5s cubic-bezier(.34,1.56,.64,1) backwards;}
+@keyframes countPop{0%{transform:scale(1.6);color:#16a34a}100%{transform:scale(1)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
 .portal-nav{position:fixed;bottom:0;left:0;right:0;z-index:100;background:rgba(255,255,255,.92);border-top:1px solid #dbe2ec;
   padding:8px 0 calc(12px + env(safe-area-inset-bottom));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 -2px 14px rgba(16,24,40,.06);}
@@ -365,6 +367,10 @@ const fmtMonth = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{month:
 // El saldo del bono puede quedar en negativo: son sesiones hechas sin bono
 // pagado, que se descuentan automáticamente del siguiente bono al renovar.
 const owedOf = c => Math.max(0, -(parseInt(c&&c.sessions_left)||0));
+// Reservas que ya "gastan" bono: clases de hoy en adelante aún sin marcar como hechas.
+// El bono se descuenta al marcar "Vino"; esto solo sirve para mostrar lo que queda libre.
+const bookedAhead = (c, sessions) => (sessions||[]).filter(s=>s.client_id===c.id&&s.date>=TODAY&&s.status!=="completed").length;
+const freeToBook = (c, sessions) => Math.max(0,(parseInt(c.sessions_left)||0)-bookedAhead(c,sessions));
 const bonoTxt = c => owedOf(c) ? `debe ${owedOf(c)}` : `${c.sessions_left}/${c.total_sessions}`;
 // Posición de una reserva dentro del bono ACTUAL (p. ej. 4ª de 8), a partir de
 // las sesiones ya descontadas (total − restantes) y del historial:
@@ -1932,7 +1938,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     <div style={{marginBottom:11}}>
                       <div style={{display:"flex",justifyContent:"space-between",marginBottom:5}}>
                         <span style={{fontSize:10,color:"#64748b",fontWeight:700}}>SESIONES</span>
-                        <span className="mono" style={{fontSize:11,fontWeight:700,color:owedOf(c)?"#be123c":undefined}}>{bonoTxt(c)}</span>
+                        <span className="mono" style={{fontSize:11,fontWeight:700,color:owedOf(c)?"#be123c":undefined}}>{bonoTxt(c)}{bookedAhead(c,sessions)?<span style={{color:"#0284c7"}}> · 📅 {bookedAhead(c,sessions)} reservada{bookedAhead(c,sessions)>1?"s":""} · {freeToBook(c,sessions)} libre{freeToBook(c,sessions)!==1?"s":""}</span>:null}</span>
                       </div>
                       <div className="pbar"><div className="pfill" style={{width:`${pct}%`,background:pct>40?"#16a34a":pct>20?"#ca8a04":"#dc2626"}}/></div>
                     </div>
@@ -3165,6 +3171,9 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
   const monthKey=TODAY.slice(0,7), thisMonth=days.filter(d=>d.startsWith(monthKey)).length;
   const prevKey=(()=>{ const d=new Date(TODAY+"T12:00:00"); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); })(), prevMonth=days.filter(d=>d.startsWith(prevKey)).length;
   const streak=calcStreak(days.map(date=>({date})));
+  // Constancia: sesiones por semana en las últimas 8 semanas.
+  const mon=mondayOfDate(TODAY), weeks=Array.from({length:8},(_,i)=>addDays(mon,-7*(7-i)));
+  const perWeek=weeks.map(w=>days.filter(d=>d>=w&&d<addDays(w,7)).length), maxW=Math.max(1,...perWeek);
   // Fuerza: los 3 ejercicios que más ha hecho, contados de forma coloquial.
   const lifts=strengthByExercise(strengthLog(client,assignedSessions,assignedExercises)).sort((a,b)=>b.n-a.n).slice(0,3);
   // Cuerpo
@@ -3188,7 +3197,13 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
           <Big v={streak} l={streak===1?"semana seguida":"semanas seguidas"}/>
           <Big v={days.length} l="en total"/>
         </div>
-        <WeekStrip client={client} sess={sess} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
+        <div style={{display:"flex",alignItems:"flex-end",gap:6,height:70}} aria-label="Entrenos por semana, últimas 8 semanas">
+          {perWeek.map((n,i)=><div key={i} title={`Semana del ${fmtD(weeks[i])}: ${n}`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
+            <span style={{fontSize:10,fontWeight:700,color:n?"#0f172a":"#cbd5e1"}}>{n}</span>
+            <div style={{width:"100%",maxWidth:24,height:Math.max(3,n/maxW*46),background:i===7?"#0284c7":"#bfdcf2",borderRadius:"4px 4px 0 0"}}/>
+          </div>)}
+        </div>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginTop:4}}><span>hace 8 semanas</span><span>esta semana</span></div>
       </Card>
       {lifts.length>0&&<Card icon="chart" title="Tu fuerza">
         {lifts.map((x,li)=><div key={x.key} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:"1px solid #f1f4f8"}}>
@@ -3214,53 +3229,6 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
       {!days.length&&!body.length&&!lifts.length&&<div style={{fontSize:13,color:"#64748b",textAlign:"center",padding:20}}>Todavía no hay datos. ¡Vamos a por el primer entreno! 💪</div>}
     </div>
   );
-}
-// Constancia semana a semana: 7 círculos (L-D) por semana; tocar una semana
-// despliega sus sesiones y cada sesión abre su detalle.
-function WeekStrip({client,sess,assignedSessions,assignedExercises}){
-  const [openW,setOpenW]=React.useState(null);
-  const [det,setDet]=React.useState(null);
-  const [n,setN]=React.useState(6);
-  const mon=mondayOfDate(TODAY), weeks=Array.from({length:n},(_,i)=>addDays(mon,-7*i));
-  const byDate=Object.fromEntries((sess||[]).map(x=>[x.date,x]));
-  const DL=["L","M","X","J","V","S","D"];
-  const wLabel=(w,i)=>i===0?"Esta semana":i===1?"Semana pasada":(w.slice(5,7)===addDays(w,6).slice(5,7)?`${new Date(w+"T12:00:00").getDate()}–${shortD(addDays(w,6))}`:`${shortD(w)} – ${shortD(addDays(w,6))}`);
-  const slog=strengthLog(client,assignedSessions,assignedExercises);
-  const prSet=new Set(strengthByExercise(slog).flatMap(x=>x.prs.map(p=>p.key+"|"+p.date)));
-  return(<div>
-    <div style={{display:"flex",justifyContent:"flex-end",gap:6,padding:"0 30px 4px 0"}}>{DL.map(d=><span key={d} style={{width:24,textAlign:"center",fontSize:10,fontWeight:800,color:"#94a3b8"}}>{d}</span>)}</div>
-    {weeks.map((w,i)=>{ const ds=Array.from({length:7},(_,k)=>addDays(w,k)), list=ds.map(d=>byDate[d]).filter(Boolean), on=openW===w;
-      const ton=list.reduce((t,x)=>t+(x.vol||0),0);
-      return(<div key={w} style={{borderTop:"1px solid #f1f4f8"}}>
-        <button type="button" onClick={()=>setOpenW(on?null:w)} aria-expanded={on} style={{width:"100%",display:"flex",alignItems:"center",gap:6,padding:"8px 0",border:"none",background:on?"#f5f9fe":"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",borderRadius:8}}>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:12,fontWeight:800,color:i===0?"#0284c7":"#0f172a"}}>{wLabel(w,i)}</div>
-            <div style={{fontSize:11,fontWeight:700,color:list.length?"#16a34a":"#94a3b8"}}>{list.length?`${list.length} ${list.length===1?"sesión":"sesiones"}`:"descanso"}</div>
-          </div>
-          {ds.map(d=>{ const x=byDate[d], fut=d>TODAY, today=d===TODAY; return <span key={d} title={`${fmtLong(d)}${x?` · ${x.label}`:""}`} style={{width:24,height:24,borderRadius:"50%",flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,
-            background:x?"#0284c7":fut?"transparent":"#f1f4fa",color:x?"#fff":"#cbd5e1",border:today?"2px solid #0284c7":fut?"1px dashed #dbe2ec":"1px solid #e6ebf3",boxSizing:"border-box"}}>{x?"✓":""}</span>; })}
-          <span style={{width:24,textAlign:"center",fontSize:12,color:"#94a3b8"}}>{on?"▲":"▼"}</span>
-        </button>
-        {on&&<div style={{padding:"2px 0 10px"}}>
-          {list.length===0
-            ?<div style={{fontSize:12,color:"#64748b",background:"#f8fafc",borderRadius:10,padding:"10px 12px"}}>Semana sin entrenar 😴 ¡Descansar también cuenta (un poco)!</div>
-            :<>
-              {list.map(x=><button key={x.date} type="button" onClick={()=>setDet(x)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 10px",marginBottom:5,border:"1px solid #e6ebf3",borderRadius:10,background:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
-                <span style={{fontSize:11,fontWeight:800,color:"#0284c7",width:30,textTransform:"capitalize"}}>{new Date(x.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")} {new Date(x.date+"T12:00:00").getDate()}</span>
-                <div style={{flex:1,minWidth:0}}>
-                  <div style={{fontSize:13,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</div>
-                  <div style={{fontSize:11,color:"#64748b"}}>{x.exs&&x.exs.length?`${x.nDone} ejercicios`:"Asistencia"}{x.vol?` · ${fmtTon(x.vol)} movidos`:""}{(x.exs||[]).some(e=>prSet.has(notesKey(e.exercise_name)+"|"+x.date))?" · 🏆 récord":""}</div>
-                </div>
-                <span style={{fontSize:15,color:"#cbd5e1"}}>›</span>
-              </button>)}
-              {ton>0&&<div style={{fontSize:11,color:"#64748b",padding:"2px 2px 0"}}>En total esa semana: <b>{fmtTon(ton)}</b> movidos 💪</div>}
-            </>}
-        </div>}
-      </div>); })}
-    {n<12&&<button type="button" className="btn ghost" style={{width:"100%",padding:9,marginTop:6,fontSize:12}} onClick={()=>setN(12)}>Ver más semanas</button>}
-    <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Cada círculo es un día (lunes a domingo). Azul ✓ = entrenaste. Toca una semana para ver qué hiciste.</div>
-    {det&&<AthleteSessionModal prSet={prSet} client={client} item={det} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onClose={()=>setDet(null)}/>}
-  </div>);
 }
 function ClientSummaryModal({onClose,...props}){
   return <div className="ovl" onClick={onClose}><div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520,background:"#eef1f7"}}>
@@ -6529,6 +6497,8 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
   const mySessions=allSessions.filter(s=>s.client_id===client.id&&s.date>=TODAY&&s.status!=="completed").sort((a,b)=>a.date.localeCompare(b.date));
   const myHistory=allHistory.filter(s=>s.client_id===client.id).sort((a,b)=>b.date.localeCompare(a.date));
   const pct=Math.max(0,Math.round(client.sessions_left/client.total_sessions*100));
+  const nBooked=bookedAhead(client,allSessions), nFree=freeToBook(client,allSessions);
+  const tot=parseInt(client.total_sessions)||0, nDone=Math.max(0,Math.min(tot,tot-(parseInt(client.sessions_left)||0)));
   const pd=daysUntil(client.next_payment);
   const streak=calcStreak(myHistory);
   const nextSess=mySessions.find(s=>!s.requested);
@@ -6577,9 +6547,9 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           <div style={{fontWeight:800,fontSize:16,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{tab==="inicio"?`Hola, ${client.name.split(" ")[0]} 👋`:(NAV.find(n=>n[0]===tab)||[])[2]}</div>
           <div style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>{GYM_NAME}{streak>0?<span style={{color:"#ea580c"}}> · 🔥 {streak} sem. seguidas</span>:""}</div>
         </div>
-        <button onClick={()=>go("reservar")} title="Sesiones que te quedan en el bono" style={{border:`1px solid ${client.sessions_left<=1?"#f2cccc":"#bcd3ee"}`,background:client.sessions_left<=1?"#fbe6e6":"#eef4fc",borderRadius:12,padding:"4px 10px",textAlign:"center",cursor:"pointer",fontFamily:"inherit"}}>
-          <div className="mono" style={{fontSize:17,fontWeight:800,color:client.sessions_left<=1?"#dc2626":"#0284c7",lineHeight:1.1}}>{Math.max(0,client.sessions_left)}</div>
-          <div style={{fontSize:8,fontWeight:800,color:"#94a3b8"}}>SESIONES</div>
+        <button onClick={()=>go("reservar")} title={`Sesiones libres para reservar (${nBooked} ya reservadas)`} style={{border:`1px solid ${client.sessions_left<=0?"#f2cccc":nFree===0?"#e4cd8c":"#bcd3ee"}`,background:client.sessions_left<=0?"#fbe6e6":nFree===0?"#fbf1d8":"#eef4fc",borderRadius:12,padding:"4px 10px",textAlign:"center",cursor:"pointer",fontFamily:"inherit"}}>
+          <div key={nFree} className="mono count-pop" style={{fontSize:17,fontWeight:800,color:client.sessions_left<=0?"#dc2626":nFree===0?"#a16207":"#0284c7",lineHeight:1.1}}>{nFree}</div>
+          <div style={{fontSize:8,fontWeight:800,color:"#94a3b8"}}>LIBRES</div>
         </button>
         <button className={preview?"btn sky":"btn ghost"} style={{fontSize:12,padding:"6px 10px"}} onClick={onLogout}>{preview?"← Panel":"Salir"}</button>
       </div>
@@ -6664,12 +6634,22 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
         {/* Bono y pago */}
         <div className="card" style={{marginBottom:12,padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:7}}>
-            <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>🎟️ Tu bono</span>
-            <span style={{fontSize:12,color:"#64748b"}}><b style={{color:"#0f172a"}}>{Math.max(0,client.sessions_left)}</b> de {client.total_sessions} sesiones</span>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+            <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>🎟️ Tu bono · {tot} sesiones</span>
+            <span style={{fontSize:12,color:"#64748b"}}><b key={nFree} className="count-pop" style={{color:"#0f172a",fontSize:15}}>{nFree}</b> libre{nFree!==1?"s":""}</span>
           </div>
-          <div className="pbar" style={{height:9,background:"#eaf1fb"}}>
-            <div className="pfill" style={{width:`${pct}%`,background:`linear-gradient(90deg,${pct>40?"#0284c7,#16a34a":pct>20?"#f59e0b,#ca8a04":"#dc2626,#dc2626"})`}}/>
+          {/* Una casilla por sesión: hecha, reservada o libre (bonos grandes: barra proporcional) */}
+          {tot>0&&tot<=20
+            ?<div style={{display:"grid",gridTemplateColumns:`repeat(${tot},1fr)`,gap:3}} aria-label={`${nDone} hechas, ${nBooked} reservadas, ${nFree} libres`}>
+              {Array.from({length:tot},(_,i)=>{ const st=i<nDone?"done":i<nDone+Math.min(nBooked,tot-nDone)?"res":"free"; return(
+                <div key={i} title={st==="done"?"Hecha":st==="res"?"Reservada":"Libre"} style={{height:22,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,transition:"background .35s",
+                  background:st==="done"?"#cbd5e1":st==="res"?"#7cc4f0":"#fff",color:st==="done"?"#64748b":st==="res"?"#fff":"#0284c7",border:st==="free"?"1.5px solid #0284c7":"1.5px solid transparent"}}>{st==="done"?"✓":st==="res"?"📅":""}</div>); })}
+            </div>
+            :<div style={{display:"flex",gap:2,height:12}} aria-label={`${nDone} hechas, ${nBooked} reservadas, ${nFree} libres`}>
+              {[[nDone,"#cbd5e1"],[Math.min(nBooked,Math.max(0,tot-nDone)),"#7cc4f0"],[nFree,"#0284c7"]].filter(([n])=>n>0).map(([n,c],i)=><div key={i} style={{flex:n,background:c,borderRadius:4,transition:"flex .35s"}}/>)}
+            </div>}
+          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:7,fontSize:11,color:"#64748b",fontWeight:700}}>
+            <span>✓ {nDone} hecha{nDone!==1?"s":""}</span><span>📅 {nBooked} reservada{nBooked!==1?"s":""}</span><span style={{color:"#0284c7"}}>◻ {nFree} libre{nFree!==1?"s":""}</span>
           </div>
           <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:11,gap:8}}>
             <div style={{fontSize:12,color:pd<=3?"#dc2626":pd<=7?"#ca8a04":"#64748b"}}>💳 Próximo pago: <b>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
@@ -6710,7 +6690,16 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           {/* RESERVAR: selector de huecos (reserva directa) */}
           <div style={{fontSize:11,color:"#64748b",fontWeight:800,margin:"22px 2px 4px"}}>➕ RESERVAR CLASES</div>
           <div style={{fontSize:12,color:"#94a3b8",margin:"0 2px 10px"}}>Toca las horas libres (en verde) y confirma. Cada clase es de 1 hora y como máximo {config.defaultCapacity||3} personas.</div>
-          {client.sessions_left<=0
+          {client.sessions_left>0&&nFree<=0
+            ?<div className="card" style={{textAlign:"center",padding:24,border:"1px solid #e4cd8c"}}>
+              <div style={{fontSize:24,marginBottom:6}}>👏</div>
+              <div style={{color:"#a16207",fontWeight:800,marginBottom:4}}>Ya tienes reservadas todas las sesiones de tu bono</div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:10}}>Cuando vengas a clase se irán descontando. Si quieres reservar más, renueva el bono.</div>
+              <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono para reservar más clases 💪`)} target="_blank" rel="noreferrer">
+                <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
+              </a>
+            </div>
+          :client.sessions_left<=0
             ?<div className="card" style={{textAlign:"center",padding:28,border:"1px solid #f2cccc"}}>
               <div style={{fontSize:24,marginBottom:8}}>🚫</div>
               <div style={{color:"#dc2626",fontWeight:700,marginBottom:6}}>Sin sesiones en tu bono</div>
@@ -7124,15 +7113,17 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
     await loadAll(); notify("Fuera de la lista de espera");
   };
 
+  const nFree=freeToBook(client,allSessions), nBooked=bookedAhead(client,allSessions);
   const toggle=(d,t)=>{
     const k=key(d,t);
     if(!picked.includes(k)&&!available(d,t)) return;
-    if(!picked.includes(k)&&picked.length>=client.sessions_left) return notify(`Solo tienes ${client.sessions_left} sesiones en tu bono`,"err");
+    if(!picked.includes(k)&&picked.length>=nFree) return notify(nFree?`Solo te ${nFree===1?"queda 1 sesión libre":`quedan ${nFree} sesiones libres`} en tu bono`:"Ya tienes reservadas todas las sesiones de tu bono","err");
     setPicked(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k]);
   };
 
   const submit=async()=>{
     if(client.sessions_left<=0) return notify("Sin sesiones. Contacta a tu trainer.","err");
+    if(picked.length>nFree) return notify("No te quedan tantas sesiones libres en el bono","err");
     if(picked.length===0) return notify("Elige al menos una hora libre","err");
     const bad=picked.map(k=>k.split("|")).find(([d,t])=>freeAt(d,t)<=0||slotBlocked(d,t)||isPast(d,t));
     if(bad) return notify(`La clase ${bad[1]} del ${fmtDate(bad[0])} ya no está disponible`,"err");
@@ -7141,7 +7132,8 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
     const {error}=await sb.from("sessions").insert(inserts);
     if(error){ notify("Error al reservar","err"); setSaving(false); return; }
     await loadAll(); setSaving(false); setPicked([]);
-    notify(`✅ ${inserts.length} clase${inserts.length>1?"s":""} reservada${inserts.length>1?"s":""}! Nos vemos 💪`);
+    const left=Math.max(0,nFree-inserts.length);
+    notify(`✅ ${inserts.length} clase${inserts.length>1?"s":""} reservada${inserts.length>1?"s":""} · ${left?`te queda${left>1?"n":""} ${left} libre${left>1?"s":""}`:"bono completo reservado"} 💪`);
   };
 
   // Navegación
@@ -7157,7 +7149,10 @@ function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist
     <div className="card">
       <div style={{background:"#eaf1fb",borderRadius:10,padding:"11px 13px",border:"1px solid #bcd3ee",fontSize:13,color:"#64748b",marginBottom:14}}>
         💡 Planea tus clases: cambia entre <b>día</b>, <b>semana</b> y <b>mes</b>, y toca las horas libres para reservarlas al instante.
-        <div style={{marginTop:4,fontSize:12,color:"#94a3b8"}}>Clases en tu bono: <span style={{color:"#0284c7",fontWeight:700}}>{Math.max(0,client.sessions_left)}</span></div>
+        <div style={{marginTop:6,fontSize:12,color:"#64748b"}}>
+          Te quedan <b className="count-pop" key={nFree-picked.length} style={{color:nFree-picked.length>0?"#0284c7":"#ca8a04",fontSize:15}}>{nFree-picked.length}</b> sesion{nFree-picked.length!==1?"es":""} libre{nFree-picked.length!==1?"s":""} para reservar
+          <span style={{color:"#94a3b8"}}> · {nBooked} ya reservada{nBooked!==1?"s":""}{picked.length?` · ${picked.length} elegida${picked.length>1?"s":""} ahora`:""}</span>
+        </div>
       </div>
 
       {/* Elegidas (multi-día) */}
