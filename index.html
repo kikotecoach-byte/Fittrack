@@ -6479,7 +6479,7 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
 function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
-  const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | hist
+  const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
   const [saving,setSaving]=React.useState(false);
   const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
 
@@ -6524,6 +6524,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
   const todayExs=todayAsig?(myAssignedExercises||[]).filter(e=>e.session_id===todayAsig.id):[];
   const todayDone=todayExs.filter(exDone).length;
   const nTrained=athleteSessions(client,allHistory,myAssignedSessions,myAssignedExercises).length;
+  const nextPlan=nextSess&&nextSess.date!==TODAY?planForDate(client,nextSess.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null;
   const go=(t)=>{ setTab(t); try{ window.scrollTo({top:0}); }catch(e){} };
   const NAV=[["inicio","home","Inicio"],["reservar","calendar","Reservar"],["entreno","clients","Entreno"],["progreso","chart","Progreso"],["comunidad","forum","Comunidad"]];
   const Sec=({children})=><div style={{fontSize:11,color:"#64748b",fontWeight:800,letterSpacing:.3,margin:"20px 2px 9px",textTransform:"uppercase"}}>{children}</div>;
@@ -6602,14 +6603,18 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
               <div style={{fontSize:11,fontWeight:800,color:"#94a3b8"}}>TU PRÓXIMA CLASE</div>
               {nextSess
                 ?<><div style={{fontSize:17,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{nextCountdown===0?"Hoy":nextCountdown===1?"Mañana":new Date(nextSess.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"})} · {nextSess.time}</div>
-                  {nextCountdown>1&&<div style={{fontSize:12,color:"#64748b"}}>dentro de {nextCountdown} días</div>}</>
+                  {nextCountdown>1&&<div style={{fontSize:12,color:"#64748b"}}>dentro de {nextCountdown} días</div>}
+                  {nextPlan&&<div style={{fontSize:12,fontWeight:700,color:"#0284c7",marginTop:2}}>🏋️ Te toca: {nextPlan.label} · {nextPlan.exs.length} ejercicios</div>}</>
                 :<div style={{fontSize:15,fontWeight:700,color:"#64748b"}}>Sin clases reservadas</div>}
             </div>
           </div>
-          <button className="btn sky" style={{width:"100%",marginTop:12,padding:11,justifyContent:"center",fontSize:14}} onClick={()=>go("reservar")}>{nextSess?"📅 Ver o reservar más clases":"📅 Reservar clase"}</button>
+          <div style={{display:"flex",gap:8,marginTop:12}}>
+            {nextPlan&&<button className="btn ghost" style={{flex:1,padding:11,justifyContent:"center",fontSize:13,border:"1px solid #bcd3ee",color:"#0284c7",fontWeight:700}} onClick={()=>{ setPpView("next"); go("entreno"); }}>🔜 Ver qué me toca</button>}
+            <button className="btn sky" style={{flex:1,padding:11,justifyContent:"center",fontSize:13}} onClick={()=>go("reservar")}>{nextSess?"📅 Reservar más":"📅 Reservar clase"}</button>
+          </div>
         </div>
 
-        <button onClick={()=>go("entreno")} className="card" style={{width:"100%",display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:todayAsig?"1px solid #bcd3ee":undefined}}>
+        <button onClick={()=>{ setPpView("hoy"); go("entreno"); }} className="card" style={{width:"100%",display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:todayAsig?"1px solid #bcd3ee":undefined}}>
           <Ico k="clients" size={40}/>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:11,fontWeight:800,color:"#94a3b8"}}>ENTRENO DE HOY</div>
@@ -6687,15 +6692,17 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
       {tab==="entreno"&&<div>
         <div className="seg" style={{marginBottom:14}}>
-          <button className={"sb"+(ppView!=="hist"?" on":"")} onClick={()=>setPpView("hoy")} style={{fontSize:13}}>⚡ Hoy</button>
-          <button className={"sb"+(ppView==="hist"?" on":"")} onClick={()=>setPpView("hist")} style={{fontSize:13}}>📋 Mis sesiones{nTrained?` (${nTrained})`:""}</button>
+          <button className={"sb"+(ppView==="hoy"?" on":"")} onClick={()=>setPpView("hoy")} style={{fontSize:13}}>⚡ Hoy</button>
+          <button className={"sb"+(ppView==="next"?" on":"")} onClick={()=>setPpView("next")} style={{fontSize:13}}>🔜 Próximas</button>
+          <button className={"sb"+(ppView==="hist"?" on":"")} onClick={()=>setPpView("hist")} style={{fontSize:13}}>📋 Hechas{nTrained?` (${nTrained})`:""}</button>
         </div>
-        {ppView!=="hist"
+        {ppView==="next"&&<AthleteUpcoming client={client} sessions={allSessions} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} annualBlocks={annualBlocks} clientWeights={clientWeights}/>}
+        {ppView==="hoy"
           ?<>
             <TodaySession client={client} myAssignedSessions={myAssignedSessions} myAssignedExercises={myAssignedExercises} clientWeights={clientWeights} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify}/>
             {(clientPlans||[]).some(cp=>cp.client_id===client.id&&cp.active)&&<><Sec>🗂️ Mi plan</Sec><PlanTab client={client} plans={plans} clientPlans={clientPlans} exercises={exercises}/></>}
           </>
-          :<AthleteHistory client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
+          :ppView==="hist"&&<AthleteHistory client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
       </div>}
 
       {tab==="progreso"&&<ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify}/>}
@@ -6761,6 +6768,67 @@ function AthleteHistory({client,history,assignedSessions,assignedExercises}){
     </div>))}
     {list.length>shown.length&&<button className="btn ghost" style={{width:"100%",padding:11}} onClick={()=>setAll(true)}>Ver todas ({list.length})</button>}
     {open&&<AthleteSessionModal client={client} item={open} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onClose={()=>setOpen(null)}/>}
+  </div>);
+}
+// ── PRÓXIMOS ENTRENOS DEL ATLETA ──────────────────────────────────────────
+// Lo que le toca en cada clase futura: lo que ha preparado el coach o, si aún no
+// está, lo previsto por su programación (puede cambiar).
+const PROTO_SHORT = {top_set_backoff:"Top set + back-off",ramp_up:"Subiendo peso",amrap:"Máx. reps",superset:"Superserie",drop_set:"Drop set",rest_pause:"Rest-pause",cluster:"Cluster",emom:"EMOM",isometrico:"Isométrico",test_amrap:"Test",circuito:"Circuito"};
+function planForDate(client,date,{sessions,assignedSessions,assignedExercises,annualBlocks,clientWeights}){
+  const asig=(assignedSessions||[]).find(a=>a.client_id===client.id&&a.date===date);
+  if(asig){ const exs=(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+    if(exs.length) return {label:(asig.day_type&&DAY_LABEL[asig.day_type])||"Tu entreno",exs,ready:true}; }
+  const blk=blockForDate(annualBlocks,date,client);
+  if(!blk) return null;
+  const au=autoRoutineFor(client,date,sessions,annualBlocks);
+  const exs=prescribeRows(au.routine,{client,blk,date,clientWeights,assignedSessions,assignedExercises,sessionId:null}).map((r,i)=>({...r,id:"p"+i}));
+  return {label:au.label,exs,ready:false,blk};
+}
+function PlanExRows({client,exs}){
+  return <div style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden"}}>
+    {exs.map((e,i)=>{ const kg=e.load_band?bandLabel(e.load_band):(e.prescribed_weight!=null&&e.prescribed_weight!==""?`${fmtKgN(parseFloat(e.prescribed_weight))} kg`:""); return(
+      <div key={e.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderTop:i?"1px solid #eef1f7":"none",background:"#fff"}}>
+        <span style={{width:22,height:22,borderRadius:7,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,background:"#eef4fc",color:"#0284c7"}}>{i+1}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/></div>
+          <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&e.reps?`${e.sets} × ${e.reps}${isIsoRow(e)?"":" reps"}`:""}{PROTO_SHORT[e.protocol]?` · ${PROTO_SHORT[e.protocol]}`:""}{e.rest_seconds?` · descanso ${e.rest_seconds>=60?(Math.round(e.rest_seconds/6)/10).toLocaleString("es-ES")+" min":e.rest_seconds+" s"}`:""}</div>
+        </div>
+        <div style={{textAlign:"right",flexShrink:0}}>
+          {kg&&<div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{kg}</div>}
+          {e.rir!=null&&<div style={{fontSize:10,fontWeight:800,color:"#9a3412"}}>RIR {e.rir}</div>}
+        </div>
+      </div>); })}
+  </div>;
+}
+function AthleteUpcoming({client,sessions,assignedSessions,assignedExercises,annualBlocks,clientWeights}){
+  const booked=(sessions||[]).filter(s=>s.client_id===client.id&&s.date>TODAY&&s.status!=="completed");
+  const dates=[...new Set([...booked.map(s=>s.date),...(assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date>TODAY).map(a=>a.date)])].sort().slice(0,10);
+  const [open,setOpen]=React.useState(dates[0]||null);
+  if(!dates.length) return <div className="card" style={{textAlign:"center",padding:28}}><Ico k="calendar" size={44}/><div style={{color:"#64748b",fontSize:13,marginTop:8}}>No tienes clases reservadas. Cuando reserves, aquí verás lo que te toca cada día.</div></div>;
+  const ctx={sessions,assignedSessions,assignedExercises,annualBlocks,clientWeights};
+  return(<div>
+    <div style={{fontSize:12,color:"#94a3b8",margin:"0 2px 10px"}}>Toca una clase para ver los ejercicios. Las cargas son orientativas: ajústalas con tu trainer.</div>
+    {dates.map(d=>{ const b=booked.find(s=>s.date===d), pl=planForDate(client,d,ctx), on=open===d, x=new Date(d+"T12:00:00"), dd=daysUntil(d); return(
+      <div key={d} className="card" style={{marginBottom:10,padding:0,overflow:"hidden",border:on?"1px solid #bcd3ee":undefined}}>
+        <button onClick={()=>setOpen(on?null:d)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"12px 13px",border:"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+          <div style={{width:44,flexShrink:0,textAlign:"center",background:"#eef4fc",borderRadius:10,padding:"5px 0"}}>
+            <div style={{fontSize:9,fontWeight:800,color:"#0284c7",textTransform:"uppercase"}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
+            <div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.1}}>{x.getDate()}</div>
+          </div>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:14,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{pl?pl.label:"Entreno"}</div>
+            <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{dd===1?"Mañana":`En ${dd} días`}{b&&b.time?` · ${b.time}`:""}{pl?` · ${pl.exs.length} ejercicios`:""}
+              {pl&&<span style={{marginLeft:6,fontSize:9,fontWeight:800,padding:"1px 7px",borderRadius:20,background:pl.ready?"#e2f4e8":"#fbf4e3",color:pl.ready?"#16a34a":"#a1873c"}}>{pl.ready?"✓ PREPARADO":"PREVISTO"}</span>}</div>
+          </div>
+          <span style={{fontSize:14,color:"#94a3b8"}}>{on?"▲":"▼"}</span>
+        </button>
+        {on&&<div style={{padding:"0 12px 12px"}}>
+          {pl?<>
+            <PlanExRows client={client} exs={pl.exs}/>
+            {!pl.ready&&<div style={{fontSize:10,color:"#94a3b8",marginTop:6,lineHeight:1.4}}>Previsto según tu programación{pl.blk?` (${pl.blk.name})`:""}. Tu trainer puede ajustarlo antes de la clase.</div>}
+          </>:<div style={{background:"#f1f4fa",borderRadius:10,padding:12,fontSize:12,color:"#64748b",textAlign:"center"}}>Tu trainer te preparará esta sesión 💪</div>}
+        </div>}
+      </div>); })}
   </div>);
 }
 function AthleteSessionModal({client,item,assignedSessions,assignedExercises,onClose}){
