@@ -1337,7 +1337,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     setHistView(null); notify(okN>1?`Entreno replicado en ${okN} fechas ✓`:`Entreno replicado ✓`);
   });
   // Núcleo: copia un entreno guardado (src) a otra fecha, con las cargas usadas.
-  const _copySession = async (client, src, toDate) => {
+  // opts.loads: "used" (cargas usadas ese día) · "own" (las del cliente destino: su RM estimado o su última carga) · "same" (mismos kg)
+  const _copySession = async (client, src, toDate, opts={}) => {
+    const loads=opts.loads||"used", other=src.client_id!==client.id;
     const srcEx=assignedExercises.filter(e=>e.session_id===src.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
     const existing=assignedSessions.find(s=>s.client_id===client.id&&s.date===toDate);
     if(existing){ await sb.from("assigned_exercises").delete().eq("session_id",existing.id); await sb.from("assigned_sessions").delete().eq("id",existing.id); }
@@ -1345,11 +1347,32 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(ins.error){ ins=await sb.from("assigned_sessions").insert({client_id:client.id,date:toDate,status:"pending"}).select().single(); }
     const {data:sess,error}=ins;
     if(error) return false;
-    const rows=srcEx.map((e,i)=>({session_id:sess.id,exercise_name:e.exercise_name,prescribed_weight:(e.actual_weight!=null?e.actual_weight:e.prescribed_weight),sets:e.sets,reps:e.reps,protocol:e.protocol,rest_seconds:e.rest_seconds,notes:e.notes||"",load_band:e.load_band||null,order_index:i}));
-    if(rows.length){ let r=await sb.from("assigned_exercises").insert(rows); if(r.error){ await sb.from("assigned_exercises").insert(rows.map(({load_band,...x})=>x)); } }
+    const blk=blockForDate(annualBlocks,toDate,client);
+    const hist=loads==="own"?rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]):null;
+    const wts=clientWeights.filter(x=>x.client_id===client.id);
+    const ownLoad=(e)=>{ const rm=rmFor(hist,e.exercise_name), r=repsLow(e.reps), rir=e.rir!=null?Number(e.rir):defaultRir(blk,levelOf(client),isMainRow(e));
+      if(rm&&r&&isRmRow(e)) return e.protocol==="test_amrap"?loadFor(rm,5,0):loadFor(rm,r,rir);
+      const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e.exercise_name).toLowerCase()); return cw?suggestLoad(cw,isMainRow(e),blk,toDate):null; };
+    const rows=srcEx.map((e,i)=>{ const used=e.actual_weight!=null?e.actual_weight:e.prescribed_weight;
+      return {session_id:sess.id,exercise_name:e.exercise_name,prescribed_weight:loads==="own"?ownLoad(e):used,sets:e.sets,reps:e.reps,protocol:e.protocol,rest_seconds:e.rest_seconds,
+        notes:other?"":(e.notes||""),load_band:e.load_band||null,rir:e.rir!=null?e.rir:null,order_index:i}; });
+    if(rows.length){ let r=await sb.from("assigned_exercises").insert(rows);
+      if(r.error){ r=await sb.from("assigned_exercises").insert(rows.map(({rir,...x})=>x)); }
+      if(r.error){ await sb.from("assigned_exercises").insert(rows.map(({rir,load_band,...x})=>x)); } }
     const nm=asigName(src,sessionTemplates); if(nm) await sb.from("history").update({type:nm}).eq("client_id",client.id).eq("date",toDate);
     return true;
   };
+  // Copiar un entreno hecho a otros clientes. targets = [{client, date}]
+  const copySessionTo = (srcClient, fromDate, targets, loads) => w(async()=>{
+    const src=assignedSessions.find(s=>s.client_id===srcClient.id&&s.date===fromDate);
+    if(!src) return notify("Ese día no tiene entreno guardado para copiar","err");
+    const list=(targets||[]).filter(t=>t.client&&t.date);
+    if(!list.length) return notify("Elige al menos un cliente con fecha","err");
+    const clash=list.filter(t=>assignedSessions.some(a=>a.client_id===t.client.id&&a.date===t.date));
+    if(clash.length&&!window.confirm(`${clash.map(t=>t.client.name.split(" ")[0]).join(", ")} ya ${clash.length>1?"tienen":"tiene"} entreno ese día. Se sustituirá por este. ¿Continuar?`)) return;
+    let ok=0; for(const t of list){ if(await _copySession(t.client,src,t.date,{loads})) ok++; }
+    setHistView(null); notify(`Entreno copiado a ${ok} cliente${ok!==1?"s":""} ✓`);
+  });
   // Copiar entrenos de la semana anterior a los días pendientes. pairs = [[fechaOrigen,fechaDestino],...]
   const copyWeek = (client, pairs) => w(async()=>{
     let ok=0;
@@ -2564,7 +2587,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             loadAll={loadAll} notify={notify} onLogout={()=>setViewAs(null)}/>
         </div>); })()}
       {showSummary&&<ClientSummaryModal client={showSummary} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} progress={progress} annualBlocks={annualBlocks} sessions={sessions} onClose={()=>setShowSummary(null)}/>}
-      {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
+      {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clients={clients} sessions={sessions} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onCopyTo={(targets,loads)=>copySessionTo(histView.client,histView.date,targets,loads)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
       {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
       {execData&&<SessionExecModal docked={canDock&&!quickView} client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
@@ -3559,13 +3582,25 @@ function ClientHistoryPanel({client,history,payments,assignedSessions,sessionTem
 }
 
 // ── DETALLE DE SESIÓN DEL HISTORIAL (qué hizo, con qué cargas, y replicar) ──
-function HistorySessionModal({client,date,type,time,assignedSessions,assignedExercises,onReplicate,onEdit,onClose}) {
+function HistorySessionModal({client,date,type,time,assignedSessions,assignedExercises,clients,sessions,onReplicate,onCopyTo,onEdit,onClose}) {
   const asig=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const exs=asig?(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
   const nextWeek=(()=>{const x=new Date(date+"T12:00:00");x.setDate(x.getDate()+7);return x.toISOString().split("T")[0];})();
   const [toDate,setToDate]=React.useState(nextWeek);
   const [dates,setDates]=React.useState([]); // fechas seleccionadas para replicar
   const addDate=()=>{ if(toDate&&!dates.includes(toDate)) setDates(d=>[...d,toDate].sort()); };
+  // Copiar a otros clientes
+  const [dest,setDest]=React.useState("self");         // self | others
+  const [picked,setPicked]=React.useState([]);          // ids de clientes destino
+  const [q,setQ]=React.useState("");
+  const [when,setWhen]=React.useState("next");          // next (su próxima reserva) | date
+  const [oDate,setODate]=React.useState(TODAY);
+  const [loads,setLoads]=React.useState("own");          // own | same
+  const others=(clients||[]).filter(c=>c.id!==client.id);
+  const nextOf=(c)=>(sessions||[]).filter(s=>s.client_id===c.id&&s.date>=TODAY&&s.status!=="completed"&&!s.requested).sort((a,b)=>(a.date+(a.time||"")).localeCompare(b.date+(b.time||"")))[0];
+  const shown=others.filter(c=>!q||String(c.name).toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"").includes(q.toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"")));
+  const targets=picked.map(id=>others.find(c=>c.id===id)).filter(Boolean).map(c=>({client:c,date:when==="next"?(nextOf(c)||{}).date:oDate,next:nextOf(c)}));
+  const ready=targets.filter(t=>t.date);
   const loadTxt=(e)=> e.load_band?bandLabel(e.load_band):(e.actual_weight!=null?`${e.actual_weight} kg`:(e.prescribed_weight!=null?`${e.prescribed_weight} kg`:""));
   return(
     <div className="ovl" onClick={onClose}>
@@ -3587,8 +3622,13 @@ function HistorySessionModal({client,date,type,time,assignedSessions,assignedExe
               );})}
             </div>}
         </div>
-        <div style={{marginTop:12,flexShrink:0,background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:11}}>
-          <span className="lbl">🔁 REPLICAR ESTE ENTRENO EN OTRAS FECHAS</span>
+        <div style={{marginTop:12,flexShrink:0,background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:11,maxHeight:"46vh",overflowY:"auto"}}>
+          <span className="lbl">🔁 COPIAR ESTE ENTRENO</span>
+          {onCopyTo&&others.length>0&&<div className="seg" style={{marginBottom:9}}>
+            <button className={"sb"+(dest==="self"?" on":"")} onClick={()=>setDest("self")} style={{fontSize:12}}>A {client.name.split(" ")[0]} (otras fechas)</button>
+            <button className={"sb"+(dest==="others"?" on":"")} onClick={()=>setDest("others")} style={{fontSize:12}}>A otros clientes</button>
+          </div>}
+          {dest==="self"?<>
           <div style={{display:"flex",gap:8,alignItems:"center"}}>
             <input type="date" className="inp" style={{flex:1,padding:"8px 10px"}} value={toDate} onChange={e=>setToDate(e.target.value)}/>
             <button className="btn ghost" style={{padding:"10px 14px",whiteSpace:"nowrap",border:"1px solid #bcd3ee",color:"#0284c7",fontWeight:700}} onClick={addDate}>➕ Añadir</button>
@@ -3602,6 +3642,35 @@ function HistorySessionModal({client,date,type,time,assignedSessions,assignedExe
           </div>}
           <button className="btn sky" style={{width:"100%",padding:11,marginTop:9,justifyContent:"center"}} disabled={exs.length===0} onClick={()=>onReplicate(dates.length?dates:[toDate])}>{dates.length>1?`Replicar en ${dates.length} fechas`:"Replicar"}</button>
           <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Añade una o varias fechas (p. ej. lunes y jueves) y copia los mismos ejercicios con las cargas de ese día.</div>
+</>
+          :<>
+            <input className="inp" placeholder="🔍 Buscar cliente…" value={q} onChange={e=>setQ(e.target.value)} style={{padding:"8px 10px",marginBottom:6}}/>
+            <div style={{display:"flex",flexWrap:"wrap",gap:5,maxHeight:130,overflowY:"auto",marginBottom:8}}>
+              {shown.map(c=>{ const on=picked.includes(c.id); return <button key={c.id} type="button" onClick={()=>setPicked(p=>on?p.filter(x=>x!==c.id):[...p,c.id])}
+                style={{display:"inline-flex",alignItems:"center",gap:6,fontSize:12,fontWeight:700,padding:"5px 10px",borderRadius:20,cursor:"pointer",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#334155"}}>
+                <span style={{width:8,height:8,borderRadius:4,background:on?"#fff":c.color}}/>{c.name}</button>; })}
+              {shown.length===0&&<span style={{fontSize:12,color:"#94a3b8"}}>Sin resultados</span>}
+            </div>
+            <span className="lbl">CUÁNDO</span>
+            <div className="seg" style={{marginBottom:6}}>
+              <button className={"sb"+(when==="next"?" on":"")} onClick={()=>setWhen("next")} style={{fontSize:12}}>En su próxima reserva</button>
+              <button className={"sb"+(when==="date"?" on":"")} onClick={()=>setWhen("date")} style={{fontSize:12}}>En una fecha</button>
+            </div>
+            {when==="date"&&<input type="date" className="inp" style={{padding:"8px 10px",marginBottom:6}} value={oDate} onChange={e=>setODate(e.target.value||TODAY)}/>}
+            {targets.length>0&&<div style={{background:"#fff",border:"1px solid #dbe2ec",borderRadius:9,padding:"6px 9px",marginBottom:8,fontSize:12}}>
+              {targets.map(t=><div key={t.client.id} style={{display:"flex",justifyContent:"space-between",gap:8,padding:"2px 0",color:t.date?"#0f172a":"#b45309"}}>
+                <span style={{fontWeight:700}}>{t.client.name}</span>
+                <span>{t.date?`${fmtDate(t.date)}${when==="next"&&t.next&&t.next.time?` · ${t.next.time}`:""}${(assignedSessions||[]).some(a=>a.client_id===t.client.id&&a.date===t.date)?" · ⚠️ sustituye su entreno":""}`:"sin reserva próxima"}</span>
+              </div>)}
+            </div>}
+            <span className="lbl">CARGAS</span>
+            <div className="seg" style={{marginBottom:4}}>
+              <button className={"sb"+(loads==="own"?" on":"")} onClick={()=>setLoads("own")} style={{fontSize:12}}>Las suyas</button>
+              <button className={"sb"+(loads==="same"?" on":"")} onClick={()=>setLoads("same")} style={{fontSize:12}}>Mismos kg</button>
+            </div>
+            <div style={{fontSize:10,color:"#64748b",marginBottom:8,lineHeight:1.4}}>{loads==="own"?"Cada uno con su carga: desde su RM estimado y el RIR del ejercicio, o su última carga registrada (si no hay, la apuntas al entrenar).":`Copia los kg que usó ${client.name.split(" ")[0]} ese día.`} Se copian ejercicios, series, reps, protocolo, RIR y descansos.</div>
+            <button className="btn sky" style={{width:"100%",padding:11,justifyContent:"center"}} disabled={exs.length===0||!ready.length} onClick={()=>onCopyTo(ready.map(({client,date})=>({client,date})),loads)}>{ready.length?`Copiar a ${ready.length} cliente${ready.length!==1?"s":""}`:"Elige clientes"}</button>
+          </>}
         </div>
         <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
           {onEdit&&asig&&<button className="btn ghost" style={{flex:1,padding:11}} onClick={onEdit}>✏️ Editar esta sesión</button>}
