@@ -6705,7 +6705,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           :ppView==="hist"&&<AthleteHistory client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
       </div>}
 
-      {tab==="progreso"&&<ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify}/>}
+      {tab==="progreso"&&<ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
 
       {tab==="comunidad"&&<ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>}
     </div>
@@ -6747,10 +6747,19 @@ function AthleteHistory({client,history,assignedSessions,assignedExercises}){
   const shown=all?list:list.slice(0,12);
   const months=[]; shown.forEach(x=>{ const k=x.date.slice(0,7); let g=months.find(m=>m.k===k); if(!g){ g={k,items:[]}; months.push(g); } g.items.push(x); });
   const mLabel=(k)=>capFirst(new Date(k+"-15T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"}));
+  const slog=strengthLog(client,assignedSessions,assignedExercises);
+  const prSet=new Set(strengthByExercise(slog).flatMap(x=>x.prs.map(p=>p.key+"|"+p.date)));
+  const totSets=slog.reduce((t,r)=>t+r.sets,0), totTon=slog.reduce((t,r)=>t+r.ton,0);
+  const since=list.length?list[list.length-1].date:null;
   if(!list.length) return <div className="card" style={{textAlign:"center",padding:28}}><Ico k="clipboard" size={44}/><div style={{color:"#64748b",fontSize:13,marginTop:8}}>Aquí aparecerán tus sesiones cuando entrenes.</div></div>;
+  const Tile=({v,l})=><div style={{background:"#fff",border:"1px solid #e6ebf3",borderRadius:12,padding:"9px 6px",textAlign:"center"}}><div style={{fontSize:19,fontWeight:800,color:"#0f172a",lineHeight:1.1}}>{v}</div><div style={{fontSize:10,fontWeight:700,color:"#64748b",marginTop:2}}>{l}</div></div>;
   return(<div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:6}}>
+      <Tile v={list.length} l="sesiones"/><Tile v={totSets.toLocaleString("es-ES")} l="series"/><Tile v={fmtTon(totTon)} l="movidos"/>
+    </div>
+    {since&&<div style={{fontSize:11,color:"#94a3b8",margin:"0 2px 12px"}}>Desde el {fmtLong(since)}. Toca una sesión para ver todo lo que hiciste.</div>}
     {months.map(m=>(<div key={m.k} style={{marginBottom:12}}>
-      <div style={{fontSize:11,fontWeight:800,color:"#64748b",margin:"0 2px 6px"}}>{mLabel(m.k)} · {list.filter(x=>x.date.startsWith(m.k)).length} sesion{list.filter(x=>x.date.startsWith(m.k)).length!==1?"es":""}</div>
+      <div style={{fontSize:11,fontWeight:800,color:"#64748b",margin:"0 2px 6px"}}>{mLabel(m.k)} · {list.filter(x=>x.date.startsWith(m.k)).length} {list.filter(x=>x.date.startsWith(m.k)).length!==1?"sesiones":"sesión"}</div>
       <div className="card" style={{padding:0,overflow:"hidden"}}>
         {m.items.map((x,i)=>{ const d=new Date(x.date+"T12:00:00"); return(
           <button key={x.date} onClick={()=>setOpen(x)} style={{width:"100%",display:"flex",alignItems:"center",gap:12,padding:"11px 13px",border:"none",borderTop:i?"1px solid #eef1f6":"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
@@ -6760,16 +6769,161 @@ function AthleteHistory({client,history,assignedSessions,assignedExercises}){
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</div>
-              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{x.exs&&x.exs.length?`${x.nDone}/${x.exs.length} ejercicios`:"Asistencia"}{x.vol?` · ${x.vol.toLocaleString("es-ES")} kg movidos`:""}{x.time?` · ${x.time}`:""}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{x.exs&&x.exs.length?`${x.nDone}/${x.exs.length} ejercicios`:"Asistencia"}{x.vol?` · ${x.vol.toLocaleString("es-ES")} kg movidos`:""}{x.time?` · ${x.time}`:""}{(x.exs||[]).some(e=>prSet.has(notesKey(e.exercise_name)+"|"+x.date))&&<span style={{marginLeft:5,fontSize:10,fontWeight:800,color:"#a16207"}}>🏆 récord</span>}</div>
             </div>
             <span style={{fontSize:16,color:"#cbd5e1"}}>›</span>
           </button>); })}
       </div>
     </div>))}
     {list.length>shown.length&&<button className="btn ghost" style={{width:"100%",padding:11}} onClick={()=>setAll(true)}>Ver todas ({list.length})</button>}
-    {open&&<AthleteSessionModal client={client} item={open} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onClose={()=>setOpen(null)}/>}
+    {open&&<AthleteSessionModal prSet={prSet} client={client} item={open} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onClose={()=>setOpen(null)}/>}
   </div>);
 }
+// ── FUERZA Y VOLUMEN DEL ATLETA ───────────────────────────────────────────
+// Todo sale de los ejercicios marcados como hechos: carga, reps, series, RIR.
+// Tonelaje = kg × reps × series (no cuenta isométricos ni cargas con banda).
+const STR_GROUPS=[["Pierna","🦵",["Cuádriceps","Isquios","Glúteo","Aductores","Gemelo"]],["Pecho","🛡️",["Pecho"]],["Espalda","🪽",["Espalda"]],
+  ["Hombro","🏔️",["Hombro"]],["Brazos","💪",["Bíceps","Tríceps","Antebrazo"]],["Core","🧱",["Core","Lumbar"]],["Otros","⚙️",[]]];
+const strGroupOf=(name)=>{ const m=musclesOf(name)[0]; const g=STR_GROUPS.find(x=>x[2].includes(m)); return g?g[0]:"Otros"; };
+const isoSecs=(t)=>{ const s=String(t||""), m=s.match(/(\d+)\s*(s|seg|")/i), mi=s.match(/(\d+)\s*(min|')/i); return m?parseInt(m[1]):mi?parseInt(mi[1])*60:null; };
+function strengthLog(client,assignedSessions,assignedExercises){
+  const dateOf=Object.fromEntries((assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date&&a.date<=TODAY).map(a=>[a.id,a.date]));
+  return (assignedExercises||[]).filter(e=>dateOf[e.session_id]&&exDone(e)&&e.exercise_name).map(e=>{
+    const iso=isIsoRow(e), kg=e.load_band?null:exKg(e), repsTxt=e.actual_reps||e.reps, reps=repsLow(repsTxt), sets=parseInt(e.sets)||1;
+    const rir=e.actual_rir!=null?Number(e.actual_rir):(e.rir!=null?Number(e.rir):null);
+    return {name:String(e.exercise_name).trim(),key:notesKey(e.exercise_name),date:dateOf[e.session_id],kg,band:e.load_band||null,reps,repsTxt,sets,rir,iso,
+      secs:iso?isoSecs(repsTxt):null,e1rm:!iso&&kg?e1rmOf(kg,reps,rir!=null?rir:RIR_DEFAULT_UNKNOWN):null,ton:!iso&&kg&&reps?kg*reps*sets:0,group:strGroupOf(e.exercise_name)};
+  }).sort((a,b)=>a.date.localeCompare(b.date));
+}
+// Por ejercicio: una entrada por día (la mejor carga), récords y totales.
+function strengthByExercise(log){
+  const m={};
+  log.forEach(r=>{ const x=m[r.key]=m[r.key]||{name:r.name,key:r.key,group:r.group,iso:r.iso,days:{},sets:0,ton:0};
+    x.sets+=r.sets; x.ton+=r.ton;
+    const d=x.days[r.date]; const better=!d||(r.iso?(r.secs||0)>(d.secs||0):(r.kg||0)>(d.kg||0)||((r.kg||0)===(d.kg||0)&&(r.reps||0)>(d.reps||0)));
+    if(better) x.days[r.date]={...r,sets:(d?d.sets:0)+r.sets}; else d.sets+=r.sets; });
+  return Object.values(m).map(x=>{ const pts=Object.values(x.days).sort((a,b)=>a.date.localeCompare(b.date));
+    const val=(p)=>x.iso?(p.secs||0):(p.kg||0);
+    let best=null; const prs=[]; pts.forEach((p,i)=>{ if(val(p)>0&&(!best||val(p)>val(best))){ if(best) prs.push({...p,prev:val(best),name:x.name,iso:x.iso}); best=p; } });
+    const e1=pts.filter(p=>p.e1rm), first=pts[0], last=pts[pts.length-1];
+    const bestE1=e1.length?Math.max(...e1.map(p=>p.e1rm)):null;
+    const base=e1.length>1?[e1[0].e1rm,e1[e1.length-1].e1rm]:(val(first)&&val(last)&&pts.length>1?[val(first),val(last)]:null);
+    return {...x,pts,best,prs,first,last,bestE1,pct:base?Math.round((base[1]/base[0]-1)*100):null,n:pts.length};
+  });
+}
+const shortD=(d)=>new Date(d+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"}).replace(".","");
+const fmtTon=(v)=>v>=10000?`${(Math.round(v/100)/10).toLocaleString("es-ES")} t`:`${Math.round(v).toLocaleString("es-ES")} kg`;
+const ptTxt=(p,iso)=>iso?(p.secs?`${p.secs} s`:p.repsTxt||"—"):p.band?bandLabel(p.band):(p.kg!=null?`${fmtKgN(p.kg)} kg${p.reps?` × ${p.reps}`:""}`:(p.repsTxt?`${p.repsTxt} reps`:"—"));
+function Spark({vals,w=120,h=30,color="#0284c7"}){
+  const v=vals.filter(x=>x!=null); if(v.length<2) return null;
+  const mn=Math.min(...v), mx=Math.max(...v), r=mx-mn||1, step=w/(vals.length-1);
+  const pts=vals.map((x,i)=>x==null?null:[i*step,h-3-(x-mn)/r*(h-6)]).filter(Boolean);
+  const l=pts[pts.length-1];
+  return <svg width={w} height={h} viewBox={`0 0 ${w} ${h}`} aria-hidden="true" style={{display:"block",overflow:"visible"}}>
+    <polyline points={pts.map(p=>p.join(",")).join(" ")} fill="none" stroke={color} strokeWidth="2" strokeLinejoin="round" strokeLinecap="round"/>
+    <circle cx={l[0]} cy={l[1]} r="3.5" fill={color} stroke="#fff" strokeWidth="2"/>
+  </svg>;
+}
+function StrengthView({client,assignedSessions,assignedExercises}){
+  const log=strengthLog(client,assignedSessions,assignedExercises);
+  const exs=strengthByExercise(log);
+  const [grp,setGrp]=React.useState("");
+  if(!exs.length) return <div className="card" style={{textAlign:"center",padding:28}}><Ico k="chart" size={44}/><div style={{color:"#64748b",fontSize:13,marginTop:8}}>Cuando completes tus entrenos aquí verás tus pesos, récords y evolución por ejercicio.</div></div>;
+  const prs=exs.flatMap(x=>x.prs).sort((a,b)=>b.date.localeCompare(a.date));
+  const prs30=prs.filter(p=>p.date>=addDays(TODAY,-30)).length;
+  const groups=STR_GROUPS.map(([g,ico])=>({g,ico,list:exs.filter(x=>x.group===g).sort((a,b)=>b.n-a.n||a.name.localeCompare(b.name))})).filter(x=>x.list.length);
+  const shown=grp?groups.filter(x=>x.g===grp):groups;
+  const Big=({v,l})=><div style={{background:"#fff",border:"1px solid #e6ebf3",borderRadius:12,padding:"10px 6px",textAlign:"center"}}><div style={{fontSize:20,fontWeight:800,color:"#0f172a",lineHeight:1.1}}>{v}</div><div style={{fontSize:10,fontWeight:700,color:"#64748b",marginTop:2}}>{l}</div></div>;
+  const chip=(on,label,fn)=><button key={label} type="button" onClick={fn} style={{flexShrink:0,padding:"6px 11px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:700,border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#334155"}}>{label}</button>;
+  return(<div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
+      <Big v={exs.length} l="ejercicios"/><Big v={prs.length} l={`récords${prs30?` · ${prs30} este mes`:""}`}/><Big v={fmtTon(exs.reduce((t,x)=>t+x.ton,0))} l="tonelaje total"/>
+    </div>
+    {prs.length>0&&<div className="card" style={{marginBottom:14,padding:"12px 13px"}}>
+      <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:6}}>🏆 Tus últimos récords</div>
+      {prs.slice(0,5).map((p,i)=><div key={p.key+p.date} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:i?"1px solid #f1f4f8":"none"}}>
+        <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={p.name}/></div><div style={{fontSize:11,color:"#94a3b8"}}>{shortD(p.date)} · antes {p.iso?`${p.prev} s`:`${fmtKgN(p.prev)} kg`}</div></div>
+        <div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>{ptTxt(p,p.iso)}</div><div style={{fontSize:11,fontWeight:800,color:"#15803d"}}>▲ +{p.iso?`${(p.secs||0)-p.prev} s`:`${fmtKgN(p.kg-p.prev)} kg`}</div></div>
+      </div>)}
+    </div>}
+    <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginBottom:10}}>
+      {chip(!grp,"Todos",()=>setGrp(""))}
+      {groups.map(x=>chip(grp===x.g,`${x.ico} ${x.g}`,()=>setGrp(grp===x.g?"":x.g)))}
+    </div>
+    {shown.map(G=>(<div key={G.g} style={{marginBottom:14}}>
+      <div style={{fontSize:12,fontWeight:800,color:"#64748b",margin:"0 2px 7px"}}>{G.ico} {G.g.toUpperCase()} · {G.list.length} ejercicio{G.list.length!==1?"s":""}</div>
+      <div className="card" style={{padding:0,overflow:"hidden"}}>
+        {G.list.map((x,i)=>(
+          <button key={x.key} onClick={()=>openExHistory(client,x.name)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 13px",border:"none",borderTop:i?"1px solid #eef1f6":"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:14,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.name}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>Última: <b style={{color:"#334155"}}>{ptTxt(x.last,x.iso)}</b> · {shortD(x.last.date)}</div>
+              <div style={{fontSize:10,color:"#94a3b8",marginTop:1}}>{x.n} {x.n!==1?"sesiones":"sesión"} · {x.sets} series{x.ton?` · ${fmtTon(x.ton)}`:""}{x.bestE1?` · 1RM est. ${fmtKgN(x.bestE1)} kg`:""}</div>
+            </div>
+            <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
+              {x.best&&<div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}
+              <Spark vals={x.pts.slice(-10).map(p=>x.iso?p.secs:p.kg)} w={84} h={24}/>
+              {x.pct!=null&&x.pct!==0&&<div style={{fontSize:11,fontWeight:800,color:x.pct>0?"#15803d":"#b45309"}}>{x.pct>0?"▲ +":"▼ "}{Math.abs(x.pct)} %</div>}
+            </div>
+          </button>))}
+      </div>
+    </div>))}
+    <div style={{fontSize:10,color:"#94a3b8",lineHeight:1.45}}>🏆 = tu mejor marca. ▲ % = cuánto ha subido tu fuerza (1RM estimado) desde la primera vez. Toca un ejercicio para ver todas tus sesiones con él.</div>
+  </div>);
+}
+function VolumeView({client,assignedSessions,assignedExercises}){
+  const log=strengthLog(client,assignedSessions,assignedExercises);
+  const [per,setPer]=React.useState("w"); // w semanas | m meses
+  const [met,setMet]=React.useState("ton"); // ton | sets
+  const [sel,setSel]=React.useState(null);
+  if(!log.length) return <div className="card" style={{textAlign:"center",padding:28}}><Ico k="program" size={44}/><div style={{color:"#64748b",fontSize:13,marginTop:8}}>Aquí verás cuánto trabajo haces cada semana: kilos movidos y series.</div></div>;
+  const keyOf=(d)=>per==="w"?mondayOfDate(d):d.slice(0,7);
+  const N=12, cur=keyOf(TODAY);
+  const keys=per==="w"?Array.from({length:N},(_,i)=>addDays(cur,-7*(N-1-i))):Array.from({length:N},(_,i)=>{ const d=new Date(cur+"-15T12:00:00"); d.setMonth(d.getMonth()-(N-1-i)); return d.toISOString().slice(0,7); });
+  const agg=Object.fromEntries(keys.map(k=>[k,{ton:0,sets:0,days:new Set()}]));
+  log.forEach(r=>{ const a=agg[keyOf(r.date)]; if(a){ a.ton+=r.ton; a.sets+=r.sets; a.days.add(r.date); } });
+  const vals=keys.map(k=>agg[k][met]), mx=Math.max(1,...vals);
+  const lastWith=(()=>{ for(let i=N-1;i>=0;i--) if(vals[i]) return i; return N-1; })();
+  const si=sel!=null&&sel<N?sel:lastWith, sk=keys[si], sa=agg[sk], prev=si>0?agg[keys[si-1]]:null;
+  const lbl=(k)=>per==="w"?`Semana del ${shortD(k)}`:capFirst(new Date(k+"-15T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"}));
+  const tick=(k)=>per==="w"?new Date(k+"T12:00:00").getDate():new Date(k+"-15T12:00:00").toLocaleDateString("es-ES",{month:"short"}).replace(".","").slice(0,3);
+  const pctV=(a,b)=>b?Math.round((a/b-1)*100):null, dv=prev?pctV(sa[met],prev[met]):null;
+  // Series por grupo muscular en las últimas 4 semanas
+  const from=addDays(mondayOfDate(TODAY),-21);
+  const byG=STR_GROUPS.map(([g,ico])=>({g,ico,n:log.filter(r=>r.date>=from&&r.group===g).reduce((t,r)=>t+r.sets,0)})).filter(x=>x.n>0).sort((a,b)=>b.n-a.n);
+  const mxG=Math.max(1,...byG.map(x=>x.n));
+  const seg=(v,set,opts)=><div className="seg" style={{flex:1}}>{opts.map(([id,l])=><button key={id} className={"sb"+(v===id?" on":"")} onClick={()=>{ set(id); setSel(null); }} style={{fontSize:12}}>{l}</button>)}</div>;
+  const fmtV=(v)=>met==="ton"?fmtTon(v):`${v} series`;
+  return(<div>
+    <div style={{display:"flex",gap:8,marginBottom:12}}>{seg(met,setMet,[["ton","🏋️ Tonelaje"],["sets","🔢 Series"]])}{seg(per,setPer,[["w","Semanas"],["m","Meses"]])}</div>
+    <div className="card" style={{padding:"14px 13px",marginBottom:14}}>
+      <div style={{fontSize:12,color:"#64748b",fontWeight:700}}>{lbl(sk)}</div>
+      <div style={{display:"flex",alignItems:"baseline",gap:8,flexWrap:"wrap"}}>
+        <span style={{fontSize:26,fontWeight:800,color:"#0f172a"}}>{fmtV(sa[met])}</span>
+        {dv!=null&&isFinite(dv)&&dv!==0&&<span style={{fontSize:12,fontWeight:800,color:dv>0?"#15803d":"#b45309"}}>{dv>0?"▲ +":"▼ "}{Math.abs(dv)} % vs {per==="w"?"semana":"mes"} anterior</span>}
+      </div>
+      <div style={{fontSize:11,color:"#94a3b8",marginBottom:10}}>{sa.days.size} {sa.days.size!==1?"sesiones":"sesión"} · {met==="ton"?`${sa.sets} series`:fmtTon(sa.ton)}</div>
+      <div role="img" aria-label={`${met==="ton"?"Tonelaje":"Series"} por ${per==="w"?"semana":"mes"}, últimos 12`} style={{display:"flex",alignItems:"flex-end",gap:2,height:110}}>
+        {keys.map((k,i)=>{ const v=vals[i], on=i===si; return(
+          <button key={k} type="button" onClick={()=>setSel(i)} title={`${lbl(k)}: ${fmtV(v)}`} style={{flex:1,height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:3,border:"none",background:"none",padding:0,cursor:"pointer"}}>
+            <div style={{width:"100%",maxWidth:22,height:v?Math.max(4,v/mx*92):2,background:on?"#0284c7":v?"#bfdcf2":"#e6ebf3",borderRadius:"4px 4px 0 0"}}/>
+          </button>); })}
+      </div>
+      <div style={{display:"flex",gap:2,marginTop:4}}>{keys.map((k,i)=><span key={k} style={{flex:1,textAlign:"center",fontSize:9,fontWeight:i===si?800:600,color:i===si?"#0284c7":"#94a3b8"}}>{tick(k)}</span>)}</div>
+      <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Toca una barra para ver {per==="w"?"esa semana":"ese mes"}. {met==="ton"?"Tonelaje = kg × reps × series.":"Series de todos tus ejercicios hechos."}</div>
+    </div>
+    {byG.length>0&&<div className="card" style={{padding:"13px 13px"}}>
+      <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>Series por grupo muscular</div>
+      <div style={{fontSize:11,color:"#94a3b8",marginBottom:9}}>Últimas 4 semanas</div>
+      {byG.map(x=><div key={x.g} style={{display:"flex",alignItems:"center",gap:8,marginBottom:7}}>
+        <span style={{width:84,flexShrink:0,fontSize:12,fontWeight:700,color:"#334155"}}>{x.ico} {x.g}</span>
+        <div style={{flex:1,height:12,background:"#f1f4fa",borderRadius:4}}><div style={{width:`${x.n/mxG*100}%`,height:"100%",background:"#0284c7",borderRadius:4}}/></div>
+        <span className="mono" style={{width:30,textAlign:"right",fontSize:12,fontWeight:800,color:"#0f172a"}}>{x.n}</span>
+      </div>)}
+    </div>}
+  </div>);
+}
+
 // ── PRÓXIMOS ENTRENOS DEL ATLETA ──────────────────────────────────────────
 // Lo que le toca en cada clase futura: lo que ha preparado el coach o, si aún no
 // está, lo previsto por su programación (puede cambiar).
@@ -6831,8 +6985,9 @@ function AthleteUpcoming({client,sessions,assignedSessions,assignedExercises,ann
       </div>); })}
   </div>);
 }
-function AthleteSessionModal({client,item,assignedSessions,assignedExercises,onClose}){
+function AthleteSessionModal({client,item,assignedSessions,assignedExercises,prSet,onClose}){
   const exs=item.exs||[];
+  const nSets=exs.filter(exDone).reduce((t,e)=>t+(parseInt(e.sets)||0),0);
   // Carga de la vez anterior que hizo el mismo ejercicio (para ver si ha subido).
   const prevKg=(e)=>{ const n=String(e.exercise_name||"").trim().toLowerCase();
     const prev=(assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date<item.date).sort((a,b)=>b.date.localeCompare(a.date));
@@ -6847,9 +7002,10 @@ function AthleteSessionModal({client,item,assignedSessions,assignedExercises,onC
           <div><div style={{fontSize:17,fontWeight:800,color:"#0f172a"}}>{item.label}</div>
             <div style={{fontSize:12,color:"#64748b",textTransform:"capitalize"}}>{fmtLong(item.date)}{item.time?` · ${item.time}`:""}</div></div>
         </div>
-        {exs.length>0&&<div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginBottom:12}}>
-          <div style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"8px",textAlign:"center"}}><div style={{fontSize:20,fontWeight:800}}>{item.nDone}/{exs.length}</div><div style={{fontSize:11,color:"#64748b"}}>ejercicios hechos</div></div>
-          <div style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"8px",textAlign:"center"}}><div style={{fontSize:20,fontWeight:800}}>{item.vol?item.vol.toLocaleString("es-ES"):"—"}</div><div style={{fontSize:11,color:"#64748b"}}>kg movidos en total</div></div>
+        {exs.length>0&&<div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
+          <div style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"8px 4px",textAlign:"center"}}><div style={{fontSize:19,fontWeight:800}}>{item.nDone}/{exs.length}</div><div style={{fontSize:10,color:"#64748b"}}>ejercicios</div></div>
+          <div style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"8px 4px",textAlign:"center"}}><div style={{fontSize:19,fontWeight:800}}>{nSets}</div><div style={{fontSize:10,color:"#64748b"}}>series</div></div>
+          <div style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"8px 4px",textAlign:"center"}}><div style={{fontSize:19,fontWeight:800}}>{item.vol?fmtTon(item.vol):"—"}</div><div style={{fontSize:10,color:"#64748b"}}>movidos</div></div>
         </div>}
         <div style={{flex:1,overflowY:"auto",minHeight:0}}>
           {exs.length===0
@@ -6859,8 +7015,10 @@ function AthleteSessionModal({client,item,assignedSessions,assignedExercises,onC
                 <div key={e.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 12px",borderTop:i?"1px solid #eef1f7":"none",background:done?"#f4faf6":"#fff"}}>
                   <span style={{width:22,height:22,borderRadius:7,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,background:done?"#16a34a":"#eef1f6",color:done?"#fff":"#94a3b8"}}>{done?"✓":i+1}</span>
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/></div>
-                    <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets} series × ${e.actual_reps||e.reps}${isIsoRow(e)?"":" reps"}`:""}{e.rir!=null?` · RIR ${e.rir}`:""}{e.rpe_felt?` · esfuerzo ${e.rpe_felt}/10`:""}{!done?" · no hecho":""}</div>
+                    <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/>{prSet&&prSet.has(notesKey(e.exercise_name)+"|"+item.date)&&<span style={{marginLeft:6,fontSize:10,fontWeight:800,color:"#a16207",background:"#fef3c7",border:"1px solid #fde68a",borderRadius:20,padding:"0 6px"}}>🏆 Récord</span>}</div>
+                    <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&(e.actual_reps||e.reps)?`${e.sets} series × ${e.actual_reps||e.reps}${isIsoRow(e)?"":" reps"}`:""}{e.actual_rir!=null?` · RIR ${e.actual_rir}${e.rir!=null&&Number(e.rir)!==Number(e.actual_rir)?` (objetivo ${e.rir})`:""}`:e.rir!=null?` · RIR ${e.rir}`:""}{e.rpe_felt?` · esfuerzo ${e.rpe_felt}/10`:""}{!done?" · no hecho":""}</div>
+                    {done&&exKg(e)!=null&&!isIsoRow(e)&&repsLow(e.actual_reps||e.reps)&&<div style={{fontSize:10,color:"#94a3b8"}}>{fmtTon(exKg(e)*repsLow(e.actual_reps||e.reps)*(parseInt(e.sets)||1))} movidos</div>}
+                    {e.notes&&<div style={{fontSize:11,color:"#64748b",fontStyle:"italic"}}>📝 {e.notes}</div>}
                   </div>
                   <div style={{textAlign:"right",flexShrink:0}}>
                     {load(e)&&<div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{load(e)}</div>}
@@ -7665,8 +7823,8 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
 }
 
 // ── PROGRESS TAB ──────────────────────────────────────────────────────────
-function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, loadAll, notify}) {
-  const [view, setView] = React.useState("stats");
+function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises}) {
+  const [view, setView] = React.useState("fuerza");
   const [showLog, setShowLog] = React.useState(false);
   const [showPR, setShowPR] = React.useState(false);
   const [log, setLog] = React.useState({date:TODAY,weight:"",body_fat:"",waist:"",notes:""});
@@ -7731,15 +7889,18 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
   return(
     <div>
       <div className="seg" style={{marginBottom:14}}>
-        {[["stats","📏 Medidas"],["photos","📸 Fotos"],["records","🏆 Marcas"],["badges","🎖 Logros"]].map(([id,label])=>(
-          <button key={id} className={"sb"+(view===id?" on":"")} onClick={()=>setView(id)} style={{fontSize:12}}>{label}</button>
+        {[["fuerza","💪","Fuerza"],["volumen","📊","Volumen"],["stats","📏","Medidas"],["photos","📸","Fotos"],["badges","🏆","Logros"]].map(([id,ic,label])=>(
+          <button key={id} className={"sb"+(view===id?" on":"")} onClick={()=>setView(id)} style={{fontSize:11,padding:"6px 2px",lineHeight:1.15,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}><span style={{fontSize:15}}>{ic}</span>{label}</button>
         ))}
       </div>
+
+      {view==="fuerza"&&<StrengthView client={client} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>}
+      {view==="volumen"&&<VolumeView client={client} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>}
 
       {view==="stats"&&<MeasuresPanel client={client} progress={myProgress} loadAll={loadAll} notify={notify}/>}
       {view==="photos"&&<PhotosPanel client={client} notify={notify}/>}
 
-      {view==="records"&&(
+      {view==="badges"&&(
         <div>
           <div style={{display:"flex",gap:8,marginBottom:14}}>
             <button className="btn sky" style={{flex:1,padding:10,fontSize:12}} onClick={()=>setShowPR(true)}>+ Nueva marca personal</button>
