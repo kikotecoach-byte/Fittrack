@@ -520,15 +520,15 @@ function getMonthDays(year, month) {
   return cells;
 }
 
+// Semanas seguidas (lunes-domingo) con al menos una sesión. La semana en curso
+// no rompe la racha si aún no ha entrenado: se cuenta desde la anterior.
 function calcStreak(history) {
-  if(!history.length) return 0;
-  const dates = [...new Set(history.map(h=>h.date))].sort((a,b)=>b.localeCompare(a));
-  let streak = 0, prev = null;
-  for(const d of dates) {
-    if(!prev) { streak=1; prev=d; continue; }
-    const diff = Math.round((new Date(prev+"T12:00:00") - new Date(d+"T12:00:00")) / 86400000);
-    if(diff<=7) { streak++; prev=d; } else break;
-  }
+  if(!history||!history.length) return 0;
+  const weeks=new Set(history.filter(h=>h&&h.date&&h.date<=TODAY).map(h=>mondayOfDate(h.date)));
+  let w=mondayOfDate(TODAY);
+  if(!weeks.has(w)) w=addDays(w,-7);
+  let streak=0;
+  while(weeks.has(w)){ streak++; w=addDays(w,-7); }
   return streak;
 }
 
@@ -3158,20 +3158,15 @@ const PHASE_TXT = {
   descarga:"Semana de descarga: bajamos la intensidad para recuperarte y volver más fuerte.",
 };
 function ClientSummary({client,history,assignedSessions,assignedExercises,progress,annualBlocks,sessions,noHello}){
-  const T=useRmTests(client.id);
   const {photos}=useClientPhotos(client.id);
   const hist=(history||[]).filter(h=>h.client_id===client.id&&h.date&&h.date<=TODAY);
-  const days=[...new Set(hist.map(h=>h.date))].sort();
+  const sess=athleteSessions(client,history,assignedSessions,assignedExercises);
+  const days=[...new Set(sess.map(x=>x.date))].sort();
   const monthKey=TODAY.slice(0,7), thisMonth=days.filter(d=>d.startsWith(monthKey)).length;
   const prevKey=(()=>{ const d=new Date(TODAY+"T12:00:00"); d.setMonth(d.getMonth()-1); return d.toISOString().slice(0,7); })(), prevMonth=days.filter(d=>d.startsWith(prevKey)).length;
-  const streak=calcStreak(hist);
-  // Constancia: sesiones por semana en las últimas 8 semanas.
-  const mon=mondayOfDate(TODAY), weeks=Array.from({length:8},(_,i)=>addDays(mon,-7*(7-i)));
-  const perWeek=weeks.map(w=>days.filter(d=>d>=w&&d<addDays(w,7)).length), maxW=Math.max(1,...perWeek);
-  // Fuerza: los 3 ejercicios con más registros, RM estimado ahora vs. el primero.
-  const rm=rmHistory(client.id,assignedSessions,assignedExercises,T.list);
-  const lifts=Object.values(rm).filter(g=>g.pts.length>=1).sort((a,b)=>b.pts.length-a.pts.length).slice(0,3)
-    .map(g=>{ const f=g.pts[0], cur=currentRM(g.pts); return {name:g.name,cur,first:f.e1rm,since:f.date,pct:f.e1rm?Math.round((cur/f.e1rm-1)*100):0}; });
+  const streak=calcStreak(days.map(date=>({date})));
+  // Fuerza: los 3 ejercicios que más ha hecho, contados de forma coloquial.
+  const lifts=strengthByExercise(strengthLog(client,assignedSessions,assignedExercises)).sort((a,b)=>b.n-a.n).slice(0,3);
   // Cuerpo
   const pr=(progress||[]).filter(p=>p.client_id===client.id&&p.date).sort((a,b)=>a.date.localeCompare(b.date));
   const body=MEASURES.map(m=>{ const pts=pr.filter(p=>p[m.k]!=null); if(!pts.length) return null; const f=pts[0], l=pts[pts.length-1], d=Math.round((l[m.k]-f[m.k])*10)/10; return {m,l:l[m.k],d,n:pts.length,tone:changeTone(m,d,client.goal),since:f.date}; }).filter(Boolean).slice(0,4);
@@ -3193,20 +3188,14 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
           <Big v={streak} l={streak===1?"semana seguida":"semanas seguidas"}/>
           <Big v={days.length} l="en total"/>
         </div>
-        <div style={{display:"flex",alignItems:"flex-end",gap:6,height:70}} aria-label="Entrenos por semana, últimas 8 semanas">
-          {perWeek.map((n,i)=><div key={i} title={`Semana del ${fmtD(weeks[i])}: ${n}`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-            <span style={{fontSize:10,fontWeight:700,color:n?"#0f172a":"#cbd5e1"}}>{n}</span>
-            <div style={{width:"100%",maxWidth:24,height:Math.max(3,n/maxW*46),background:i===7?"#0284c7":"#bfdcf2",borderRadius:"4px 4px 0 0"}}/>
-          </div>)}
-        </div>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginTop:4}}><span>hace 8 semanas</span><span>esta semana</span></div>
+        <WeekStrip client={client} sess={sess} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
       </Card>
       {lifts.length>0&&<Card icon="chart" title="Tu fuerza">
-        {lifts.map(x=><div key={x.name} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:"1px solid #f1f4f8"}}>
-          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{x.name}</div><div style={{fontSize:11,color:"#94a3b8"}}>desde {fmtD(x.since)}</div></div>
-          <div style={{textAlign:"right"}}><div style={{fontSize:16,fontWeight:800,color:"#0f172a"}}>{fmtKgN(x.cur)} kg</div>{x.pct!==0&&<div style={{fontSize:12,fontWeight:800,color:x.pct>0?"#15803d":"#b45309"}}>{x.pct>0?"▲ +":"▼ "}{Math.abs(x.pct)} %</div>}</div>
+        {lifts.map((x,li)=><div key={x.key} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:"1px solid #f1f4f8"}}>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}><ExName client={client} name={x.name}/></div><div style={{fontSize:12,color:"#475569",marginTop:2,lineHeight:1.4}}>{funLine(x,li)}</div></div>
+          <div style={{textAlign:"right",flexShrink:0}}>{x.best&&<div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}<div style={{fontSize:10,color:"#94a3b8"}}>tu mejor marca</div></div>
         </div>)}
-        <div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Fuerza máxima estimada (1 repetición) según lo que levantas en tus series.</div>
+        <div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Toca un ejercicio para ver toda su evolución. Tienes todos en Progreso → Fuerza.</div>
       </Card>}
       {body.length>0&&<Card icon="check" title="Tu cuerpo">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -3225,6 +3214,53 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
       {!days.length&&!body.length&&!lifts.length&&<div style={{fontSize:13,color:"#64748b",textAlign:"center",padding:20}}>Todavía no hay datos. ¡Vamos a por el primer entreno! 💪</div>}
     </div>
   );
+}
+// Constancia semana a semana: 7 círculos (L-D) por semana; tocar una semana
+// despliega sus sesiones y cada sesión abre su detalle.
+function WeekStrip({client,sess,assignedSessions,assignedExercises}){
+  const [openW,setOpenW]=React.useState(null);
+  const [det,setDet]=React.useState(null);
+  const [n,setN]=React.useState(6);
+  const mon=mondayOfDate(TODAY), weeks=Array.from({length:n},(_,i)=>addDays(mon,-7*i));
+  const byDate=Object.fromEntries((sess||[]).map(x=>[x.date,x]));
+  const DL=["L","M","X","J","V","S","D"];
+  const wLabel=(w,i)=>i===0?"Esta semana":i===1?"Semana pasada":(w.slice(5,7)===addDays(w,6).slice(5,7)?`${new Date(w+"T12:00:00").getDate()}–${shortD(addDays(w,6))}`:`${shortD(w)} – ${shortD(addDays(w,6))}`);
+  const slog=strengthLog(client,assignedSessions,assignedExercises);
+  const prSet=new Set(strengthByExercise(slog).flatMap(x=>x.prs.map(p=>p.key+"|"+p.date)));
+  return(<div>
+    <div style={{display:"flex",justifyContent:"flex-end",gap:6,padding:"0 30px 4px 0"}}>{DL.map(d=><span key={d} style={{width:24,textAlign:"center",fontSize:10,fontWeight:800,color:"#94a3b8"}}>{d}</span>)}</div>
+    {weeks.map((w,i)=>{ const ds=Array.from({length:7},(_,k)=>addDays(w,k)), list=ds.map(d=>byDate[d]).filter(Boolean), on=openW===w;
+      const ton=list.reduce((t,x)=>t+(x.vol||0),0);
+      return(<div key={w} style={{borderTop:"1px solid #f1f4f8"}}>
+        <button type="button" onClick={()=>setOpenW(on?null:w)} aria-expanded={on} style={{width:"100%",display:"flex",alignItems:"center",gap:6,padding:"8px 0",border:"none",background:on?"#f5f9fe":"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left",borderRadius:8}}>
+          <div style={{flex:1,minWidth:0}}>
+            <div style={{fontSize:12,fontWeight:800,color:i===0?"#0284c7":"#0f172a"}}>{wLabel(w,i)}</div>
+            <div style={{fontSize:11,fontWeight:700,color:list.length?"#16a34a":"#94a3b8"}}>{list.length?`${list.length} ${list.length===1?"sesión":"sesiones"}`:"descanso"}</div>
+          </div>
+          {ds.map(d=>{ const x=byDate[d], fut=d>TODAY, today=d===TODAY; return <span key={d} title={`${fmtLong(d)}${x?` · ${x.label}`:""}`} style={{width:24,height:24,borderRadius:"50%",flexShrink:0,display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:12,fontWeight:800,
+            background:x?"#0284c7":fut?"transparent":"#f1f4fa",color:x?"#fff":"#cbd5e1",border:today?"2px solid #0284c7":fut?"1px dashed #dbe2ec":"1px solid #e6ebf3",boxSizing:"border-box"}}>{x?"✓":""}</span>; })}
+          <span style={{width:24,textAlign:"center",fontSize:12,color:"#94a3b8"}}>{on?"▲":"▼"}</span>
+        </button>
+        {on&&<div style={{padding:"2px 0 10px"}}>
+          {list.length===0
+            ?<div style={{fontSize:12,color:"#64748b",background:"#f8fafc",borderRadius:10,padding:"10px 12px"}}>Semana sin entrenar 😴 ¡Descansar también cuenta (un poco)!</div>
+            :<>
+              {list.map(x=><button key={x.date} type="button" onClick={()=>setDet(x)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"8px 10px",marginBottom:5,border:"1px solid #e6ebf3",borderRadius:10,background:"#fff",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                <span style={{fontSize:11,fontWeight:800,color:"#0284c7",width:30,textTransform:"capitalize"}}>{new Date(x.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")} {new Date(x.date+"T12:00:00").getDate()}</span>
+                <div style={{flex:1,minWidth:0}}>
+                  <div style={{fontSize:13,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</div>
+                  <div style={{fontSize:11,color:"#64748b"}}>{x.exs&&x.exs.length?`${x.nDone} ejercicios`:"Asistencia"}{x.vol?` · ${fmtTon(x.vol)} movidos`:""}{(x.exs||[]).some(e=>prSet.has(notesKey(e.exercise_name)+"|"+x.date))?" · 🏆 récord":""}</div>
+                </div>
+                <span style={{fontSize:15,color:"#cbd5e1"}}>›</span>
+              </button>)}
+              {ton>0&&<div style={{fontSize:11,color:"#64748b",padding:"2px 2px 0"}}>En total esa semana: <b>{fmtTon(ton)}</b> movidos 💪</div>}
+            </>}
+        </div>}
+      </div>); })}
+    {n<12&&<button type="button" className="btn ghost" style={{width:"100%",padding:9,marginTop:6,fontSize:12}} onClick={()=>setN(12)}>Ver más semanas</button>}
+    <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Cada círculo es un día (lunes a domingo). Azul ✓ = entrenaste. Toca una semana para ver qué hiciste.</div>
+    {det&&<AthleteSessionModal prSet={prSet} client={client} item={det} assignedSessions={assignedSessions} assignedExercises={assignedExercises} onClose={()=>setDet(null)}/>}
+  </div>);
 }
 function ClientSummaryModal({onClose,...props}){
   return <div className="ovl" onClick={onClose}><div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520,background:"#eef1f7"}}>
@@ -6824,6 +6860,28 @@ function Spark({vals,w=120,h=30,color="#0284c7"}){
     <circle cx={l[0]} cy={l[1]} r="3.5" fill={color} stroke="#fff" strokeWidth="2"/>
   </svg>;
 }
+// Frase coloquial de lo que lleva hecho en un ejercicio (sin hablar de 1RM).
+const FUN_OBJ=[[5000,"elefante","elefantes","🐘"],[1200,"coche","coches","🚗"],[300,"piano","pianos","🎹"],[70,"lavadora","lavadoras","🧺"]];
+const hashStr=(t)=>{ let h=0; for(const c of String(t)) h=(h*31+c.charCodeAt(0))>>>0; return h; };
+function funLine(x,idx=0){
+  const pick=(arr)=>arr[(hashStr(x.name)+idx)%arr.length];
+  const f=x.first, b=x.best, l=x.last, weeks=f&&l?Math.max(1,Math.round((new Date(l.date)-new Date(f.date))/604800000)):0;
+  const reps=x.pts.reduce((t,p)=>t+(p.reps||0)*(p.sets||1),0);
+  let a;
+  if(x.n===1) a=pick([`¡Lo has estrenado! Primera vez con ${ptTxt(l,x.iso)} 🎉`,`Primer contacto: ${ptTxt(l,x.iso)}. ¡Esto acaba de empezar! 🎬`]);
+  else if(x.iso&&b&&f&&(b.secs||0)>(f.secs||0)) a=pick([`Empezaste aguantando ${f.secs} s y ya llegas a ${b.secs} s. ¡${b.secs-f.secs} segundos más de puro aguante! ⏱️`,`De ${f.secs} s a ${b.secs} s: cada vez cuesta más que te rindas 😤`]);
+  else if(!x.iso&&b&&f&&b.kg!=null&&f.kg!=null&&b.kg>f.kg){ const d=fmtKgN(b.kg-f.kg);
+    a=pick([`Empezaste con ${fmtKgN(f.kg)} kg y ya mueves ${fmtKgN(b.kg)} kg: ¡${d} kg más${weeks>1?` en ${weeks} semanas`:""}! 🚀`,`De ${fmtKgN(f.kg)} kg a ${fmtKgN(b.kg)} kg. Esos ${d} kg extra no se han subido solos 😎`,`Has pasado de ${fmtKgN(f.kg)} a ${fmtKgN(b.kg)} kg. ¡La barra ya te tiene respeto! 💥`]); }
+  else if(!x.iso&&b&&b.kg!=null) a=pick([`Firme como una roca en ${fmtKgN(b.kg)} kg 🪨 La próxima, a por un poquito más.`,`Consolidando ${fmtKgN(b.kg)} kg: la base que luego te hará subir 🧱`]);
+  else if(reps) a=pick([`Llevas ${reps.toLocaleString("es-ES")} repeticiones en ${x.sets} series. ¡Eso es constancia! 💪`,`${reps.toLocaleString("es-ES")} repeticiones ya. Tu cuerpo lo nota (y lo agradece) 🙌`]);
+  else a=`Llevas ${x.sets} series de ${x.name.toLowerCase()} 💪`;
+  const o=FUN_OBJ.find(([kg])=>x.ton>=kg), extra=[];
+  if(x.prs.length>=2) extra.push(`Has batido tu récord ${x.prs.length} veces 🏆`);
+  if(o){ const k=Math.round(x.ton/o[0]); extra.push(`En total has levantado ${fmtTon(x.ton)}: ¡como ${k} ${k===1?o[1]:o[2]}! ${o[3]}`); }
+  if(!extra.length&&x.prs.length===1) extra.push("Ya tienes un récord aquí 🏆");
+  const c=extra.length?extra[(hashStr(x.name)+idx)%extra.length]:"";
+  return c?`${a} ${c}`:a;
+}
 function StrengthView({client,assignedSessions,assignedExercises}){
   const log=strengthLog(client,assignedSessions,assignedExercises);
   const exs=strengthByExercise(log);
@@ -6857,18 +6915,17 @@ function StrengthView({client,assignedSessions,assignedExercises}){
           <button key={x.key} onClick={()=>openExHistory(client,x.name)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 13px",border:"none",borderTop:i?"1px solid #eef1f6":"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.name}</div>
-              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>Última: <b style={{color:"#334155"}}>{ptTxt(x.last,x.iso)}</b> · {shortD(x.last.date)}</div>
-              <div style={{fontSize:10,color:"#94a3b8",marginTop:1}}>{x.n} {x.n!==1?"sesiones":"sesión"} · {x.sets} series{x.ton?` · ${fmtTon(x.ton)}`:""}{x.bestE1?` · 1RM est. ${fmtKgN(x.bestE1)} kg`:""}</div>
+              <div style={{fontSize:13,color:"#334155",marginTop:3,lineHeight:1.4}}>{funLine(x,i)}</div>
+              <div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Última vez: <b style={{color:"#64748b"}}>{ptTxt(x.last,x.iso)}</b> · {shortD(x.last.date)} · {x.n} {x.n!==1?"sesiones":"sesión"} · {x.sets} series</div>
             </div>
             <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
               {x.best&&<div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}
               <Spark vals={x.pts.slice(-10).map(p=>x.iso?p.secs:p.kg)} w={84} h={24}/>
-              {x.pct!=null&&x.pct!==0&&<div style={{fontSize:11,fontWeight:800,color:x.pct>0?"#15803d":"#b45309"}}>{x.pct>0?"▲ +":"▼ "}{Math.abs(x.pct)} %</div>}
             </div>
           </button>))}
       </div>
     </div>))}
-    <div style={{fontSize:10,color:"#94a3b8",lineHeight:1.45}}>🏆 = tu mejor marca. ▲ % = cuánto ha subido tu fuerza (1RM estimado) desde la primera vez. Toca un ejercicio para ver todas tus sesiones con él.</div>
+    <div style={{fontSize:10,color:"#94a3b8",lineHeight:1.45}}>🏆 = tu mejor marca. La línea azul es cómo ha ido tu peso en las últimas sesiones. Toca un ejercicio para ver todas tus sesiones con él.</div>
   </div>);
 }
 function VolumeView({client,assignedSessions,assignedExercises}){
