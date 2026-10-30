@@ -212,6 +212,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
   width:100%;max-width:480px;max-height:92vh;overflow-y:auto;box-shadow:0 20px 50px rgba(16,24,40,.18);}
 .pbar{height:6px;background:#eef1f7;border-radius:10px;overflow:hidden;}
 .pfill{height:100%;border-radius:10px;transition:width .6s;}
+.rest-on .notif{top:calc(96px + env(safe-area-inset-top)) !important;}
 .notif{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:400;
   padding:12px 20px;border-radius:24px;font-size:13px;font-weight:600;
   animation:slideIn .3s ease;white-space:nowrap;}
@@ -755,6 +756,7 @@ function App() {
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
       {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
+      <RestTimerHost/>
       {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
@@ -3773,6 +3775,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const setMode=(ex,mode)=>{ setVal(ex,"mode",mode); if(mode==="kg"){ setVal(ex,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ex.id); } };
   const toggleDone=async(ex)=>{
     const nowDone=!valOf(ex,"done"); setVal(ex,"done",nowDone);
+    if(nowDone) startRest(ex.rest_seconds,ex.exercise_name);
     const goma=valOf(ex,"mode")==="goma";
     const w=goma?null:numW(valOf(ex,"w"));
     const {error}=await sb.from("assigned_exercises").update({done:nowDone,actual_weight:w,load_band:goma?(valOf(ex,"band")||null):null,actual_reps:valOf(ex,"r")||null,done_at:nowDone?new Date().toISOString():null}).eq("id",ex.id);
@@ -3841,7 +3844,10 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
                       <div style={{fontWeight:700,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{selClient?<ExName client={selClient} name={ex.exercise_name}/>:ex.exercise_name} <button onClick={()=>setPicker({mode:"swap",ex})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
                       <MuscleTags name={ex.exercise_name}/>
                     </div>
-                    <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {ex.sets&&ex.reps?`${ex.sets}×${ex.reps}`:"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}{ex.rir!=null?` · RIR ${ex.rir}`:""}</div>
+                    <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                      <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {ex.sets&&ex.reps?`${ex.sets}×${ex.reps}`:"—"}{ex.prescribed_weight!=null?` · ${ex.prescribed_weight}kg`:""}{ex.rir!=null?` · RIR ${ex.rir}`:""}</div>
+                      <RestButton secs={ex.rest_seconds} label={ex.exercise_name} style={{padding:"3px 9px",fontSize:11,borderRadius:20}}/>
+                    </div>
                   </div>
                   <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
                     <div style={{flex:1.4,minWidth:0}}>
@@ -5038,6 +5044,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
     band:e.load_band||"",
     mode:(e.load_band?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
     done:!!e.done,
+    rest:e.rest_seconds,
   })));
   const [saving,setSaving]=React.useState(false);
   const setField=(id,k,v)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x));
@@ -5047,6 +5054,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   const toggleDone=async(row)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
+    if(nowDone) startRest(row.rest,row.name);
     const goma=row.mode==="goma";
     const w=goma?null:(row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",",".")));
     const {error}=await sb.from("assigned_exercises").update({
@@ -5115,7 +5123,10 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
                     <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}><ExName client={client} name={row.name}/> <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
                     <MuscleTags name={row.name}/>
                   </div>
-                  <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}{(baseExs.find(e=>e.id===row.id)||{}).rir!=null?` · RIR ${(baseExs.find(e=>e.id===row.id)||{}).rir}`:""}</div>
+                  <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
+                    <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}{(baseExs.find(e=>e.id===row.id)||{}).rir!=null?` · RIR ${(baseExs.find(e=>e.id===row.id)||{}).rir}`:""}</div>
+                    <RestButton secs={row.rest} label={row.name} style={{padding:"3px 9px",fontSize:11,borderRadius:20}}/>
+                  </div>
                 </div>
                 <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
                   <div style={{flex:1.4,minWidth:0}}>
@@ -5653,6 +5664,88 @@ function RirHelp({notify,highlight,label="¿Qué es el RIR?"}){
 // ── HISTORIAL DE UN EJERCICIO (cargas realizadas y evolución) ─────────────
 // Se abre al tocar el nombre de un ejercicio en cualquier pantalla. Un solo
 // visor activo (el último montado: panel del coach o portal del atleta).
+// ── CRONO DE DESCANSO ──────────────────────────────────────────────────────
+// Un único crono flotante para toda la app (coach y atleta). Se lanza con
+// startRest(segundos, ejercicio): al marcar un ejercicio como hecho o con ⏱.
+// Cuenta contra una hora de fin, así no se desfasa si el móvil se bloquea.
+const REST = {s:null, hosts:[], ac:null};
+const restPing = () => REST.hosts.forEach(h=>h());
+const restBeep = (f=880,d=0.15,v=0.25) => { try{ const ac=REST.ac; if(!ac) return; const o=ac.createOscillator(), g=ac.createGain(); o.frequency.value=f; o.connect(g); g.connect(ac.destination);
+  g.gain.setValueAtTime(v,ac.currentTime); g.gain.exponentialRampToValueAtTime(0.001,ac.currentTime+d); o.start(); o.stop(ac.currentTime+d); }catch(e){} };
+const restSecsOf = (v) => { const n=parseInt(v,10); return n>0?Math.min(600,n):90; };
+function startRest(secs, label){
+  try{ REST.ac=REST.ac||new (window.AudioContext||window.webkitAudioContext)(); REST.ac.resume&&REST.ac.resume(); }catch(e){}
+  const total=restSecsOf(secs);
+  REST.s={total,end:Date.now()+total*1000,paused:null,label:label||"",done:false,warned:{}};
+  restPing();
+}
+const fmtClock = (t) => { t=Math.max(0,Math.ceil(t)); return `${Math.floor(t/60)}:${String(t%60).padStart(2,"0")}`; };
+function RestButton({secs,label,style}){
+  return <button type="button" title="Empezar descanso" onClick={e=>{ e.stopPropagation(); startRest(secs,label); }}
+    style={{border:"1px solid #bcd3ee",background:"#eef4fc",color:"#0284c7",borderRadius:9,padding:"7px 9px",fontSize:12,fontWeight:800,cursor:"pointer",whiteSpace:"nowrap",fontFamily:"inherit",...(style||{})}}>⏱ {fmtClock(restSecsOf(secs))}</button>;
+}
+function RestTimerHost(){
+  const [,force]=React.useReducer(x=>x+1,0);
+  const [presets,setPresets]=React.useState(false);
+  const wake=React.useRef(null);
+  React.useEffect(()=>{ const h=()=>force(); REST.hosts.push(h); return ()=>{ REST.hosts=REST.hosts.filter(x=>x!==h); }; },[]);
+  const st=REST.s;
+  const left=st?(st.paused!=null?st.paused:(st.end-Date.now())/1000):0;
+  React.useEffect(()=>{
+    if(!st||st.done||st.paused!=null) return;
+    const id=setInterval(()=>{
+      const l=(st.end-Date.now())/1000;
+      [3,2,1].forEach(k=>{ if(l<=k&&l>k-1&&!st.warned[k]){ st.warned[k]=true; restBeep(660,0.12); } });
+      if(l<=0&&!st.done){ st.done=true; restBeep(988,0.35,0.35); setTimeout(()=>restBeep(1318,0.5,0.35),380);
+        try{ navigator.vibrate&&navigator.vibrate([250,120,250]); }catch(e){}
+        setTimeout(()=>{ if(REST.s===st){ REST.s=null; restPing(); } },9000); }
+      force();
+    },250);
+    return ()=>clearInterval(id);
+  },[st,st&&st.paused,st&&st.done]);
+  // Mantener la pantalla encendida mientras corre el descanso (si el móvil lo permite).
+  React.useEffect(()=>{
+    const on=!!(st&&!st.done);
+    if(on&&!wake.current&&navigator.wakeLock) navigator.wakeLock.request("screen").then(l=>{ wake.current=l; }).catch(()=>{});
+    if(!on&&wake.current){ try{ wake.current.release(); }catch(e){} wake.current=null; }
+  },[st,st&&st.done]);
+  React.useEffect(()=>{ document.body.classList.toggle("rest-on",!!st); },[st]);
+  if(!st) return null;
+  const done=st.done||left<=0, frac=done?1:1-Math.max(0,left)/st.total;
+  const R=19, C=2*Math.PI*R;
+  const add=(d)=>{ if(st.paused!=null) st.paused=Math.max(1,st.paused+d); else { st.end+=d*1000; st.total=Math.max(st.total+d,1); } st.warned={}; force(); };
+  const pause=()=>{ if(st.paused!=null){ st.end=Date.now()+st.paused*1000; st.paused=null; } else st.paused=Math.max(0,(st.end-Date.now())/1000); force(); };
+  const close=()=>{ REST.s=null; restPing(); };
+  const col=done?"#16a34a":left<=5?"#ea580c":"#0284c7";
+  const btn={border:"1px solid #dbe2ec",background:"#fff",color:"#334155",borderRadius:10,padding:"8px 9px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",minWidth:40};
+  return(
+    <div role="timer" aria-live="polite" aria-label={done?"Descanso terminado":`Descanso: quedan ${Math.ceil(left)} segundos`}
+      style={{position:"fixed",left:12,right:12,top:"calc(10px + env(safe-area-inset-top))",zIndex:450,display:"flex",justifyContent:"center",pointerEvents:"none"}}>
+      <div className="fade" style={{pointerEvents:"auto",width:"100%",maxWidth:440,background:done?"#ecfdf3":"#fff",border:`1.5px solid ${done?"#86efac":"#bcd3ee"}`,borderRadius:18,boxShadow:"0 10px 30px rgba(15,23,42,.18)",padding:"10px 12px"}}>
+        <div style={{display:"flex",alignItems:"center",gap:10}}>
+          <button type="button" onClick={()=>setPresets(p=>!p)} title="Cambiar el tiempo" aria-label="Cambiar el tiempo" style={{position:"relative",width:48,height:48,flexShrink:0,border:"none",background:"none",padding:0,cursor:"pointer"}}>
+            <svg width="48" height="48" viewBox="0 0 48 48" aria-hidden="true"><circle cx="24" cy="24" r={R} fill="none" stroke="#e6ebf3" strokeWidth="5"/>
+              <circle cx="24" cy="24" r={R} fill="none" stroke={col} strokeWidth="5" strokeLinecap="round" strokeDasharray={C} strokeDashoffset={C*(1-frac)} transform="rotate(-90 24 24)" style={{transition:"stroke-dashoffset .25s linear"}}/></svg>
+            <span style={{position:"absolute",inset:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:done?18:11,fontWeight:800,color:col}}>{done?"💪":"⏱"}</span>
+          </button>
+          <div style={{flex:1,minWidth:0}}>
+            <div className="mono" style={{fontSize:done?16:26,fontWeight:800,color:done?"#15803d":"#0f172a",lineHeight:1.1}}>{done?"¡A por la siguiente!":fmtClock(left)}</div>
+            <div style={{fontSize:11,color:"#64748b",fontWeight:700,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{done?"Descanso terminado":st.paused!=null?"En pausa":"Descanso"}{st.label?` · ${st.label}`:""}</div>
+          </div>
+          {!done&&<button type="button" style={btn} onClick={()=>add(-15)} aria-label="Quitar 15 segundos">−15</button>}
+          {!done&&<button type="button" style={btn} onClick={()=>add(15)} aria-label="Añadir 15 segundos">+15</button>}
+          {!done&&<button type="button" style={btn} onClick={pause} aria-label={st.paused!=null?"Seguir":"Pausar"}>{st.paused!=null?"▶":<svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true" style={{display:"block",margin:"0 auto"}}><rect x="2" y="1" width="3" height="10" rx="1" fill="currentColor"/><rect x="7" y="1" width="3" height="10" rx="1" fill="currentColor"/></svg>}</button>}
+          {done&&<button type="button" style={btn} onClick={()=>startRest(st.total,st.label)}>↺ Otra vez</button>}
+          <button type="button" style={{...btn,color:"#94a3b8"}} onClick={close} aria-label="Cerrar crono">✕</button>
+        </div>
+        {presets&&<div style={{display:"flex",gap:6,marginTop:9,flexWrap:"wrap"}}>
+          {[30,45,60,90,120,180,240].map(v=><button key={v} type="button" onClick={()=>{ startRest(v,st.label); setPresets(false); }}
+            style={{...btn,padding:"6px 10px",background:st.total===v?"#0284c7":"#fff",color:st.total===v?"#fff":"#334155",border:`1px solid ${st.total===v?"#0284c7":"#dbe2ec"}`}}>{fmtClock(v)}</button>)}
+        </div>}
+      </div>
+    </div>
+  );
+}
 const EXH = {cur:null, hosts:[]};
 const exhPing = () => EXH.hosts.forEach(h=>h.f());
 const openExHistory = (client, name) => { if(!client||!name) return; EXH.cur={client,name}; exhPing(); };
@@ -10407,7 +10500,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
               <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
               {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
               {ae.rir!=null&&<span style={{fontSize:11,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:20,padding:"0 7px"}}>RIR {ae.rir}</span>}
-              {ae.rest_seconds&&<span style={{fontSize:11,color:"#94a3b8"}}>⏱{ae.rest_seconds}s</span>}
+              {ae.rest_seconds?<span onClick={e=>e.stopPropagation()}><RestButton secs={ae.rest_seconds} label={ae.exercise_name} style={{padding:"1px 8px",fontSize:11,borderRadius:20}}/></span>:null}
             </div>
           </div>
         </div>
@@ -10433,7 +10526,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
               <input type="number" className="inp" min="1" max="10" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={rpe} onChange={e=>setRpe(e.target.value)} placeholder="8"/>
             </div>
           </div>
-          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>onComplete(ae.id,parseFloat(actualWeight)||null,actualReps||null,parseFloat(rpe)||null)} disabled={saving}>
+          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>{ startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,parseFloat(actualWeight)||null,actualReps||null,parseFloat(rpe)||null); }} disabled={saving}>
             ✓ Marcar como completado
           </button>
         </div>
