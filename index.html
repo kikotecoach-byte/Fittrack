@@ -5828,6 +5828,127 @@ function RestTimerHost(){
 const EXH = {cur:null, hosts:[]};
 const exhPing = () => EXH.hosts.forEach(h=>h.f());
 const openExHistory = (client, name) => { if(!client||!name) return; EXH.cur={client,name}; exhPing(); };
+// ── FOTOS Y VÍDEOS DE CADA EJERCICIO ──────────────────────────────────────
+// Se guardan por ejercicio (no por cliente): lo que subas lo ven todos los que
+// lo hagan. Fotos y vídeos van al almacén «exercise-media»; también se pueden
+// pegar enlaces de YouTube (se ven dentro de la app) u otras webs.
+const EXM = {list:null, loading:null, missing:false, subs:new Set()};
+const exmLoad = () => { EXM.loading=sb.from("exercise_media").select("*").order("created_at",{ascending:true}).then(({data,error})=>{
+  EXM.missing=!!error; EXM.list=error?[]:(data||[]); EXM.loading=null; EXM.subs.forEach(f=>f()); }); return EXM.loading; };
+function useExMedia(){ const [,f]=React.useReducer(x=>x+1,0);
+  React.useEffect(()=>{ EXM.subs.add(f); if(EXM.list==null&&!EXM.loading) exmLoad(); return ()=>{ EXM.subs.delete(f); }; },[]); return EXM; }
+const exMediaOf = (name) => (EXM.list||[]).filter(m=>m.exercise_key===notesKey(name));
+const ytId = (u) => { const m=String(u||"").match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/); return m?m[1]:null; };
+const MAX_VIDEO_MB = 50;
+const mediaSlug = (name) => notesKey(name).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"ejercicio";
+const mediaPathOf = (url) => { const m=String(url||"").match(/\/exercise-media\/(.+)$/); return m?decodeURIComponent(m[1].split("?")[0]):null; };
+function ExerciseMedia({name,coach,notify}){
+  useExMedia();
+  const items=exMediaOf(name);
+  const [busy,setBusy]=React.useState("");
+  const [link,setLink]=React.useState(""), [cap,setCap]=React.useState(""), [zoom,setZoom]=React.useState(null);
+  const fileRef=React.useRef(null);
+  const sqlMsg=()=>notify&&notify("Para guardar fotos y vídeos ejecuta docs/ejercicios-media.sql en Supabase","err");
+  const save=async(row,withCap=true)=>{ const {error}=await sb.from("exercise_media").insert({exercise_key:notesKey(name),caption:withCap?(cap.trim()||null):null,...row}); if(error){ sqlMsg(); return false; } return true; };
+  const addFiles=async(files)=>{
+    const list=[...(files||[])]; if(!list.length) return; let ok=0;
+    for(let i=0;i<list.length;i++){ const f=list[i], isVid=/^video\//.test(f.type)||/\.(mp4|mov|m4v|webm)$/i.test(f.name);
+      setBusy(`Subiendo ${i+1}/${list.length}…`);
+      const base=`${mediaSlug(name)}/${Date.now()}_${i}`;
+      if(isVid){
+        if(f.size>MAX_VIDEO_MB*1024*1024){ notify&&notify(`El vídeo pesa ${Math.round(f.size/1048576)} MB y el máximo son ${MAX_VIDEO_MB} MB. Recórtalo o súbelo a YouTube (oculto) y pega el enlace.`,"err"); continue; }
+        const ext=(f.name.match(/\.([a-z0-9]+)$/i)||[,"mp4"])[1].toLowerCase(), path=`${base}.${ext}`;
+        const {error}=await sb.storage.from("exercise-media").upload(path,f,{contentType:f.type||"video/mp4",cacheControl:"86400"});
+        if(error){ notify&&notify(uploadErrMsg(error),"err"); continue; }
+        const url=sb.storage.from("exercise-media").getPublicUrl(path).data.publicUrl;
+        if(await save({kind:"video",url,path},ok===0)) ok++;
+      } else {
+        const url=await uploadImage("exercise-media",base,f,notify); if(!url) continue;
+        if(await save({kind:"image",url,path:mediaPathOf(url)},ok===0)) ok++;
+      }
+    }
+    setBusy(""); if(fileRef.current) fileRef.current.value="";
+    if(ok){ setCap(""); await exmLoad(); notify&&notify(`${ok} archivo${ok>1?"s":""} añadido${ok>1?"s":""} ✓ · ya lo ven tus clientes`); }
+  };
+  const addLink=async()=>{ const u=link.trim(); if(!/^https?:\/\//i.test(u)) return notify&&notify("Pega un enlace que empiece por https://","err");
+    setBusy("Guardando…"); const ok=await save({kind:"link",url:u}); setBusy(""); if(ok){ setLink(""); setCap(""); await exmLoad(); notify&&notify("Enlace añadido ✓"); } };
+  const del=async(m)=>{ if(!window.confirm("¿Quitar este archivo del ejercicio?")) return;
+    if(m.path) await sb.storage.from("exercise-media").remove([m.path]);
+    await sb.from("exercise_media").delete().eq("id",m.id); await exmLoad(); notify&&notify("Quitado"); };
+  if(!coach&&!items.length) return null;
+  const box={borderRadius:12,overflow:"hidden",background:"#0f172a",position:"relative"};
+  return(
+    <div style={{marginBottom:12}}>
+      <div style={{fontSize:12,fontWeight:800,color:"#0f172a",marginBottom:6}}>🎬 Cómo se hace{items.length?` · ${items.length}`:""}</div>
+      {items.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {items.map(m=>{ const yt=m.kind==="link"&&ytId(m.url); return(
+          <div key={m.id}>
+            <div style={box}>
+              {m.kind==="image"&&<img src={m.url} alt={m.caption||name} onClick={()=>setZoom(m)} style={{width:"100%",maxHeight:320,objectFit:"contain",display:"block",cursor:"zoom-in",background:"#0f172a"}}/>}
+              {m.kind==="video"&&<video src={m.url} controls playsInline preload="metadata" style={{width:"100%",maxHeight:360,display:"block",background:"#000"}}/>}
+              {yt&&<div style={{position:"relative",paddingTop:"56.25%"}}><iframe src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&playsinline=1`} title={m.caption||name} allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowFullScreen style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/></div>}
+              {m.kind==="link"&&!yt&&<a href={m.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:10,padding:"14px 14px",color:"#fff",textDecoration:"none",fontWeight:800,fontSize:14}}>▶️ Ver el vídeo <span style={{fontSize:11,fontWeight:600,opacity:.7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0]}</span></a>}
+              {coach&&<button type="button" onClick={()=>del(m)} aria-label="Quitar" style={{position:"absolute",top:6,right:6,width:28,height:28,borderRadius:"50%",border:"none",background:"rgba(15,23,42,.7)",color:"#fff",fontSize:13,cursor:"pointer"}}>✕</button>}
+            </div>
+            {m.caption&&<div style={{fontSize:12,color:"#475569",marginTop:4,lineHeight:1.4}}>💬 {m.caption}</div>}
+          </div>); })}
+      </div>}
+      {coach&&<div style={{marginTop:items.length?10:0,border:"1px dashed #bcd3ee",borderRadius:12,padding:10,background:"#f8fbff"}}>
+        {!items.length&&<div style={{fontSize:12,color:"#64748b",marginBottom:8}}>Añade fotos o vídeos de la técnica. Los verán todos los clientes que hagan este ejercicio.</div>}
+        <input className="inp" placeholder="Explicación corta (opcional): «espalda neutra, empuja con talones»" value={cap} onChange={e=>setCap(e.target.value)} maxLength={160} style={{marginBottom:8,fontSize:12}}/>
+        <input ref={fileRef} type="file" accept="image/*,video/*" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
+        <button type="button" className="btn sky" disabled={!!busy} style={{width:"100%",padding:10,justifyContent:"center",fontSize:13}} onClick={()=>fileRef.current&&fileRef.current.click()}>{busy||"📷 Subir foto o vídeo"}</button>
+        <div style={{display:"flex",gap:6,marginTop:8}}>
+          <input className="inp" placeholder="o pega un enlace (YouTube, Instagram…)" value={link} onChange={e=>setLink(e.target.value)} style={{flex:1,fontSize:12}}/>
+          <button type="button" className="btn ghost" disabled={!!busy||!link.trim()} style={{padding:"8px 12px",fontSize:12,fontWeight:800}} onClick={addLink}>🔗 Añadir</button>
+        </div>
+        <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Vídeos de hasta {MAX_VIDEO_MB} MB (unos 30-60 s grabados con el móvil). Para vídeos largos, súbelo a YouTube como «oculto» y pega el enlace.</div>
+      </div>}
+      {zoom&&<div className="ovl" style={{zIndex:1700,background:"rgba(0,0,0,.92)",alignItems:"center"}} onClick={()=>setZoom(null)}>
+        <img src={zoom.url} alt={zoom.caption||name} style={{maxWidth:"96vw",maxHeight:"88vh",objectFit:"contain",borderRadius:8}}/>
+      </div>}
+    </div>
+  );
+}
+function ExerciseMediaModal({name,coach,notify,onClose}){
+  return <div className="ovl" style={{zIndex:1450}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
+    <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520,maxHeight:"92vh",overflowY:"auto"}}>
+      <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",lineHeight:1.2,marginBottom:4}}>{name}</h2>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}><MuscleTags name={name}/></div>
+      <ExerciseMedia name={name} coach={coach} notify={notify}/>
+      <button className="btn ghost" style={{width:"100%",padding:11}} onClick={onClose}>Cerrar</button>
+    </div>
+  </div>;
+}
+// Coach: buscador de ejercicios para gestionar sus fotos y vídeos.
+function ExerciseMediaLibrary({notify}){
+  const M=useExMedia();
+  const [q,setQ]=React.useState(""), [open,setOpen]=React.useState(null);
+  const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const count=(n)=>exMediaOf(n).length;
+  const names=[...new Set([...exerciseCatalog().map(x=>x.name),...(M.list||[]).map(m=>(exerciseCatalog().find(x=>notesKey(x.name)===m.exercise_key)||{name:m.exercise_key}).name)])];
+  const list=names.filter(n=>!q||norm(n).includes(norm(q))).sort((a,b)=>count(b)-count(a)||a.localeCompare(b)).slice(0,80);
+  const withMedia=names.filter(n=>count(n)>0).length;
+  return(<div>
+    <div className="card" style={{padding:"12px 14px",marginBottom:12,background:"#f8fbff",border:"1px solid #bcd3ee"}}>
+      <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🎬 Fotos y vídeos de los ejercicios</div>
+      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Sube cómo se hace cada ejercicio. Tus clientes lo verán en su entreno («▶ Cómo se hace») y al tocar el nombre del ejercicio.</div>
+      <div style={{fontSize:12,fontWeight:800,color:"#0284c7",marginTop:6}}>{withMedia} ejercicio{withMedia!==1?"s":""} con material</div>
+      {M.missing&&<div style={{fontSize:12,color:"#b45309",marginTop:6,fontWeight:700}}>⚠️ Falta ejecutar docs/ejercicios-media.sql en Supabase para poder guardarlos.</div>}
+    </div>
+    <input className="inp" placeholder="🔎 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:10}}/>
+    <div className="card" style={{padding:0,overflow:"hidden"}}>
+      {list.map((n,i)=>{ const c=count(n); return(
+        <button key={n} type="button" onClick={()=>setOpen(n)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 13px",border:"none",borderTop:i?"1px solid #eef1f6":"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+          <span style={{fontSize:18}}>{c?"🎬":"➕"}</span>
+          <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span>
+          <span style={{fontSize:11,fontWeight:800,color:c?"#0284c7":"#cbd5e1"}}>{c?`${c} archivo${c>1?"s":""}`:"añadir"}</span>
+        </button>); })}
+      {!list.length&&<div style={{padding:16,fontSize:12,color:"#94a3b8",textAlign:"center"}}>Sin resultados</div>}
+    </div>
+    {open&&<ExerciseMediaModal name={open} coach notify={notify} onClose={()=>setOpen(null)}/>}
+  </div>);
+}
 function ExName({client,name,children,style}){
   return <span role="button" tabIndex={0} title="Ver cargas y evolución de este ejercicio"
     onClick={e=>{ e.stopPropagation(); openExHistory(client,name); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.stopPropagation(); openExHistory(client,name); } }}
@@ -5885,6 +6006,7 @@ function ExerciseHistoryModal({client,name,assignedSessions,assignedExercises,co
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
         <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{name}</h2>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",margin:"4px 0 12px"}}><span style={{fontSize:12,color:"#64748b"}}>{client.name}</span><MuscleTags name={name}/><CxTag name={name}/></div>
+        <ExerciseMedia name={name} coach={coach} notify={notify}/>
         {!pts.length&&!tests.length
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Aún no hay registros de este ejercicio. Aparecerán al marcarlo como hecho con su carga.</div>
           :<>
@@ -7233,12 +7355,13 @@ function planForDate(client,date,{sessions,assignedSessions,assignedExercises,an
   return {label:au.label,exs,ready:false,blk};
 }
 function PlanExRows({client,exs}){
+  useExMedia();
   return <div style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden"}}>
     {exs.map((e,i)=>{ const kg=e.load_band?bandLabel(e.load_band):(e.prescribed_weight!=null&&e.prescribed_weight!==""?`${fmtKgN(parseFloat(e.prescribed_weight))} kg`:""); return(
       <div key={e.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderTop:i?"1px solid #eef1f7":"none",background:"#fff"}}>
         <span style={{width:22,height:22,borderRadius:7,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,background:"#eef4fc",color:"#0284c7"}}>{i+1}</span>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/></div>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/>{exMediaOf(e.exercise_name).length>0&&<span title="Tiene vídeo o foto: toca el nombre" style={{marginLeft:5,fontSize:11}}>🎬</span>}</div>
           <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&e.reps?`${e.sets} × ${e.reps}${isIsoRow(e)?"":" reps"}`:""}{PROTO_SHORT[e.protocol]?` · ${PROTO_SHORT[e.protocol]}`:""}{e.rest_seconds?` · descanso ${e.rest_seconds>=60?(Math.round(e.rest_seconds/6)/10).toLocaleString("es-ES")+" min":e.rest_seconds+" s"}`:""}</div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
@@ -8727,10 +8850,12 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:12,paddingBottom:4}}>
-        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"]].map(([id,label])=>(
+        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"],["media","🎬 Vídeos"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
+
+      {tab==="media"&&<ExerciseMediaLibrary notify={notify}/>}
 
       {/* ── MACROCICLO TAB ── */}
       {tab==="macrocycle"&&(
@@ -10627,6 +10752,10 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 // ── EXERCISE CARD (client registers completion) ────────────────────────────
 function ExerciseCard({ae, index, onComplete, saving, client}) {
   const [expanded,setExpanded] = React.useState(false);
+  const [howTo,setHowTo] = React.useState(false);
+  useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length;
+  const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); setHowTo(true); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
+  const howModal=howTo&&<ExerciseMediaModal name={ae.exercise_name} notify={()=>{}} onClose={()=>setHowTo(false)}/>;
   const [actualWeight,setActualWeight] = React.useState(ae.prescribed_weight||"");
   const [actualReps,setActualReps] = React.useState(ae.reps||"");
   const [rpe,setRpe] = React.useState("");
@@ -10636,25 +10765,28 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
       <div style={{display:"flex",gap:10,alignItems:"center"}}>
         <div style={{width:22,height:22,borderRadius:6,background:"#e2f4e8",border:"1px solid #14532d",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✓</div>
         <div>
-          <div style={{fontSize:13,fontWeight:600,color:"#16a34a"}}>{ae.exercise_name}</div>
+          <div style={{fontSize:13,fontWeight:600,color:"#16a34a",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{ae.exercise_name}{howBtn}</div>
           <div style={{fontSize:11,color:"#94a3b8"}}>{ae.actual_weight||ae.prescribed_weight}kg · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
         </div>
       </div>
       <span style={{fontSize:16}}>✅</span>
+      {howModal}
     </div>
   );
 
   return(
     <div style={{borderBottom:"1px solid #e6ebf3",paddingBottom:10,marginBottom:10}}>
+      {howModal}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setExpanded(!expanded)}>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           <div style={{width:22,height:22,borderRadius:6,background:"#e6f0fb",border:"1px solid #bcd3ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#0284c7",flexShrink:0}}>{index+1}</div>
           <div>
             <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
-            <div style={{display:"flex",gap:8,marginTop:2}}>
+            <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
               <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
               {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
               {ae.rir!=null&&<span style={{fontSize:11,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:20,padding:"0 7px"}}>RIR {ae.rir}</span>}
+              {howBtn}
               {ae.rest_seconds?<span onClick={e=>e.stopPropagation()}><RestButton secs={ae.rest_seconds} label={ae.exercise_name} style={{padding:"1px 8px",fontSize:11,borderRadius:20}}/></span>:null}
             </div>
           </div>
