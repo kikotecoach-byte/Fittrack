@@ -1104,6 +1104,22 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
 
   // Datos del cliente: básicos juntos; nivel y ficha aparte (si falta la columna, lo demás se guarda igual).
+  // Clientes convertidos antes: su valoración se pasa a la ficha una vez (solo lo vacío).
+  const leadSync=React.useRef(new Set());
+  React.useEffect(()=>{
+    (clients||[]).forEach(c=>{
+      const l=(leads||[]).filter(x=>x.converted_client_id===c.id).sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")))[0];
+      if(!l||leadSync.current.has(c.id)) return; const p=profileOf(c); if(p.lead_id===l.id) return;
+      leadSync.current.add(c.id);
+      const next=mergeLeadProfile(p,l);
+      sb.from("clients").update({profile:next}).eq("id",c.id).then(({error})=>{ if(error) return;
+        if(l.weight&&!(progress||[]).some(x=>x.client_id===c.id&&x.weight!=null&&x.date===l.date))
+          sb.from("progress").insert({client_id:c.id,date:l.date&&l.date<=TODAY?l.date:TODAY,weight:parseFloat(l.weight),notes:"Valoración inicial"}).then(()=>loadAll());
+        else loadAll(); });
+    });
+  },[clients,leads]);
+  const leadOf = (c) => (leads||[]).filter(l=>l.converted_client_id===c.id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
+  const openValoracion = (c) => { setLeadsClient(c); setShowLeads(true); };
   const saveClientData = (client, f, {codeChanged,activated}) => w(async()=>{
     const base={name:f.name.trim(),phone:f.phone.trim()||null,email:f.email.trim()||null,code:f.code,color:f.color,goal:f.goal,welcome_msg:f.welcome_msg,notes:f.notes,
       train_days:(f.train_days||[]).join(","),days_week:(f.train_days&&f.train_days.length)||client.days_week||3};
@@ -1241,6 +1257,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     bono=bono||{};
     const code=String(Math.floor(1000+Math.random()*9000));
     const color=COLORS[Math.floor(Math.random()*COLORS.length)];
+    // Texto completo por si la tabla aún no tiene la ficha (docs/ficha-cliente.sql).
     const parts=[];
     if(lead.age) parts.push(`Edad: ${lead.age}`);
     if(lead.job) parts.push(`Trabajo: ${lead.job}`);
@@ -1249,13 +1266,19 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(lead.injuries) parts.push(`Lesiones: ${lead.injuries}`);
     if(lead.availability) parts.push(`Disponibilidad: ${lead.availability}`);
     if(lead.weight) parts.push(`Peso valoración: ${lead.weight}kg`);
-    const notes="📋 Valoración inicial\n"+parts.join("\n");
+    const oldNotes="📋 Valoración inicial\n"+parts.join("\n")+(lead.notes?`\nConclusiones: ${lead.notes}`:"");
+    const notes=lead.notes?`📋 Conclusiones de la valoración${lead.date?` (${fmtDate(lead.date)})`:""}:\n${lead.notes}`:"";
+    const profile=mergeLeadProfile({},lead);
     const total=Math.max(1,parseInt(bono.sessions)||10);
     const price=parseFloat(bono.price)||0;
     const goal=bono.goal||"salud";
     const dw=Math.max(1,parseInt(bono.days_week)||3);
-    const {data:cli,error}=await sb.from("clients").insert({name:lead.name||"Nuevo cliente",code,color,sessions_left:total,total_sessions:total,next_payment:bono.next_payment||TODAY,payment_amount:price,notes,goal,days_week:dw}).select().single();
+    const row={name:lead.name||"Nuevo cliente",code,color,sessions_left:total,total_sessions:total,next_payment:bono.next_payment||TODAY,payment_amount:price,goal,days_week:dw};
+    let {data:cli,error}=await sb.from("clients").insert({...row,notes,profile}).select().single();
+    if(error){ ({data:cli,error}=await sb.from("clients").insert({...row,notes:oldNotes}).select().single()); }
     if(error){ notify("Error al crear cliente","err"); return; }
+    // El pesaje de la valoración es su primera medida.
+    if(lead.weight) await sb.from("progress").insert({client_id:cli.id,date:lead.date&&lead.date<=TODAY?lead.date:TODAY,weight:parseFloat(lead.weight),notes:"Valoración inicial"});
     await sb.from("leads").update({status:"cliente",converted_client_id:cli.id}).eq("id",lead.id);
     setShowValoracion(null); notify(`✅ ${lead.name||"Cliente"} añadido · bono ${total} sesiones · ${price}€ · código ${code}`);
   });
@@ -2601,7 +2624,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} onValoracion={leadOf(quickView)?()=>openValoracion(quickView):null} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} block={blockAt(slotMenu.date,slotMenu.time)} booked={sessions.filter(s=>s.date===slotMenu.date&&s.time===slotMenu.time).length}
@@ -2610,10 +2633,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         onBlock={(kind,note)=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time,kind,note);}}
         onClose={()=>setSlotMenu(null)}/>}
       {openHour&&<OpenHourModal date={openHour} daySlots={daySlots} openSet={extraOf(openHour)} onOpen={(t)=>openExtraHour(openHour,t)} onCloseHour={(t)=>closeExtraHour(openHour,t)} onClose={()=>setOpenHour(null)}/>}
-      {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
+      {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
-      {editData&&<EditClientModal client={clients.find(c=>c.id===editData.id)||editData} clients={clients} saving={saving} onSave={(f,o)=>saveClientData(editData,f,o)} onClose={()=>setEditData(null)}/>}
+      {editData&&<EditClientModal client={clients.find(c=>c.id===editData.id)||editData} clients={clients} saving={saving} lead={leadOf(editData)} onValoracion={()=>{ const c=editData; setEditData(null); openValoracion(c); }} onSave={(f,o)=>saveClientData(editData,f,o)} onClose={()=>setEditData(null)}/>}
       {showMeasures&&<MeasuresModal client={showMeasures} progress={progress} loadAll={loadAll} notify={notify} onClose={()=>setShowMeasures(null)}/>}
       {viewAs&&(()=>{ const c=clients.find(x=>x.id===viewAs.id)||viewAs; return(
         <div style={{position:"fixed",inset:0,zIndex:300,background:"#eef1f7",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
@@ -2816,7 +2839,7 @@ function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
 }
 function LeadsModal({leads,client,onOpen,onNew,onClose}) {
   const list=(leads||[]).slice().sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")));
-  const [sel,setSel]=React.useState(null); // valoración en vista previa resumida
+  const [sel,setSel]=React.useState(()=>client&&list.length===1?list[0]:null); // valoración en vista previa resumida
   const statusPill=(l)=><span style={{fontSize:10,fontWeight:700,color:l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7",background:(l.status==="cliente"?"#16a34a":l.status==="descartado"?"#dc2626":"#0284c7")+"14",borderRadius:20,padding:"2px 9px",flexShrink:0}}>{l.status==="cliente"?"✅ Cliente":l.status==="descartado"?"Descartado":"Lead"}</span>;
   // ── Vista previa resumida de una valoración ──
   if(sel){
@@ -4324,7 +4347,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -4359,7 +4382,10 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         <div style={{marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
             <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
-            {onEditData&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onEditData}>✏️ Editar datos</button>}
+            <span style={{display:"flex",gap:5}}>
+              {onValoracion&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={onValoracion}>📋 Valoración</button>}
+              {onEditData&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onEditData}>✏️ Editar datos</button>}
+            </span>
           </div>
           <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#64748b":"#94a3b8",whiteSpace:"pre-wrap",lineHeight:1.45}}>
             {client.notes||"Sin notas. Toca «✏️ Editar datos» para añadirlas."}
@@ -6173,7 +6199,11 @@ const PROFILE_FIELDS = [
   {k:"birth_date",l:"Fecha de nacimiento",t:"date"},
   {k:"sex",l:"Sexo",t:"select",opts:[["","—"],["mujer","Mujer"],["hombre","Hombre"],["otro","Otro"]]},
   {k:"height_cm",l:"Altura (cm)",t:"number",ph:"170"},
+  {k:"age",l:"Edad (si no sabes la fecha)",t:"number",ph:"35"},
   {k:"occupation",l:"Profesión / actividad diaria",t:"text",ph:"Oficina, de pie, turnos…"},
+  {k:"availability",l:"Disponibilidad semanal",t:"text",ph:"L-X-V por la tarde…"},
+  {k:"experience",l:"Experiencia deportiva previa",t:"area",ph:"Gimnasio 2 años, fútbol de joven…"},
+  {k:"diet",l:"Hábitos alimenticios",t:"area",ph:"3 comidas, poca proteína, picoteo por la noche…"},
   {k:"injuries",l:"Lesiones o patologías",t:"area",ph:"Rodilla derecha (menisco 2023), lumbalgia…"},
   {k:"medical",l:"Medicación / condiciones médicas",t:"area",ph:"Hipertensión, asma, embarazo…"},
   {k:"goal_detail",l:"Objetivo detallado",t:"area",ph:"Perder 5 kg, correr 10 km, volver a jugar al pádel…"},
@@ -6183,20 +6213,28 @@ const PROFILE_FIELDS = [
 ];
 const ageOf = (d) => { if(!d) return null; const b=new Date(d+"T12:00:00"), n=new Date(); let a=n.getFullYear()-b.getFullYear(); if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate())) a--; return a>=0&&a<120?a:null; };
 const profileOf = (c) => (c&&c.profile&&typeof c.profile==="object")?c.profile:{};
+// Datos de la valoración inicial que pasan a la ficha del cliente (cada uno a su campo).
+const leadProfile = (l) => { if(!l) return {}; const t=(v)=>v!=null&&String(v).trim()!==""?String(v).trim():null;
+  return Object.fromEntries([["age",l.age!=null&&l.age!==""?parseInt(l.age)||null:null],["occupation",t(l.job)],["injuries",t(l.injuries)],["experience",t(l.experience)],["diet",t(l.diet)],["availability",t(l.availability)]].filter(([,v])=>v!=null)); };
+// Rellena solo lo que está vacío en la ficha (nunca pisa lo que ya escribiste).
+const mergeLeadProfile = (prof, l) => { const out={...(prof||{})}; Object.entries(leadProfile(l)).forEach(([k,v])=>{ if(out[k]==null||String(out[k]).trim()==="") out[k]=v; }); if(l&&l.id) out.lead_id=l.id; if(l&&l.date&&!out.eval_date) out.eval_date=l.date; return out; };
 // Resumen corto de la ficha (edad, altura, lesiones…) para la ficha rápida y Clientes.
 function ProfileSummary({client,compact}){
-  const p=profileOf(client), age=ageOf(p.birth_date);
+  const p=profileOf(client), age=ageOf(p.birth_date)!=null?ageOf(p.birth_date):(parseInt(p.age)||null);
   const bits=[age!=null?`${age} años`:null,p.sex?({mujer:"Mujer",hombre:"Hombre",otro:"Otro"}[p.sex]):null,p.height_cm?`${p.height_cm} cm`:null,p.occupation||null].filter(Boolean);
   const alerts=[p.injuries?["🩹 Lesiones",p.injuries]:null,p.medical?["💊 Médico",p.medical]:null].filter(Boolean);
-  if(!bits.length&&!alerts.length&&!p.goal_detail&&!p.emergency_name) return null;
+  if(!bits.length&&!alerts.length&&!p.goal_detail&&!p.emergency_name&&!p.experience&&!p.diet&&!p.availability) return null;
   return <div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 11px",marginBottom:compact?10:14,fontSize:12,color:"#334155",lineHeight:1.45}}>
     {bits.length>0&&<div style={{fontWeight:700,color:"#0f172a"}}>{bits.join(" · ")}</div>}
     {alerts.map(([l,v])=><div key={l} style={{marginTop:3,color:"#9a3412"}}><b>{l}:</b> {v}</div>)}
     {p.goal_detail&&<div style={{marginTop:3}}><b>🎯 Objetivo:</b> {p.goal_detail}</div>}
+    {!compact&&p.experience&&<div style={{marginTop:3}}><b>🏃 Experiencia:</b> {p.experience}</div>}
+    {!compact&&p.diet&&<div style={{marginTop:3}}><b>🍽️ Hábitos:</b> {p.diet}</div>}
+    {p.availability&&<div style={{marginTop:3}}><b>🗓️ Disponibilidad:</b> {p.availability}</div>}
     {!compact&&p.emergency_name&&<div style={{marginTop:3,color:"#64748b"}}>🆘 {p.emergency_name}{p.emergency_phone?` · ${p.emergency_phone}`:""}</div>}
   </div>;
 }
-function EditClientModal({client,clients,saving,onSave,onClose}){
+function EditClientModal({client,clients,saving,lead,onValoracion,onSave,onClose}){
   const [f,setF]=React.useState(()=>({name:client.name||"",phone:client.phone||"",email:client.email||"",code:String(client.code||""),color:client.color||COLORS[0],
     goal:client.goal||"salud",level:levelOf(client),train_days:parseDays(client.train_days).length?parseDays(client.train_days):[1,3,5],welcome_msg:client.welcome_msg||"",notes:client.notes||"",profile:{...profileOf(client)}}));
   const [err,setErr]=React.useState("");
@@ -6217,6 +6255,11 @@ function EditClientModal({client,clients,saving,onSave,onClose}){
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>✏️ Datos de {client.name.split(" ")[0]}</h2>
         <p style={{fontSize:11,color:"#64748b"}}>Completa o corrige su información. El bono y los pagos se editan aparte.</p>
+        {lead&&<div style={{display:"flex",alignItems:"center",gap:10,marginTop:10,background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:10,padding:"9px 11px"}}>
+          <span style={{fontSize:20}}>📋</span>
+          <div style={{flex:1,minWidth:0,fontSize:12,color:"#5b21b6"}}><b>Valoración inicial{lead.date?` · ${fmtDate(lead.date)}`:""}</b><div style={{color:"#7c6aa8",fontSize:11}}>Sus datos ya están en la ficha. Los tests, en el botón.</div></div>
+          <button type="button" className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#7c3aed",border:"1px solid #e0d2f5",background:"#fff",whiteSpace:"nowrap"}} onClick={onValoracion}>Ver tests</button>
+        </div>}
         {sec("DATOS BÁSICOS")}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <div style={{gridColumn:"1 / -1"}}>{inp("name","NOMBRE COMPLETO *","María García")}</div>
