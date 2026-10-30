@@ -416,7 +416,9 @@ const reminderWA = (r) => {
 };
 const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
 // Estilo de una valoración/lead según su estado (color de un vistazo en la agenda).
-const VAL_STY = (status) => status==="descartado"
+const VAL_STY = (status) => status==="cliente"
+  ? {tag:"ya es cliente",fg:"#0f766e",bg:"#e6f6f3",bd:"#b5e3da",chip:"#cdeee7"}
+  : status==="descartado"
   ? {tag:"descartado",fg:"#64748b",bg:"#f1f5f9",bd:"#dbe2ec",chip:"#e2e8f0"}
   : {tag:"lead",fg:"#7c3aed",bg:"#f3ecfb",bd:"#e0d2f5",chip:"#e7d8f7"};
 // Una valoración está "realizada" cuando ya tiene pesaje o algún test puntuado.
@@ -1567,8 +1569,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <span style={{flex:"1 1 auto",minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{label}</span>
             {sub&&<span style={{flexShrink:1,minWidth:0,fontSize:Math.max(8,fs-3),fontWeight:700,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</span>}
           </div>); };
-        const ValChip=({l,fs})=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
-          <div onClick={e=>{e.stopPropagation();setShowValoracion(l);}} style={{minWidth:0,background:done?"#cdeed8":vc.chip,borderRadius:6,padding:`${padOf(fs)}px 4px`,fontSize:fs,lineHeight:1.18,fontWeight:800,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>{done?"✅":"📋"} {(l.name||"valorac.").split(" ")[0]}</div>); };
+        const ValChip=({l,fs})=>{ const vc=VAL_STY(l.status); const conv=l.status==="cliente", done=!conv&&valDone(l); return(
+          <div onClick={e=>{e.stopPropagation();setShowValoracion(l);}} style={{minWidth:0,background:done?"#cdeed8":vc.chip,borderRadius:6,padding:`${padOf(fs)}px 4px`,fontSize:fs,lineHeight:1.18,fontWeight:800,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>{conv?"🎉":done?"✅":"📋"} {(l.name||"valorac.").split(" ")[0]}</div>); };
         // Elige el mayor tamaño de letra con el que caben todos los nombres en la celda más llena.
         const padOf=(fs)=>fs>=12?2:1;
         const fitFont=(rowH,cellW,maxItems,minW,maxFs=16)=>{ const calc=(fs)=>{ const chipH=fs*1.18+2*padOf(fs)+2; const lines=Math.max(1,Math.floor((rowH-4+2)/(chipH+2))); const cols=Math.max(1,Math.min(4,Math.floor((cellW-4+2)/((minW?minW(fs):fs*3.1+14)+2)))); return {fs,cols,cap:lines*cols}; };
@@ -1580,11 +1582,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           const days=all7.filter((d,i)=>i<5||usedDay(d));
           const slots=Array.from(new Set([...workSlots,...days.flatMap(d=>extraOf(d)),...sessions.filter(s=>days.includes(s.date)).map(s=>s.time)])).sort();
           const timeW=36, dayHeadH=low?22:30, gap=2;
-          const busy=(t)=>days.some(d=>sessions.some(s=>s.date===d&&s.time===t)||(leads||[]).some(l=>l.date===d&&l.time===t&&l.status!=="cliente"));
+          const busy=(t)=>days.some(d=>sessions.some(s=>s.date===d&&s.time===t)||(leads||[]).some(l=>l.date===d&&l.time===t));
           const nBusy=slots.filter(busy).length, nEmpty=slots.length-nBusy, emptyH=nBusy?Math.min(30,Math.max(16,(availH-dayHeadH)/slots.length*0.45)):0;
           const rowH=(availH-dayHeadH-gap*slots.length-emptyH*nEmpty)/Math.max(1,nBusy||slots.length);
           const colW=(W-12-timeW-gap*days.length)/days.length;
-          const items=(d,t)=>sessions.filter(s=>s.date===d&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===d&&l.time===t&&l.status!=="cliente").length;
+          const items=(d,t)=>sessions.filter(s=>s.date===d&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===d&&l.time===t).length;
           let maxItems=1; days.forEach(d=>slots.forEach(t=>{ maxItems=Math.max(maxItems,items(d,t)+(dragId?1:0)); }));
           const {fs,cols,cap}=fitFont(rowH,colW,maxItems);
           const initial=(colW/cols)>=fs*6.6+18;
@@ -1600,7 +1602,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 {days.map(day=>{
                   const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL"), slotBlocked=isBlkDay||isBlocked(day,time);
                   const ss=sessions.filter(s=>s.date===day&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
-                  const vals=(leads||[]).filter(l=>l.date===day&&l.time===time&&l.status!=="cliente");
+                  const vals=(leads||[]).filter(l=>l.date===day&&l.time===time);
                   const k=day+"|"+time, isDrop=dropKey===k;
                   const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l}))];
                   const room=cap-(isDrop&&dragCli?1:0), shown=all.length>room?all.slice(0,Math.max(0,room-1)):all, extra=all.length-shown.length;
@@ -1624,10 +1626,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           const dayOff=(isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL"))&&extraOf(activeDay).length===0;
           if(dayOff||!slots.length) body=<div style={{height:availH,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#64748b"}}>{isWeekend(activeDay)?"🌴 Fin de semana — libre":"🚫 Día no disponible"}</div>;
           else {
-            const busyD=(t)=>sessions.some(s=>s.date===activeDay&&s.time===t)||(leads||[]).some(l=>l.date===activeDay&&l.time===t&&l.status!=="cliente");
+            const busyD=(t)=>sessions.some(s=>s.date===activeDay&&s.time===t)||(leads||[]).some(l=>l.date===activeDay&&l.time===t);
             const nB=slots.filter(busyD).length, nE=slots.length-nB, eH=nB?Math.min(34,Math.max(20,availH/slots.length*0.5)):0;
             const rowH=(availH-gap*(slots.length-1)-eH*nE)/Math.max(1,nB||slots.length), areaW=W-12-timeW-gap-6;
-            const items=(t)=>sessions.filter(s=>s.date===activeDay&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===activeDay&&l.time===t&&l.status!=="cliente").length;
+            const items=(t)=>sessions.filter(s=>s.date===activeDay&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===activeDay&&l.time===t).length;
             let maxItems=1; slots.forEach(t=>{ maxItems=Math.max(maxItems,items(t)+(dragId?1:0)); });
             // Con espacio: letra grande y segunda línea con lo que le toca.
             const two=fitFont(rowH,areaW,maxItems,(f)=>f*7+30,20);
@@ -1640,7 +1642,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               {slots.map(time=>{
                 const slotBlocked=isBlocked(activeDay,time);
                 const ss=sessions.filter(s=>s.date===activeDay&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
-                const vals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time&&l.status!=="cliente");
+                const vals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
                 const k=activeDay+"|"+time, isDrop=dropKey===k, cp=capOf(time), isWork=isWorkSlot(activeDay,time);
                 const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l}))];
                 const room=cap-(isDrop&&dragCli?1:0), shown=all.length>room?all.slice(0,Math.max(0,room-1)):all, extra=all.length-shown.length;
@@ -2128,12 +2130,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
 
             {/* Valoraciones del día sin hora concreta (las que tienen hora salen en su fila) */}
-            {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente"&&!l.time).length>0&&(
+            {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&!l.time).length>0&&(
               <div style={{marginBottom:12,display:"flex",flexDirection:"column",gap:6}}>
-                {(leads||[]).filter(l=>l.date===activeDay&&l.status!=="cliente"&&!l.time).map(l=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
+                {(leads||[]).filter(l=>l.date===activeDay&&!l.time).map(l=>{ const vc=VAL_STY(l.status); const conv=l.status==="cliente", done=!conv&&valDone(l); return(
                   <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:10,background:done?"#e2f4e8":vc.bg,border:`1px solid ${done?"#c9e6d1":vc.bd}`,borderRadius:10,padding:"9px 12px",cursor:"pointer"}}>
-                    <span style={{fontSize:16}}>{done?"✅":"📋"}</span>
-                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:done?"#16a34a":vc.fg}}>Valoración · {l.name||"(sin nombre)"}</div><div style={{fontSize:11,color:"#94a3b8"}}>{done?<><span style={{color:"#16a34a"}}>✓ realizada</span> · sin hora</>:<><span style={{color:vc.fg}}>●</span> {vc.tag} · sin hora · pendiente</>}</div></div>
+                    <span style={{fontSize:16}}>{conv?"🎉":done?"✅":"📋"}</span>
+                    <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:done?"#16a34a":vc.fg}}>Valoración · {l.name||"(sin nombre)"}</div><div style={{fontSize:11,color:"#94a3b8"}}>{conv?<><span style={{color:vc.fg}}>ya es cliente</span> · sin hora</>:done?<><span style={{color:"#16a34a"}}>✓ realizada</span> · sin hora</>:<><span style={{color:vc.fg}}>●</span> {vc.tag} · sin hora · pendiente</>}</div></div>
                     <span style={{fontSize:16,color:done?"#9ed3b0":vc.bd}}>›</span>
                   </div>
                 );})}
@@ -2161,7 +2163,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const slotBlocked=isBlocked(activeDay,time);
                       const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
-                      const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time&&l.status!=="cliente");
+                      const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
                       const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",transition:"background .4s, box-shadow .4s",boxShadow:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"inset 0 0 0 2px #0284c7":"none",background:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"#e3f0fd":dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"transparent":"#f1f4fa"}}>
@@ -2225,12 +2227,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   </div>
                                   );
                                 })}
-                                {slotVals.map(l=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
+                                {slotVals.map(l=>{ const vc=VAL_STY(l.status); const conv=l.status==="cliente", done=!conv&&valDone(l); return(
                                   <div key={l.id} onClick={()=>setShowValoracion(l)} style={{display:"flex",alignItems:"center",gap:9,background:done?"#e2f4e8":vc.bg,border:`1px solid ${done?"#c9e6d1":vc.bd}`,borderRadius:12,padding:"8px 9px",cursor:"pointer"}}>
-                                    <span style={{fontSize:18}}>{done?"✅":"📋"}</span>
+                                    <span style={{fontSize:18}}>{conv?"🎉":done?"✅":"📋"}</span>
                                     <div style={{flex:1,minWidth:0}}>
                                       <span style={{color:done?"#16a34a":vc.fg,fontWeight:700,fontSize:14,display:"block",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{l.time?`${l.time} · `:""}Valoración · {l.name||"(sin nombre)"}</span>
-                                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>{done?<><span style={{color:"#16a34a"}}>✓ realizada</span> · toca para verla</>:<><span style={{color:vc.fg}}>●</span> {vc.tag} · pendiente de realizar</>}</span>
+                                      <span style={{fontSize:11,color:"#94a3b8",fontWeight:600}}>{conv?<><span style={{color:vc.fg}}>ya es cliente</span> · toca para ver su valoración</>:done?<><span style={{color:"#16a34a"}}>✓ realizada</span> · toca para verla</>:<><span style={{color:vc.fg}}>●</span> {vc.tag} · pendiente de realizar</>}</span>
                                     </div>
                                     <span style={{fontSize:16,color:done?"#9ed3b0":vc.bd}}>›</span>
                                   </div>
@@ -2310,7 +2312,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           const slotBlocked=isBlkDay||isBlocked(day,time);
                           const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
                             .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
-                          const dayVals=(leads||[]).filter(l=>l.date===day&&l.time===time&&l.status!=="cliente");
+                          const dayVals=(leads||[]).filter(l=>l.date===day&&l.time===time);
                           const hasStuff=daySessions.length>0||dayVals.length>0;
                           const shownS=daySessions.slice(0,weekBig?8:6);
                           const k=day+"|"+time, isDrop=dropKey===k;
@@ -2330,10 +2332,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                 </div>
                               ); })}
                               {isDrop&&dragCli&&<div className="drag-preview" style={{border:`2px dashed ${dragCli.color}`,borderRadius:weekBig?8:5,padding:weekBig?"5px 6px":"2px 4px",fontSize:chipFs,fontWeight:800,color:"#0f172a",background:"#fff",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>＋ {dragCli.name.split(" ")[0]}</div>}
-                              {dayVals.slice(0,weekBig?4:2).map(l=>{ const vc=VAL_STY(l.status); const done=valDone(l); return(
+                              {dayVals.slice(0,weekBig?4:2).map(l=>{ const vc=VAL_STY(l.status); const conv=l.status==="cliente", done=!conv&&valDone(l); return(
                                 <div key={l.id} onClick={e=>{e.stopPropagation();setShowValoracion(l);}}
                                   style={{background:done?"#cdeed8":vc.chip,borderRadius:weekBig?8:5,padding:weekBig?"5px 7px":"3px 4px",fontSize:weekBig?13:10,fontWeight:800,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
-                                  {done?"✅":"📋"} {l.time?`${l.time} `:""}{(l.name||"valorac.").split(" ")[0]}
+                                  {conv?"🎉":done?"✅":"📋"} {l.time?`${l.time} `:""}{(l.name||"valorac.").split(" ")[0]}
                                 </div>
                               );})}
                               {(daySessions.length-shownS.length)>0&&<div style={{fontSize:weekBig?11:10,color:"#475569",fontWeight:700,paddingLeft:2}}>+{daySessions.length-shownS.length} más</div>}
@@ -2651,7 +2653,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         </div>); })()}
       {showSummary&&<ClientSummaryModal client={showSummary} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} progress={progress} annualBlocks={annualBlocks} sessions={sessions} onClose={()=>setShowSummary(null)}/>}
       {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clients={clients} sessions={sessions} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onCopyTo={(targets,loads)=>copySessionTo(histView.client,histView.date,targets,loads)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
-      {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
+      {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} clientName={(()=>{ const c=clients.find(x=>x.id===showValoracion.converted_client_id); return c&&c.name; })()} onGoClient={(id)=>{ const c=clients.find(x=>x.id===id); if(c){ setShowValoracion(null); goToProfile(c); } }} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
       {execData&&<SessionExecModal docked={canDock&&!quickView} client={execData.client} date={execData.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
@@ -2726,7 +2728,7 @@ const MOB_TESTS = [
   ["thomas","Thomas Test"],
   ["fadir","Fadir Test"],
 ];
-function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
+function ValoracionModal({lead,saving,clientName,onGoClient,onSave,onConvert,onDelete,onClose}) {
   const [f,setF]=React.useState(()=>({
     id:lead&&lead.id, name:(lead&&lead.name)||"", age:(lead&&lead.age)||"", job:(lead&&lead.job)||"",
     experience:(lead&&lead.experience)||"", diet:(lead&&lead.diet)||"", injuries:(lead&&lead.injuries)||"",
@@ -2757,6 +2759,7 @@ function ValoracionModal({lead,saving,onSave,onConvert,onDelete,onClose}) {
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"92vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>{full?"📋":"📅"} Valoración{f.name?` · ${f.name}`:""}</h2>
         <p style={{fontSize:11,color:"#64748b",marginBottom:12}}>{yaCliente?"✅ Ya convertido en cliente":full?"Realizar la valoración — pesaje y tests.":"Agendar cita — nombre y datos personales (los tests se hacen después)."}</p>
+        {yaCliente&&f.converted_client_id&&onGoClient&&clientName&&<button type="button" className="btn ghost" style={{width:"100%",padding:10,marginBottom:12,color:"#0f766e",border:"1px solid #b5e3da",background:"#e6f6f3",fontWeight:800,justifyContent:"center"}} onClick={()=>onGoClient(f.converted_client_id)}>🎉 Ya es cliente · ir a la ficha de {clientName.split(" ")[0]} ›</button>}
 
         <div style={{fontSize:11,fontWeight:700,color:"#0284c7",margin:"4px 0 8px"}}>DATOS PERSONALES</div>
         {F({label:"NOMBRE",k:"name"})}
