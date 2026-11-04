@@ -987,6 +987,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
   const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
   const [showSched,setShowSched] = React.useState(false);
+  const [progTab,setProgTab] = React.useState({t:null,k:0}); // atajo: abrir Programación en una pestaña
   const [moveSess,setMoveSess] = React.useState(null);
   const [quickView,setQuickView] = React.useState(null);
   const [focusSlot,setFocusSlot] = React.useState(null); // {date,time} hora resaltada en la agenda
@@ -1356,14 +1357,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       const r=res[i], e=r[6]&&byId[r[6]];
       if(e){
         keep.add(e.id); const upd={};
-        if(e.exercise_name!==r[0]){ upd.exercise_name=r[0]; upd.prescribed_weight=suggestLoad(cwOf(r[0]),r[5],blk,asig.date); }
+        const lr=()=>{ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises}); return x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date); };
+        if(e.exercise_name!==r[0]){ upd.exercise_name=r[0]; upd.prescribed_weight=lr(); }
         if((parseInt(e.sets)||1)!==r[1]) upd.sets=r[1];
-        if(String(e.reps||"")!==String(r[2])) upd.reps=r[2];
+        if(String(e.reps||"")!==String(r[2])){ upd.reps=r[2]; if(!e.done&&upd.prescribed_weight===undefined){ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises}); if(x) upd.prescribed_weight=x.kg; } }
         if((e.protocol||"")!==r[4]) upd.protocol=r[4];
         if(e.order_index!==i) upd.order_index=i;
         if(Object.keys(upd).length){ await sb.from("assigned_exercises").update(upd).eq("id",e.id); if(Object.keys(upd).some(k=>k!=="order_index")) n++; }
       } else {
-        await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:r[0],prescribed_weight:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}); n++;
+        const x=rmLoad(client,r[0],r[2],{main:r[5],blk,assignedSessions,assignedExercises});
+        await insertExRows([{session_id:asig.id,exercise_name:r[0],prescribed_weight:x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),...(x?{rir:x.rir}:{}),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}]); n++;
       }
     }
     const del=exs.filter(e=>!keep.has(e.id)).map(e=>e.id);
@@ -1768,6 +1771,31 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     </div>}
                 </div>);
             })()}
+            {/* ── ATAJOS: un toque y estás en cada sección ── */}
+            {(()=>{ const go=(v)=>()=>setView(v);
+              const items=[
+                ["agenda","Agenda",go("schedule")],
+                ["calendar","Nueva sesión",()=>{ setView("schedule"); setShowNS(true); }],
+                ["clients","Clientes",go("clients")],
+                ["clipboard","Valoraciones",()=>{ setLeadsClient(null); setShowLeads(true); },(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length],
+                ["program","Programa",()=>{ setProgTab({t:null,k:Date.now()}); setView("programming"); }],
+                ["🎬","Vídeos",()=>{ setProgTab({t:"media",k:Date.now()}); setView("programming"); }],
+                ["money","Finanzas",go("income")],
+                ["bell","Alertas",go("reminders"),reminders.length],
+                ["check","Pasar lista",go("feed")],
+                ["forum","Foro",go("forum")],
+                ["gear","Horario",()=>{ setView("schedule"); setShowSched(true); }],
+                ["phone","WhatsApp a todos",()=>setShowBulkWA(true)],
+              ];
+              return(
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(78px,1fr))",gap:8,marginBottom:14}}>
+                  {items.map(([ic,l,fn,n])=>(
+                    <button key={l} type="button" onClick={fn} className="card tilt" style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,padding:"11px 4px 9px",cursor:"pointer",fontFamily:"inherit",border:"1px solid #e6ebf3",minHeight:76}}>
+                      {ICO3D[ic]?<Ico k={ic} size={30}/>:<span style={{fontSize:26,lineHeight:1}}>{ic}</span>}
+                      <span style={{fontSize:11,fontWeight:800,color:"#334155",textAlign:"center",lineHeight:1.15}}>{l}</span>
+                      {n>0&&<span style={{position:"absolute",top:5,right:6,minWidth:18,height:18,borderRadius:9,background:"#dc2626",color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{n}</span>}
+                    </button>))}
+                </div>); })()}
             <div className="dash-cols">
             {/* ── ACCESO DIRECTO A FINANZAS ── */}
             {(()=>{
@@ -1899,7 +1927,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14,marginTop:4}}>
               {[
                 {label:"Clientes",val:clients.length,ico:"clients",go:"clients"},
-                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,ico:"check"},
+                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,ico:"check",go:"clients"},
                 {label:"Alertas",val:reminders.length,ico:"bell",go:"reminders"},
                 {label:"Sesiones hoy",val:todaySessions.length,ico:"stopwatch",go:"schedule"},
                 {label:"Este mes",val:`${monthIncome}€`,ico:"moneybag",go:"income"},
@@ -2633,6 +2661,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {/* PROGRAMMING VIEW */}
         {view==="programming"&&(
           <ProgrammingAdmin
+            key={progTab.k} initialTab={progTab.t}
             clients={clients}
             sessions={sessions}
             history={history}
@@ -3864,10 +3893,10 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
     }
   };
   const [picker,setPicker]=React.useState(null); // {mode:"swap",ex} | {mode:"add"}
-  const cwOfSel=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const cwOfSel=(name,reps,rir)=>{ const r=rmLoad(selClient,name,reps,{rir,assignedSessions,assignedExercises}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const pickIt=async(it)=>{ const p=picker; setPicker(null); setBusy(true);
-    if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
-    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
+    if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name,p.ex.reps,p.ex.rir),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
+    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name,it.reps||"10-12"),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
     await loadAll(); setBusy(false); };
   const finalizarPersona=async()=>{ if(!asig) return; setBusy(true); await sb.from("assigned_sessions").update({status:"done"}).eq("id",asig.id); await loadAll(); setBusy(false); notify(`${selClient.name.split(" ")[0]}: entreno registrado ✓`); };
   const cerrar=async()=>{ setBusy(true); await loadAll(); setBusy(false); onClose(); };
@@ -4254,15 +4283,19 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const auto = (!sess&&blockForDate(annualBlocks,date,client))?autoRoutineFor(client,date,sessions,annualBlocks):null;
   const libItems = Object.entries(EXERCISE_LIBRARY).map(([cat,list])=>[cat,list.filter(x=>equipOk(x[0]))]).filter(([c,l])=>l.length);
   const inLib = (name)=>Object.values(EXERCISE_LIBRARY).some(list=>list.some(x=>x[0]===name));
-  const wOf = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const sBlk=blockForDate(annualBlocks,date,client);
+  const wOf = (name,reps,rir,main)=>{ const r=rmLoad(client,name,reps,{rir,main,blk:sBlk,assignedSessions,assignedExercises}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
-  const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
+  const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name,ex.reps,ex.rir,isMainRow(ex))}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
   const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
   const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
   // RIR objetivo y RM estimado (series hechas + tests) para calcular la carga.
   const rmTests=useRmTests(client.id).list;
   const rmHist=React.useMemo(()=>rmHistory(client.id,assignedSessions,assignedExercises,rmTests),[client.id,assignedSessions,assignedExercises,rmTests]);
-  const setRir=(ex,v)=>w(async()=>{ const {error}=await sb.from("assigned_exercises").update({rir:v}).eq("id",ex.id); if(error) notify("Para guardar el RIR ejecuta docs/rir-rm.sql en Supabase","err"); });
+  const reload=(ex,reps,rir)=>{ if(ex.done) return {}; const x=rmLoad(client,ex.exercise_name,reps,{rir,main:isMainRow(ex),blk:sBlk,hist:rmHist}); return x&&Number(ex.prescribed_weight)!==x.kg?{prescribed_weight:x.kg}:{}; };
+  const setReps=(ex,v)=>{ if(String(v)===String(ex.reps||"")) return; const extra=reload(ex,v,ex.rir); w(async()=>{ await sb.from("assigned_exercises").update({reps:v,...extra}).eq("id",ex.id); if(extra.prescribed_weight!=null) notify(`Carga ajustada a ${fmtKgN(extra.prescribed_weight)} kg según su eRM ✓`); }); };
+  const recalcAll=()=>w(async()=>{ let n=0; for(const ex of exs){ if(!isRmRow(ex)) continue; const extra=reload(ex,ex.reps,ex.rir); if(extra.prescribed_weight!=null){ await sb.from("assigned_exercises").update(extra).eq("id",ex.id); n++; } } notify(n?`${n} carga${n>1?"s":""} ajustada${n>1?"s":""} a su eRM ✓`:"Las cargas ya coinciden con su eRM"); });
+  const setRir=(ex,v)=>w(async()=>{ const extra=reload(ex,ex.reps,v); const {error}=await sb.from("assigned_exercises").update({rir:v,...extra}).eq("id",ex.id); if(error) notify("Para guardar el RIR ejecuta docs/rir-rm.sql en Supabase","err"); });
   // Isométrico: se prescribe por segundos (y se registra tiempo, carga y dolor al ejecutarlo).
   const toggleIso = (ex)=>w(async()=>{ const on=ex.protocol==="isometrico"; const upd=on?{protocol:""}:{protocol:"isometrico",...(secsOf(ex.reps)!=null&&/s|seg/i.test(String(ex.reps))?{}:{reps:"30s"})};
     await sb.from("assigned_exercises").update(upd).eq("id",ex.id); notify(on?"Ya no es isométrico":"Isométrico ⏸️ (por segundos) ✓"); });
@@ -4284,8 +4317,8 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
   const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
-  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
-  const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
+  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name,it.reps||"10-12"),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
+  const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName,lib?lib[2]:"10-12"),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
@@ -4296,6 +4329,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
           <LevelPicker value={lv} onChange={(l)=>{ setLv(l); if(onSetLevel) onSetLevel(client,l); }}/>
           {sess&&exs.length>0&&<VolumeBadge items={exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))} level={lv} block={blockForDate(annualBlocks,date,client)} goal={client.goal} style={{marginTop:8}}/>}
           {sess&&exs.length>0&&onAdjust&&<button className="btn sky" style={{width:"100%",marginTop:8,padding:"9px",fontSize:12,fontWeight:700,justifyContent:"center"}} disabled={saving} onClick={()=>onAdjust(lv)}>🎚 Ajustar a su nivel ({LEVEL_LABEL[lv]})</button>}
+           {sess&&exs.some(e=>!e.done&&isRmRow(e)&&rmFor(rmHist,e.exercise_name))&&<button className="btn ghost" style={{width:"100%",marginTop:6,padding:"9px",fontSize:12,fontWeight:800,justifyContent:"center",color:"#0284c7",border:"1px solid #bcd3ee"}} disabled={saving} onClick={recalcAll}>🎯 Ajustar cargas a su eRM (según reps y RIR)</button>}
           <div style={{fontSize:10,color:"#94a3b8",marginTop:6,lineHeight:1.4}}>Cambia lo demasiado técnico por un ejercicio del mismo patrón, ajusta series y nº de ejercicios al objetivo del nivel y escala el WOD.</div>
         </div>
         {!sess
@@ -4336,11 +4370,11 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                   <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.sets} onBlur={e=>setField(ex,"sets",parseInt(e.target.value)||null)}/></div>
-                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"SEGUNDOS":"REPS"}</span><input key={ex.id+"|"+(ex.reps||"")} className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} placeholder={isIsoRow(ex)?"45s":""} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"SEGUNDOS":"REPS"}</span><input key={ex.id+"|"+(ex.reps||"")} className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} placeholder={isIsoRow(ex)?"45s":""} onBlur={e=>setReps(ex,e.target.value)}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"CARGA / LASTRE (kg)":"PESO (kg)"}</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} key={ex.id+"|"+(ex.prescribed_weight??"")} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":isIsoRow(ex)?"PC":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>DESC. (s)</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.rest_seconds??""} onBlur={e=>setField(ex,"rest_seconds",parseInt(e.target.value)||null)}/></div>
                 </div>
-                {isRmRow(ex)&&(()=>{ const rm=rmFor(rmHist,ex.exercise_name), r=repsLow(ex.reps), t=ex.rir!=null?Number(ex.rir):null, kgS=rm&&r&&t!=null?loadFor(rm,r,t):null, pct=r&&t!=null?Math.round(pctRM(r+t)*100):null;
+                {isRmRow(ex)&&(()=>{ const rm=rmFor(rmHist,ex.exercise_name), r=repsLow(ex.reps), t=ex.rir!=null?Number(ex.rir):null, x=rmLoad(client,ex.exercise_name,ex.reps,{rir:t,main:isMainRow(ex),blk:sBlk,hist:rmHist}), kgS=x?x.kg:null, tt=x?x.rir:t, pct=r&&tt!=null?Math.round(pctRM(r+tt)*100):null;
                   return <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,flexWrap:"wrap"}}>
                     <span className="lbl" style={{fontSize:9,marginBottom:0}}>RIR OBJETIVO</span><RirHelp notify={notify} highlight={t} label="Guía"/>
                     <select value={t==null?"":t} disabled={saving} onChange={e=>setRir(ex,e.target.value===""?null:parseInt(e.target.value,10))} style={{fontSize:12,fontWeight:700,border:"1px solid #cfd8e6",borderRadius:8,padding:"5px 8px",background:"#fff",color:"#0f172a"}}>
@@ -5151,10 +5185,10 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   };
 
   const [picker,setPicker]=React.useState(null); // {mode:"swap",row} | {mode:"add"}
-  const cwOf=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
-  const swapRow=async(row,it)=>{ const pw=cwOf(it.name); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
+  const cwOf=(name,reps,rir)=>{ const r=rmLoad(client,name,reps,{rir,hist:rmHist}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const swapRow=async(row,it)=>{ const pw=cwOf(it.name,row.reps,(baseExs.find(e=>e.id===row.id)||{}).rir); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
     setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg"}:x)); notify("Ejercicio cambiado ✓"); };
-  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
+  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name,it.reps||"10-12"); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
     if(error||!data) return notify("No se pudo añadir","err");
     setRows(rs=>[...rs,{id:data.id,name:data.exercise_name,sets:data.sets,reps:data.reps,protocol:"",prescribed:pw,w:pw!=null?pw:"",r:data.reps||"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg",done:false}]); notify("Ejercicio añadido ✓"); };
   const finalizar=async()=>{
@@ -5164,6 +5198,12 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   };
 
   const hechos=rows.filter(r=>r.done).length;
+  // Cargas que no coinciden con lo que marca su eRM para las reps y el RIR de hoy.
+  const rmDiff=rows.filter(r=>!r.done&&r.mode!=="goma").map(r=>{ const b=baseExs.find(e=>e.id===r.id)||{}; if(!isRmRow(b)) return null;
+    const x=rmLoad(client,r.name,r.reps,{rir:b.rir,main:isMainRow(b),hist:rmHist}); return x&&Number(r.w)!==x.kg?{row:r,kg:x.kg}:null; }).filter(Boolean);
+  const applyRm=async()=>{ setRows(rs=>rs.map(x=>{ const d=rmDiff.find(y=>y.row.id===x.id); return d?{...x,w:d.kg,prescribed:d.kg}:x; }));
+    for(const d of rmDiff) await sb.from("assigned_exercises").update({prescribed_weight:d.kg}).eq("id",d.row.id);
+    notify(`${rmDiff.length} carga${rmDiff.length>1?"s":""} ajustada${rmDiff.length>1?"s":""} a su eRM ✓`); };
   return(
     <div className={"ovl"+(docked?" dock":"")} onClick={docked?undefined:onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
@@ -5189,6 +5229,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
               <span style={{fontSize:12,fontWeight:800,color:"#fff",background:"#ea580c",borderRadius:10,padding:"7px 10px",whiteSpace:"nowrap"}}>▶ Temporizador</span>
             </button>
           ))}
+        {rmDiff.length>0&&<button type="button" onClick={applyRm} className="btn ghost" style={{width:"100%",marginBottom:8,padding:"9px 10px",fontSize:12,fontWeight:800,justifyContent:"center",color:"#0284c7",border:"1px solid #bcd3ee",background:"#eef4fc"}}>🎯 Ajustar {rmDiff.length} carga{rmDiff.length>1?"s":""} a su eRM ({rmDiff.slice(0,2).map(d=>`${d.row.name.split(" ")[0]} ${fmtKgN(d.kg)} kg`).join(", ")}{rmDiff.length>2?"…":""})</button>}
         {!sess||rows.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
@@ -5281,12 +5322,14 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     if(error){ notify("Error al asignar","err"); setSaving(false); return; }
     const tex=(templateExercises||[]).filter(te=>te.template_id===tmpl.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
     const wts=(clientWeights||[]).filter(w=>w.client_id===client.id);
+    const blkA=blockForDate(annualBlocks,date,client), histA=rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]);
     const rows=tex.map(ex=>{
       const cw=wts.find(w=>(w.exercise_name||"").toLowerCase()===(ex.exercise_name||"").toLowerCase());
-      return {session_id:sess.id,exercise_name:ex.exercise_name,prescribed_weight:cw?cw.weight:null,
+      const x=isRmRow(ex)?rmLoad(client,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkA,hist:histA}):null;
+      return {session_id:sess.id,exercise_name:ex.exercise_name,prescribed_weight:x?x.kg:(cw?cw.weight:null),...(x?{rir:x.rir}:{}),
         sets:ex.sets,reps:ex.reps,protocol:ex.protocol,rest_seconds:ex.rest_seconds,notes:ex.notes,order_index:ex.order_index};
     });
-    if(rows.length>0) await sb.from("assigned_exercises").insert(rows);
+    if(rows.length>0) await insertExRows(rows);
     if(tmpl.name) await sb.from("history").update({type:tmpl.name}).eq("client_id",client.id).eq("date",date); // si ya vino, el historial toma el nombre
     await loadAll(); setSaving(false); notify("Entreno asignado ✓"); onClose();
   };
@@ -8593,8 +8636,8 @@ const TEMPLATE_EXERCISES = {
   "Movilidad / Regeneración":[["Movilidad de cadera",2,"8-10",0,false],["Movilidad torácica",2,"8-10",0,false],["Gato-camello",2,"10",0,false],["Plancha frontal",3,"30-45s",30,false],["Bicicleta / Assault bike",1,"15-20 min",0,false]],
 };
 
-function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenProgress,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
-  const [tab,setTab] = React.useState("macrocycle");
+function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenProgress,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
+  const [tab,setTab] = React.useState(initialTab||"macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
   const [selTemplate,setSelTemplate] = React.useState(null);
   const [selClient,setSelClient] = React.useState(clients[0]?.id||"");
@@ -8772,13 +8815,18 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
       .sort((a,b) => a.order_index - b.order_index);
 
     const clientWts = clientWeights.filter(cw => cw.client_id === clientId);
+    const cli = clients.find(c=>c.id===clientId), blkP = cli&&blockForDate(annualBlocks,date,cli);
+    const histP = cli&&rmHistory(clientId,assignedSessions,assignedExercises,(rmtStore(clientId).list)||[]);
 
     const assigns = (customExercises || tmplExercises).map(ex => {
       const cw = clientWts.find(w => w.exercise_name.toLowerCase() === ex.exercise_name.toLowerCase());
+      // Carga desde su eRM para estas reps; si aún no hay eRM, la última registrada.
+      const x = cli&&isRmRow(ex) ? rmLoad(cli,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkP,hist:histP}) : null;
       return {
         session_id: sess.id,
         exercise_name: ex.exercise_name,
-        prescribed_weight: cw?.weight || null,
+        prescribed_weight: x ? x.kg : (cw?.weight || null),
+        ...(x ? {rir:x.rir} : {}),
         sets: ex.sets,
         reps: ex.reps,
         protocol: ex.protocol,
@@ -8789,7 +8837,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
     });
 
     if(assigns.length > 0) {
-      await sb.from("assigned_exercises").insert(assigns);
+      await insertExRows(assigns);
     }
   };
 
@@ -10036,6 +10084,18 @@ const defaultRir = (block,level,main) => {
   if(level==="avanzado"&&bt!=="acondicionamiento") r=Math.max(0,r-1);
   return r;
 };
+// Carga desde el eRM del ejercicio para el rango de reps pedido y el RIR objetivo
+// (si no hay RIR, el de la fase y el nivel). En descarga, un 15 % menos.
+// Devuelve {kg,rir,rm} o null si ese ejercicio aún no tiene eRM.
+function rmLoad(client, name, reps, {rir, main, blk, hist, assignedSessions, assignedExercises}={}){
+  if(!client||!name||isIsoRow({exercise_name:name,reps})) return null;
+  const r=repsLow(reps); if(!r) return null;
+  const h=hist||rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]);
+  const rm=rmFor(h,name); if(!rm) return null;
+  const t=rir!=null&&rir!==""?Number(rir):defaultRir(blk||null,levelOf(client),!!main);
+  let kg=loadFor(rm,r,t); if(kg&&blk&&blk.type==="descarga") kg=roundLoad(kg*0.85);
+  return kg?{kg,rir:t,rm}:null;
+}
 // ¿Se puede trabajar por RIR/RM? (fuerza con carga externa: ni WOD ni isométricos).
 const isRmRow = (e) => !!e && !isIsoRow(e) && !META_PROTOS.includes(e.protocol) && !isWodHeader(e) && repsLow(e.reps)!=null;
 // Tests de RM hechos a mano (tabla rm_tests), con caché por cliente como las notas.
@@ -10058,7 +10118,7 @@ function rmHistory(clientId, assignedSessions, assignedExercises, tests){
   const dateOf=Object.fromEntries((assignedSessions||[]).filter(a=>a.client_id===clientId).map(a=>[a.id,a.date]));
   const g={}; const push=(name,p)=>{ const k=notesKey(name); (g[k]=g[k]||{name,pts:[]}).pts.push(p); };
   (assignedExercises||[]).forEach(e=>{
-    const d=dateOf[e.session_id]; if(!d||d>TODAY||!e.done||!isRmRow(e)) return;
+    const d=dateOf[e.session_id]; if(!d||d>TODAY||!(e.done||e.completed)||!isRmRow(e)) return;
     const kg=e.actual_weight!=null?Number(e.actual_weight):null; const reps=repsLow(e.actual_reps!=null?e.actual_reps:e.reps);
     const rir=e.actual_rir!=null?Number(e.actual_rir):(e.rir!=null?Number(e.rir):null);
     const v=e1rmOf(kg,reps,rir!=null?rir:RIR_DEFAULT_UNKNOWN); if(!v) return;
