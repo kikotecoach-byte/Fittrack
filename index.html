@@ -503,11 +503,21 @@ const dayTypeLabel = (id) => (DAY_LABEL&&DAY_LABEL[id]) || "Sesión";
 // la posición de la sesión entre los días que REALMENTE viene esa semana
 // (sus reservas). Los días habituales de la ficha solo marcan el tamaño mínimo
 // del microciclo.
+// ── MODALIDAD HÍBRIDA (clases con el coach + días «open» por su cuenta) ──
+// La modalidad va en la ficha (profile.plan_type = "hibrido", profile.open_per_week);
+// los días open, en la tabla open_sessions (docs/hibrido.sql).
+const OPEN = {list:[], missing:false};
+const isHybrid = (c) => profileOf(c).plan_type==="hibrido";
+const openPerWeek = (c) => { const n=parseInt(profileOf(c).open_per_week,10); return n>0?n:null; }; // null = sin límite
+const opensOf = (c, list) => ((list||OPEN.list)||[]).filter(o=>c&&o.client_id===c.id);
+const opensInWeek = (c, d, list) => { const m=mondayOfDate(d), e=addDays(m,7); return opensOf(c,list).filter(o=>o.date>=m&&o.date<e); };
 function autoRoutineFor(client, date, sessions, annualBlocks){
   const blk = blockForDate(annualBlocks, date, client);
   const td = parseDays(client.train_days);
   const wd = getWeekDays(mondayOfDate(date));
-  const days = [...new Set((sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date))];
+  // Días de entreno de la semana: clases reservadas y, en híbrido, también los días open.
+  const days = [...new Set([...(sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date),
+    ...opensOf(client).filter(o=>wd.includes(o.date)).map(o=>o.date)])];
   if(!days.includes(date)) days.push(date);
   days.sort();
   const nDays = Math.max(days.length, td.length || client.days_week || 0) || 4;
@@ -568,6 +578,7 @@ function App() {
   const [assignedExercises, setAssignedExercises] = React.useState([]);
   const [weightHistory, setWeightHistory] = React.useState([]);
   const [leads, setLeads] = React.useState([]);
+  const [openSessions, setOpenSessions] = React.useState([]); // modalidad híbrida: días que entrena por su cuenta
   const [loading, setLoading] = React.useState(true);
   const [loggedClient, setLoggedClient] = React.useState(null);
   const [pendingSession, setPendingSession] = React.useState(null);
@@ -616,6 +627,7 @@ function App() {
       setWaitlist(wl.data||[]);
       // Leads/valoraciones: fetch aparte para no romper si aún no existe la tabla.
       try { const lq=await sb.from("leads").select("*").order("created_at",{ascending:false}); if(!lq.error) setLeads(lq.data||[]); } catch(e){}
+      try { const oq=await sb.from("open_sessions").select("*").order("date"); OPEN.missing=!!oq.error; OPEN.list=oq.error?[]:(oq.data||[]); setOpenSessions(OPEN.list); } catch(e){ OPEN.missing=true; }
       if(authKind.current==="client") await loadCommunity();
       setLoading(false);
       return {clients:c.data||[]};
@@ -757,9 +769,9 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal openSessions={openSessions} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
@@ -870,7 +882,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify,onLogout,secure}) {
+function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify,onLogout,secure}) {
   setCustomExercises(exercises); // ejercicios propios (músculos y material) para buscador y generador
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
@@ -987,6 +999,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [ns,setNs] = React.useState({clientId:"",date:TODAY,time:"07:00",type:"Fuerza",confirmed:true});
   const [config,setConfig] = React.useState(DEFAULT_SCHEDULE);
   const [showSched,setShowSched] = React.useState(false);
+  const [progTab,setProgTab] = React.useState({t:null,k:0}); // atajo: abrir Programación en una pestaña
   const [moveSess,setMoveSess] = React.useState(null);
   const [quickView,setQuickView] = React.useState(null);
   const [focusSlot,setFocusSlot] = React.useState(null); // {date,time} hora resaltada en la agenda
@@ -1356,14 +1369,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       const r=res[i], e=r[6]&&byId[r[6]];
       if(e){
         keep.add(e.id); const upd={};
-        if(e.exercise_name!==r[0]){ upd.exercise_name=r[0]; upd.prescribed_weight=suggestLoad(cwOf(r[0]),r[5],blk,asig.date); }
+        const lr=()=>{ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises}); return x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date); };
+        if(e.exercise_name!==r[0]){ upd.exercise_name=r[0]; upd.prescribed_weight=lr(); }
         if((parseInt(e.sets)||1)!==r[1]) upd.sets=r[1];
-        if(String(e.reps||"")!==String(r[2])) upd.reps=r[2];
+        if(String(e.reps||"")!==String(r[2])){ upd.reps=r[2]; if(!e.done&&upd.prescribed_weight===undefined){ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises}); if(x) upd.prescribed_weight=x.kg; } }
         if((e.protocol||"")!==r[4]) upd.protocol=r[4];
         if(e.order_index!==i) upd.order_index=i;
         if(Object.keys(upd).length){ await sb.from("assigned_exercises").update(upd).eq("id",e.id); if(Object.keys(upd).some(k=>k!=="order_index")) n++; }
       } else {
-        await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:r[0],prescribed_weight:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}); n++;
+        const x=rmLoad(client,r[0],r[2],{main:r[5],blk,assignedSessions,assignedExercises});
+        await insertExRows([{session_id:asig.id,exercise_name:r[0],prescribed_weight:x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),...(x?{rir:x.rir}:{}),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}]); n++;
       }
     }
     const del=exs.filter(e=>!keep.has(e.id)).map(e=>e.id);
@@ -1721,21 +1736,83 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 </div>
                 {secure&&hasCol&&<div style={{fontSize:12,fontWeight:700,color:"#92400e",marginTop:6}}>📲 {act} de {clients.length} atletas han activado su app · envía el acceso desde Clientes → atleta → «📲 Enviar acceso».</div>}
               </div>); })()}
-            <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
-              {[
-                {label:"Clientes",val:clients.length,ico:"clients",go:"clients"},
-                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,ico:"check"},
-                {label:"Alertas",val:reminders.length,ico:"bell",go:"reminders"},
-                {label:"Sesiones hoy",val:todaySessions.length,ico:"stopwatch",go:"schedule"},
-                {label:"Este mes",val:`${monthIncome}€`,ico:"moneybag",go:"income"},
-              ].map(s=>(
-                <div key={s.label} className={"card"+(s.go?" tilt":"")} onClick={s.go?()=>setView(s.go):undefined} style={{padding:"12px 14px",...(s.go?{cursor:"pointer"}:{})}}>
-                  <Ico k={s.ico} size={30}/>
-                  <div style={{fontSize:22,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1.1}}>{s.val}</div>
-                  <div style={{fontSize:11,color:"#64748b",marginTop:2,fontWeight:600}}>{s.label}</div>
-                </div>
-              ))}
-            </div>
+            {/* ── HOY: cuántas clases y con quién (lo primero que se ve) ── */}
+            {(()=>{
+              const nowHM=new Date().toTimeString().slice(0,5);
+              const vals=(leads||[]).filter(l=>l.date===TODAY&&l.time&&l.status!=="descartado");
+              const times=[...new Set([...todaySessions.map(s=>s.time),...vals.map(l=>l.time)])].filter(Boolean).sort();
+              const groups=times.map(t=>({t,ss:todaySessions.filter(s=>s.time===t).map(s=>({s,c:clients.find(c=>c.id===s.client_id)})).filter(x=>x.c),vs:vals.filter(l=>l.time===t)}));
+              const endOf=(t)=>{ const [h,m]=t.split(":").map(Number); return String(h+1).padStart(2,"0")+":"+String(m).padStart(2,"0"); };
+              const nowG=groups.find(g=>g.t<=nowHM&&nowHM<endOf(g.t)), nextG=groups.find(g=>g.t>nowHM);
+              const people=new Set(todaySessions.map(s=>s.client_id)).size, doneN=todaySessions.filter(s=>s.status==="completed").length;
+              const goHour=(t)=>{ setActiveDay(TODAY); setSchedView("day"); setView("schedule"); setFocusSlot({date:TODAY,time:t}); };
+              const mins=(t)=>{ const [h,m]=t.split(":").map(Number), [nh,nm]=nowHM.split(":").map(Number); return (h*60+m)-(nh*60+nm); };
+              return(
+                <div className="card" style={{marginBottom:14,padding:"16px 16px 12px",background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.28)"}}>
+                  <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:10}}>
+                    <div>
+                      <div style={{fontSize:12,fontWeight:800,opacity:.85,letterSpacing:.4}}>HOY · {capFirst(new Date(TODAY+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}))}</div>
+                      <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2}}>
+                        <span style={{fontSize:52,fontWeight:800,lineHeight:1}}>{groups.length}</span>
+                        <span style={{fontSize:18,fontWeight:800}}>{groups.length===1?"clase":"clases"}</span>
+                      </div>
+                      <div style={{fontSize:13,fontWeight:700,opacity:.9,marginTop:2}}>{people} {people===1?"persona":"personas"}{vals.length?` · ${vals.length} valoraci${vals.length===1?"ón":"ones"}`:""}{doneN?` · ${doneN} ya vinieron ✓`:""}</div>
+                    </div>
+                    <button className="btn" style={{background:"rgba(255,255,255,.16)",color:"#fff",border:"1px solid rgba(255,255,255,.35)",fontSize:12,padding:"8px 12px",flexShrink:0}} onClick={()=>{ setActiveDay(TODAY); setSchedView("day"); setView("schedule"); }}>Agenda ›</button>
+                  </div>
+                  {(nowG||nextG)&&<div style={{marginTop:12,background:"rgba(255,255,255,.14)",borderRadius:12,padding:"9px 11px",fontSize:13,fontWeight:700}}>
+                    {nowG?<>🔴 <b>Ahora · {nowG.t}</b> con {[...nowG.ss.map(x=>x.c.name.split(" ")[0]),...nowG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")||"nadie"}</>
+                      :<>⏭️ <b>Siguiente · {nextG.t}</b>{mins(nextG.t)<=120?` (en ${mins(nextG.t)<60?`${mins(nextG.t)} min`:`${Math.floor(mins(nextG.t)/60)} h ${mins(nextG.t)%60?`${mins(nextG.t)%60} min`:""}`})`:""} con {[...nextG.ss.map(x=>x.c.name.split(" ")[0]),...nextG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")}</>}
+                  </div>}
+                  {(()=>{ const ops=(openSessions||[]).filter(o=>o.date===TODAY).map(o=>({o,c:clients.find(c=>c.id===o.client_id)})).filter(x=>x.c); if(!ops.length) return null; return(
+                    <div style={{marginTop:10,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",background:"rgba(255,255,255,.12)",borderRadius:12,padding:"7px 10px"}}>
+                      <span style={{fontSize:12,fontWeight:800}}>🔓 Por su cuenta:</span>
+                      {ops.map(({o,c})=><button key={o.id} type="button" onClick={()=>setQuickView(c)} style={{border:"none",borderRadius:20,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:"rgba(255,255,255,.92)",color:"#0f766e"}}>{c.name.split(" ")[0]}{o.time?` ${o.time}`:""}{o.status==="done"?" ✓":""}</button>)}
+                    </div>); })()}
+                  {groups.length===0
+                    ?<div style={{marginTop:10,fontSize:13,opacity:.9}}>Hoy no hay clases. ¡Día libre o de planificar! 🌴</div>
+                    :<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
+                      {groups.map(g=>{ const past=endOf(g.t)<=nowHM, live=nowG&&nowG.t===g.t; return(
+                        <div key={g.t} style={{display:"flex",alignItems:"center",gap:10,background:live?"#fff":"rgba(255,255,255,.1)",color:live?"#0f172a":"#fff",borderRadius:12,padding:"8px 10px",opacity:past&&!live?.7:1}}>
+                          <button type="button" onClick={()=>goHour(g.t)} className="mono" style={{border:"none",background:"none",color:"inherit",fontSize:17,fontWeight:800,padding:0,minWidth:52,textAlign:"left",cursor:"pointer"}}>{g.t}</button>
+                          <div style={{flex:1,minWidth:0,display:"flex",flexWrap:"wrap",gap:5}}>
+                            {g.ss.map(({s,c})=>{ const ok=s.status==="completed"; return(
+                              <button key={s.id} type="button" onClick={()=>goToPerson(s,c)} style={{display:"inline-flex",alignItems:"center",gap:5,border:"none",borderRadius:20,padding:"3px 9px 3px 3px",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,
+                                background:live?c.color+"1f":"rgba(255,255,255,.92)",color:"#0f172a"}}>
+                                {c.avatar_url?<img src={c.avatar_url} style={{width:22,height:22,borderRadius:"50%",objectFit:"cover"}}/>:<span style={{width:22,height:22,borderRadius:"50%",background:c.color,color:"#fff",fontSize:9,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>}
+                                {c.name.split(" ")[0]}{ok?" ✓":""}</button>); })}
+                            {g.vs.map(l=><button key={l.id} type="button" onClick={()=>setShowValoracion(l)} style={{border:"none",borderRadius:20,padding:"4px 9px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:"#f3ecfb",color:"#7c3aed"}}>📋 {(l.name||"Valoración").split(" ")[0]}</button>)}
+                          </div>
+                          <span style={{fontSize:11,fontWeight:800,opacity:.85,flexShrink:0}}>{g.ss.length}/{capOf(g.t)}</span>
+                        </div>); })}
+                    </div>}
+                </div>);
+            })()}
+            {/* ── ATAJOS: un toque y estás en cada sección ── */}
+            {(()=>{ const go=(v)=>()=>setView(v);
+              const items=[
+                ["agenda","Agenda",go("schedule")],
+                ["calendar","Nueva sesión",()=>{ setView("schedule"); setShowNS(true); }],
+                ["clients","Clientes",go("clients")],
+                ["clipboard","Valoraciones",()=>{ setLeadsClient(null); setShowLeads(true); },(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length],
+                ["program","Programa",()=>{ setProgTab({t:null,k:Date.now()}); setView("programming"); }],
+                ["🎬","Vídeos",()=>{ setProgTab({t:"media",k:Date.now()}); setView("programming"); }],
+                ["money","Finanzas",go("income")],
+                ["bell","Alertas",go("reminders"),reminders.length],
+                ["check","Pasar lista",go("feed")],
+                ["forum","Foro",go("forum")],
+                ["gear","Horario",()=>{ setView("schedule"); setShowSched(true); }],
+                ["phone","WhatsApp a todos",()=>setShowBulkWA(true)],
+              ];
+              return(
+                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(78px,1fr))",gap:8,marginBottom:14}}>
+                  {items.map(([ic,l,fn,n])=>(
+                    <button key={l} type="button" onClick={fn} className="card tilt" style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,padding:"11px 4px 9px",cursor:"pointer",fontFamily:"inherit",border:"1px solid #e6ebf3",minHeight:76}}>
+                      {ICO3D[ic]?<Ico k={ic} size={30}/>:<span style={{fontSize:26,lineHeight:1}}>{ic}</span>}
+                      <span style={{fontSize:11,fontWeight:800,color:"#334155",textAlign:"center",lineHeight:1.15}}>{l}</span>
+                      {n>0&&<span style={{position:"absolute",top:5,right:6,minWidth:18,height:18,borderRadius:9,background:"#dc2626",color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{n}</span>}
+                    </button>))}
+                </div>); })()}
             <div className="dash-cols">
             {/* ── ACCESO DIRECTO A FINANZAS ── */}
             {(()=>{
@@ -1763,7 +1840,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <div className="card dash-hoy" style={{marginBottom:14,padding:0,overflow:"hidden"}}>
               <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"14px 16px",borderBottom:"1px solid #e6ebf3"}}>
                 <div>
-                  <h3 style={{fontSize:15,fontWeight:800,display:"flex",alignItems:"center",gap:8}}><Ico k="calendar" size={24}/>Hoy · {todaySessions.length} sesión{todaySessions.length===1?"":"es"}</h3>
+                  <h3 style={{fontSize:15,fontWeight:800,display:"flex",alignItems:"center",gap:8}}><Ico k="calendar" size={24}/>Hoy · {todaySessions.length} {todaySessions.length===1?"sesión":"sesiones"}</h3>
                   <div style={{fontSize:11,color:"#94a3b8",marginTop:2,textTransform:"capitalize"}}>{fmtLong(TODAY)}</div>
                 </div>
                 <button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} onClick={()=>{setView("schedule");setShowNS(true);}}>+ Nueva</button>
@@ -1864,6 +1941,21 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               )}
             </div>
             </div>
+            <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14,marginTop:4}}>
+              {[
+                {label:"Clientes",val:clients.length,ico:"clients",go:"clients"},
+                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,ico:"check",go:"clients"},
+                {label:"Alertas",val:reminders.length,ico:"bell",go:"reminders"},
+                {label:"Sesiones hoy",val:todaySessions.length,ico:"stopwatch",go:"schedule"},
+                {label:"Este mes",val:`${monthIncome}€`,ico:"moneybag",go:"income"},
+              ].map(s=>(
+                <div key={s.label} className={"card"+(s.go?" tilt":"")} onClick={s.go?()=>setView(s.go):undefined} style={{padding:"12px 14px",...(s.go?{cursor:"pointer"}:{})}}>
+                  <Ico k={s.ico} size={30}/>
+                  <div style={{fontSize:22,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1.1}}>{s.val}</div>
+                  <div style={{fontSize:11,color:"#64748b",marginTop:2,fontWeight:600}}>{s.label}</div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
@@ -1957,6 +2049,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                             <span style={{fontSize:10,color:"#94a3b8"}}>· {c.days_week||4}d/sem</span>
                             <span style={{fontSize:10}}>{c.goal==="estetica"?"💪":"🩺"}</span>
                             {streak>0&&<span style={{fontSize:10,color:"#ea580c"}}>🔥{streak}</span>}
+                            {isHybrid(c)&&<span title="Clases con el coach + días por su cuenta" style={{fontSize:9,fontWeight:800,color:"#0f766e",background:"#e6f6f3",border:"1px solid #b5e3da",borderRadius:20,padding:"1px 6px"}}>🔀 Híbrido{openPerWeek(c)?` · ${openPerWeek(c)} open/sem`:""}</span>}
                           </div>
                         </div>
                       </div>
@@ -2129,6 +2222,22 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               })()}
             </div>
 
+            {/* Modalidad híbrida: quién viene hoy por su cuenta (no ocupa plaza de clase) */}
+            {schedView==="day"&&(()=>{ const ops=(openSessions||[]).filter(o=>o.date===activeDay).map(o=>({o,c:clients.find(c=>c.id===o.client_id)})).filter(x=>x.c).sort((a,b)=>String(a.o.time||"99").localeCompare(String(b.o.time||"99")));
+              if(!ops.length) return null;
+              return(<div style={{marginBottom:12,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px"}}>
+                <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN · POR SU CUENTA · {ops.length}</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {ops.map(({o,c})=>{ const asig=assignedSessions.some(a=>a.client_id===c.id&&a.date===activeDay); return(
+                    <button key={o.id} type="button" onClick={()=>setQuickView(c)} title={asig?"Tiene su entreno preparado":"Sin entreno asignado: ábrelo para prepararlo"}
+                      style={{display:"inline-flex",alignItems:"center",gap:6,border:`1px solid ${c.color}55`,background:"#fff",borderRadius:20,padding:"4px 10px 4px 4px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,color:"#0f172a"}}>
+                      <span style={{width:22,height:22,borderRadius:"50%",background:c.color,color:"#fff",fontSize:9,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>
+                      {c.name.split(" ")[0]}{o.time?<span className="mono" style={{color:"#64748b",fontWeight:700}}>{o.time}</span>:null}
+                      <span style={{fontSize:11}}>{o.status==="done"?"✅":asig?"🏋️":"⚠️"}</span>
+                    </button>); })}
+                </div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:6}}>🏋️ entreno preparado · ⚠️ sin entreno (toca para asignarlo) · ✅ ya entrenó</div>
+              </div>); })()}
             {/* Valoraciones del día sin hora concreta (las que tienen hora salen en su fila) */}
             {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&!l.time).length>0&&(
               <div style={{marginBottom:12,display:"flex",flexDirection:"column",gap:6}}>
@@ -2586,6 +2695,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {/* PROGRAMMING VIEW */}
         {view==="programming"&&(
           <ProgrammingAdmin
+            key={progTab.k} initialTab={progTab.t}
             clients={clients}
             sessions={sessions}
             history={history}
@@ -2626,7 +2736,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} onValoracion={leadOf(quickView)?()=>openValoracion(quickView):null} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView loadAll={loadAll} notify={notify} docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} onValoracion={leadOf(quickView)?()=>openValoracion(quickView):null} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} block={blockAt(slotMenu.date,slotMenu.time)} booked={sessions.filter(s=>s.date===slotMenu.date&&s.time===slotMenu.time).length}
@@ -2646,7 +2756,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <span style={{fontSize:13,fontWeight:700,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>👁 Vista de {c.name} · así ve su app</span>
             <button className="btn" style={{background:"#fff",color:"#6d28d9",fontSize:12,padding:"6px 12px",flexShrink:0}} onClick={()=>setViewAs(null)}>✕ Cerrar</button>
           </div>
-          <ClientPortal preview client={c} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans}
+          <ClientPortal preview openSessions={openSessions} client={c} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans}
             myProgress={(progress||[]).filter(p=>p.client_id===c.id)} myRecords={(records||[]).filter(r=>r.client_id===c.id)} myAchievements={(achievements||[]).filter(a=>a.client_id===c.id)}
             myAssignedSessions={assignedSessions.filter(s=>s.client_id===c.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===c.id)} annualBlocks={annualBlocks}
             loadAll={loadAll} notify={notify} onLogout={()=>setViewAs(null)}/>
@@ -3191,7 +3301,7 @@ const PHASE_TXT = {
   hibrido:"Combinamos fuerza y trabajo metabólico para rendir y gastar más energía.",
   descarga:"Semana de descarga: bajamos la intensidad para recuperarte y volver más fuerte.",
 };
-function ClientSummary({client,history,assignedSessions,assignedExercises,progress,annualBlocks,sessions,noHello}){
+function ClientSummary({client,history,assignedSessions,assignedExercises,progress,annualBlocks,sessions,noHello,noPhase,onSeeAllStrength}){
   const {photos}=useClientPhotos(client.id);
   const hist=(history||[]).filter(h=>h.client_id===client.id&&h.date&&h.date<=TODAY);
   const sess=athleteSessions(client,history,assignedSessions,assignedExercises);
@@ -3234,11 +3344,13 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
         <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginTop:4}}><span>hace 8 semanas</span><span>esta semana</span></div>
       </Card>
       {lifts.length>0&&<Card icon="chart" title="Tu fuerza">
-        {lifts.map((x,li)=><div key={x.key} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 0",borderTop:"1px solid #f1f4f8"}}>
-          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}><ExName client={client} name={x.name}/></div><div style={{fontSize:12,color:"#475569",marginTop:2,lineHeight:1.4}}>{funLine(x,li)}</div></div>
-          <div style={{textAlign:"right",flexShrink:0}}>{x.best&&<div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}<div style={{fontSize:10,color:"#94a3b8"}}>tu mejor marca</div></div>
-        </div>)}
-        <div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Toca un ejercicio para ver toda su evolución. Tienes todos en Progreso → Fuerza.</div>
+        {lifts.map((x,li)=><button key={x.key} type="button" onClick={()=>openExHistory(client,x.name)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 0",border:"none",borderTop:"1px solid #f1f4f8",background:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{x.name}</div><div style={{fontSize:12,color:"#475569",marginTop:2,lineHeight:1.4}}>{funLine(x,li)}</div></div>
+          <div style={{textAlign:"right",flexShrink:0}}>{x.best&&<div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}<div style={{fontSize:10,color:"#94a3b8"}}>tu mejor marca</div><div style={{fontSize:11,fontWeight:800,color:"#0284c7",marginTop:2}}>Ver todo ›</div></div>
+        </button>)}
+        {onSeeAllStrength
+          ?<button type="button" className="btn ghost" style={{width:"100%",padding:9,marginTop:6,fontSize:12,fontWeight:800,color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={onSeeAllStrength}>💪 Ver todos mis ejercicios y récords</button>
+          :<div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Toca un ejercicio para ver toda su evolución.</div>}
       </Card>}
       {body.length>0&&<Card icon="check" title="Tu cuerpo">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
@@ -3250,7 +3362,7 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
         </div>
       </Card>}
       {new Set(photos.map(p=>p.taken_on).filter(Boolean)).size>=2&&<Card icon="clipboard" title="Tu cambio"><PhotoCompare photos={photos} size={180}/></Card>}
-      {blk&&<Card icon="program" title="En qué estamos ahora">
+      {blk&&!noPhase&&<Card icon="program" title="En qué estamos ahora">
         <div style={{fontSize:13,fontWeight:700,color:"#0284c7"}}>{blk.name}</div>
         <div style={{fontSize:13,color:"#475569",marginTop:3,lineHeight:1.45}}>{isTestBlock(blk)?"Semana de test: medimos cuánto has mejorado.":(PHASE_TXT[blk.type]||"")}</div>
       </Card>}
@@ -3786,11 +3898,12 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const [timerWod,setTimerWod]=React.useState(null);
   const rmTestsC=useRmTests(sel).list;
   const rmHistC=React.useMemo(()=>sel?rmHistory(sel,assignedSessions,assignedExercises,rmTestsC):{},[sel,assignedSessions,assignedExercises,rmTestsC]);
+  const lbOf=(ex)=>lastBandOf(sel,ex.exercise_name,assignedSessions,assignedExercises,date);
   const valOf=(ex,k)=>{ const e=edited[ex.id]; if(e&&e[k]!==undefined) return e[k];
     if(k==="w") return ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:"");
     if(k==="r") return ex.actual_reps!=null?ex.actual_reps:(ex.protocol==="test_amrap"?"":(ex.reps!=null?ex.reps:""));
-    if(k==="band") return ex.load_band||"";
-    if(k==="mode") return ex.load_band?"goma":(isBodyweight(ex.exercise_name)&&ex.prescribed_weight==null?"goma":"kg");
+    if(k==="band") return ex.load_band||(!ex.done&&lbOf(ex)?lbOf(ex).band:"");
+    if(k==="mode") return (ex.load_band||(!ex.done&&lbOf(ex)))?"goma":(isBodyweight(ex.exercise_name)&&ex.prescribed_weight==null?"goma":"kg");
     return !!ex.done; };
   const setVal=(ex,k,v)=>setEdited(m=>({...m,[ex.id]:{...m[ex.id],[k]:v}}));
   const numW=(raw)=> raw===""||raw==null?null:parseFloat(String(raw).replace(",","."));
@@ -3814,10 +3927,10 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
     }
   };
   const [picker,setPicker]=React.useState(null); // {mode:"swap",ex} | {mode:"add"}
-  const cwOfSel=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const cwOfSel=(name,reps,rir)=>{ const r=rmLoad(selClient,name,reps,{rir,assignedSessions,assignedExercises}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const pickIt=async(it)=>{ const p=picker; setPicker(null); setBusy(true);
-    if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
-    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
+    if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name,p.ex.reps,p.ex.rir),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
+    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name,it.reps||"10-12"),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
     await loadAll(); setBusy(false); };
   const finalizarPersona=async()=>{ if(!asig) return; setBusy(true); await sb.from("assigned_sessions").update({status:"done"}).eq("id",asig.id); await loadAll(); setBusy(false); notify(`${selClient.name.split(" ")[0]}: entreno registrado ✓`); };
   const cerrar=async()=>{ setBusy(true); await loadAll(); setBusy(false); onClose(); };
@@ -3882,11 +3995,11 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
                         <button onClick={()=>setMode(ex,valOf(ex,"mode")==="goma"?"kg":"goma")} style={{fontSize:9,fontWeight:700,color:"#0284c7",background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px",cursor:"pointer"}}>{valOf(ex,"mode")==="goma"?"⇄ kg":"⇄ goma"}</button>
                       </div>
                       {valOf(ex,"mode")==="goma"
-                        ?<div style={{display:"flex",gap:4}}>
+                        ?<><div style={{display:"flex",gap:4}}>
                           {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(valOf(ex,"band")).includes(k); return(
                             <button key={k} title={lbl} onClick={()=>setBand(ex,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
                           );})}
-                        </div>
+                        </div><LastBandHint lb={lbOf(ex)} current={valOf(ex,"band")}/></>
                         :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={valOf(ex,"w")} onChange={e=>setVal(ex,"w",e.target.value)} onBlur={()=>saveW(ex)}/>}
                     </div>
                     <div style={{flex:1}}>
@@ -4204,15 +4317,19 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const auto = (!sess&&blockForDate(annualBlocks,date,client))?autoRoutineFor(client,date,sessions,annualBlocks):null;
   const libItems = Object.entries(EXERCISE_LIBRARY).map(([cat,list])=>[cat,list.filter(x=>equipOk(x[0]))]).filter(([c,l])=>l.length);
   const inLib = (name)=>Object.values(EXERCISE_LIBRARY).some(list=>list.some(x=>x[0]===name));
-  const wOf = (name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const sBlk=blockForDate(annualBlocks,date,client);
+  const wOf = (name,reps,rir,main)=>{ const r=rmLoad(client,name,reps,{rir,main,blk:sBlk,assignedSessions,assignedExercises}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
-  const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
+  const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name,ex.reps,ex.rir,isMainRow(ex))}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
   const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
   const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
   // RIR objetivo y RM estimado (series hechas + tests) para calcular la carga.
   const rmTests=useRmTests(client.id).list;
   const rmHist=React.useMemo(()=>rmHistory(client.id,assignedSessions,assignedExercises,rmTests),[client.id,assignedSessions,assignedExercises,rmTests]);
-  const setRir=(ex,v)=>w(async()=>{ const {error}=await sb.from("assigned_exercises").update({rir:v}).eq("id",ex.id); if(error) notify("Para guardar el RIR ejecuta docs/rir-rm.sql en Supabase","err"); });
+  const reload=(ex,reps,rir)=>{ if(ex.done) return {}; const x=rmLoad(client,ex.exercise_name,reps,{rir,main:isMainRow(ex),blk:sBlk,hist:rmHist}); return x&&Number(ex.prescribed_weight)!==x.kg?{prescribed_weight:x.kg}:{}; };
+  const setReps=(ex,v)=>{ if(String(v)===String(ex.reps||"")) return; const extra=reload(ex,v,ex.rir); w(async()=>{ await sb.from("assigned_exercises").update({reps:v,...extra}).eq("id",ex.id); if(extra.prescribed_weight!=null) notify(`Carga ajustada a ${fmtKgN(extra.prescribed_weight)} kg según su eRM ✓`); }); };
+  const recalcAll=()=>w(async()=>{ let n=0; for(const ex of exs){ if(!isRmRow(ex)) continue; const extra=reload(ex,ex.reps,ex.rir); if(extra.prescribed_weight!=null){ await sb.from("assigned_exercises").update(extra).eq("id",ex.id); n++; } } notify(n?`${n} carga${n>1?"s":""} ajustada${n>1?"s":""} a su eRM ✓`:"Las cargas ya coinciden con su eRM"); });
+  const setRir=(ex,v)=>w(async()=>{ const extra=reload(ex,ex.reps,v); const {error}=await sb.from("assigned_exercises").update({rir:v,...extra}).eq("id",ex.id); if(error) notify("Para guardar el RIR ejecuta docs/rir-rm.sql en Supabase","err"); });
   // Isométrico: se prescribe por segundos (y se registra tiempo, carga y dolor al ejecutarlo).
   const toggleIso = (ex)=>w(async()=>{ const on=ex.protocol==="isometrico"; const upd=on?{protocol:""}:{protocol:"isometrico",...(secsOf(ex.reps)!=null&&/s|seg/i.test(String(ex.reps))?{}:{reps:"30s"})};
     await sb.from("assigned_exercises").update(upd).eq("id",ex.id); notify(on?"Ya no es isométrico":"Isométrico ⏸️ (por segundos) ✓"); });
@@ -4234,8 +4351,8 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
   const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
-  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
-  const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
+  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name,it.reps||"10-12"),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
+  const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName,lib?lib[2]:"10-12"),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
@@ -4246,6 +4363,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
           <LevelPicker value={lv} onChange={(l)=>{ setLv(l); if(onSetLevel) onSetLevel(client,l); }}/>
           {sess&&exs.length>0&&<VolumeBadge items={exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))} level={lv} block={blockForDate(annualBlocks,date,client)} goal={client.goal} style={{marginTop:8}}/>}
           {sess&&exs.length>0&&onAdjust&&<button className="btn sky" style={{width:"100%",marginTop:8,padding:"9px",fontSize:12,fontWeight:700,justifyContent:"center"}} disabled={saving} onClick={()=>onAdjust(lv)}>🎚 Ajustar a su nivel ({LEVEL_LABEL[lv]})</button>}
+           {sess&&exs.some(e=>!e.done&&isRmRow(e)&&rmFor(rmHist,e.exercise_name))&&<button className="btn ghost" style={{width:"100%",marginTop:6,padding:"9px",fontSize:12,fontWeight:800,justifyContent:"center",color:"#0284c7",border:"1px solid #bcd3ee"}} disabled={saving} onClick={recalcAll}>🎯 Ajustar cargas a su eRM (según reps y RIR)</button>}
           <div style={{fontSize:10,color:"#94a3b8",marginTop:6,lineHeight:1.4}}>Cambia lo demasiado técnico por un ejercicio del mismo patrón, ajusta series y nº de ejercicios al objetivo del nivel y escala el WOD.</div>
         </div>
         {!sess
@@ -4286,11 +4404,11 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                 </div>
                 <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
                   <div><span className="lbl" style={{fontSize:9}}>SERIES</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.sets} onBlur={e=>setField(ex,"sets",parseInt(e.target.value)||null)}/></div>
-                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"SEGUNDOS":"REPS"}</span><input key={ex.id+"|"+(ex.reps||"")} className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} placeholder={isIsoRow(ex)?"45s":""} onBlur={e=>setField(ex,"reps",e.target.value)}/></div>
+                  <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"SEGUNDOS":"REPS"}</span><input key={ex.id+"|"+(ex.reps||"")} className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.reps} placeholder={isIsoRow(ex)?"45s":""} onBlur={e=>setReps(ex,e.target.value)}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"CARGA / LASTRE (kg)":"PESO (kg)"}</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} key={ex.id+"|"+(ex.prescribed_weight??"")} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":isIsoRow(ex)?"PC":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>DESC. (s)</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.rest_seconds??""} onBlur={e=>setField(ex,"rest_seconds",parseInt(e.target.value)||null)}/></div>
                 </div>
-                {isRmRow(ex)&&(()=>{ const rm=rmFor(rmHist,ex.exercise_name), r=repsLow(ex.reps), t=ex.rir!=null?Number(ex.rir):null, kgS=rm&&r&&t!=null?loadFor(rm,r,t):null, pct=r&&t!=null?Math.round(pctRM(r+t)*100):null;
+                {isRmRow(ex)&&(()=>{ const rm=rmFor(rmHist,ex.exercise_name), r=repsLow(ex.reps), t=ex.rir!=null?Number(ex.rir):null, x=rmLoad(client,ex.exercise_name,ex.reps,{rir:t,main:isMainRow(ex),blk:sBlk,hist:rmHist}), kgS=x?x.kg:null, tt=x?x.rir:t, pct=r&&tt!=null?Math.round(pctRM(r+tt)*100):null;
                   return <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,flexWrap:"wrap"}}>
                     <span className="lbl" style={{fontSize:9,marginBottom:0}}>RIR OBJETIVO</span><RirHelp notify={notify} highlight={t} label="Guía"/>
                     <select value={t==null?"":t} disabled={saving} onChange={e=>setRir(ex,e.target.value===""?null:parseInt(e.target.value,10))} style={{fontSize:12,fontWeight:700,border:"1px solid #cfd8e6",borderRadius:8,padding:"5px 8px",background:"#fff",color:"#0f172a"}}>
@@ -4350,7 +4468,36 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+// Ficha rápida · híbrido: días open de la semana (marcar hecho, quitar o añadir uno).
+function HybridBox({client,date,loadAll,notify,athlete}){
+  const [busy,setBusy]=React.useState(false), [nd,setNd]=React.useState("");
+  const wk=opensInWeek(client,date||TODAY).sort((a,b)=>a.date.localeCompare(b.date)), lim=openPerWeek(client);
+  const run=async(fn,msg)=>{ setBusy(true); const r=await fn(); setBusy(false); if(r&&r.error) return notify&&notify(OPEN.missing?"Ejecuta docs/hibrido.sql en Supabase":"No se pudo guardar","err"); await loadAll(); msg&&notify&&notify(msg); };
+  const toggle=(o)=>run(()=>sb.from("open_sessions").update({status:o.status==="done"?"planned":"done"}).eq("id",o.id),o.status==="done"?"Marcada como pendiente":"Open hecha ✓");
+  const del=(o)=>{ if(window.confirm(`¿Quitar la sesión open del ${fmtDate(o.date)}?`)) run(()=>sb.from("open_sessions").delete().eq("id",o.id),"Quitada"); };
+  const add=()=>{ if(!nd) return; run(()=>sb.from("open_sessions").insert({client_id:client.id,date:nd,status:"planned"}),"Open añadida ✓").then(()=>setNd("")); };
+  return(
+    <div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+        <span style={{fontSize:12,fontWeight:800,color:"#0f766e"}}>🔀 HÍBRIDO · OPEN ESTA SEMANA</span>
+        <span style={{fontSize:12,fontWeight:800,color:lim&&wk.length>=lim?"#b45309":"#0f766e"}}>{wk.length}{lim?` / ${lim}`:" · sin límite"}</span>
+      </div>
+      {OPEN.missing&&<div style={{fontSize:11,color:"#b45309",fontWeight:700,marginTop:4}}>⚠️ Falta ejecutar docs/hibrido.sql en Supabase.</div>}
+      {wk.length===0?<div style={{fontSize:12,color:"#64748b",marginTop:4}}>Esta semana no ha reservado días por su cuenta.</div>
+        :<div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>{wk.map(o=>(
+          <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,background:"#fff",borderRadius:9,padding:"6px 8px"}}>
+            <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f172a",textTransform:"capitalize"}}>{fmtDate(o.date)}{o.time?` · ${o.time}`:""}</span>
+            <button type="button" disabled={busy} onClick={()=>toggle(o)} style={{border:`1px solid ${o.status==="done"?"#16a34a":"#cbd5e1"}`,background:o.status==="done"?"#e2f4e8":"#fff",color:o.status==="done"?"#16a34a":"#64748b",borderRadius:8,padding:"3px 8px",fontSize:11,fontWeight:800,cursor:"pointer"}}>{o.status==="done"?"✓ hecha":"○ hecha"}</button>
+            <button type="button" disabled={busy} onClick={()=>del(o)} aria-label="Quitar" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:13}}>✕</button>
+          </div>))}</div>}
+      {!athlete&&<div style={{display:"flex",gap:6,marginTop:7}}>
+        <input type="date" className="inp" value={nd} min={TODAY} onChange={e=>setNd(e.target.value)} style={{flex:1,padding:"6px 8px",fontSize:12}}/>
+        <button type="button" className="btn ghost" disabled={busy||!nd} onClick={add} style={{fontSize:11,padding:"6px 10px",fontWeight:800,color:"#0f766e",border:"1px solid #b5e3da"}}>＋ Open</button>
+      </div>}
+      <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Sus días open aparecen en la planificación semanal para que le prepares el entreno.</div>
+    </div>);
+}
+function ClientQuickView({loadAll,notify,client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -4382,6 +4529,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         </div>
 
         <ProfileSummary client={client} compact/>
+        {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
         <div style={{marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
             <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
@@ -4746,7 +4894,8 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   const week=getWeekDays(anchor);
   const td=parseDays(client.train_days);
   const mine=(arr)=>(arr||[]).filter(x=>x.client_id===client.id);
-  const hasBooking=(d)=>mine(sessions).some(s=>s.date===d);
+  const openOn=(d)=>opensOf(client).find(o=>o.date===d);
+  const hasBooking=(d)=>mine(sessions).some(s=>s.date===d)||!!openOn(d);
   const hasAsig=(d)=>mine(assignedSessions).some(a=>a.date===d);
   const hasHist=(d)=>mine(history).some(h=>h.date===d);
   // Solo lo real: días con reserva, con entreno asignado o ya hechos.
@@ -4754,7 +4903,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   const realRows=week.filter(real);
   // En "Asignar" se ven todos los días laborables (para poder programar cualquiera).
   const rows=allDays?week.filter(d=>real(d)||(weekdayOf(d)>=1&&weekdayOf(d)<=5)):realRows;
-  const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d);
+  const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d)||(openOn(d)||{}).status==="done";
   const pending=realRows.filter(d=>!isDone(d));
   const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   const doneN=realRows.filter(isDone).length;
@@ -4798,7 +4947,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
         ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>Sin reservas ni entrenos esta semana.</div>
         :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
         {rows.map((d,i)=>{
-          const booking=mine(sessions).find(s=>s.date===d);
+          const booking=mine(sessions).find(s=>s.date===d), opn=!booking&&openOn(d);
           const asig=mine(assignedSessions).find(a=>a.date===d);
           const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
           const au=blockForDate(annualBlocks,d,client)?autoRoutineFor(client,d,sessions,annualBlocks):null;
@@ -4826,7 +4975,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
                       {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
                     </select>}
                 {exs.length>0&&(()=>{ const v=sessionVolume(exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))); const t=levelTarget(lvl,blockForDate(annualBlocks,d,client),client.goal); const ok=v.ex<3||(v.sets>=t.min&&v.sets<=t.max); return v.sets>0&&<span title={`Series de trabajo (objetivo ${t.min}-${t.max})`} className="mono" style={{flexShrink:0,fontSize:10,fontWeight:800,color:ok?"#15803d":"#b45309",background:ok?"#f0fdf4":"#fffbeb",border:`1px solid ${ok?"#bbf7d0":"#fde68a"}`,borderRadius:20,padding:"1px 6px"}}>{v.sets} ser.</span>; })()}
-                <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:isReal?"sin reserva":"libre"}</div>
+                <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":opn?"#0f766e":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:opn?`🔓 open${opn.time?" "+opn.time:""}`:isReal?"sin reserva":"libre"}</div>
                 <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
               </div>
               {open&&(
@@ -5070,8 +5219,8 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
     id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
     w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
     r:(e.actual_reps!=null?e.actual_reps:(e.protocol==="test_amrap"?"":(e.reps!=null?e.reps:""))),
-    band:e.load_band||"",
-    mode:(e.load_band?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
+    band:e.load_band||(!e.done&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)||{}).band||"",
+    mode:((e.load_band||(!e.done&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)))?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
     done:!!e.done,
     rest:e.rest_seconds,
   })));
@@ -5101,10 +5250,10 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   };
 
   const [picker,setPicker]=React.useState(null); // {mode:"swap",row} | {mode:"add"}
-  const cwOf=(name)=>{ const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
-  const swapRow=async(row,it)=>{ const pw=cwOf(it.name); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
+  const cwOf=(name,reps,rir)=>{ const r=rmLoad(client,name,reps,{rir,hist:rmHist}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const swapRow=async(row,it)=>{ const pw=cwOf(it.name,row.reps,(baseExs.find(e=>e.id===row.id)||{}).rir); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
     setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg"}:x)); notify("Ejercicio cambiado ✓"); };
-  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
+  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name,it.reps||"10-12"); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
     if(error||!data) return notify("No se pudo añadir","err");
     setRows(rs=>[...rs,{id:data.id,name:data.exercise_name,sets:data.sets,reps:data.reps,protocol:"",prescribed:pw,w:pw!=null?pw:"",r:data.reps||"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg",done:false}]); notify("Ejercicio añadido ✓"); };
   const finalizar=async()=>{
@@ -5114,6 +5263,12 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
   };
 
   const hechos=rows.filter(r=>r.done).length;
+  // Cargas que no coinciden con lo que marca su eRM para las reps y el RIR de hoy.
+  const rmDiff=rows.filter(r=>!r.done&&r.mode!=="goma").map(r=>{ const b=baseExs.find(e=>e.id===r.id)||{}; if(!isRmRow(b)) return null;
+    const x=rmLoad(client,r.name,r.reps,{rir:b.rir,main:isMainRow(b),hist:rmHist}); return x&&Number(r.w)!==x.kg?{row:r,kg:x.kg}:null; }).filter(Boolean);
+  const applyRm=async()=>{ setRows(rs=>rs.map(x=>{ const d=rmDiff.find(y=>y.row.id===x.id); return d?{...x,w:d.kg,prescribed:d.kg}:x; }));
+    for(const d of rmDiff) await sb.from("assigned_exercises").update({prescribed_weight:d.kg}).eq("id",d.row.id);
+    notify(`${rmDiff.length} carga${rmDiff.length>1?"s":""} ajustada${rmDiff.length>1?"s":""} a su eRM ✓`); };
   return(
     <div className={"ovl"+(docked?" dock":"")} onClick={docked?undefined:onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
@@ -5139,6 +5294,7 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
               <span style={{fontSize:12,fontWeight:800,color:"#fff",background:"#ea580c",borderRadius:10,padding:"7px 10px",whiteSpace:"nowrap"}}>▶ Temporizador</span>
             </button>
           ))}
+        {rmDiff.length>0&&<button type="button" onClick={applyRm} className="btn ghost" style={{width:"100%",marginBottom:8,padding:"9px 10px",fontSize:12,fontWeight:800,justifyContent:"center",color:"#0284c7",border:"1px solid #bcd3ee",background:"#eef4fc"}}>🎯 Ajustar {rmDiff.length} carga{rmDiff.length>1?"s":""} a su eRM ({rmDiff.slice(0,2).map(d=>`${d.row.name.split(" ")[0]} ${fmtKgN(d.kg)} kg`).join(", ")}{rmDiff.length>2?"…":""})</button>}
         {!sess||rows.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
           :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
@@ -5164,11 +5320,11 @@ function SessionExecModal({client,date,assignedSessions,assignedExercises,client
                       <button onClick={()=>setMode(row,row.mode==="goma"?"kg":"goma")} style={{fontSize:9,fontWeight:700,color:"#0284c7",background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px",cursor:"pointer"}}>{row.mode==="goma"?"⇄ kg":"⇄ goma"}</button>
                     </div>
                     {row.mode==="goma"
-                      ?<div style={{display:"flex",gap:4}}>
+                      ?<><div style={{display:"flex",gap:4}}>
                         {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(row.band).includes(k); return(
                           <button key={k} title={lbl} onClick={()=>setBand(row,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
                         );})}
-                      </div>
+                      </div><LastBandHint lb={lastBandOf(client.id,row.name,assignedSessions,assignedExercises,date)} current={row.band}/></>
                       :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id);}}/>}
                   </div>
                   <div style={{flex:1}}>
@@ -5231,12 +5387,14 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     if(error){ notify("Error al asignar","err"); setSaving(false); return; }
     const tex=(templateExercises||[]).filter(te=>te.template_id===tmpl.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0));
     const wts=(clientWeights||[]).filter(w=>w.client_id===client.id);
+    const blkA=blockForDate(annualBlocks,date,client), histA=rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]);
     const rows=tex.map(ex=>{
       const cw=wts.find(w=>(w.exercise_name||"").toLowerCase()===(ex.exercise_name||"").toLowerCase());
-      return {session_id:sess.id,exercise_name:ex.exercise_name,prescribed_weight:cw?cw.weight:null,
+      const x=isRmRow(ex)?rmLoad(client,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkA,hist:histA}):null;
+      return {session_id:sess.id,exercise_name:ex.exercise_name,prescribed_weight:x?x.kg:(cw?cw.weight:null),...(x?{rir:x.rir}:{}),
         sets:ex.sets,reps:ex.reps,protocol:ex.protocol,rest_seconds:ex.rest_seconds,notes:ex.notes,order_index:ex.order_index};
     });
-    if(rows.length>0) await sb.from("assigned_exercises").insert(rows);
+    if(rows.length>0) await insertExRows(rows);
     if(tmpl.name) await sb.from("history").update({type:tmpl.name}).eq("client_id",client.id).eq("date",date); // si ya vino, el historial toma el nombre
     await loadAll(); setSaving(false); notify("Entreno asignado ✓"); onClose();
   };
@@ -5778,18 +5936,148 @@ function RestTimerHost(){
 const EXH = {cur:null, hosts:[]};
 const exhPing = () => EXH.hosts.forEach(h=>h.f());
 const openExHistory = (client, name) => { if(!client||!name) return; EXH.cur={client,name}; exhPing(); };
+// ── FOTOS Y VÍDEOS DE CADA EJERCICIO ──────────────────────────────────────
+// Se guardan por ejercicio (no por cliente): lo que subas lo ven todos los que
+// lo hagan. Fotos y vídeos van al almacén «exercise-media»; también se pueden
+// pegar enlaces de YouTube (se ven dentro de la app) u otras webs.
+const EXM = {list:null, loading:null, missing:false, subs:new Set()};
+const exmLoad = () => { EXM.loading=sb.from("exercise_media").select("*").order("created_at",{ascending:true}).then(({data,error})=>{
+  EXM.missing=!!error; EXM.list=error?[]:(data||[]); EXM.loading=null; EXM.subs.forEach(f=>f()); }); return EXM.loading; };
+function useExMedia(){ const [,f]=React.useReducer(x=>x+1,0);
+  React.useEffect(()=>{ EXM.subs.add(f); if(EXM.list==null&&!EXM.loading) exmLoad(); return ()=>{ EXM.subs.delete(f); }; },[]); return EXM; }
+const exMediaOf = (name) => (EXM.list||[]).filter(m=>m.exercise_key===notesKey(name));
+const ytId = (u) => { const m=String(u||"").match(/(?:youtube\.com\/(?:watch\?(?:.*&)?v=|shorts\/|embed\/|live\/)|youtu\.be\/)([A-Za-z0-9_-]{6,})/); return m?m[1]:null; };
+const MAX_VIDEO_MB = 50;
+const mediaSlug = (name) => notesKey(name).normalize("NFD").replace(/[̀-ͯ]/g,"").replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"ejercicio";
+const mediaPathOf = (url) => { const m=String(url||"").match(/\/exercise-media\/(.+)$/); return m?decodeURIComponent(m[1].split("?")[0]):null; };
+function ExerciseMedia({name,coach,notify}){
+  useExMedia();
+  const items=exMediaOf(name);
+  const [busy,setBusy]=React.useState("");
+  const [link,setLink]=React.useState(""), [cap,setCap]=React.useState(""), [zoom,setZoom]=React.useState(null);
+  const fileRef=React.useRef(null);
+  const sqlMsg=()=>notify&&notify("Para guardar fotos y vídeos ejecuta docs/ejercicios-media.sql en Supabase","err");
+  const save=async(row,withCap=true)=>{ const {error}=await sb.from("exercise_media").insert({exercise_key:notesKey(name),caption:withCap?(cap.trim()||null):null,...row}); if(error){ sqlMsg(); return false; } return true; };
+  const addFiles=async(files)=>{
+    const list=[...(files||[])]; if(!list.length) return; let ok=0;
+    for(let i=0;i<list.length;i++){ const f=list[i], isVid=/^video\//.test(f.type)||/\.(mp4|mov|m4v|webm)$/i.test(f.name);
+      setBusy(`Subiendo ${i+1}/${list.length}…`);
+      const base=`${mediaSlug(name)}/${Date.now()}_${i}`;
+      if(isVid){
+        if(f.size>MAX_VIDEO_MB*1024*1024){ notify&&notify(`El vídeo pesa ${Math.round(f.size/1048576)} MB y el máximo son ${MAX_VIDEO_MB} MB. Recórtalo o súbelo a YouTube (oculto) y pega el enlace.`,"err"); continue; }
+        const ext=(f.name.match(/\.([a-z0-9]+)$/i)||[,"mp4"])[1].toLowerCase(), path=`${base}.${ext}`;
+        const {error}=await sb.storage.from("exercise-media").upload(path,f,{contentType:f.type||"video/mp4",cacheControl:"86400"});
+        if(error){ notify&&notify(uploadErrMsg(error),"err"); continue; }
+        const url=sb.storage.from("exercise-media").getPublicUrl(path).data.publicUrl;
+        if(await save({kind:"video",url,path},ok===0)) ok++;
+      } else {
+        const url=await uploadImage("exercise-media",base,f,notify); if(!url) continue;
+        if(await save({kind:"image",url,path:mediaPathOf(url)},ok===0)) ok++;
+      }
+    }
+    setBusy(""); if(fileRef.current) fileRef.current.value="";
+    if(ok){ setCap(""); await exmLoad(); notify&&notify(`${ok} archivo${ok>1?"s":""} añadido${ok>1?"s":""} ✓ · ya lo ven tus clientes`); }
+  };
+  const addLink=async()=>{ const u=link.trim(); if(!/^https?:\/\//i.test(u)) return notify&&notify("Pega un enlace que empiece por https://","err");
+    setBusy("Guardando…"); const ok=await save({kind:"link",url:u}); setBusy(""); if(ok){ setLink(""); setCap(""); await exmLoad(); notify&&notify("Enlace añadido ✓"); } };
+  const del=async(m)=>{ if(!window.confirm("¿Quitar este archivo del ejercicio?")) return;
+    if(m.path) await sb.storage.from("exercise-media").remove([m.path]);
+    await sb.from("exercise_media").delete().eq("id",m.id); await exmLoad(); notify&&notify("Quitado"); };
+  if(!coach&&!items.length) return null;
+  const box={borderRadius:12,overflow:"hidden",background:"#0f172a",position:"relative"};
+  return(
+    <div style={{marginBottom:12}}>
+      <div style={{fontSize:12,fontWeight:800,color:"#0f172a",marginBottom:6}}>🎬 Cómo se hace{items.length?` · ${items.length}`:""}</div>
+      {items.length>0&&<div style={{display:"flex",flexDirection:"column",gap:8}}>
+        {items.map(m=>{ const yt=m.kind==="link"&&ytId(m.url); return(
+          <div key={m.id}>
+            <div style={box}>
+              {m.kind==="image"&&<img src={m.url} alt={m.caption||name} onClick={()=>setZoom(m)} style={{width:"100%",maxHeight:320,objectFit:"contain",display:"block",cursor:"zoom-in",background:"#0f172a"}}/>}
+              {m.kind==="video"&&<video src={m.url} controls playsInline preload="metadata" style={{width:"100%",maxHeight:360,display:"block",background:"#000"}}/>}
+              {yt&&<div style={{position:"relative",paddingTop:"56.25%"}}><iframe src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&playsinline=1`} title={m.caption||name} allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowFullScreen style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/></div>}
+              {m.kind==="link"&&!yt&&<a href={m.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:10,padding:"14px 14px",color:"#fff",textDecoration:"none",fontWeight:800,fontSize:14}}>▶️ Ver el vídeo <span style={{fontSize:11,fontWeight:600,opacity:.7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0]}</span></a>}
+              {coach&&<button type="button" onClick={()=>del(m)} aria-label="Quitar" style={{position:"absolute",top:6,right:6,width:28,height:28,borderRadius:"50%",border:"none",background:"rgba(15,23,42,.7)",color:"#fff",fontSize:13,cursor:"pointer"}}>✕</button>}
+            </div>
+            {m.caption&&<div style={{fontSize:12,color:"#475569",marginTop:4,lineHeight:1.4}}>💬 {m.caption}</div>}
+          </div>); })}
+      </div>}
+      {coach&&<div style={{marginTop:items.length?10:0,border:"1px dashed #bcd3ee",borderRadius:12,padding:10,background:"#f8fbff"}}>
+        {!items.length&&<div style={{fontSize:12,color:"#64748b",marginBottom:8}}>Añade fotos o vídeos de la técnica. Los verán todos los clientes que hagan este ejercicio.</div>}
+        <input className="inp" placeholder="Explicación corta (opcional): «espalda neutra, empuja con talones»" value={cap} onChange={e=>setCap(e.target.value)} maxLength={160} style={{marginBottom:8,fontSize:12}}/>
+        <input ref={fileRef} type="file" accept="image/*,video/*" multiple style={{display:"none"}} onChange={e=>addFiles(e.target.files)}/>
+        <button type="button" className="btn sky" disabled={!!busy} style={{width:"100%",padding:10,justifyContent:"center",fontSize:13}} onClick={()=>fileRef.current&&fileRef.current.click()}>{busy||"📷 Subir foto o vídeo"}</button>
+        <div style={{display:"flex",gap:6,marginTop:8}}>
+          <input className="inp" placeholder="o pega un enlace (YouTube, Instagram…)" value={link} onChange={e=>setLink(e.target.value)} style={{flex:1,fontSize:12}}/>
+          <button type="button" className="btn ghost" disabled={!!busy||!link.trim()} style={{padding:"8px 12px",fontSize:12,fontWeight:800}} onClick={addLink}>🔗 Añadir</button>
+        </div>
+        <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Vídeos de hasta {MAX_VIDEO_MB} MB (unos 30-60 s grabados con el móvil). Para vídeos largos, súbelo a YouTube como «oculto» y pega el enlace.</div>
+      </div>}
+      {zoom&&<div className="ovl" style={{zIndex:1700,background:"rgba(0,0,0,.92)",alignItems:"center"}} onClick={()=>setZoom(null)}>
+        <img src={zoom.url} alt={zoom.caption||name} style={{maxWidth:"96vw",maxHeight:"88vh",objectFit:"contain",borderRadius:8}}/>
+      </div>}
+    </div>
+  );
+}
+function ExerciseMediaModal({name,coach,notify,onClose}){
+  return <div className="ovl" style={{zIndex:1450}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
+    <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520,maxHeight:"92vh",overflowY:"auto"}}>
+      <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",lineHeight:1.2,marginBottom:4}}>{name}</h2>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}><MuscleTags name={name}/></div>
+      <ExerciseMedia name={name} coach={coach} notify={notify}/>
+      <button className="btn ghost" style={{width:"100%",padding:11}} onClick={onClose}>Cerrar</button>
+    </div>
+  </div>;
+}
+// Coach: buscador de ejercicios para gestionar sus fotos y vídeos.
+function ExerciseMediaLibrary({notify}){
+  const M=useExMedia();
+  const [q,setQ]=React.useState(""), [open,setOpen]=React.useState(null);
+  const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
+  const count=(n)=>exMediaOf(n).length;
+  const names=[...new Set([...exerciseCatalog().map(x=>x.name),...(M.list||[]).map(m=>(exerciseCatalog().find(x=>notesKey(x.name)===m.exercise_key)||{name:m.exercise_key}).name)])];
+  const list=names.filter(n=>!q||norm(n).includes(norm(q))).sort((a,b)=>count(b)-count(a)||a.localeCompare(b)).slice(0,80);
+  const withMedia=names.filter(n=>count(n)>0).length;
+  return(<div>
+    <div className="card" style={{padding:"12px 14px",marginBottom:12,background:"#f8fbff",border:"1px solid #bcd3ee"}}>
+      <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🎬 Fotos y vídeos de los ejercicios</div>
+      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Sube cómo se hace cada ejercicio. Tus clientes lo verán en su entreno («▶ Cómo se hace») y al tocar el nombre del ejercicio.</div>
+      <div style={{fontSize:12,fontWeight:800,color:"#0284c7",marginTop:6}}>{withMedia} ejercicio{withMedia!==1?"s":""} con material</div>
+      {M.missing&&<div style={{fontSize:12,color:"#b45309",marginTop:6,fontWeight:700}}>⚠️ Falta ejecutar docs/ejercicios-media.sql en Supabase para poder guardarlos.</div>}
+    </div>
+    <input className="inp" placeholder="🔎 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:10}}/>
+    <div className="card" style={{padding:0,overflow:"hidden"}}>
+      {list.map((n,i)=>{ const c=count(n); return(
+        <button key={n} type="button" onClick={()=>setOpen(n)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 13px",border:"none",borderTop:i?"1px solid #eef1f6":"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+          <span style={{fontSize:18}}>{c?"🎬":"➕"}</span>
+          <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span>
+          <span style={{fontSize:11,fontWeight:800,color:c?"#0284c7":"#cbd5e1"}}>{c?`${c} archivo${c>1?"s":""}`:"añadir"}</span>
+        </button>); })}
+      {!list.length&&<div style={{padding:16,fontSize:12,color:"#94a3b8",textAlign:"center"}}>Sin resultados</div>}
+    </div>
+    {open&&<ExerciseMediaModal name={open} coach notify={notify} onClose={()=>setOpen(null)}/>}
+  </div>);
+}
 function ExName({client,name,children,style}){
   return <span role="button" tabIndex={0} title="Ver cargas y evolución de este ejercicio"
     onClick={e=>{ e.stopPropagation(); openExHistory(client,name); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.stopPropagation(); openExHistory(client,name); } }}
     style={{cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted",textDecorationColor:"#94a3b8",textUnderlineOffset:3,...(style||{})}}>{children||name}</span>;
 }
+// Goma usada la última vez en este ejercicio (antes de la fecha dada), para proponerla.
+function lastBandOf(clientId, name, assignedSessions, assignedExercises, before){
+  const k=notesKey(name);
+  const prev=(assignedSessions||[]).filter(a=>a.client_id===clientId&&a.date&&a.date<before).sort((a,b)=>b.date.localeCompare(a.date));
+  for(const a of prev){ const e=(assignedExercises||[]).find(x=>x.session_id===a.id&&notesKey(x.exercise_name)===k&&x.load_band); if(e) return {band:e.load_band,date:a.date}; }
+  return null;
+}
+const LastBandHint=({lb,current})=>lb?<div style={{fontSize:10,fontWeight:700,color:bandKeys(current).join("+")===bandKeys(lb.band).join("+")?"#16a34a":"#64748b",marginTop:4}}>
+  {bandKeys(current).join("+")===bandKeys(lb.band).join("+")?"✓ Misma goma que la última vez":"Última vez"}: {bandLabel(lb.band)} · {fmtD(lb.date)}</div>:null;
 function exHistory(clientId, name, assignedSessions, assignedExercises){
   const dateOf=Object.fromEntries((assignedSessions||[]).filter(a=>a.client_id===clientId).map(a=>[a.id,a.date]));
   const k=notesKey(name);
-  return (assignedExercises||[]).filter(e=>dateOf[e.session_id]&&dateOf[e.session_id]<=TODAY&&notesKey(e.exercise_name)===k&&(e.done||e.actual_weight!=null||e.actual_reps!=null||e.load_band))
+  return (assignedExercises||[]).filter(e=>dateOf[e.session_id]&&dateOf[e.session_id]<=TODAY&&notesKey(e.exercise_name)===k&&(e.done||e.completed||e.actual_weight!=null||e.actual_reps!=null||e.load_band))
     .map(e=>{ const d=dateOf[e.session_id], kg=e.actual_weight!=null?Number(e.actual_weight):(e.done&&e.prescribed_weight!=null?Number(e.prescribed_weight):null);
       const reps=e.actual_reps!=null?e.actual_reps:e.reps, rl=repsLow(reps), rir=e.actual_rir!=null?Number(e.actual_rir):(e.rir!=null?Number(e.rir):null);
-      return {date:d,sets:parseInt(e.sets)||null,reps,kg,band:e.load_band,rir,done:!!e.done,iso:isIsoRow(e),secs:secsOf(e.actual_reps!=null?e.actual_reps:e.reps),pain:e.pain!=null?Number(e.pain):null,load:isIsoRow(e)?isoLoadTxt(e):null,
+      return {date:d,sets:parseInt(e.sets)||null,reps,kg,band:e.load_band,rir,done:!!(e.done||e.completed),iso:isIsoRow(e),secs:secsOf(e.actual_reps!=null?e.actual_reps:e.reps),pain:e.pain!=null?Number(e.pain):null,load:isIsoRow(e)?isoLoadTxt(e):null,
         e1rm:kg&&rl?e1rmOf(kg,rl,rir!=null?rir:RIR_DEFAULT_UNKNOWN):null}; })
     .sort((a,b)=>a.date.localeCompare(b.date));
 }
@@ -5807,40 +6095,63 @@ function ExerciseHistoryModal({client,name,assignedSessions,assignedExercises,co
   const rmNow=rmDays.length?currentRM(rmDays.map(d=>({date:d.date,e1rm:d.e1rm}))):null;
   const prog=kgDays.length>1&&kgDays[0].kg?Math.round((kgDays[kgDays.length-1].kg/kgDays[0].kg-1)*100):null;
   const loadTxt=(p)=>p.iso?p.load:(p.band?bandLabel(p.band):(p.kg!=null?`${fmtKgN(p.kg)} kg`:"—"));
+  // Mejores marcas: más peso, más repeticiones en una serie, mejor día (kg × reps × series) y más segundos.
+  const doneP=pts.filter(p=>p.done);
+  const bestKgP=doneP.filter(p=>p.kg!=null).sort((a,b)=>b.kg-a.kg||(repsLow(b.reps)||0)-(repsLow(a.reps)||0))[0];
+  const bestRepP=!iso?doneP.filter(p=>repsLow(p.reps)).sort((a,b)=>repsLow(b.reps)-repsLow(a.reps)||(b.kg||0)-(a.kg||0))[0]:null;
+  const volOf=(p)=>p.kg&&repsLow(p.reps)?p.kg*repsLow(p.reps)*(p.sets||1):0;
+  const bestVolP=!iso?doneP.filter(volOf).sort((a,b)=>volOf(b)-volOf(a))[0]:null;
+  const bestSecP=iso?doneP.filter(p=>p.secs!=null).sort((a,b)=>b.secs-a.secs)[0]:null;
+  const lastBand=[...pts].reverse().find(p=>p.band);
+  const marks=[bestKgP&&["🏋️ Más peso",`${fmtKgN(bestKgP.kg)} kg${repsLow(bestKgP.reps)?` × ${repsLow(bestKgP.reps)}`:""}`,bestKgP.date],
+    bestRepP&&["🔁 Más repeticiones",`${repsLow(bestRepP.reps)} reps${bestRepP.kg!=null?` con ${fmtKgN(bestRepP.kg)} kg`:bestRepP.band?` · ${bandLabel(bestRepP.band)}`:""}`,bestRepP.date],
+    bestVolP&&["📦 Mejor día",`${Math.round(volOf(bestVolP)).toLocaleString("es-ES")} kg movidos`,bestVolP.date],
+    bestSecP&&["⏱️ Más tiempo",`${bestSecP.secs} s`,bestSecP.date],
+    lastBand&&["🎗️ Última goma",bandLabel(lastBand.band),lastBand.date]].filter(Boolean);
   const Tile=({l,v,sub})=><div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}><div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>{l}</div><div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{v}</div>{sub&&<div style={{fontSize:10,color:"#94a3b8"}}>{sub}</div>}</div>;
   return(
     <div className="ovl" style={{zIndex:1400}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
         <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{name}</h2>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",margin:"4px 0 12px"}}><span style={{fontSize:12,color:"#64748b"}}>{client.name}</span><MuscleTags name={name}/><CxTag name={name}/></div>
+        <ExerciseMedia name={name} coach={coach} notify={notify}/>
         {!pts.length&&!tests.length
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Aún no hay registros de este ejercicio. Aparecerán al marcarlo como hecho con su carga.</div>
           :<>
             <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:10}}>
               {last&&<Tile l="Último registro" v={iso?`${last.sets||""}${last.sets?"×":""}${last.secs!=null?last.secs+"s":"—"}`:`${loadTxt(last)}`} sub={`${fmtD(last.date)}${!iso&&last.reps?` · ${last.sets?last.sets+"×":""}${last.reps}`:""}${last.rir!=null?` · RIR ${last.rir}`:""}`}/>}
               {!iso&&<Tile l="Mejor carga" v={best!=null?`${fmtKgN(best)} kg`:"—"} sub={prog!=null&&prog!==0?`${prog>0?"▲ +":"▼ "}${Math.abs(prog)} % desde el inicio`:`${pts.length} registro${pts.length!==1?"s":""}`}/>}
-              {!iso&&<Tile l="RM estimado" v={rmNow?`${fmtKgN(rmNow)} kg`:"—"} sub="mejor de las últimas 6 semanas"/>}
+              {!iso&&coach&&<Tile l="RM estimado" v={rmNow?`${fmtKgN(rmNow)} kg`:"—"} sub="mejor de las últimas 6 semanas"/>}
               {iso&&<Tile l="Dolor último" v={last&&last.pain!=null?`${last.pain}/10`:"—"} sub={`${pts.length} registro${pts.length!==1?"s":""}`}/>}
             </div>
+            {marks.length>0&&<div style={{background:"#fffbeb",border:"1px solid #fde68a",borderRadius:12,padding:"9px 11px",marginBottom:10}}>
+              <div style={{fontSize:12,fontWeight:800,color:"#92400e",marginBottom:6}}>🏆 MEJORES MARCAS</div>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6}}>
+                {marks.map(([l,v,d])=><div key={l} style={{background:"#fff",borderRadius:9,padding:"6px 8px"}}>
+                  <div style={{fontSize:10,fontWeight:700,color:"#64748b"}}>{l}</div>
+                  <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>{v}</div>
+                  <div style={{fontSize:10,color:"#94a3b8"}}>{fmtD(d)}</div></div>)}
+              </div>
+            </div>}
             <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(130px,1fr))",gap:6,marginBottom:10}}>
               {!iso&&kgDays.length>1&&<MiniLine title="Carga por sesión (kg)" pts={kgDays.map(d=>({date:d.date,v:d.kg}))} yMin={Math.floor(Math.min(...kgDays.map(d=>d.kg))*0.9)} yMax={Math.ceil(Math.max(...kgDays.map(d=>d.kg))*1.05)} fmt={(v)=>fmtKgN(v)}/>}
-              {!iso&&rmDays.length>1&&<MiniLine title="RM estimado (kg)" pts={rmDays.map(d=>({date:d.date,v:Math.round(d.e1rm*10)/10}))} yMin={Math.floor(Math.min(...rmDays.map(d=>d.e1rm))*0.92)} yMax={Math.ceil(Math.max(...rmDays.map(d=>d.e1rm))*1.03)} fmt={(v)=>fmtKgN(v)}/>}
+              {!iso&&coach&&rmDays.length>1&&<MiniLine title="RM estimado (kg)" pts={rmDays.map(d=>({date:d.date,v:Math.round(d.e1rm*10)/10}))} yMin={Math.floor(Math.min(...rmDays.map(d=>d.e1rm))*0.92)} yMax={Math.ceil(Math.max(...rmDays.map(d=>d.e1rm))*1.03)} fmt={(v)=>fmtKgN(v)}/>}
               {iso&&days.filter(d=>d.secs!=null).length>1&&<MiniLine title="Segundos" pts={days.filter(d=>d.secs!=null).map(d=>({date:d.date,v:d.secs}))} fmt={(v)=>`${v}s`}/>}
               {iso&&days.filter(d=>d.pain!=null).length>1&&<MiniLine title="Dolor (0-10)" pts={days.filter(d=>d.pain!=null).map(d=>({date:d.date,v:d.pain}))} yMax={10} fmt={(v)=>String(v)} dotColor={painColor} lineColor="#94a3b8"/>}
             </div>
             <span className="lbl">REGISTROS</span>
             <div style={{border:"1px solid #e6ebf3",borderRadius:10,overflow:"hidden",background:"#fff",maxHeight:"38vh",overflowY:"auto"}}>
-              <div style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",background:"#f8fafc",fontSize:9,fontWeight:800,color:"#64748b",position:"sticky",top:0}}>
-                <span>FECHA</span><span>SERIES</span><span>CARGA</span>{iso?<span style={{textAlign:"right"}}>DOLOR</span>:<><span style={{textAlign:"right"}}>RIR</span><span style={{textAlign:"right"}}>e1RM</span></>}
+              <div style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":coach?"1fr 1fr 1fr .6fr .8fr":"1fr 1fr 1fr .6fr",gap:6,padding:"6px 10px",background:"#f8fafc",fontSize:9,fontWeight:800,color:"#64748b",position:"sticky",top:0}}>
+                <span>FECHA</span><span>SERIES</span><span>CARGA</span>{iso?<span style={{textAlign:"right"}}>DOLOR</span>:<><span style={{textAlign:"right"}}>RIR</span>{coach&&<span style={{textAlign:"right"}}>e1RM</span>}</>}
               </div>
-              {[...pts].reverse().map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,fontVariantNumeric:"tabular-nums",color:"#0f172a"}}>
+              {[...pts].reverse().map((p,i)=><div key={i} style={{display:"grid",gridTemplateColumns:iso?"1fr 1fr 1.3fr .7fr":coach?"1fr 1fr 1fr .6fr .8fr":"1fr 1fr 1fr .6fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,fontVariantNumeric:"tabular-nums",color:"#0f172a"}}>
                 <span style={{color:"#475569"}}>{fmtD(p.date)}{!p.done?<span style={{color:"#94a3b8"}}> ·</span>:""}</span>
                 <span>{p.sets?`${p.sets}×`:""}{iso?(p.secs!=null?`${p.secs}s`:"—"):(p.reps||"—")}</span>
                 <span style={{fontWeight:700}}>{loadTxt(p)}</span>
                 {iso?<span style={{textAlign:"right",fontWeight:800,color:painColor(p.pain)}}>{p.pain!=null?`${p.pain}/10`:"—"}</span>
-                  :<><span style={{textAlign:"right",color:"#475569"}}>{p.rir!=null?p.rir:"—"}</span><span style={{textAlign:"right",fontWeight:700}}>{p.e1rm?fmtKgN(p.e1rm):"—"}</span></>}
+                  :<><span style={{textAlign:"right",color:"#475569"}}>{p.rir!=null?p.rir:"—"}</span>{coach&&<span style={{textAlign:"right",fontWeight:700}}>{p.e1rm?fmtKgN(p.e1rm):"—"}</span>}</>}
               </div>)}
-              {tests.map(t=><div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,background:"#fffbeb"}}>
+              {coach&&tests.map(t=><div key={t.id} style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr .6fr .8fr",gap:6,padding:"6px 10px",borderTop:"1px solid #f1f4f8",fontSize:12,background:"#fffbeb"}}>
                 <span style={{color:"#475569"}}>{fmtD(t.tested_on)} · test</span><span>1×{t.reps||1}</span><span style={{fontWeight:700}}>{fmtKgN(t.kg)} kg</span><span style={{textAlign:"right"}}>{t.rir||0}</span><span style={{textAlign:"right",fontWeight:700}}>{fmtKgN(e1rmOf(t.kg,t.reps||1,t.rir||0))}</span>
               </div>)}
             </div>
@@ -6278,6 +6589,13 @@ function EditClientModal({client,clients,saving,lead,onValoracion,onSave,onClose
         <div style={{marginBottom:8}}><LevelPicker value={f.level} onChange={(l)=>set("level",l)} size="md"/></div>
         <span className="lbl">DÍAS HABITUALES ({f.train_days.length}/sem)</span>
         <WeekdayPicker value={f.train_days} onChange={(d)=>set("train_days",d)}/>
+        {sec("MODALIDAD")}
+        <div className="seg" style={{marginBottom:8}}>{[["clases","👥 Solo clases"],["hibrido","🔀 Híbrido · clases + open"]].map(([k,l])=><button key={k} type="button" className={"sb"+(((f.profile.plan_type||"clases")===k)?" on":"")} onClick={()=>setP("plan_type",k==="clases"?"":k)}>{l}</button>)}</div>
+        {f.profile.plan_type==="hibrido"&&<div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:10,padding:"9px 11px",marginBottom:4}}>
+          <span className="lbl">SESIONES OPEN POR SEMANA (por su cuenta)</span>
+          <input type="number" min="1" max="7" className="inp" placeholder="Sin límite" value={f.profile.open_per_week||""} onChange={e=>setP("open_per_week",e.target.value)}/>
+          <div style={{fontSize:11,color:"#0f766e",marginTop:6,lineHeight:1.4}}>Las clases siguen con su bono y aforo de siempre. Los días open los reserva desde su app (no gastan bono ni ocupan plaza de clase) y su planificación semanal los cuenta como días de entreno. Déjalo vacío si son ilimitadas.</div>
+        </div>}
         {sec("FICHA PERSONAL")}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {PROFILE_FIELDS.map(x=><div key={x.k} style={x.t==="area"?{gridColumn:"1 / -1"}:undefined}>
@@ -6620,9 +6938,10 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
+function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
+  const [resMode,setResMode]=React.useState("clase"); // Reservar (híbrido): clase | open
   const [saving,setSaving]=React.useState(false);
   const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
 
@@ -6637,6 +6956,11 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
   const myHistory=allHistory.filter(s=>s.client_id===client.id).sort((a,b)=>b.date.localeCompare(a.date));
   const pct=Math.max(0,Math.round(client.sessions_left/client.total_sessions*100));
   const nBooked=bookedAhead(client,allSessions), nFree=freeToBook(client,allSessions);
+  // Híbrido: sus días open (por su cuenta)
+  const hyb=isHybrid(client), openLim=openPerWeek(client);
+  const myOpens=(openSessions||[]).filter(o=>o.client_id===client.id);
+  const myOpensUp=hyb?myOpens.filter(o=>o.date>=TODAY&&o.status!=="done").map(o=>({...o,id:"open-"+o.id,oid:o.id,open:true})):[];
+  const openToday=hyb?myOpens.find(o=>o.date===TODAY):null;
   const tot=parseInt(client.total_sessions)||0, nDone=Math.max(0,Math.min(tot,tot-(parseInt(client.sessions_left)||0)));
   const pd=daysUntil(client.next_payment);
   const streak=calcStreak(myHistory);
@@ -6740,66 +7064,110 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
         ))}
 
 
-        {/* Lo importante, de un vistazo: próxima clase y entreno de hoy */}
-        <div className="hero-card" style={{marginBottom:12,padding:16}}>
-          <div style={{display:"flex",alignItems:"center",gap:12}}>
-            <Ico k="calendar" size={44}/>
-            <div style={{flex:1,minWidth:0}}>
-              <div style={{fontSize:11,fontWeight:800,color:"#94a3b8"}}>TU PRÓXIMA CLASE</div>
-              {nextSess
-                ?<><div style={{fontSize:17,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{nextCountdown===0?"Hoy":nextCountdown===1?"Mañana":new Date(nextSess.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"})} · {nextSess.time}</div>
-                  {nextCountdown>1&&<div style={{fontSize:12,color:"#64748b"}}>dentro de {nextCountdown} días</div>}
-                  {nextPlan&&<div style={{fontSize:12,fontWeight:700,color:"#0284c7",marginTop:2}}>🏋️ Te toca: {nextPlan.label} · {nextPlan.exs.length} ejercicios</div>}</>
-                :<div style={{fontSize:15,fontWeight:700,color:"#64748b"}}>Sin clases reservadas</div>}
+        {/* 1 · Lo más importante: su próxima sesión y las que tiene agendadas */}
+        {(()=>{ // Clases reservadas y, en híbrido, también sus días open (por su cuenta)
+          const all=[...mySessions,...myOpensUp].sort((x,y)=>(x.date+(x.time||"99")).localeCompare(y.date+(y.time||"99")));
+          const hero=all.find(x=>!x.requested)||null, ups=all.filter(x=>x!==hero), hc=hero?daysUntil(hero.date):null;
+          const hp=hero&&hero.date!==TODAY?planForDate(client,hero.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null;
+          const tm=(x)=>x.open?(x.time||"a tu hora"):x.time;
+          const tile=(d,big)=>{ const x=new Date(d+"T12:00:00"); return <div style={{width:big?62:44,flexShrink:0,textAlign:"center",background:"#fff",borderRadius:big?14:10,padding:big?"7px 0":"4px 0",boxShadow:big?"0 4px 12px rgba(15,23,42,.18)":"none",border:big?"none":"1px solid #e6ebf3"}}>
+            <div style={{fontSize:big?11:9,fontWeight:800,color:"#0284c7",textTransform:"uppercase"}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
+            <div style={{fontSize:big?28:17,fontWeight:800,color:"#0f172a",lineHeight:1.05}}>{x.getDate()}</div>
+            <div style={{fontSize:big?10:8,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{x.toLocaleDateString("es-ES",{month:"short"}).replace(".","")}</div></div>; };
+          return(
+          <div className="card" style={{marginBottom:12,padding:0,overflow:"hidden",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.22)"}}>
+            <div style={{background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",padding:"15px 16px"}}>
+              <div style={{fontSize:12,fontWeight:800,opacity:.85,letterSpacing:.4}}>TU PRÓXIMA SESIÓN</div>
+              {hero
+                ?<>
+                  <div style={{display:"flex",alignItems:"center",gap:14,marginTop:9}}>
+                    {tile(hero.date,true)}
+                    <div style={{minWidth:0}}>
+                      <div style={{fontSize:24,fontWeight:800,lineHeight:1.1,textTransform:"capitalize"}}>{hc===0?"Hoy":hc===1?"Mañana":new Date(hero.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {tm(hero)}</div>
+                      {hero.open&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,background:"rgba(255,255,255,.2)",borderRadius:20,padding:"2px 9px",marginTop:4}}>🔓 Open · vas por tu cuenta</div>}
+                      <div style={{fontSize:13,fontWeight:700,opacity:.9,marginTop:2}}>{hc===0?"¡Es hoy! 💪":hc===1?"Mañana toca 💪":`Dentro de ${hc} días`}</div>
+                      {hp&&<div style={{fontSize:13,fontWeight:800,marginTop:3}}>🏋️ Te toca: {hp.label}</div>}
+                    </div>
+                  </div>
+                  {(hp||hc===0)&&<button className="btn" style={{width:"100%",marginTop:12,padding:10,justifyContent:"center",fontSize:13,fontWeight:800,background:"#fff",color:"#0284c7",border:"none"}} onClick={()=>{ setPpView(hc===0?"hoy":"next"); go("entreno"); }}>{hc===0?"⚡ Ver mi entreno de hoy":"🔜 Ver qué me toca"}</button>}
+                </>
+                :<div style={{fontSize:16,fontWeight:800,marginTop:6}}>Aún no tienes clases reservadas</div>}
             </div>
-          </div>
-          <div style={{display:"flex",gap:8,marginTop:12}}>
-            {nextPlan&&<button className="btn ghost" style={{flex:1,padding:11,justifyContent:"center",fontSize:13,border:"1px solid #bcd3ee",color:"#0284c7",fontWeight:700}} onClick={()=>{ setPpView("next"); go("entreno"); }}>🔜 Ver qué me toca</button>}
-            <button className="btn sky" style={{flex:1,padding:11,justifyContent:"center",fontSize:13}} onClick={()=>go("reservar")}>{nextSess?"📅 Reservar más":"📅 Reservar clase"}</button>
-          </div>
-        </div>
+            {ups.length>0&&<div style={{padding:"10px 14px 4px"}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#64748b",marginBottom:6}}>📅 TAMBIÉN TIENES AGENDADAS · {ups.length}</div>
+              {ups.slice(0,5).map(x=>{ const pl=x.date!==TODAY?planForDate(client,x.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null; return(
+                <button key={x.id} type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"7px 0",border:"none",borderTop:"1px solid #f1f4f8",background:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+                  {tile(x.date,false)}
+                  <div style={{flex:1,minWidth:0}}>
+                    <div style={{fontSize:14,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{new Date(x.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {tm(x)}</div>
+                    <div style={{fontSize:11,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.requested?"⏳ Pendiente de confirmar":x.open?`🔓 Open · por tu cuenta${pl?` · ${pl.label}`:""}`:pl?`🏋️ ${pl.label}`:"✓ Reservada"}</div>
+                  </div>
+                  <span style={{fontSize:15,color:"#cbd5e1"}}>›</span>
+                </button>); })}
+              {ups.length>5&&<div style={{fontSize:11,color:"#94a3b8",padding:"2px 0 6px"}}>y {ups.length-5} más…</div>}
+            </div>}
+            <div style={{padding:"8px 14px 12px"}}>
+              <button className="btn sky" style={{width:"100%",padding:10,justifyContent:"center",fontSize:13}} onClick={()=>go("reservar")}>{hero?"📅 Reservar más":"📅 Reservar clase"}</button>
+            </div>
+          </div>); })()}
 
-        <button onClick={()=>{ setPpView("hoy"); go("entreno"); }} className="card" style={{width:"100%",display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:todayAsig?"1px solid #bcd3ee":undefined}}>
+        {todayAsig&&nextCountdown!==0&&<button onClick={()=>{ setPpView("hoy"); go("entreno"); }} className="card" style={{width:"100%",display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:"1px solid #bcd3ee"}}>
           <Ico k="clients" size={40}/>
           <div style={{flex:1,minWidth:0}}>
             <div style={{fontSize:11,fontWeight:800,color:"#94a3b8"}}>ENTRENO DE HOY</div>
-            {todayAsig
-              ?<><div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{DAY_LABEL[todayAsig.day_type]||"Tu sesión"}</div>
-                <div style={{fontSize:12,color:todayDone===todayExs.length&&todayExs.length?"#16a34a":"#64748b",fontWeight:700}}>{todayExs.length?(todayDone===todayExs.length?"✓ ¡Completado!":`${todayDone}/${todayExs.length} ejercicios hechos`):"Preparado por tu trainer"}</div></>
-              :<div style={{fontSize:14,fontWeight:700,color:"#64748b"}}>Hoy descansas 😴 · ver mis sesiones</div>}
+            <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{DAY_LABEL[todayAsig.day_type]||"Tu sesión"}</div>
+            <div style={{fontSize:12,color:todayDone===todayExs.length&&todayExs.length?"#16a34a":"#64748b",fontWeight:700}}>{todayExs.length?(todayDone===todayExs.length?"✓ ¡Completado!":`${todayDone}/${todayExs.length} ejercicios hechos`):"Preparado por tu trainer"}</div>
           </div>
           <span style={{fontSize:20,color:"#94a3b8"}}>›</span>
-        </button>
+        </button>}
 
-        {/* Bono y pago */}
-        <div className="card" style={{marginBottom:12,padding:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
-            <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>🎟️ Tu bono · {tot} sesiones</span>
-            <span style={{fontSize:12,color:"#64748b"}}><b key={nFree} className="count-pop" style={{color:"#0f172a",fontSize:15}}>{nFree}</b> libre{nFree!==1?"s":""}</span>
-          </div>
-          {/* Una casilla por sesión: hecha, reservada o libre (bonos grandes: barra proporcional) */}
-          {tot>0&&tot<=20
-            ?<div style={{display:"grid",gridTemplateColumns:`repeat(${tot},1fr)`,gap:3}} aria-label={`${nDone} hechas, ${nBooked} reservadas, ${nFree} libres`}>
-              {Array.from({length:tot},(_,i)=>{ const st=i<nDone?"done":i<nDone+Math.min(nBooked,tot-nDone)?"res":"free"; return(
-                <div key={i} title={st==="done"?"Hecha":st==="res"?"Reservada":"Libre"} style={{height:22,borderRadius:6,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,transition:"background .35s",
-                  background:st==="done"?"#cbd5e1":st==="res"?"#7cc4f0":"#fff",color:st==="done"?"#64748b":st==="res"?"#fff":"#0284c7",border:st==="free"?"1.5px solid #0284c7":"1.5px solid transparent"}}>{st==="done"?"✓":st==="res"?"📅":""}</div>); })}
+        {/* 2 · Bono: cuántas quedan y cuántas lleva usadas, en un anillo */}
+        {(()=>{ const left=parseInt(client.sessions_left)||0, owed=Math.max(0,-left), resN=Math.min(nBooked,Math.max(0,tot-nDone));
+          const R=44, C=2*Math.PI*R, seg=[[nDone,"#cbd5e1"],[resN,"#7cc4f0"],[nFree,"#0284c7"]], sum=Math.max(1,tot);
+          let off=0; const gap=tot>1?3:0;
+          return(
+          <div className="card" style={{marginBottom:12,padding:14}}>
+            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginBottom:10}}>🎟️ Tu bono · {tot} sesiones</div>
+            <div style={{display:"flex",alignItems:"center",gap:16}}>
+              <div style={{position:"relative",width:112,height:112,flexShrink:0}} aria-label={`Te quedan ${Math.max(0,left)} de ${tot}: ${nDone} usadas, ${resN} reservadas, ${nFree} libres`} role="img">
+                <svg width="112" height="112" viewBox="0 0 112 112" aria-hidden="true"><circle cx="56" cy="56" r={R} fill="none" stroke="#eef1f6" strokeWidth="13"/>
+                  {seg.filter(([n])=>n>0).map(([n,c],i)=>{ const len=Math.max(0,n/sum*C-gap); const el=<circle key={i} cx="56" cy="56" r={R} fill="none" stroke={c} strokeWidth="13" strokeDasharray={`${len} ${C}`} strokeDashoffset={-off} transform="rotate(-90 56 56)" style={{transition:"stroke-dasharray .5s"}}/>; off+=n/sum*C; return el; })}
+                </svg>
+                <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                  <span key={left} className="count-pop" style={{fontSize:32,fontWeight:800,color:owed?"#dc2626":"#0f172a",lineHeight:1}}>{owed?owed:Math.max(0,left)}</span>
+                  <span style={{fontSize:10,fontWeight:800,color:owed?"#dc2626":"#64748b"}}>{owed?"DEBES":left===1?"TE QUEDA":"TE QUEDAN"}</span>
+                </div>
+              </div>
+              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:7}}>
+                {[["#cbd5e1","Usadas",nDone,"✓"],["#7cc4f0","Reservadas",resN,"📅"],["#0284c7","Libres para reservar",nFree,""]].map(([c,l,n,ic])=>(
+                  <div key={l} style={{display:"flex",alignItems:"center",gap:8}}>
+                    <span style={{width:12,height:12,borderRadius:4,background:c,flexShrink:0}}/>
+                    <span style={{flex:1,fontSize:12,fontWeight:700,color:"#475569"}}>{ic?`${ic} `:""}{l}</span>
+                    <span style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{n}</span>
+                  </div>))}
+              </div>
             </div>
-            :<div style={{display:"flex",gap:2,height:12}} aria-label={`${nDone} hechas, ${nBooked} reservadas, ${nFree} libres`}>
-              {[[nDone,"#cbd5e1"],[Math.min(nBooked,Math.max(0,tot-nDone)),"#7cc4f0"],[nFree,"#0284c7"]].filter(([n])=>n>0).map(([n,c],i)=><div key={i} style={{flex:n,background:c,borderRadius:4,transition:"flex .35s"}}/>)}
-            </div>}
-          <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:7,fontSize:11,color:"#64748b",fontWeight:700}}>
-            <span>✓ {nDone} hecha{nDone!==1?"s":""}</span><span>📅 {nBooked} reservada{nBooked!==1?"s":""}</span><span style={{color:"#0284c7"}}>◻ {nFree} libre{nFree!==1?"s":""}</span>
-          </div>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:11,gap:8}}>
-            <div style={{fontSize:12,color:pd<=3?"#dc2626":pd<=7?"#ca8a04":"#64748b"}}>💳 Próximo pago: <b>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
-            <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer"><button className="btn wa" style={{fontSize:12,padding:"7px 11px"}}>📱 Trainer</button></a>
-          </div>
-        </div>
+            {hyb&&(()=>{ const n=opensInWeek(client,TODAY,myOpens).length; return(
+              <button type="button" onClick={()=>{ setResMode("open"); go("reservar"); }} style={{width:"100%",marginTop:12,display:"flex",alignItems:"center",gap:10,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                <span style={{fontSize:20}}>🔓</span>
+                <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f766e"}}>Open por tu cuenta esta semana<br/><span style={{fontSize:11,fontWeight:600,color:"#64748b"}}>No gastan sesiones del bono</span></span>
+                <span style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{n}{openLim?<span style={{fontSize:12,color:"#64748b"}}> / {openLim}</span>:""}</span>
+              </button>); })()}
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,gap:8}}>
+              <div style={{fontSize:12,color:pd<=3?"#dc2626":pd<=7?"#ca8a04":"#64748b"}}>💳 Próximo pago: <b>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
+              <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer"><button className="btn wa" style={{fontSize:12,padding:"7px 11px"}}>📱 Trainer</button></a>
+            </div>
+          </div>); })()}
 
-        <ClientSummary noHello client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
+        <ClientSummary noHello noPhase onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
       </>}
 
       {tab==="reservar"&&<div>
+          {hyb&&<div className="seg" style={{marginBottom:14}}>
+            <button className={"sb"+(resMode!=="open"?" on":"")} onClick={()=>setResMode("clase")} style={{fontSize:13}}>👥 Clase con coach</button>
+            <button className={"sb"+(resMode==="open"?" on":"")} onClick={()=>setResMode("open")} style={{fontSize:13}}>🔓 Open · por mi cuenta</button>
+          </div>}
+          {hyb&&resMode==="open"?<OpenBooking client={client} opens={myOpens} blocked={blocked} loadAll={loadAll} notify={notify}/>:<>
           {/* PRÓXIMAS CLASES reservadas */}
           <div style={{fontSize:11,color:"#64748b",fontWeight:800,margin:"0 2px 9px"}}>📅 MIS PRÓXIMAS CLASES</div>
           {mySessions.length===0
@@ -6852,6 +7220,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 👋`)} target="_blank" rel="noreferrer" style={{display:"block",marginTop:16}}>
             <button className="btn wa" style={{width:"100%",padding:12,justifyContent:"center",fontSize:13}}>📱 Chatear con mi trainer</button>
           </a>
+      </>}
       </div>}
 
       {tab==="entreno"&&<div>
@@ -6863,6 +7232,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
         {ppView==="next"&&<AthleteUpcoming client={client} sessions={allSessions} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} annualBlocks={annualBlocks} clientWeights={clientWeights}/>}
         {ppView==="hoy"
           ?<>
+            {openToday&&<OpenTodayCard open={openToday} client={client} hasAsig={!!todayAsig} plan={!todayAsig?planForDate(client,TODAY,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null} loadAll={loadAll} notify={notify}/>}
             <TodaySession client={client} myAssignedSessions={myAssignedSessions} myAssignedExercises={myAssignedExercises} clientWeights={clientWeights} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify}/>
             {(clientPlans||[]).some(cp=>cp.client_id===client.id&&cp.active)&&<><Sec>🗂️ Mi plan</Sec><PlanTab client={client} plans={plans} clientPlans={clientPlans} exercises={exercises}/></>}
           </>
@@ -6899,9 +7269,10 @@ function athleteSessions(client,history,assignedSessions,assignedExercises){
   mine.forEach(a=>{ const exs=(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0));
     const nDone=exs.filter(exDone).length; if(!byDate[a.date]&&!nDone&&a.status!=="completed") return; // planificado pero no hecho
     byDate[a.date]={...(byDate[a.date]||{date:a.date,came:false}),asig:a,exs,nDone}; });
+  (OPEN.list||[]).filter(o=>o.client_id===client.id&&o.status==="done"&&o.date<=TODAY).forEach(o=>{ const x=byDate[o.date]; if(x) x.open=true; else byDate[o.date]={date:o.date,time:o.time,type:"Open",came:true,open:true}; });
   return Object.values(byDate).map(x=>{ const exs=x.exs||[];
     const vol=exs.filter(exDone).reduce((t,e)=>{ const kg=exKg(e), r=parseInt(e.actual_reps||e.reps)||0, st=parseInt(e.sets)||0; return t+(kg&&r&&st&&!isIsoRow(e)?kg*r*st:0); },0);
-    return {...x,label:(x.asig&&DAY_LABEL[x.asig.day_type])||x.type||"Entreno",vol:Math.round(vol)}; })
+    return {...x,label:((x.asig&&DAY_LABEL[x.asig.day_type])||(x.open?"🔓 Open · por tu cuenta":x.type)||"Entreno")+(x.open&&x.asig?" · 🔓 open":""),vol:Math.round(vol)}; })
     .sort((a,b)=>b.date.localeCompare(a.date));
 }
 function AthleteHistory({client,history,assignedSessions,assignedExercises}){
@@ -6933,7 +7304,7 @@ function AthleteHistory({client,history,assignedSessions,assignedExercises}){
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</div>
-              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{x.exs&&x.exs.length?`${x.nDone}/${x.exs.length} ejercicios`:"Asistencia"}{x.vol?` · ${x.vol.toLocaleString("es-ES")} kg movidos`:""}{x.time?` · ${x.time}`:""}{(x.exs||[]).some(e=>prSet.has(notesKey(e.exercise_name)+"|"+x.date))&&<span style={{marginLeft:5,fontSize:10,fontWeight:800,color:"#a16207"}}>🏆 récord</span>}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{x.exs&&x.exs.length?`${x.nDone}/${x.exs.length} ejercicios`:x.open?"Entrenaste por tu cuenta":"Asistencia"}{x.vol?` · ${x.vol.toLocaleString("es-ES")} kg movidos`:""}{x.time?` · ${x.time}`:""}{(x.exs||[]).some(e=>prSet.has(notesKey(e.exercise_name)+"|"+x.date))&&<span style={{marginLeft:5,fontSize:10,fontWeight:800,color:"#a16207"}}>🏆 récord</span>}</div>
             </div>
             <span style={{fontSize:16,color:"#cbd5e1"}}>›</span>
           </button>); })}
@@ -7124,12 +7495,13 @@ function planForDate(client,date,{sessions,assignedSessions,assignedExercises,an
   return {label:au.label,exs,ready:false,blk};
 }
 function PlanExRows({client,exs}){
+  useExMedia();
   return <div style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden"}}>
     {exs.map((e,i)=>{ const kg=e.load_band?bandLabel(e.load_band):(e.prescribed_weight!=null&&e.prescribed_weight!==""?`${fmtKgN(parseFloat(e.prescribed_weight))} kg`:""); return(
       <div key={e.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderTop:i?"1px solid #eef1f7":"none",background:"#fff"}}>
         <span style={{width:22,height:22,borderRadius:7,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,background:"#eef4fc",color:"#0284c7"}}>{i+1}</span>
         <div style={{flex:1,minWidth:0}}>
-          <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/></div>
+          <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/>{exMediaOf(e.exercise_name).length>0&&<span title="Tiene vídeo o foto: toca el nombre" style={{marginLeft:5,fontSize:11}}>🎬</span>}</div>
           <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&e.reps?`${e.sets} × ${e.reps}${isIsoRow(e)?"":" reps"}`:""}{PROTO_SHORT[e.protocol]?` · ${PROTO_SHORT[e.protocol]}`:""}{e.rest_seconds?` · descanso ${e.rest_seconds>=60?(Math.round(e.rest_seconds/6)/10).toLocaleString("es-ES")+" min":e.rest_seconds+" s"}`:""}</div>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
@@ -7217,6 +7589,74 @@ function AthleteSessionModal({client,item,assignedSessions,assignedExercises,prS
       </div>
     </div>
   );
+}
+
+// Hoy es día open: qué le toca y botón para marcar que ya entrenó.
+function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
+  const [busy,setBusy]=React.useState(false), done=open.status==="done";
+  const toggle=async()=>{ setBusy(true); const {error}=await sb.from("open_sessions").update({status:done?"planned":"done"}).eq("id",open.id); setBusy(false);
+    if(error) return notify("No se pudo guardar","err"); await loadAll(); notify(done?"Marcado como pendiente":"¡Bien hecho! Open registrado ✅"); };
+  return(
+    <div className="card" style={{marginBottom:14,padding:"13px 14px",background:done?"#ecfdf3":"#f0faf7",border:`1px solid ${done?"#86efac":"#b5e3da"}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:26}}>{done?"✅":"🔓"}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#0f766e"}}>Hoy entrenas por tu cuenta{open.time?` · ${open.time}`:""}</div>
+          <div style={{fontSize:12,color:"#475569"}}>{done?"¡Ya lo tienes hecho hoy!":hasAsig?"Tu trainer te ha dejado el entreno aquí abajo 👇 Marca cada ejercicio al hacerlo.":plan?"Este es tu entreno previsto. Tu trainer puede ajustarlo.":"Tu trainer te preparará el entreno."}</div>
+        </div>
+      </div>
+      {!hasAsig&&plan&&!done&&<div style={{marginTop:10}}><PlanExRows client={client} exs={plan.exs}/></div>}
+      <button type="button" className={done?"btn ghost":"btn grn"} disabled={busy} onClick={toggle} style={{width:"100%",marginTop:10,padding:10,justifyContent:"center",fontSize:13,fontWeight:800}}>{done?"↺ Deshacer":"✓ He entrenado hoy"}</button>
+    </div>);
+}
+// ── HÍBRIDO · reservar días «open» (entrena por su cuenta) ────────────────
+function OpenBooking({client,opens,blocked,loadAll,notify}){
+  const lim=openPerWeek(client);
+  const [busy,setBusy]=React.useState(false), [time,setTime]=React.useState("");
+  const closed=(d)=>isWeekend(d)||(blocked||[]).some(b=>b.date===d&&b.time==="ALL");
+  const days=Array.from({length:14},(_,i)=>addDays(TODAY,i));
+  const mine=(d)=>(opens||[]).find(o=>o.date===d);
+  const wk=(d)=>opensInWeek(client,d,opens).length;
+  const book=async(d)=>{ if(busy) return;
+    if(lim&&wk(d)>=lim) return notify(`Esa semana ya tienes tus ${lim} open`,"err");
+    setBusy(true); const {error}=await sb.from("open_sessions").insert({client_id:client.id,date:d,time:time||null,status:"planned"}); setBusy(false);
+    if(error) return notify("No se pudo reservar. Avisa a tu trainer (falta activar el modo híbrido).","err");
+    await loadAll(); notify("🔓 Open reservado ✓ · tu trainer te preparará el entreno"); };
+  const cancel=async(o)=>{ if(o.status==="done"||!window.confirm(`¿Quitar tu open del ${fmtDate(o.date)}?`)) return;
+    setBusy(true); await sb.from("open_sessions").delete().eq("id",o.id); setBusy(false); await loadAll(); notify("Open quitado"); };
+  const up=(opens||[]).filter(o=>o.date>=TODAY).sort((a,b)=>a.date.localeCompare(b.date));
+  const thisW=wk(TODAY), nextW=wk(addDays(mondayOfDate(TODAY),7));
+  return(<div>
+    <div className="card" style={{padding:"12px 14px",marginBottom:12,background:"#f0faf7",border:"1px solid #b5e3da"}}>
+      <div style={{fontSize:14,fontWeight:800,color:"#0f766e"}}>🔓 Días open: entrenas por tu cuenta</div>
+      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Elige qué días vienes a entrenar solo/a. No gastan sesiones de tu bono y tu trainer te deja el entreno preparado en la app.</div>
+      <div style={{display:"flex",gap:14,marginTop:8,fontSize:12,fontWeight:800,color:"#0f172a"}}>
+        <span>Esta semana: {thisW}{lim?` / ${lim}`:""}</span><span>Próxima: {nextW}{lim?` / ${lim}`:""}</span>{!lim&&<span style={{color:"#0f766e"}}>sin límite</span>}
+      </div>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+      <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>Hora aproximada (opcional)</span>
+      <input type="time" className="inp" value={time} onChange={e=>setTime(e.target.value)} style={{width:120,padding:"6px 8px"}}/>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(68px,1fr))",gap:6,marginBottom:14}}>
+      {days.map(d=>{ const m=mine(d), cl=closed(d), full=!m&&lim&&wk(d)>=lim, x=new Date(d+"T12:00:00"); return(
+        <button key={d} type="button" disabled={busy||(cl&&!m)||full} onClick={()=>m?cancel(m):book(d)} title={m?"Toca para quitarlo":cl?"Cerrado":full?"Ya tienes el cupo de esa semana":"Reservar"}
+          style={{padding:"8px 2px",borderRadius:12,cursor:(cl&&!m)||full?"default":"pointer",fontFamily:"inherit",textAlign:"center",
+            background:m?"#0f766e":cl?"#f1f4fa":"#fff",color:m?"#fff":cl||full?"#cbd5e1":"#0f172a",border:`1.5px solid ${m?"#0f766e":cl||full?"#e6ebf3":"#b5e3da"}`}}>
+          <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",opacity:.85}}>{d===TODAY?"hoy":x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
+          <div style={{fontSize:18,fontWeight:800,lineHeight:1.1}}>{x.getDate()}</div>
+          <div style={{fontSize:9,fontWeight:700}}>{m?(m.status==="done"?"✓ hecho":"✓ voy"):cl?"cerrado":full?"cupo lleno":"libre"}</div>
+        </button>); })}
+    </div>
+    <div style={{fontSize:11,fontWeight:800,color:"#64748b",margin:"0 2px 6px"}}>🔓 MIS PRÓXIMOS OPEN</div>
+    {up.length===0?<div className="card" style={{textAlign:"center",padding:18,fontSize:13,color:"#64748b"}}>Aún no has reservado ningún día open.</div>
+      :<div className="card" style={{padding:0,overflow:"hidden"}}>{up.map((o,i)=>(
+        <div key={o.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 13px",borderTop:i?"1px solid #eef1f6":"none"}}>
+          <span style={{fontSize:18}}>{o.status==="done"?"✅":"🔓"}</span>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{fmtLong(o.date)}</div><div style={{fontSize:11,color:"#64748b"}}>{o.time?`hacia las ${o.time}`:"a tu hora"}</div></div>
+          {o.status!=="done"&&<button type="button" disabled={busy} onClick={()=>cancel(o)} style={{border:"1px solid #f2cccc",background:"#fff",color:"#dc2626",borderRadius:8,padding:"4px 9px",fontSize:11,fontWeight:800,cursor:"pointer"}}>Quitar</button>}
+        </div>))}</div>}
+  </div>);
 }
 
 // ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
@@ -8361,8 +8801,8 @@ const TEMPLATE_EXERCISES = {
   "Movilidad / Regeneración":[["Movilidad de cadera",2,"8-10",0,false],["Movilidad torácica",2,"8-10",0,false],["Gato-camello",2,"10",0,false],["Plancha frontal",3,"30-45s",30,false],["Bicicleta / Assault bike",1,"15-20 min",0,false]],
 };
 
-function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenProgress,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
-  const [tab,setTab] = React.useState("macrocycle");
+function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenProgress,onEditSession,onOpenHistory,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,loadAll,notify}) {
+  const [tab,setTab] = React.useState(initialTab||"macrocycle");
   const [selBlock,setSelBlock] = React.useState(null);
   const [selTemplate,setSelTemplate] = React.useState(null);
   const [selClient,setSelClient] = React.useState(clients[0]?.id||"");
@@ -8540,13 +8980,18 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
       .sort((a,b) => a.order_index - b.order_index);
 
     const clientWts = clientWeights.filter(cw => cw.client_id === clientId);
+    const cli = clients.find(c=>c.id===clientId), blkP = cli&&blockForDate(annualBlocks,date,cli);
+    const histP = cli&&rmHistory(clientId,assignedSessions,assignedExercises,(rmtStore(clientId).list)||[]);
 
     const assigns = (customExercises || tmplExercises).map(ex => {
       const cw = clientWts.find(w => w.exercise_name.toLowerCase() === ex.exercise_name.toLowerCase());
+      // Carga desde su eRM para estas reps; si aún no hay eRM, la última registrada.
+      const x = cli&&isRmRow(ex) ? rmLoad(cli,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkP,hist:histP}) : null;
       return {
         session_id: sess.id,
         exercise_name: ex.exercise_name,
-        prescribed_weight: cw?.weight || null,
+        prescribed_weight: x ? x.kg : (cw?.weight || null),
+        ...(x ? {rir:x.rir} : {}),
         sets: ex.sets,
         reps: ex.reps,
         protocol: ex.protocol,
@@ -8557,7 +9002,7 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
     });
 
     if(assigns.length > 0) {
-      await sb.from("assigned_exercises").insert(assigns);
+      await insertExRows(assigns);
     }
   };
 
@@ -8618,10 +9063,12 @@ function ProgrammingAdmin({clients,sessions,history,onSetType,onPlanWeek,onCopyW
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:12,paddingBottom:4}}>
-        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"]].map(([id,label])=>(
+        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"],["media","🎬 Vídeos"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
+
+      {tab==="media"&&<ExerciseMediaLibrary notify={notify}/>}
 
       {/* ── MACROCICLO TAB ── */}
       {tab==="macrocycle"&&(
@@ -9802,6 +10249,18 @@ const defaultRir = (block,level,main) => {
   if(level==="avanzado"&&bt!=="acondicionamiento") r=Math.max(0,r-1);
   return r;
 };
+// Carga desde el eRM del ejercicio para el rango de reps pedido y el RIR objetivo
+// (si no hay RIR, el de la fase y el nivel). En descarga, un 15 % menos.
+// Devuelve {kg,rir,rm} o null si ese ejercicio aún no tiene eRM.
+function rmLoad(client, name, reps, {rir, main, blk, hist, assignedSessions, assignedExercises}={}){
+  if(!client||!name||isIsoRow({exercise_name:name,reps})) return null;
+  const r=repsLow(reps); if(!r) return null;
+  const h=hist||rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]);
+  const rm=rmFor(h,name); if(!rm) return null;
+  const t=rir!=null&&rir!==""?Number(rir):defaultRir(blk||null,levelOf(client),!!main);
+  let kg=loadFor(rm,r,t); if(kg&&blk&&blk.type==="descarga") kg=roundLoad(kg*0.85);
+  return kg?{kg,rir:t,rm}:null;
+}
 // ¿Se puede trabajar por RIR/RM? (fuerza con carga externa: ni WOD ni isométricos).
 const isRmRow = (e) => !!e && !isIsoRow(e) && !META_PROTOS.includes(e.protocol) && !isWodHeader(e) && repsLow(e.reps)!=null;
 // Tests de RM hechos a mano (tabla rm_tests), con caché por cliente como las notas.
@@ -9824,7 +10283,7 @@ function rmHistory(clientId, assignedSessions, assignedExercises, tests){
   const dateOf=Object.fromEntries((assignedSessions||[]).filter(a=>a.client_id===clientId).map(a=>[a.id,a.date]));
   const g={}; const push=(name,p)=>{ const k=notesKey(name); (g[k]=g[k]||{name,pts:[]}).pts.push(p); };
   (assignedExercises||[]).forEach(e=>{
-    const d=dateOf[e.session_id]; if(!d||d>TODAY||!e.done||!isRmRow(e)) return;
+    const d=dateOf[e.session_id]; if(!d||d>TODAY||!(e.done||e.completed)||!isRmRow(e)) return;
     const kg=e.actual_weight!=null?Number(e.actual_weight):null; const reps=repsLow(e.actual_reps!=null?e.actual_reps:e.reps);
     const rir=e.actual_rir!=null?Number(e.actual_rir):(e.rir!=null?Number(e.rir):null);
     const v=e1rmOf(kg,reps,rir!=null?rir:RIR_DEFAULT_UNKNOWN); if(!v) return;
@@ -10518,6 +10977,10 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 // ── EXERCISE CARD (client registers completion) ────────────────────────────
 function ExerciseCard({ae, index, onComplete, saving, client}) {
   const [expanded,setExpanded] = React.useState(false);
+  const [howTo,setHowTo] = React.useState(false);
+  useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length;
+  const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); setHowTo(true); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
+  const howModal=howTo&&<ExerciseMediaModal name={ae.exercise_name} notify={()=>{}} onClose={()=>setHowTo(false)}/>;
   const [actualWeight,setActualWeight] = React.useState(ae.prescribed_weight||"");
   const [actualReps,setActualReps] = React.useState(ae.reps||"");
   const [rpe,setRpe] = React.useState("");
@@ -10527,25 +10990,28 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
       <div style={{display:"flex",gap:10,alignItems:"center"}}>
         <div style={{width:22,height:22,borderRadius:6,background:"#e2f4e8",border:"1px solid #14532d",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✓</div>
         <div>
-          <div style={{fontSize:13,fontWeight:600,color:"#16a34a"}}>{ae.exercise_name}</div>
+          <div style={{fontSize:13,fontWeight:600,color:"#16a34a",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{ae.exercise_name}{howBtn}</div>
           <div style={{fontSize:11,color:"#94a3b8"}}>{ae.actual_weight||ae.prescribed_weight}kg · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
         </div>
       </div>
       <span style={{fontSize:16}}>✅</span>
+      {howModal}
     </div>
   );
 
   return(
     <div style={{borderBottom:"1px solid #e6ebf3",paddingBottom:10,marginBottom:10}}>
+      {howModal}
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setExpanded(!expanded)}>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           <div style={{width:22,height:22,borderRadius:6,background:"#e6f0fb",border:"1px solid #bcd3ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#0284c7",flexShrink:0}}>{index+1}</div>
           <div>
             <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
-            <div style={{display:"flex",gap:8,marginTop:2}}>
+            <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
               <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
               {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
               {ae.rir!=null&&<span style={{fontSize:11,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:20,padding:"0 7px"}}>RIR {ae.rir}</span>}
+              {howBtn}
               {ae.rest_seconds?<span onClick={e=>e.stopPropagation()}><RestButton secs={ae.rest_seconds} label={ae.exercise_name} style={{padding:"1px 8px",fontSize:11,borderRadius:20}}/></span>:null}
             </div>
           </div>
