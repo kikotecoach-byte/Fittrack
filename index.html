@@ -503,11 +503,21 @@ const dayTypeLabel = (id) => (DAY_LABEL&&DAY_LABEL[id]) || "Sesión";
 // la posición de la sesión entre los días que REALMENTE viene esa semana
 // (sus reservas). Los días habituales de la ficha solo marcan el tamaño mínimo
 // del microciclo.
+// ── MODALIDAD HÍBRIDA (clases con el coach + días «open» por su cuenta) ──
+// La modalidad va en la ficha (profile.plan_type = "hibrido", profile.open_per_week);
+// los días open, en la tabla open_sessions (docs/hibrido.sql).
+const OPEN = {list:[], missing:false};
+const isHybrid = (c) => profileOf(c).plan_type==="hibrido";
+const openPerWeek = (c) => { const n=parseInt(profileOf(c).open_per_week,10); return n>0?n:null; }; // null = sin límite
+const opensOf = (c, list) => ((list||OPEN.list)||[]).filter(o=>c&&o.client_id===c.id);
+const opensInWeek = (c, d, list) => { const m=mondayOfDate(d), e=addDays(m,7); return opensOf(c,list).filter(o=>o.date>=m&&o.date<e); };
 function autoRoutineFor(client, date, sessions, annualBlocks){
   const blk = blockForDate(annualBlocks, date, client);
   const td = parseDays(client.train_days);
   const wd = getWeekDays(mondayOfDate(date));
-  const days = [...new Set((sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date))];
+  // Días de entreno de la semana: clases reservadas y, en híbrido, también los días open.
+  const days = [...new Set([...(sessions||[]).filter(s=>s.client_id===client.id && wd.includes(s.date)).map(s=>s.date),
+    ...opensOf(client).filter(o=>wd.includes(o.date)).map(o=>o.date)])];
   if(!days.includes(date)) days.push(date);
   days.sort();
   const nDays = Math.max(days.length, td.length || client.days_week || 0) || 4;
@@ -568,6 +578,7 @@ function App() {
   const [assignedExercises, setAssignedExercises] = React.useState([]);
   const [weightHistory, setWeightHistory] = React.useState([]);
   const [leads, setLeads] = React.useState([]);
+  const [openSessions, setOpenSessions] = React.useState([]); // modalidad híbrida: días que entrena por su cuenta
   const [loading, setLoading] = React.useState(true);
   const [loggedClient, setLoggedClient] = React.useState(null);
   const [pendingSession, setPendingSession] = React.useState(null);
@@ -616,6 +627,7 @@ function App() {
       setWaitlist(wl.data||[]);
       // Leads/valoraciones: fetch aparte para no romper si aún no existe la tabla.
       try { const lq=await sb.from("leads").select("*").order("created_at",{ascending:false}); if(!lq.error) setLeads(lq.data||[]); } catch(e){}
+      try { const oq=await sb.from("open_sessions").select("*").order("date"); OPEN.missing=!!oq.error; OPEN.list=oq.error?[]:(oq.data||[]); setOpenSessions(OPEN.list); } catch(e){ OPEN.missing=true; }
       if(authKind.current==="client") await loadCommunity();
       setLoading(false);
       return {clients:c.data||[]};
@@ -757,9 +769,9 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
-      {mode==="client"&&loggedClient&&<ClientPortal client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal openSessions={openSessions} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
@@ -870,7 +882,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,loadAll,notify,onLogout,secure}) {
+function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify,onLogout,secure}) {
   setCustomExercises(exercises); // ejercicios propios (músculos y material) para buscador y generador
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
@@ -1752,6 +1764,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     {nowG?<>🔴 <b>Ahora · {nowG.t}</b> con {[...nowG.ss.map(x=>x.c.name.split(" ")[0]),...nowG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")||"nadie"}</>
                       :<>⏭️ <b>Siguiente · {nextG.t}</b>{mins(nextG.t)<=120?` (en ${mins(nextG.t)<60?`${mins(nextG.t)} min`:`${Math.floor(mins(nextG.t)/60)} h ${mins(nextG.t)%60?`${mins(nextG.t)%60} min`:""}`})`:""} con {[...nextG.ss.map(x=>x.c.name.split(" ")[0]),...nextG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")}</>}
                   </div>}
+                  {(()=>{ const ops=(openSessions||[]).filter(o=>o.date===TODAY).map(o=>({o,c:clients.find(c=>c.id===o.client_id)})).filter(x=>x.c); if(!ops.length) return null; return(
+                    <div style={{marginTop:10,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",background:"rgba(255,255,255,.12)",borderRadius:12,padding:"7px 10px"}}>
+                      <span style={{fontSize:12,fontWeight:800}}>🔓 Por su cuenta:</span>
+                      {ops.map(({o,c})=><button key={o.id} type="button" onClick={()=>setQuickView(c)} style={{border:"none",borderRadius:20,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:"rgba(255,255,255,.92)",color:"#0f766e"}}>{c.name.split(" ")[0]}{o.time?` ${o.time}`:""}{o.status==="done"?" ✓":""}</button>)}
+                    </div>); })()}
                   {groups.length===0
                     ?<div style={{marginTop:10,fontSize:13,opacity:.9}}>Hoy no hay clases. ¡Día libre o de planificar! 🌴</div>
                     :<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
@@ -2032,6 +2049,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                             <span style={{fontSize:10,color:"#94a3b8"}}>· {c.days_week||4}d/sem</span>
                             <span style={{fontSize:10}}>{c.goal==="estetica"?"💪":"🩺"}</span>
                             {streak>0&&<span style={{fontSize:10,color:"#ea580c"}}>🔥{streak}</span>}
+                            {isHybrid(c)&&<span title="Clases con el coach + días por su cuenta" style={{fontSize:9,fontWeight:800,color:"#0f766e",background:"#e6f6f3",border:"1px solid #b5e3da",borderRadius:20,padding:"1px 6px"}}>🔀 Híbrido{openPerWeek(c)?` · ${openPerWeek(c)} open/sem`:""}</span>}
                           </div>
                         </div>
                       </div>
@@ -2204,6 +2222,22 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               })()}
             </div>
 
+            {/* Modalidad híbrida: quién viene hoy por su cuenta (no ocupa plaza de clase) */}
+            {schedView==="day"&&(()=>{ const ops=(openSessions||[]).filter(o=>o.date===activeDay).map(o=>({o,c:clients.find(c=>c.id===o.client_id)})).filter(x=>x.c).sort((a,b)=>String(a.o.time||"99").localeCompare(String(b.o.time||"99")));
+              if(!ops.length) return null;
+              return(<div style={{marginBottom:12,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px"}}>
+                <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN · POR SU CUENTA · {ops.length}</div>
+                <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
+                  {ops.map(({o,c})=>{ const asig=assignedSessions.some(a=>a.client_id===c.id&&a.date===activeDay); return(
+                    <button key={o.id} type="button" onClick={()=>setQuickView(c)} title={asig?"Tiene su entreno preparado":"Sin entreno asignado: ábrelo para prepararlo"}
+                      style={{display:"inline-flex",alignItems:"center",gap:6,border:`1px solid ${c.color}55`,background:"#fff",borderRadius:20,padding:"4px 10px 4px 4px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,color:"#0f172a"}}>
+                      <span style={{width:22,height:22,borderRadius:"50%",background:c.color,color:"#fff",fontSize:9,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>
+                      {c.name.split(" ")[0]}{o.time?<span className="mono" style={{color:"#64748b",fontWeight:700}}>{o.time}</span>:null}
+                      <span style={{fontSize:11}}>{o.status==="done"?"✅":asig?"🏋️":"⚠️"}</span>
+                    </button>); })}
+                </div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:6}}>🏋️ entreno preparado · ⚠️ sin entreno (toca para asignarlo) · ✅ ya entrenó</div>
+              </div>); })()}
             {/* Valoraciones del día sin hora concreta (las que tienen hora salen en su fila) */}
             {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&!l.time).length>0&&(
               <div style={{marginBottom:12,display:"flex",flexDirection:"column",gap:6}}>
@@ -2702,7 +2736,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} onValoracion={leadOf(quickView)?()=>openValoracion(quickView):null} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView loadAll={loadAll} notify={notify} docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} onValoracion={leadOf(quickView)?()=>openValoracion(quickView):null} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{setExecData({client:quickView,date:activeDay});setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} block={blockAt(slotMenu.date,slotMenu.time)} booked={sessions.filter(s=>s.date===slotMenu.date&&s.time===slotMenu.time).length}
@@ -2722,7 +2756,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             <span style={{fontSize:13,fontWeight:700,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>👁 Vista de {c.name} · así ve su app</span>
             <button className="btn" style={{background:"#fff",color:"#6d28d9",fontSize:12,padding:"6px 12px",flexShrink:0}} onClick={()=>setViewAs(null)}>✕ Cerrar</button>
           </div>
-          <ClientPortal preview client={c} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans}
+          <ClientPortal preview openSessions={openSessions} client={c} allSessions={sessions} allHistory={history} allClients={clients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans}
             myProgress={(progress||[]).filter(p=>p.client_id===c.id)} myRecords={(records||[]).filter(r=>r.client_id===c.id)} myAchievements={(achievements||[]).filter(a=>a.client_id===c.id)}
             myAssignedSessions={assignedSessions.filter(s=>s.client_id===c.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===c.id)} annualBlocks={annualBlocks}
             loadAll={loadAll} notify={notify} onLogout={()=>setViewAs(null)}/>
@@ -4434,7 +4468,36 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 
 // ── FICHA RÁPIDA DEL CLIENTE (desde la agenda) ─────────────────────────────
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
-function ClientQuickView({client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+// Ficha rápida · híbrido: días open de la semana (marcar hecho, quitar o añadir uno).
+function HybridBox({client,date,loadAll,notify,athlete}){
+  const [busy,setBusy]=React.useState(false), [nd,setNd]=React.useState("");
+  const wk=opensInWeek(client,date||TODAY).sort((a,b)=>a.date.localeCompare(b.date)), lim=openPerWeek(client);
+  const run=async(fn,msg)=>{ setBusy(true); const r=await fn(); setBusy(false); if(r&&r.error) return notify&&notify(OPEN.missing?"Ejecuta docs/hibrido.sql en Supabase":"No se pudo guardar","err"); await loadAll(); msg&&notify&&notify(msg); };
+  const toggle=(o)=>run(()=>sb.from("open_sessions").update({status:o.status==="done"?"planned":"done"}).eq("id",o.id),o.status==="done"?"Marcada como pendiente":"Open hecha ✓");
+  const del=(o)=>{ if(window.confirm(`¿Quitar la sesión open del ${fmtDate(o.date)}?`)) run(()=>sb.from("open_sessions").delete().eq("id",o.id),"Quitada"); };
+  const add=()=>{ if(!nd) return; run(()=>sb.from("open_sessions").insert({client_id:client.id,date:nd,status:"planned"}),"Open añadida ✓").then(()=>setNd("")); };
+  return(
+    <div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
+      <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
+        <span style={{fontSize:12,fontWeight:800,color:"#0f766e"}}>🔀 HÍBRIDO · OPEN ESTA SEMANA</span>
+        <span style={{fontSize:12,fontWeight:800,color:lim&&wk.length>=lim?"#b45309":"#0f766e"}}>{wk.length}{lim?` / ${lim}`:" · sin límite"}</span>
+      </div>
+      {OPEN.missing&&<div style={{fontSize:11,color:"#b45309",fontWeight:700,marginTop:4}}>⚠️ Falta ejecutar docs/hibrido.sql en Supabase.</div>}
+      {wk.length===0?<div style={{fontSize:12,color:"#64748b",marginTop:4}}>Esta semana no ha reservado días por su cuenta.</div>
+        :<div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>{wk.map(o=>(
+          <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,background:"#fff",borderRadius:9,padding:"6px 8px"}}>
+            <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f172a",textTransform:"capitalize"}}>{fmtDate(o.date)}{o.time?` · ${o.time}`:""}</span>
+            <button type="button" disabled={busy} onClick={()=>toggle(o)} style={{border:`1px solid ${o.status==="done"?"#16a34a":"#cbd5e1"}`,background:o.status==="done"?"#e2f4e8":"#fff",color:o.status==="done"?"#16a34a":"#64748b",borderRadius:8,padding:"3px 8px",fontSize:11,fontWeight:800,cursor:"pointer"}}>{o.status==="done"?"✓ hecha":"○ hecha"}</button>
+            <button type="button" disabled={busy} onClick={()=>del(o)} aria-label="Quitar" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:13}}>✕</button>
+          </div>))}</div>}
+      {!athlete&&<div style={{display:"flex",gap:6,marginTop:7}}>
+        <input type="date" className="inp" value={nd} min={TODAY} onChange={e=>setNd(e.target.value)} style={{flex:1,padding:"6px 8px",fontSize:12}}/>
+        <button type="button" className="btn ghost" disabled={busy||!nd} onClick={add} style={{fontSize:11,padding:"6px 10px",fontWeight:800,color:"#0f766e",border:"1px solid #b5e3da"}}>＋ Open</button>
+      </div>}
+      <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Sus días open aparecen en la planificación semanal para que le prepares el entreno.</div>
+    </div>);
+}
+function ClientQuickView({loadAll,notify,client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -4466,6 +4529,7 @@ function ClientQuickView({client,date,sessions,history,payments,clientWeights,as
         </div>
 
         <ProfileSummary client={client} compact/>
+        {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
         <div style={{marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
             <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
@@ -4830,7 +4894,8 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   const week=getWeekDays(anchor);
   const td=parseDays(client.train_days);
   const mine=(arr)=>(arr||[]).filter(x=>x.client_id===client.id);
-  const hasBooking=(d)=>mine(sessions).some(s=>s.date===d);
+  const openOn=(d)=>opensOf(client).find(o=>o.date===d);
+  const hasBooking=(d)=>mine(sessions).some(s=>s.date===d)||!!openOn(d);
   const hasAsig=(d)=>mine(assignedSessions).some(a=>a.date===d);
   const hasHist=(d)=>mine(history).some(h=>h.date===d);
   // Solo lo real: días con reserva, con entreno asignado o ya hechos.
@@ -4838,7 +4903,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   const realRows=week.filter(real);
   // En "Asignar" se ven todos los días laborables (para poder programar cualquiera).
   const rows=allDays?week.filter(d=>real(d)||(weekdayOf(d)>=1&&weekdayOf(d)<=5)):realRows;
-  const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d);
+  const isDone=(d)=>mine(sessions).some(s=>s.date===d&&s.status==="completed")||hasHist(d)||(openOn(d)||{}).status==="done";
   const pending=realRows.filter(d=>!isDone(d));
   const dow=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   const doneN=realRows.filter(isDone).length;
@@ -4882,7 +4947,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
         ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>Sin reservas ni entrenos esta semana.</div>
         :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
         {rows.map((d,i)=>{
-          const booking=mine(sessions).find(s=>s.date===d);
+          const booking=mine(sessions).find(s=>s.date===d), opn=!booking&&openOn(d);
           const asig=mine(assignedSessions).find(a=>a.date===d);
           const tmpl=asig&&(sessionTemplates||[]).find(t=>t.id===asig.template_id);
           const au=blockForDate(annualBlocks,d,client)?autoRoutineFor(client,d,sessions,annualBlocks):null;
@@ -4910,7 +4975,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
                       {DAY_TYPES.map(([id,lbl])=><option key={id} value={id}>{lbl}</option>)}
                     </select>}
                 {exs.length>0&&(()=>{ const v=sessionVolume(exs.map(e=>({name:e.exercise_name,sets:e.sets,proto:e.protocol}))); const t=levelTarget(lvl,blockForDate(annualBlocks,d,client),client.goal); const ok=v.ex<3||(v.sets>=t.min&&v.sets<=t.max); return v.sets>0&&<span title={`Series de trabajo (objetivo ${t.min}-${t.max})`} className="mono" style={{flexShrink:0,fontSize:10,fontWeight:800,color:ok?"#15803d":"#b45309",background:ok?"#f0fdf4":"#fffbeb",border:`1px solid ${ok?"#bbf7d0":"#fde68a"}`,borderRadius:20,padding:"1px 6px"}}>{v.sets} ser.</span>; })()}
-                <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:isReal?"sin reserva":"libre"}</div>
+                <div style={{flexShrink:0,fontSize:11,fontWeight:700,color:done?"#16a34a":booking?"#0284c7":opn?"#0f766e":"#94a3b8",textAlign:"right"}}>{done?"✓ hecho":booking?`🕐 ${booking.time||""}`:opn?`🔓 open${opn.time?" "+opn.time:""}`:isReal?"sin reserva":"libre"}</div>
                 <span style={{flexShrink:0,fontSize:11,color:"#94a3b8",width:10}}>{open?"▾":"▸"}</span>
               </div>
               {open&&(
@@ -6524,6 +6589,13 @@ function EditClientModal({client,clients,saving,lead,onValoracion,onSave,onClose
         <div style={{marginBottom:8}}><LevelPicker value={f.level} onChange={(l)=>set("level",l)} size="md"/></div>
         <span className="lbl">DÍAS HABITUALES ({f.train_days.length}/sem)</span>
         <WeekdayPicker value={f.train_days} onChange={(d)=>set("train_days",d)}/>
+        {sec("MODALIDAD")}
+        <div className="seg" style={{marginBottom:8}}>{[["clases","👥 Solo clases"],["hibrido","🔀 Híbrido · clases + open"]].map(([k,l])=><button key={k} type="button" className={"sb"+(((f.profile.plan_type||"clases")===k)?" on":"")} onClick={()=>setP("plan_type",k==="clases"?"":k)}>{l}</button>)}</div>
+        {f.profile.plan_type==="hibrido"&&<div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:10,padding:"9px 11px",marginBottom:4}}>
+          <span className="lbl">SESIONES OPEN POR SEMANA (por su cuenta)</span>
+          <input type="number" min="1" max="7" className="inp" placeholder="Sin límite" value={f.profile.open_per_week||""} onChange={e=>setP("open_per_week",e.target.value)}/>
+          <div style={{fontSize:11,color:"#0f766e",marginTop:6,lineHeight:1.4}}>Las clases siguen con su bono y aforo de siempre. Los días open los reserva desde su app (no gastan bono ni ocupan plaza de clase) y su planificación semanal los cuenta como días de entreno. Déjalo vacío si son ilimitadas.</div>
+        </div>}
         {sec("FICHA PERSONAL")}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {PROFILE_FIELDS.map(x=><div key={x.k} style={x.t==="area"?{gridColumn:"1 / -1"}:undefined}>
@@ -6866,9 +6938,10 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
-function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
+function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
+  const [resMode,setResMode]=React.useState("clase"); // Reservar (híbrido): clase | open
   const [saving,setSaving]=React.useState(false);
   const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
 
@@ -6883,6 +6956,11 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
   const myHistory=allHistory.filter(s=>s.client_id===client.id).sort((a,b)=>b.date.localeCompare(a.date));
   const pct=Math.max(0,Math.round(client.sessions_left/client.total_sessions*100));
   const nBooked=bookedAhead(client,allSessions), nFree=freeToBook(client,allSessions);
+  // Híbrido: sus días open (por su cuenta)
+  const hyb=isHybrid(client), openLim=openPerWeek(client);
+  const myOpens=(openSessions||[]).filter(o=>o.client_id===client.id);
+  const myOpensUp=hyb?myOpens.filter(o=>o.date>=TODAY&&o.status!=="done").map(o=>({...o,id:"open-"+o.id,oid:o.id,open:true})):[];
+  const openToday=hyb?myOpens.find(o=>o.date===TODAY):null;
   const tot=parseInt(client.total_sessions)||0, nDone=Math.max(0,Math.min(tot,tot-(parseInt(client.sessions_left)||0)));
   const pd=daysUntil(client.next_payment);
   const streak=calcStreak(myHistory);
@@ -6987,7 +7065,11 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
 
 
         {/* 1 · Lo más importante: su próxima sesión y las que tiene agendadas */}
-        {(()=>{ const ups=mySessions.slice().sort((x,y)=>(x.date+(x.time||"")).localeCompare(y.date+(y.time||""))).filter(x=>x!==nextSess);
+        {(()=>{ // Clases reservadas y, en híbrido, también sus días open (por su cuenta)
+          const all=[...mySessions,...myOpensUp].sort((x,y)=>(x.date+(x.time||"99")).localeCompare(y.date+(y.time||"99")));
+          const hero=all.find(x=>!x.requested)||null, ups=all.filter(x=>x!==hero), hc=hero?daysUntil(hero.date):null;
+          const hp=hero&&hero.date!==TODAY?planForDate(client,hero.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null;
+          const tm=(x)=>x.open?(x.time||"a tu hora"):x.time;
           const tile=(d,big)=>{ const x=new Date(d+"T12:00:00"); return <div style={{width:big?62:44,flexShrink:0,textAlign:"center",background:"#fff",borderRadius:big?14:10,padding:big?"7px 0":"4px 0",boxShadow:big?"0 4px 12px rgba(15,23,42,.18)":"none",border:big?"none":"1px solid #e6ebf3"}}>
             <div style={{fontSize:big?11:9,fontWeight:800,color:"#0284c7",textTransform:"uppercase"}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
             <div style={{fontSize:big?28:17,fontWeight:800,color:"#0f172a",lineHeight:1.05}}>{x.getDate()}</div>
@@ -6996,17 +7078,18 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           <div className="card" style={{marginBottom:12,padding:0,overflow:"hidden",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.22)"}}>
             <div style={{background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",padding:"15px 16px"}}>
               <div style={{fontSize:12,fontWeight:800,opacity:.85,letterSpacing:.4}}>TU PRÓXIMA SESIÓN</div>
-              {nextSess
+              {hero
                 ?<>
                   <div style={{display:"flex",alignItems:"center",gap:14,marginTop:9}}>
-                    {tile(nextSess.date,true)}
+                    {tile(hero.date,true)}
                     <div style={{minWidth:0}}>
-                      <div style={{fontSize:24,fontWeight:800,lineHeight:1.1,textTransform:"capitalize"}}>{nextCountdown===0?"Hoy":nextCountdown===1?"Mañana":new Date(nextSess.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {nextSess.time}</div>
-                      <div style={{fontSize:13,fontWeight:700,opacity:.9,marginTop:2}}>{nextCountdown===0?"¡Es hoy! 💪":nextCountdown===1?"Mañana toca 💪":`Dentro de ${nextCountdown} días`}</div>
-                      {nextPlan&&<div style={{fontSize:13,fontWeight:800,marginTop:3}}>🏋️ Te toca: {nextPlan.label}</div>}
+                      <div style={{fontSize:24,fontWeight:800,lineHeight:1.1,textTransform:"capitalize"}}>{hc===0?"Hoy":hc===1?"Mañana":new Date(hero.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {tm(hero)}</div>
+                      {hero.open&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,background:"rgba(255,255,255,.2)",borderRadius:20,padding:"2px 9px",marginTop:4}}>🔓 Open · vas por tu cuenta</div>}
+                      <div style={{fontSize:13,fontWeight:700,opacity:.9,marginTop:2}}>{hc===0?"¡Es hoy! 💪":hc===1?"Mañana toca 💪":`Dentro de ${hc} días`}</div>
+                      {hp&&<div style={{fontSize:13,fontWeight:800,marginTop:3}}>🏋️ Te toca: {hp.label}</div>}
                     </div>
                   </div>
-                  {(nextPlan||nextCountdown===0)&&<button className="btn" style={{width:"100%",marginTop:12,padding:10,justifyContent:"center",fontSize:13,fontWeight:800,background:"#fff",color:"#0284c7",border:"none"}} onClick={()=>{ setPpView(nextCountdown===0?"hoy":"next"); go("entreno"); }}>{nextCountdown===0?"⚡ Ver mi entreno de hoy":"🔜 Ver qué me toca"}</button>}
+                  {(hp||hc===0)&&<button className="btn" style={{width:"100%",marginTop:12,padding:10,justifyContent:"center",fontSize:13,fontWeight:800,background:"#fff",color:"#0284c7",border:"none"}} onClick={()=>{ setPpView(hc===0?"hoy":"next"); go("entreno"); }}>{hc===0?"⚡ Ver mi entreno de hoy":"🔜 Ver qué me toca"}</button>}
                 </>
                 :<div style={{fontSize:16,fontWeight:800,marginTop:6}}>Aún no tienes clases reservadas</div>}
             </div>
@@ -7016,15 +7099,15 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
                 <button key={x.id} type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"7px 0",border:"none",borderTop:"1px solid #f1f4f8",background:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
                   {tile(x.date,false)}
                   <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:14,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{new Date(x.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {x.time}</div>
-                    <div style={{fontSize:11,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.requested?"⏳ Pendiente de confirmar":pl?`🏋️ ${pl.label}`:"✓ Reservada"}</div>
+                    <div style={{fontSize:14,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{new Date(x.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {tm(x)}</div>
+                    <div style={{fontSize:11,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.requested?"⏳ Pendiente de confirmar":x.open?`🔓 Open · por tu cuenta${pl?` · ${pl.label}`:""}`:pl?`🏋️ ${pl.label}`:"✓ Reservada"}</div>
                   </div>
                   <span style={{fontSize:15,color:"#cbd5e1"}}>›</span>
                 </button>); })}
               {ups.length>5&&<div style={{fontSize:11,color:"#94a3b8",padding:"2px 0 6px"}}>y {ups.length-5} más…</div>}
             </div>}
             <div style={{padding:"8px 14px 12px"}}>
-              <button className="btn sky" style={{width:"100%",padding:10,justifyContent:"center",fontSize:13}} onClick={()=>go("reservar")}>{nextSess?"📅 Reservar más clases":"📅 Reservar clase"}</button>
+              <button className="btn sky" style={{width:"100%",padding:10,justifyContent:"center",fontSize:13}} onClick={()=>go("reservar")}>{hero?"📅 Reservar más":"📅 Reservar clase"}</button>
             </div>
           </div>); })()}
 
@@ -7064,6 +7147,12 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
                   </div>))}
               </div>
             </div>
+            {hyb&&(()=>{ const n=opensInWeek(client,TODAY,myOpens).length; return(
+              <button type="button" onClick={()=>{ setResMode("open"); go("reservar"); }} style={{width:"100%",marginTop:12,display:"flex",alignItems:"center",gap:10,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+                <span style={{fontSize:20}}>🔓</span>
+                <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f766e"}}>Open por tu cuenta esta semana<br/><span style={{fontSize:11,fontWeight:600,color:"#64748b"}}>No gastan sesiones del bono</span></span>
+                <span style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{n}{openLim?<span style={{fontSize:12,color:"#64748b"}}> / {openLim}</span>:""}</span>
+              </button>); })()}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,gap:8}}>
               <div style={{fontSize:12,color:pd<=3?"#dc2626":pd<=7?"#ca8a04":"#64748b"}}>💳 Próximo pago: <b>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
               <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer"><button className="btn wa" style={{fontSize:12,padding:"7px 11px"}}>📱 Trainer</button></a>
@@ -7074,6 +7163,11 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
       </>}
 
       {tab==="reservar"&&<div>
+          {hyb&&<div className="seg" style={{marginBottom:14}}>
+            <button className={"sb"+(resMode!=="open"?" on":"")} onClick={()=>setResMode("clase")} style={{fontSize:13}}>👥 Clase con coach</button>
+            <button className={"sb"+(resMode==="open"?" on":"")} onClick={()=>setResMode("open")} style={{fontSize:13}}>🔓 Open · por mi cuenta</button>
+          </div>}
+          {hyb&&resMode==="open"?<OpenBooking client={client} opens={myOpens} blocked={blocked} loadAll={loadAll} notify={notify}/>:<>
           {/* PRÓXIMAS CLASES reservadas */}
           <div style={{fontSize:11,color:"#64748b",fontWeight:800,margin:"0 2px 9px"}}>📅 MIS PRÓXIMAS CLASES</div>
           {mySessions.length===0
@@ -7126,6 +7220,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 👋`)} target="_blank" rel="noreferrer" style={{display:"block",marginTop:16}}>
             <button className="btn wa" style={{width:"100%",padding:12,justifyContent:"center",fontSize:13}}>📱 Chatear con mi trainer</button>
           </a>
+      </>}
       </div>}
 
       {tab==="entreno"&&<div>
@@ -7137,6 +7232,7 @@ function ClientPortal({client,allSessions,allHistory,allClients,blocked,waitlist
         {ppView==="next"&&<AthleteUpcoming client={client} sessions={allSessions} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} annualBlocks={annualBlocks} clientWeights={clientWeights}/>}
         {ppView==="hoy"
           ?<>
+            {openToday&&<OpenTodayCard open={openToday} client={client} hasAsig={!!todayAsig} plan={!todayAsig?planForDate(client,TODAY,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null} loadAll={loadAll} notify={notify}/>}
             <TodaySession client={client} myAssignedSessions={myAssignedSessions} myAssignedExercises={myAssignedExercises} clientWeights={clientWeights} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify}/>
             {(clientPlans||[]).some(cp=>cp.client_id===client.id&&cp.active)&&<><Sec>🗂️ Mi plan</Sec><PlanTab client={client} plans={plans} clientPlans={clientPlans} exercises={exercises}/></>}
           </>
@@ -7173,9 +7269,10 @@ function athleteSessions(client,history,assignedSessions,assignedExercises){
   mine.forEach(a=>{ const exs=(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0));
     const nDone=exs.filter(exDone).length; if(!byDate[a.date]&&!nDone&&a.status!=="completed") return; // planificado pero no hecho
     byDate[a.date]={...(byDate[a.date]||{date:a.date,came:false}),asig:a,exs,nDone}; });
+  (OPEN.list||[]).filter(o=>o.client_id===client.id&&o.status==="done"&&o.date<=TODAY).forEach(o=>{ const x=byDate[o.date]; if(x) x.open=true; else byDate[o.date]={date:o.date,time:o.time,type:"Open",came:true,open:true}; });
   return Object.values(byDate).map(x=>{ const exs=x.exs||[];
     const vol=exs.filter(exDone).reduce((t,e)=>{ const kg=exKg(e), r=parseInt(e.actual_reps||e.reps)||0, st=parseInt(e.sets)||0; return t+(kg&&r&&st&&!isIsoRow(e)?kg*r*st:0); },0);
-    return {...x,label:(x.asig&&DAY_LABEL[x.asig.day_type])||x.type||"Entreno",vol:Math.round(vol)}; })
+    return {...x,label:((x.asig&&DAY_LABEL[x.asig.day_type])||(x.open?"🔓 Open · por tu cuenta":x.type)||"Entreno")+(x.open&&x.asig?" · 🔓 open":""),vol:Math.round(vol)}; })
     .sort((a,b)=>b.date.localeCompare(a.date));
 }
 function AthleteHistory({client,history,assignedSessions,assignedExercises}){
@@ -7207,7 +7304,7 @@ function AthleteHistory({client,history,assignedSessions,assignedExercises}){
             </div>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.label}</div>
-              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{x.exs&&x.exs.length?`${x.nDone}/${x.exs.length} ejercicios`:"Asistencia"}{x.vol?` · ${x.vol.toLocaleString("es-ES")} kg movidos`:""}{x.time?` · ${x.time}`:""}{(x.exs||[]).some(e=>prSet.has(notesKey(e.exercise_name)+"|"+x.date))&&<span style={{marginLeft:5,fontSize:10,fontWeight:800,color:"#a16207"}}>🏆 récord</span>}</div>
+              <div style={{fontSize:11,color:"#64748b",marginTop:1}}>{x.exs&&x.exs.length?`${x.nDone}/${x.exs.length} ejercicios`:x.open?"Entrenaste por tu cuenta":"Asistencia"}{x.vol?` · ${x.vol.toLocaleString("es-ES")} kg movidos`:""}{x.time?` · ${x.time}`:""}{(x.exs||[]).some(e=>prSet.has(notesKey(e.exercise_name)+"|"+x.date))&&<span style={{marginLeft:5,fontSize:10,fontWeight:800,color:"#a16207"}}>🏆 récord</span>}</div>
             </div>
             <span style={{fontSize:16,color:"#cbd5e1"}}>›</span>
           </button>); })}
@@ -7492,6 +7589,74 @@ function AthleteSessionModal({client,item,assignedSessions,assignedExercises,prS
       </div>
     </div>
   );
+}
+
+// Hoy es día open: qué le toca y botón para marcar que ya entrenó.
+function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
+  const [busy,setBusy]=React.useState(false), done=open.status==="done";
+  const toggle=async()=>{ setBusy(true); const {error}=await sb.from("open_sessions").update({status:done?"planned":"done"}).eq("id",open.id); setBusy(false);
+    if(error) return notify("No se pudo guardar","err"); await loadAll(); notify(done?"Marcado como pendiente":"¡Bien hecho! Open registrado ✅"); };
+  return(
+    <div className="card" style={{marginBottom:14,padding:"13px 14px",background:done?"#ecfdf3":"#f0faf7",border:`1px solid ${done?"#86efac":"#b5e3da"}`}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:26}}>{done?"✅":"🔓"}</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#0f766e"}}>Hoy entrenas por tu cuenta{open.time?` · ${open.time}`:""}</div>
+          <div style={{fontSize:12,color:"#475569"}}>{done?"¡Ya lo tienes hecho hoy!":hasAsig?"Tu trainer te ha dejado el entreno aquí abajo 👇 Marca cada ejercicio al hacerlo.":plan?"Este es tu entreno previsto. Tu trainer puede ajustarlo.":"Tu trainer te preparará el entreno."}</div>
+        </div>
+      </div>
+      {!hasAsig&&plan&&!done&&<div style={{marginTop:10}}><PlanExRows client={client} exs={plan.exs}/></div>}
+      <button type="button" className={done?"btn ghost":"btn grn"} disabled={busy} onClick={toggle} style={{width:"100%",marginTop:10,padding:10,justifyContent:"center",fontSize:13,fontWeight:800}}>{done?"↺ Deshacer":"✓ He entrenado hoy"}</button>
+    </div>);
+}
+// ── HÍBRIDO · reservar días «open» (entrena por su cuenta) ────────────────
+function OpenBooking({client,opens,blocked,loadAll,notify}){
+  const lim=openPerWeek(client);
+  const [busy,setBusy]=React.useState(false), [time,setTime]=React.useState("");
+  const closed=(d)=>isWeekend(d)||(blocked||[]).some(b=>b.date===d&&b.time==="ALL");
+  const days=Array.from({length:14},(_,i)=>addDays(TODAY,i));
+  const mine=(d)=>(opens||[]).find(o=>o.date===d);
+  const wk=(d)=>opensInWeek(client,d,opens).length;
+  const book=async(d)=>{ if(busy) return;
+    if(lim&&wk(d)>=lim) return notify(`Esa semana ya tienes tus ${lim} open`,"err");
+    setBusy(true); const {error}=await sb.from("open_sessions").insert({client_id:client.id,date:d,time:time||null,status:"planned"}); setBusy(false);
+    if(error) return notify("No se pudo reservar. Avisa a tu trainer (falta activar el modo híbrido).","err");
+    await loadAll(); notify("🔓 Open reservado ✓ · tu trainer te preparará el entreno"); };
+  const cancel=async(o)=>{ if(o.status==="done"||!window.confirm(`¿Quitar tu open del ${fmtDate(o.date)}?`)) return;
+    setBusy(true); await sb.from("open_sessions").delete().eq("id",o.id); setBusy(false); await loadAll(); notify("Open quitado"); };
+  const up=(opens||[]).filter(o=>o.date>=TODAY).sort((a,b)=>a.date.localeCompare(b.date));
+  const thisW=wk(TODAY), nextW=wk(addDays(mondayOfDate(TODAY),7));
+  return(<div>
+    <div className="card" style={{padding:"12px 14px",marginBottom:12,background:"#f0faf7",border:"1px solid #b5e3da"}}>
+      <div style={{fontSize:14,fontWeight:800,color:"#0f766e"}}>🔓 Días open: entrenas por tu cuenta</div>
+      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Elige qué días vienes a entrenar solo/a. No gastan sesiones de tu bono y tu trainer te deja el entreno preparado en la app.</div>
+      <div style={{display:"flex",gap:14,marginTop:8,fontSize:12,fontWeight:800,color:"#0f172a"}}>
+        <span>Esta semana: {thisW}{lim?` / ${lim}`:""}</span><span>Próxima: {nextW}{lim?` / ${lim}`:""}</span>{!lim&&<span style={{color:"#0f766e"}}>sin límite</span>}
+      </div>
+    </div>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
+      <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>Hora aproximada (opcional)</span>
+      <input type="time" className="inp" value={time} onChange={e=>setTime(e.target.value)} style={{width:120,padding:"6px 8px"}}/>
+    </div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(68px,1fr))",gap:6,marginBottom:14}}>
+      {days.map(d=>{ const m=mine(d), cl=closed(d), full=!m&&lim&&wk(d)>=lim, x=new Date(d+"T12:00:00"); return(
+        <button key={d} type="button" disabled={busy||(cl&&!m)||full} onClick={()=>m?cancel(m):book(d)} title={m?"Toca para quitarlo":cl?"Cerrado":full?"Ya tienes el cupo de esa semana":"Reservar"}
+          style={{padding:"8px 2px",borderRadius:12,cursor:(cl&&!m)||full?"default":"pointer",fontFamily:"inherit",textAlign:"center",
+            background:m?"#0f766e":cl?"#f1f4fa":"#fff",color:m?"#fff":cl||full?"#cbd5e1":"#0f172a",border:`1.5px solid ${m?"#0f766e":cl||full?"#e6ebf3":"#b5e3da"}`}}>
+          <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",opacity:.85}}>{d===TODAY?"hoy":x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
+          <div style={{fontSize:18,fontWeight:800,lineHeight:1.1}}>{x.getDate()}</div>
+          <div style={{fontSize:9,fontWeight:700}}>{m?(m.status==="done"?"✓ hecho":"✓ voy"):cl?"cerrado":full?"cupo lleno":"libre"}</div>
+        </button>); })}
+    </div>
+    <div style={{fontSize:11,fontWeight:800,color:"#64748b",margin:"0 2px 6px"}}>🔓 MIS PRÓXIMOS OPEN</div>
+    {up.length===0?<div className="card" style={{textAlign:"center",padding:18,fontSize:13,color:"#64748b"}}>Aún no has reservado ningún día open.</div>
+      :<div className="card" style={{padding:0,overflow:"hidden"}}>{up.map((o,i)=>(
+        <div key={o.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 13px",borderTop:i?"1px solid #eef1f6":"none"}}>
+          <span style={{fontSize:18}}>{o.status==="done"?"✅":"🔓"}</span>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{fmtLong(o.date)}</div><div style={{fontSize:11,color:"#64748b"}}>{o.time?`hacia las ${o.time}`:"a tu hora"}</div></div>
+          {o.status!=="done"&&<button type="button" disabled={busy} onClick={()=>cancel(o)} style={{border:"1px solid #f2cccc",background:"#fff",color:"#dc2626",borderRadius:8,padding:"4px 9px",fontSize:11,fontWeight:800,cursor:"pointer"}}>Quitar</button>}
+        </div>))}</div>}
+  </div>);
 }
 
 // ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
