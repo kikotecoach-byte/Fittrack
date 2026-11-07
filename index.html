@@ -1124,10 +1124,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   React.useEffect(()=>{
     (clients||[]).forEach(c=>{
       const l=(leads||[]).filter(x=>x.converted_client_id===c.id).sort((a,b)=>String(a.date||"").localeCompare(String(b.date||"")))[0];
-      if(!l||leadSync.current.has(c.id)) return; const p=profileOf(c); if(p.lead_id===l.id) return;
+      if(!l||leadSync.current.has(c.id)) return; const p=profileOf(c);
+      const next=mergeLeadProfile(p,l), lp=(l.profile&&typeof l.profile==="object")?l.profile:{};
+      const contact={...(!c.phone&&lp.phone?{phone:String(lp.phone).trim()}:{}),...(!c.email&&lp.email?{email:String(lp.email).trim()}:{})};
       leadSync.current.add(c.id);
-      const next=mergeLeadProfile(p,l);
-      sb.from("clients").update({profile:next}).eq("id",c.id).then(({error})=>{ if(error) return;
+      if(JSON.stringify(next)===JSON.stringify(p)&&!Object.keys(contact).length) return;
+      sb.from("clients").update({profile:next,...contact}).eq("id",c.id).then(({error})=>{ if(error) return;
         if(l.weight&&!(progress||[]).some(x=>x.client_id===c.id&&x.weight!=null&&x.date===l.date))
           sb.from("progress").insert({client_id:c.id,date:l.date&&l.date<=TODAY?l.date:TODAY,weight:parseFloat(l.weight),notes:"Valoración inicial"}).then(()=>loadAll());
         else loadAll(); });
@@ -1263,9 +1265,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const deleteClient = (id) => w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); });
   // ── Valoraciones / Leads ──
   const saveLead = (data) => w(async()=>{
-    if(data.id){ const {id,...rest}=data; const {error}=await sb.from("leads").update(rest).eq("id",id); if(error) return notify("Crea la tabla leads (docs/valoraciones.sql)","err"); }
-    else { const {error}=await sb.from("leads").insert(data); if(error) return notify("Crea la tabla leads (docs/valoraciones.sql)","err"); }
-    setShowValoracion(null); notify("Valoración guardada ✓");
+    const put=(row)=>{ const {id,...rest}=row; return id?sb.from("leads").update(rest).eq("id",id):sb.from("leads").insert(rest); };
+    let {error}=await put(data), sinFicha=false;
+    if(error&&data.profile){ ({error}=await put((({profile,...r})=>r)(data))); sinFicha=!error; }
+    if(error) return notify("Crea la tabla leads (docs/valoraciones.sql)","err");
+    setShowValoracion(null);
+    notify(sinFicha?"Valoración guardada · para guardar también teléfono, email y el resto de la ficha ejecuta docs/valoraciones-ficha.sql":"Valoración guardada ✓",sinFicha?"err":undefined);
   });
   const deleteLead = (id) => w(async()=>{ await sb.from("leads").delete().eq("id",id); notify("Valoración eliminada"); });
   const convertLead = (lead,bono) => w(async()=>{
@@ -1286,12 +1291,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     const profile=mergeLeadProfile({},lead);
     const total=Math.max(1,parseInt(bono.sessions)||10);
     const price=parseFloat(bono.price)||0;
-    const goal=bono.goal||"salud";
+    const lp=(lead.profile&&typeof lead.profile==="object")?lead.profile:{};
+    const goal=bono.goal||lp.goal||"salud";
     const dw=Math.max(1,parseInt(bono.days_week)||3);
-    const row={name:lead.name||"Nuevo cliente",code,color,sessions_left:total,total_sessions:total,next_payment:bono.next_payment||TODAY,payment_amount:price,goal,days_week:dw};
+    const row={name:lead.name||"Nuevo cliente",code,color,sessions_left:total,total_sessions:total,next_payment:bono.next_payment||TODAY,payment_amount:price,goal,days_week:dw,
+      ...(lp.phone?{phone:String(lp.phone).trim()}:{}),...(lp.email?{email:String(lp.email).trim()}:{})};
     let {data:cli,error}=await sb.from("clients").insert({...row,notes,profile}).select().single();
     if(error){ ({data:cli,error}=await sb.from("clients").insert({...row,notes:oldNotes}).select().single()); }
     if(error){ notify("Error al crear cliente","err"); return; }
+    if(lp.level) await sb.from("clients").update({level:lp.level}).eq("id",cli.id); // si falta docs/nivel.sql, se ignora
     // El pesaje de la valoración es su primera medida.
     if(lead.weight) await sb.from("progress").insert({client_id:cli.id,date:lead.date&&lead.date<=TODAY?lead.date:TODAY,weight:parseFloat(lead.weight),notes:"Valoración inicial"});
     await sb.from("leads").update({status:"cliente",converted_client_id:cli.id}).eq("id",lead.id);
@@ -2846,13 +2854,27 @@ function ValoracionModal({lead,saving,clientName,onGoClient,onSave,onConvert,onD
     time:(lead&&lead.time)||"", notes:(lead&&lead.notes)||"", status:(lead&&lead.status)||"lead",
     converted_client_id:(lead&&lead.converted_client_id)||null,
     tests:(lead&&lead.tests&&typeof lead.tests==="object")?lead.tests:{},
+    profile:{...((lead&&lead.profile&&typeof lead.profile==="object")?lead.profile:{})},
   }));
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  // Ficha del cliente: los mismos datos que «✏️ Datos». Algunos ya tenían columna propia en la valoración.
+  const gv=(k)=>LEAD_COL[k]?f[LEAD_COL[k]]:(f.profile[k]??"");
+  const sv=(k,v)=>LEAD_COL[k]?set(LEAD_COL[k],v):setF(x=>({...x,profile:{...x.profile,[k]:v}}));
+  const fichaKeys=["phone","email",...PROFILE_FIELDS.map(x=>x.k),"goal","level"];
+  const filled=fichaKeys.filter(k=>String(gv(k)??"").trim()!=="").length;
+  const PF=(k)=>{ const d=PROFILE_FIELDS.find(x=>x.k===k)||LEAD_EXTRA[k]; const v=gv(k)??"";
+    return <div key={k} style={{marginBottom:10,...(d.t==="area"?{gridColumn:"1 / -1"}:{})}}><span className="lbl">{d.l.toUpperCase()}{k==="birth_date"&&ageOf(v)!=null?` · ${ageOf(v)} AÑOS`:""}</span>
+      {d.t==="select"?<select className="inp" value={v} onChange={e=>sv(k,e.target.value)}>{d.opts.map(([o,l])=><option key={o} value={o}>{l}</option>)}</select>
+        :d.t==="area"?<textarea className="inp" rows={2} placeholder={d.ph||""} style={{resize:"vertical",fontSize:13}} value={v} onChange={e=>sv(k,e.target.value)}/>
+        :<input type={d.t||"text"} className="inp" placeholder={d.ph||""} value={v} max={d.t==="date"?TODAY:undefined} onChange={e=>sv(k,e.target.value)}/>}
+    </div>; };
+  const G=(t,children)=><div style={{marginTop:6}}><div style={{fontSize:11,fontWeight:800,color:"#0284c7",margin:"8px 0 8px"}}>{t}</div><div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:"0 10px"}}>{children}</div></div>;
   const setTest=(k,field,v)=>setF(x=>({...x,tests:{...x.tests,[k]:{...(x.tests[k]||{}),[field]:v}}}));
-  const build=()=>({...f, age:f.age?parseInt(f.age):null, weight:f.weight?parseFloat(f.weight):null});
+  const build=()=>({...f, age:f.age?parseInt(f.age):null, weight:f.weight?parseFloat(f.weight):null,
+    profile:Object.fromEntries(Object.entries(f.profile||{}).filter(([,v])=>v!=null&&String(v).trim()!==""))});
   const yaCliente=f.status==="cliente";
   const [showBono,setShowBono]=React.useState(false);
-  const [bono,setBono]=React.useState({sessions:10,price:100,goal:"salud",days_week:3,next_payment:TODAY});
+  const [bono,setBono]=React.useState(()=>({sessions:10,price:100,goal:(lead&&lead.profile&&lead.profile.goal)||"salud",days_week:3,next_payment:TODAY}));
   const setB=(k,v)=>setBono(x=>({...x,[k]:v}));
   // Dos fases: primero se AGENDA (nombre + datos personales + cita) y más tarde
   // se REALIZA (pesaje + tests). Una cita ya guardada se abre en modo realizar.
@@ -2871,16 +2893,24 @@ function ValoracionModal({lead,saving,clientName,onGoClient,onSave,onConvert,onD
         <p style={{fontSize:11,color:"#64748b",marginBottom:12}}>{yaCliente?"✅ Ya convertido en cliente":full?"Realizar la valoración — pesaje y tests.":"Agendar cita — nombre y datos personales (los tests se hacen después)."}</p>
         {yaCliente&&f.converted_client_id&&onGoClient&&clientName&&<button type="button" className="btn ghost" style={{width:"100%",padding:10,marginBottom:12,color:"#0f766e",border:"1px solid #b5e3da",background:"#e6f6f3",fontWeight:800,justifyContent:"center"}} onClick={()=>onGoClient(f.converted_client_id)}>🎉 Ya es cliente · ir a la ficha de {clientName.split(" ")[0]} ›</button>}
 
-        <div style={{fontSize:11,fontWeight:700,color:"#0284c7",margin:"4px 0 8px"}}>DATOS PERSONALES</div>
-        {F({label:"NOMBRE",k:"name"})}
-        <div style={{display:"grid",gridTemplateColumns:"1fr 2fr",gap:10}}>
-          {F({label:"EDAD",k:"age"})}
-          {F({label:"TRABAJO / OCUPACIÓN",k:"job"})}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,margin:"4px 0 2px"}}>
+          <span style={{fontSize:11,fontWeight:800,color:"#0284c7"}}>📇 FICHA DEL CLIENTE</span>
+          <span style={{fontSize:11,fontWeight:800,color:filled>=fichaKeys.length-3?"#16a34a":"#64748b"}}>{filled}/{fichaKeys.length} datos</span>
         </div>
-        {F({label:"EXPERIENCIA DEPORTIVA PREVIA",k:"experience",area:true})}
-        {F({label:"HÁBITOS ALIMENTICIOS",k:"diet",area:true})}
-        {F({label:"LESIONES PREVIAS",k:"injuries",area:true})}
-        {F({label:"DISPONIBILIDAD SEMANAL",k:"availability"})}
+        <div style={{fontSize:11,color:"#94a3b8",marginBottom:4}}>Lo que rellenes aquí pasa solo a su ficha al convertirlo en cliente.</div>
+        {G("📞 CONTACTO",<>
+          <div style={{gridColumn:"1 / -1"}}>{F({label:"NOMBRE",k:"name"})}</div>
+          {PF("phone")}{PF("email")}
+        </>)}
+        {G("👤 DATOS PERSONALES",<>{PF("birth_date")}{PF("age")}{PF("sex")}{PF("height_cm")}<div style={{gridColumn:"1 / -1"}}>{PF("occupation")}</div></>)}
+        {G("🎯 OBJETIVO Y HÁBITOS",<>
+          <div style={{gridColumn:"1 / -1",marginBottom:10}}><span className="lbl">OBJETIVO</span>
+            <div className="seg">{[["salud","🩺 Salud"],["estetica","💪 Estética / Masa"]].map(([k,l])=><button key={k} type="button" className={"sb"+(gv("goal")===k?" on":"")} onClick={()=>{ sv("goal",gv("goal")===k?"":k); if(gv("goal")!==k) setB("goal",k); }}>{l}</button>)}</div></div>
+          <div style={{gridColumn:"1 / -1",marginBottom:10}}><span className="lbl">NIVEL</span><LevelPicker value={gv("level")||null} onChange={(l)=>sv("level",gv("level")===l?"":l)} size="md"/></div>
+          {PF("goal_detail")}{PF("experience")}{PF("diet")}<div style={{gridColumn:"1 / -1"}}>{PF("availability")}</div>
+        </>)}
+        {G("🩹 SALUD",<>{PF("injuries")}{PF("medical")}</>)}
+        {G("🆘 EMERGENCIA Y ORIGEN",<>{PF("emergency_name")}{PF("emergency_phone")}<div style={{gridColumn:"1 / -1"}}>{PF("source")}</div></>)}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           <div><span className="lbl">CITA (fecha)</span><input type="date" className="inp" value={f.date} onChange={e=>set("date",e.target.value)}/></div>
           <div><span className="lbl">HORA</span><input className="inp" placeholder="10:00" value={f.time} onChange={e=>set("time",e.target.value)}/></div>
@@ -2962,7 +2992,11 @@ function LeadsModal({leads,client,onOpen,onNew,onClose}) {
     const rated=MOB_TESTS.filter(([k])=>tests[k]&&tests[k].rating);
     const RC={bien:["🟢","#16a34a","#e2f4e8"],regular:["🟡","#ca8a04","#fbf1d8"],mal:["🔴","#dc2626","#fbe6e6"]};
     const done=valDone(l);
-    const datos=[["Edad",l.age],["Trabajo",l.job],["Experiencia",l.experience],["Hábitos",l.diet],["Lesiones",l.injuries],["Disponibilidad",l.availability]].filter(([,v])=>v!=null&&String(v).trim()!=="");
+    const lp=(l.profile&&typeof l.profile==="object")?l.profile:{};
+    const pfl=(k)=>{ const d=PROFILE_FIELDS.find(x=>x.k===k)||LEAD_EXTRA[k]; return d?d.l:k; };
+    const extraD=Object.entries(lp).filter(([k,v])=>v!=null&&String(v).trim()!==""&&k!=="goal"&&k!=="level").map(([k,v])=>[pfl(k),k==="sex"?({mujer:"Mujer",hombre:"Hombre",otro:"Otro"}[v]||v):k==="birth_date"?`${fmtDate(v)}${ageOf(v)!=null?` (${ageOf(v)} años)`:""}`:v]);
+    const datos=[["Edad",l.age],["Trabajo",l.job],["Experiencia",l.experience],["Hábitos",l.diet],["Lesiones",l.injuries],["Disponibilidad",l.availability],
+      ...(lp.goal?[["Objetivo",lp.goal==="estetica"?"Estética / Masa":"Salud"]]:[]),...(lp.level?[["Nivel",LEVEL_LABEL[lp.level]||lp.level]]:[]),...extraD].filter(([,v])=>v!=null&&String(v).trim()!=="");
     return(
       <div className="ovl" onClick={onClose}>
         <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440,maxHeight:"90vh",display:"flex",flexDirection:"column"}}>
@@ -6527,9 +6561,14 @@ const PROFILE_FIELDS = [
 ];
 const ageOf = (d) => { if(!d) return null; const b=new Date(d+"T12:00:00"), n=new Date(); let a=n.getFullYear()-b.getFullYear(); if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate())) a--; return a>=0&&a<120?a:null; };
 const profileOf = (c) => (c&&c.profile&&typeof c.profile==="object")?c.profile:{};
+// Campos de la ficha que en la valoración tienen columna propia (el resto van en leads.profile).
+const LEAD_COL = {age:"age",occupation:"job",injuries:"injuries",experience:"experience",diet:"diet",availability:"availability"};
+const LEAD_EXTRA = {phone:{l:"Teléfono (WhatsApp)",t:"tel",ph:"600 000 000"},email:{l:"Email",t:"email",ph:"nombre@email.com"}};
+const LEAD_TO_CLIENT = ["phone","email","goal","level"]; // van a columnas del cliente, no a la ficha
 // Datos de la valoración inicial que pasan a la ficha del cliente (cada uno a su campo).
 const leadProfile = (l) => { if(!l) return {}; const t=(v)=>v!=null&&String(v).trim()!==""?String(v).trim():null;
-  return Object.fromEntries([["age",l.age!=null&&l.age!==""?parseInt(l.age)||null:null],["occupation",t(l.job)],["injuries",t(l.injuries)],["experience",t(l.experience)],["diet",t(l.diet)],["availability",t(l.availability)]].filter(([,v])=>v!=null)); };
+  const extra=Object.entries((l.profile&&typeof l.profile==="object")?l.profile:{}).filter(([k,v])=>!LEAD_TO_CLIENT.includes(k)&&t(v)!=null);
+  return Object.fromEntries([...extra,["age",l.age!=null&&l.age!==""?parseInt(l.age)||null:null],["occupation",t(l.job)],["injuries",t(l.injuries)],["experience",t(l.experience)],["diet",t(l.diet)],["availability",t(l.availability)]].filter(([,v])=>v!=null)); };
 // Rellena solo lo que está vacío en la ficha (nunca pisa lo que ya escribiste).
 const mergeLeadProfile = (prof, l) => { const out={...(prof||{})}; Object.entries(leadProfile(l)).forEach(([k,v])=>{ if(out[k]==null||String(out[k]).trim()==="") out[k]=v; }); if(l&&l.id) out.lead_id=l.id; if(l&&l.date&&!out.eval_date) out.eval_date=l.date; return out; };
 // Resumen corto de la ficha (edad, altura, lesiones…) para la ficha rápida y Clientes.
