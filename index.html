@@ -511,6 +511,13 @@ const isHybrid = (c) => profileOf(c).plan_type==="hibrido";
 const openPerWeek = (c) => { const n=parseInt(profileOf(c).open_per_week,10); return n>0?n:null; }; // null = sin límite
 const opensOf = (c, list) => ((list||OPEN.list)||[]).filter(o=>c&&o.client_id===c.id);
 const opensInWeek = (c, d, list) => { const m=mondayOfDate(d), e=addDays(m,7); return opensOf(c,list).filter(o=>o.date>=m&&o.date<e); };
+// Open incluidas en el bono (profile.open_total). Cuentan las reservadas o hechas desde
+// que empezó el bono (profile.open_since) más un ajuste manual del coach (profile.open_adj).
+const openTotal = (c) => { const n=parseInt(profileOf(c).open_total,10); return n>0?n:null; };
+const openUsed = (c, list) => { const p=profileOf(c), since=p.open_since||"0000-00-00"; return Math.max(0,opensOf(c,list).filter(o=>o.date>=since).length+(parseInt(p.open_adj,10)||0)); };
+const openLeft = (c, list) => { const t=openTotal(c); return t==null?null:Math.max(0,t-openUsed(c,list)); }; // null = sin tope en el bono
+// ¿Puede reservar un open ese día? Devuelve el motivo si no ("bono" | "semana").
+const openBlockReason = (c, d, list, extra=0) => { const l=openLeft(c,list); if(l!==null&&l-extra<=0) return "bono"; const w=openPerWeek(c); if(w&&opensInWeek(c,d,list).length+extra>=w) return "semana"; return null; };
 function autoRoutineFor(client, date, sessions, annualBlocks){
   const blk = blockForDate(annualBlocks, date, client);
   const td = parseDays(client.train_days);
@@ -1256,6 +1263,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const renewSessions = (client) => w(async()=>{
     const owed=owedOf(client), tot=parseInt(client.total_sessions)||0;
     await sb.from("clients").update({sessions_left:tot-owed}).eq("id",client.id);
+    if(isHybrid(client)&&openTotal(client)) await sb.from("clients").update({profile:{...profileOf(client),open_since:TODAY,open_adj:0}}).eq("id",client.id);
     notify(owed?`Bono renovado ✓ · descontadas ${owed} sesión(es) que debía`:"Sesiones renovadas ✓");
   });
   // Restablece el acceso a la app de un atleta (olvidó la contraseña, cambió de móvil…).
@@ -1315,6 +1323,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       train_days:(data.train_days||[]).join(","),
       days_week:(data.train_days&&data.train_days.length)||4,
     }).eq("id",client.id);
+    // Híbrido y open del bono van en la ficha.
+    { const p={...profileOf(client)}; if(data.hybrid){ p.plan_type="hibrido"; const t=parseInt(data.open_total,10);
+        if(t>0){ p.open_total=t; p.open_since=data.open_since||TODAY; p.open_adj=parseInt(data.open_adj,10)||0; } else { delete p.open_total; delete p.open_since; delete p.open_adj; } }
+      else { delete p.plan_type; }
+      const r=await sb.from("clients").update({profile:p}).eq("id",client.id); if(r.error&&data.hybrid) notify("Para guardar el híbrido ejecuta docs/ficha-cliente.sql","err"); }
     // El nivel va aparte: si falta la columna (docs/nivel.sql) el bono se guarda igual.
     if(data.level&&data.level!==client.level){ const r=await sb.from("clients").update({level:data.level}).eq("id",client.id); if(r.error){ setShowEdit(null); notify("Bono actualizado ✓ · para guardar el nivel ejecuta docs/nivel.sql","err"); return; } }
     setShowEdit(null); notify("Bono actualizado ✓");
@@ -4509,13 +4522,17 @@ function HybridBox({client,date,loadAll,notify,athlete}){
   const run=async(fn,msg)=>{ setBusy(true); const r=await fn(); setBusy(false); if(r&&r.error) return notify&&notify(OPEN.missing?"Ejecuta docs/hibrido.sql en Supabase":"No se pudo guardar","err"); await loadAll(); msg&&notify&&notify(msg); };
   const toggle=(o)=>run(()=>sb.from("open_sessions").update({status:o.status==="done"?"planned":"done"}).eq("id",o.id),o.status==="done"?"Marcada como pendiente":"Open hecha ✓");
   const del=(o)=>{ if(window.confirm(`¿Quitar la sesión open del ${fmtDate(o.date)}?`)) run(()=>sb.from("open_sessions").delete().eq("id",o.id),"Quitada"); };
-  const add=()=>{ if(!nd) return; run(()=>sb.from("open_sessions").insert({client_id:client.id,date:nd,status:"planned"}),"Open añadida ✓").then(()=>setNd("")); };
+  const add=()=>{ if(!nd) return; const why=openBlockReason(client,nd);
+    if(why&&!window.confirm(why==="bono"?"Ya no le quedan open en el bono. ¿Añadirla igualmente?":"Ya tiene el máximo de open esa semana. ¿Añadirla igualmente?")) return;
+    run(()=>sb.from("open_sessions").insert({client_id:client.id,date:nd,status:"planned"}),"Open añadida ✓").then(()=>setNd("")); };
+  const oT=openTotal(client), oL=openLeft(client);
   return(
     <div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",gap:8}}>
         <span style={{fontSize:12,fontWeight:800,color:"#0f766e"}}>🔀 HÍBRIDO · OPEN ESTA SEMANA</span>
         <span style={{fontSize:12,fontWeight:800,color:lim&&wk.length>=lim?"#b45309":"#0f766e"}}>{wk.length}{lim?` / ${lim}`:" · sin límite"}</span>
       </div>
+      {oT&&<div style={{fontSize:12,fontWeight:700,color:oL?"#0f766e":"#b45309",marginTop:3}}>🎟 Bono de open: quedan <b>{oL}</b> de {oT}</div>}
       {OPEN.missing&&<div style={{fontSize:11,color:"#b45309",fontWeight:700,marginTop:4}}>⚠️ Falta ejecutar docs/hibrido.sql en Supabase.</div>}
       {wk.length===0?<div style={{fontSize:12,color:"#64748b",marginTop:4}}>Esta semana no ha reservado días por su cuenta.</div>
         :<div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>{wk.map(o=>(
@@ -6681,8 +6698,14 @@ function EditBonoModal({client,saving,onSave,onClose}) {
     next_payment:client.next_payment||"",
     train_days:parseDays(client.train_days).length?parseDays(client.train_days):[1,3,5],
     level:levelOf(client),
+    hybrid:isHybrid(client), open_total:profileOf(client).open_total||"", open_since:profileOf(client).open_since||"", open_adj:parseInt(profileOf(client).open_adj,10)||0,
   });
   const set=(k,v)=>setF(x=>({...x,[k]:v}));
+  // Open del bono: usadas = reservadas/hechas desde que empezó + ajuste manual
+  const oCounted=opensOf(client).filter(o=>o.date>=(f.open_since||"0000-00-00")).length;
+  const oTot=parseInt(f.open_total,10)||0, oUsed=Math.max(0,oCounted+(f.open_adj||0)), oLeft=Math.max(0,oTot-oUsed);
+  const setOUsed=(v)=>setF(x=>({...x,open_adj:(parseInt(v,10)||0)-oCounted}));
+  const newOpenBono=(n)=>setF(x=>({...x,hybrid:true,open_total:n,open_since:TODAY,open_adj:0}));
   const tot=Math.max(1,parseInt(f.total_sessions)||1);
   const cur=parseInt(f.sessions_left)||0;
   const owed=Math.max(0,-cur); // sesiones hechas sin bono (se descuentan del siguiente)
@@ -6714,9 +6737,25 @@ function EditBonoModal({client,saving,onSave,onClose}) {
           </div>}
           <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
             {[5,10,20].map(n=>(
-              <button key={n} className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setF(x=>({...x,sessions_left:n-Math.max(0,-(parseInt(x.sessions_left)||0)),total_sessions:n}))}>Bono {n} nuevo</button>
+              <button key={n} className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setF(x=>({...x,sessions_left:n-Math.max(0,-(parseInt(x.sessions_left)||0)),total_sessions:n,...(x.hybrid?{open_since:TODAY,open_adj:0}:{})}))}>Bono {n} nuevo</button>
             ))}
             <button className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setF(x=>({...x,sessions_left:tot}))}>Marcar completo</button>
+          </div>
+          <div style={{border:"1px solid #b5e3da",background:"#f0faf7",borderRadius:10,padding:"10px 11px"}}>
+            <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,fontWeight:800,color:"#0f766e",cursor:"pointer"}}>
+              <input type="checkbox" checked={!!f.hybrid} onChange={e=>set("hybrid",e.target.checked)}/> 🔓 Incluye sesiones open (híbrido)
+            </label>
+            {f.hybrid&&<>
+              <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginTop:8}}>
+                <div><span className="lbl">OPEN EN EL BONO</span><input type="number" min="0" className="inp" placeholder="sin tope" value={f.open_total} onChange={e=>set("open_total",e.target.value)}/></div>
+                <div><span className="lbl">YA USADAS</span><input type="number" min="0" className="inp" value={oUsed} disabled={!oTot} onChange={e=>setOUsed(e.target.value)}/></div>
+                <div><span className="lbl">QUEDAN</span><div className="inp" style={{fontWeight:800,color:"#0f766e"}}>{oTot?oLeft:"∞"}</div></div>
+              </div>
+              <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+                {[4,8,12].map(n=><button key={n} type="button" className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0f766e",border:"1px solid #b5e3da"}} onClick={()=>newOpenBono(n)}>{n} open nuevas</button>)}
+              </div>
+              <div style={{fontSize:11,color:"#0f766e",marginTop:6,lineHeight:1.4}}>Cuentan las open que reserva (o le reservas) desde {f.open_since?fmtDate(f.open_since):"que empiece el bono"}. Al renovar el bono se reinicia. Vacío = sin tope.</div>
+            </>}
           </div>
           <div><span className="lbl">PRECIO DEL BONO (€)</span>
             <input type="number" className="inp" value={f.payment_amount} onChange={e=>set("payment_amount",e.target.value)}/>
@@ -6980,7 +7019,6 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
 function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
-  const [resMode,setResMode]=React.useState("clase"); // Reservar (híbrido): clase | open
   const [saving,setSaving]=React.useState(false);
   const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
 
@@ -7187,10 +7225,10 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
               </div>
             </div>
             {hyb&&(()=>{ const n=opensInWeek(client,TODAY,myOpens).length; return(
-              <button type="button" onClick={()=>{ setResMode("open"); go("reservar"); }} style={{width:"100%",marginTop:12,display:"flex",alignItems:"center",gap:10,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+              <button type="button" onClick={()=>go("reservar")} style={{width:"100%",marginTop:12,display:"flex",alignItems:"center",gap:10,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
                 <span style={{fontSize:20}}>🔓</span>
-                <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f766e"}}>Open por tu cuenta esta semana<br/><span style={{fontSize:11,fontWeight:600,color:"#64748b"}}>No gastan sesiones del bono</span></span>
-                <span style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{n}{openLim?<span style={{fontSize:12,color:"#64748b"}}> / {openLim}</span>:""}</span>
+                <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f766e"}}>{openTotal(client)?"Open (por tu cuenta) en tu bono":"Open por tu cuenta esta semana"}<br/><span style={{fontSize:11,fontWeight:600,color:"#64748b"}}>{openTotal(client)?`Te quedan por reservar${openLim?` · máx. ${openLim}/semana (esta: ${n})`:""}`:"Aparte de tus clases"}</span></span>
+                <span style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{openTotal(client)?<>{openLeft(client,myOpens)}<span style={{fontSize:12,color:"#64748b"}}> / {openTotal(client)}</span></>:<>{n}{openLim?<span style={{fontSize:12,color:"#64748b"}}> / {openLim}</span>:""}</>}</span>
               </button>); })()}
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,gap:8}}>
               <div style={{fontSize:12,color:pd<=3?"#dc2626":pd<=7?"#ca8a04":"#64748b"}}>💳 Próximo pago: <b>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
@@ -7201,66 +7239,7 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
         <ClientSummary noHello noPhase onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
       </>}
 
-      {tab==="reservar"&&<div>
-          {hyb&&<div className="seg" style={{marginBottom:14}}>
-            <button className={"sb"+(resMode!=="open"?" on":"")} onClick={()=>setResMode("clase")} style={{fontSize:13}}>👥 Clase con coach</button>
-            <button className={"sb"+(resMode==="open"?" on":"")} onClick={()=>setResMode("open")} style={{fontSize:13}}>🔓 Open · por mi cuenta</button>
-          </div>}
-          {hyb&&resMode==="open"?<OpenBooking client={client} opens={myOpens} blocked={blocked} loadAll={loadAll} notify={notify}/>:<>
-          {/* PRÓXIMAS CLASES reservadas */}
-          <div style={{fontSize:11,color:"#64748b",fontWeight:800,margin:"0 2px 9px"}}>📅 MIS PRÓXIMAS CLASES</div>
-          {mySessions.length===0
-            ?<div className="card" style={{textAlign:"center",padding:24}}>
-              <div style={{fontSize:24,marginBottom:6}}>📅</div>
-              <div style={{color:"#64748b",fontSize:13}}>Sin clases reservadas. Elige hora abajo 👇</div>
-            </div>
-            :mySessions.map(s=>(
-              <div key={s.id} className="card" style={{marginBottom:9}}>
-                <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
-                  <div>
-                    <div style={{fontWeight:700,fontSize:14}}>{s.type}</div>
-                    <div style={{fontSize:12,color:"#64748b",marginTop:3}}>{fmtLong(s.date)}</div>
-                  </div>
-                  <div style={{textAlign:"right"}}>
-                    <div className="mono" style={{fontSize:17,fontWeight:700,color:"#0284c7"}}>{s.time}</div>
-                    <div style={{marginTop:4,fontSize:11,color:"#16a34a"}}>✓ Reservada</div>
-                    {daysUntil(s.date)<=1&&(
-                      <div style={{fontSize:10,color:"#ca8a04",marginTop:2}}>{daysUntil(s.date)===0?"¡Hoy!":"¡Mañana!"}</div>
-                    )}
-                  </div>
-                </div>
-              </div>
-            ))
-          }
-
-          {/* RESERVAR: selector de huecos (reserva directa) */}
-          <div style={{fontSize:11,color:"#64748b",fontWeight:800,margin:"22px 2px 4px"}}>➕ RESERVAR CLASES</div>
-          <div style={{fontSize:12,color:"#94a3b8",margin:"0 2px 10px"}}>Toca las horas libres (en verde) y confirma. Cada clase es de 1 hora y como máximo {config.defaultCapacity||3} personas.</div>
-          {client.sessions_left>0&&nFree<=0
-            ?<div className="card" style={{textAlign:"center",padding:24,border:"1px solid #e4cd8c"}}>
-              <div style={{fontSize:24,marginBottom:6}}>👏</div>
-              <div style={{color:"#a16207",fontWeight:800,marginBottom:4}}>Ya tienes reservadas todas las sesiones de tu bono</div>
-              <div style={{fontSize:12,color:"#64748b",marginBottom:10}}>Cuando vengas a clase se irán descontando. Si quieres reservar más, renueva el bono.</div>
-              <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono para reservar más clases 💪`)} target="_blank" rel="noreferrer">
-                <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
-              </a>
-            </div>
-          :client.sessions_left<=0
-            ?<div className="card" style={{textAlign:"center",padding:28,border:"1px solid #f2cccc"}}>
-              <div style={{fontSize:24,marginBottom:8}}>🚫</div>
-              <div style={{color:"#dc2626",fontWeight:700,marginBottom:6}}>Sin sesiones en tu bono</div>
-              <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quisiera renovar mi paquete 💪`)} target="_blank" rel="noreferrer">
-                <button className="btn wa" style={{justifyContent:"center",padding:"10px 20px"}}>📱 Renovar por WhatsApp</button>
-              </a>
-            </div>
-            :<MultiSessionRequest client={client} allSessions={allSessions} allClients={allClients} blocked={blocked} waitlist={waitlist} config={config} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>
-          }
-
-          <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 👋`)} target="_blank" rel="noreferrer" style={{display:"block",marginTop:16}}>
-            <button className="btn wa" style={{width:"100%",padding:12,justifyContent:"center",fontSize:13}}>📱 Chatear con mi trainer</button>
-          </a>
-      </>}
-      </div>}
+      {tab==="reservar"&&<MultiSessionRequest client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
 
       {tab==="entreno"&&<div>
         <div className="seg" style={{marginBottom:14}}>
@@ -7648,287 +7627,131 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
       <button type="button" className={done?"btn ghost":"btn grn"} disabled={busy} onClick={toggle} style={{width:"100%",marginTop:10,padding:10,justifyContent:"center",fontSize:13,fontWeight:800}}>{done?"↺ Deshacer":"✓ He entrenado hoy"}</button>
     </div>);
 }
-// ── HÍBRIDO · reservar días «open» (entrena por su cuenta) ────────────────
-function OpenBooking({client,opens,blocked,loadAll,notify}){
-  const lim=openPerWeek(client);
-  const [busy,setBusy]=React.useState(false), [time,setTime]=React.useState("");
-  const closed=(d)=>isWeekend(d)||(blocked||[]).some(b=>b.date===d&&b.time==="ALL");
-  const days=Array.from({length:14},(_,i)=>addDays(TODAY,i));
-  const mine=(d)=>(opens||[]).find(o=>o.date===d);
-  const wk=(d)=>opensInWeek(client,d,opens).length;
-  const book=async(d)=>{ if(busy) return;
-    if(lim&&wk(d)>=lim) return notify(`Esa semana ya tienes tus ${lim} open`,"err");
-    setBusy(true); const {error}=await sb.from("open_sessions").insert({client_id:client.id,date:d,time:time||null,status:"planned"}); setBusy(false);
-    if(error) return notify("No se pudo reservar. Avisa a tu trainer (falta activar el modo híbrido).","err");
-    await loadAll(); notify("🔓 Open reservado ✓ · tu trainer te preparará el entreno"); };
-  const cancel=async(o)=>{ if(o.status==="done"||!window.confirm(`¿Quitar tu open del ${fmtDate(o.date)}?`)) return;
-    setBusy(true); await sb.from("open_sessions").delete().eq("id",o.id); setBusy(false); await loadAll(); notify("Open quitado"); };
-  const up=(opens||[]).filter(o=>o.date>=TODAY).sort((a,b)=>a.date.localeCompare(b.date));
-  const thisW=wk(TODAY), nextW=wk(addDays(mondayOfDate(TODAY),7));
-  return(<div>
-    <div className="card" style={{padding:"12px 14px",marginBottom:12,background:"#f0faf7",border:"1px solid #b5e3da"}}>
-      <div style={{fontSize:14,fontWeight:800,color:"#0f766e"}}>🔓 Días open: entrenas por tu cuenta</div>
-      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Elige qué días vienes a entrenar solo/a. No gastan sesiones de tu bono y tu trainer te deja el entreno preparado en la app.</div>
-      <div style={{display:"flex",gap:14,marginTop:8,fontSize:12,fontWeight:800,color:"#0f172a"}}>
-        <span>Esta semana: {thisW}{lim?` / ${lim}`:""}</span><span>Próxima: {nextW}{lim?` / ${lim}`:""}</span>{!lim&&<span style={{color:"#0f766e"}}>sin límite</span>}
-      </div>
-    </div>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}>
-      <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>Hora aproximada (opcional)</span>
-      <input type="time" className="inp" value={time} onChange={e=>setTime(e.target.value)} style={{width:120,padding:"6px 8px"}}/>
-    </div>
-    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(68px,1fr))",gap:6,marginBottom:14}}>
-      {days.map(d=>{ const m=mine(d), cl=closed(d), full=!m&&lim&&wk(d)>=lim, x=new Date(d+"T12:00:00"); return(
-        <button key={d} type="button" disabled={busy||(cl&&!m)||full} onClick={()=>m?cancel(m):book(d)} title={m?"Toca para quitarlo":cl?"Cerrado":full?"Ya tienes el cupo de esa semana":"Reservar"}
-          style={{padding:"8px 2px",borderRadius:12,cursor:(cl&&!m)||full?"default":"pointer",fontFamily:"inherit",textAlign:"center",
-            background:m?"#0f766e":cl?"#f1f4fa":"#fff",color:m?"#fff":cl||full?"#cbd5e1":"#0f172a",border:`1.5px solid ${m?"#0f766e":cl||full?"#e6ebf3":"#b5e3da"}`}}>
-          <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",opacity:.85}}>{d===TODAY?"hoy":x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
-          <div style={{fontSize:18,fontWeight:800,lineHeight:1.1}}>{x.getDate()}</div>
-          <div style={{fontSize:9,fontWeight:700}}>{m?(m.status==="done"?"✓ hecho":"✓ voy"):cl?"cerrado":full?"cupo lleno":"libre"}</div>
-        </button>); })}
-    </div>
-    <div style={{fontSize:11,fontWeight:800,color:"#64748b",margin:"0 2px 6px"}}>🔓 MIS PRÓXIMOS OPEN</div>
-    {up.length===0?<div className="card" style={{textAlign:"center",padding:18,fontSize:13,color:"#64748b"}}>Aún no has reservado ningún día open.</div>
-      :<div className="card" style={{padding:0,overflow:"hidden"}}>{up.map((o,i)=>(
-        <div key={o.id} style={{display:"flex",alignItems:"center",gap:10,padding:"10px 13px",borderTop:i?"1px solid #eef1f6":"none"}}>
-          <span style={{fontSize:18}}>{o.status==="done"?"✅":"🔓"}</span>
-          <div style={{flex:1,minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{fmtLong(o.date)}</div><div style={{fontSize:11,color:"#64748b"}}>{o.time?`hacia las ${o.time}`:"a tu hora"}</div></div>
-          {o.status!=="done"&&<button type="button" disabled={busy} onClick={()=>cancel(o)} style={{border:"1px solid #f2cccc",background:"#fff",color:"#dc2626",borderRadius:8,padding:"4px 9px",fontSize:11,fontWeight:800,cursor:"pointer"}}>Quitar</button>}
-        </div>))}</div>}
-  </div>);
-}
-
-// ── MULTI SESSION REQUEST (selector visual de huecos) ─────────────────────
-function MultiSessionRequest({client, allSessions, allClients, blocked, waitlist, config, loadAll, notify, saving, setSaving}) {
-  const [view,setView] = React.useState("day"); // día | semana | mes
-  const [date,setDate] = React.useState(TODAY); // día ancla (también base de semana/mes)
-  const [picked,setPicked] = React.useState([]); // claves "YYYY-MM-DD|HH:MM" (multi-día)
-
-  // Franjas y capacidad definidas por el coach.
+// ── RESERVAR: semana fija a pantalla completa ─────────────────────────────
+// Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
+// En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
+function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, hybrid, loadAll, notify, saving, setSaving}) {
+  const [wk,setWk] = React.useState(()=>mondayOfDate(TODAY));
+  const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN"
+  const days=Array.from({length:5},(_,i)=>addDays(wk,i));
   const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  const extraOf=(d)=>(config.extraSlots&&config.extraSlots[d])||[];
+  const rows=[...new Set([...workSlots,...days.flatMap(extraOf)])].sort();
+  const isOpenHour=(d,t)=>workSlots.includes(t)||extraOf(d).includes(t);
   const capOf=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
-  const blockedDay=(d)=>isWeekend(d)||blocked.some(b=>b.date===d&&b.time==="ALL");
-  const slotBlocked=(d,t)=>blockedDay(d)||blocked.some(b=>b.date===d&&b.time===t);
-  const takenAt=(d,t)=>allSessions.filter(s=>s.date===d&&s.time===t).length; // reservadas
-  const freeAt=(d,t)=>Math.max(0,capOf(t)-takenAt(d,t));
+  const dayClosed=(d)=>isWeekend(d)||blocked.some(b=>b.date===d&&b.time==="ALL");
+  const slotClosed=(d,t)=>dayClosed(d)||!isOpenHour(d,t)||blocked.some(b=>b.date===d&&b.time===t);
   const nowHM=new Date().toTimeString().slice(0,5);
   const isPast=(d,t)=>d<TODAY||(d===TODAY&&t<=nowHM);
-  const available=(d,t)=>!slotBlocked(d,t)&&freeAt(d,t)>0&&!isPast(d,t);
-  const key=(d,t)=>d+"|"+t;
-  const isPicked=(d,t)=>picked.includes(key(d,t));
+  const mine=(d,t)=>allSessions.find(s=>s.client_id===client.id&&s.date===d&&s.time===t);
+  const freeAt=(d,t)=>Math.max(0,capOf(t)-allSessions.filter(s=>s.date===d&&s.time===t).length);
+  const myWait=(d,t)=>(waitlist||[]).find(w=>w.client_id===client.id&&w.date===d&&w.time===t);
+  const myOpen=(d)=>(opens||[]).find(o=>o.date===d);
+  const nFree=freeToBook(client,allSessions);
+  const pc=picked.filter(k=>!k.endsWith("|OPEN")), po=picked.filter(k=>k.endsWith("|OPEN"));
+  const oLeft=hybrid?openLeft(client,opens):null;
 
-  // Lista de espera para huecos completos.
-  const myWait=(d,t)=>waitlist.find(w=>w.client_id===client.id&&w.date===d&&w.time===t);
-  const joinWaitlist=async(d,t)=>{
-    if(myWait(d,t)) return;
-    const {error}=await sb.from("waitlist").insert({client_id:client.id,date:d,time:t});
-    if(error) return notify("Necesitas crear la tabla waitlist (ver docs)","err");
-    await loadAll(); notify("En lista de espera ⏳ Te avisaremos si se libera");
+  const tapClass=async(d,t)=>{
+    const k=d+"|"+t, m=mine(d,t);
+    if(m) return notify(m.status==="completed"?"Clase hecha ✓":`Ya tienes esta clase · para cambiarla escribe a tu trainer`);
+    if(picked.includes(k)) return setPicked(p=>p.filter(x=>x!==k));
+    if(slotClosed(d,t)||isPast(d,t)) return;
+    if(freeAt(d,t)<=0){ const w=myWait(d,t);
+      if(w){ await sb.from("waitlist").delete().eq("id",w.id); await loadAll(); return notify("Fuera de la lista de espera"); }
+      if(!window.confirm(`La clase de las ${t} está completa. ¿Te apunto a la lista de espera?`)) return;
+      const {error}=await sb.from("waitlist").insert({client_id:client.id,date:d,time:t}); if(error) return notify("No se pudo apuntar","err");
+      await loadAll(); return notify("En lista de espera ⏳ te avisamos si se libera"); }
+    if(pc.length>=nFree) return notify(client.sessions_left<=0?"No te quedan sesiones en el bono · renueva con tu trainer":"Ya tienes reservadas todas las sesiones de tu bono","err");
+    setPicked(p=>[...p,k]);
   };
-  const leaveWaitlist=async(d,t)=>{
-    const w=myWait(d,t); if(!w) return;
-    await sb.from("waitlist").delete().eq("id",w.id);
-    await loadAll(); notify("Fuera de la lista de espera");
+  const tapOpen=async(d)=>{
+    const k=d+"|OPEN", m=myOpen(d);
+    if(m){ if(m.status==="done") return notify("Open hecha ✓"); if(!window.confirm(`¿Quitar tu open del ${fmtDate(d)}?`)) return;
+      await sb.from("open_sessions").delete().eq("id",m.id); await loadAll(); return notify("Open quitado"); }
+    if(picked.includes(k)) return setPicked(p=>p.filter(x=>x!==k));
+    if(dayClosed(d)||d<TODAY) return;
+    const why=openBlockReason(client,d,opens,po.filter(x=>x.slice(0,10)>=mondayOfDate(d)&&x.slice(0,10)<addDays(mondayOfDate(d),7)).length);
+    if(why==="bono"||(oLeft!==null&&po.length>=oLeft)) return notify("No te quedan open en el bono","err");
+    if(why==="semana") return notify(`Esa semana ya tienes tus ${openPerWeek(client)} open`,"err");
+    setPicked(p=>[...p,k]);
   };
-
-  const nFree=freeToBook(client,allSessions), nBooked=bookedAhead(client,allSessions);
-  const toggle=(d,t)=>{
-    const k=key(d,t);
-    if(!picked.includes(k)&&!available(d,t)) return;
-    if(!picked.includes(k)&&picked.length>=nFree) return notify(nFree?`Solo te ${nFree===1?"queda 1 sesión libre":`quedan ${nFree} sesiones libres`} en tu bono`:"Ya tienes reservadas todas las sesiones de tu bono","err");
-    setPicked(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k]);
-  };
-
   const submit=async()=>{
-    if(client.sessions_left<=0) return notify("Sin sesiones. Contacta a tu trainer.","err");
-    if(picked.length>nFree) return notify("No te quedan tantas sesiones libres en el bono","err");
-    if(picked.length===0) return notify("Elige al menos una hora libre","err");
-    const bad=picked.map(k=>k.split("|")).find(([d,t])=>freeAt(d,t)<=0||slotBlocked(d,t)||isPast(d,t));
-    if(bad) return notify(`La clase ${bad[1]} del ${fmtDate(bad[0])} ya no está disponible`,"err");
+    if(!picked.length) return;
+    const bad=pc.map(k=>k.split("|")).find(([d,t])=>freeAt(d,t)<=0||slotClosed(d,t)||isPast(d,t));
+    if(bad) return notify(`La clase de las ${bad[1]} del ${fmtDate(bad[0])} ya no está libre`,"err");
     setSaving(true);
-    const inserts=picked.map(k=>{const[d,t]=k.split("|");return{client_id:client.id,date:d,time:t,type:"Sesión",status:"confirmed",requested:false};});
-    const {error}=await sb.from("sessions").insert(inserts);
-    if(error){ notify("Error al reservar","err"); setSaving(false); return; }
+    if(pc.length){ const {error}=await sb.from("sessions").insert(pc.map(k=>{const[d,t]=k.split("|");return{client_id:client.id,date:d,time:t,type:"Sesión",status:"confirmed",requested:false};}));
+      if(error){ setSaving(false); return notify("No se pudo reservar","err"); } }
+    if(po.length){ const {error}=await sb.from("open_sessions").insert(po.map(k=>({client_id:client.id,date:k.slice(0,10),status:"planned"})));
+      if(error){ setSaving(false); await loadAll(); return notify("Las clases sí, pero las open no se pudieron guardar (avisa a tu trainer)","err"); } }
     await loadAll(); setSaving(false); setPicked([]);
-    const left=Math.max(0,nFree-inserts.length);
-    notify(`✅ ${inserts.length} clase${inserts.length>1?"s":""} reservada${inserts.length>1?"s":""} · ${left?`te queda${left>1?"n":""} ${left} libre${left>1?"s":""}`:"bono completo reservado"} 💪`);
+    notify(`✅ Reservado: ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")} 💪`);
   };
-
-  // Navegación
-  const shiftDay=(n)=>{const x=new Date(date+"T12:00:00");x.setDate(x.getDate()+n);setDate(x.toISOString().split("T")[0]);};
-  const shiftMonth=(n)=>{const x=new Date(date+"T12:00:00");x.setDate(1);x.setMonth(x.getMonth()+n);setDate(x.toISOString().split("T")[0]);};
-  const mondayOf=(d)=>{const x=new Date(d+"T12:00:00");const g=x.getDay();x.setDate(x.getDate()+(g===0?-6:1-g));return x.toISOString().split("T")[0];};
-  const wkStart=mondayOf(date);
-  const weekDays=Array.from({length:5},(_,i)=>{const x=new Date(wkStart+"T12:00:00");x.setDate(x.getDate()+i);return x.toISOString().split("T")[0];});
-  const mDate=new Date(date+"T12:00:00"); const mY=mDate.getFullYear(), mM=mDate.getMonth();
-  const monthCells=getMonthDays(mY,mM).map(c=>({...c,date:c.cur?`${mY}-${String(mM+1).padStart(2,"0")}-${String(c.day).padStart(2,"0")}`:null}));
-
+  const cur=mondayOfDate(TODAY), lbl=wk===cur?"Esta semana":wk===addDays(cur,7)?"Próxima semana":`${new Date(wk+"T12:00:00").getDate()} – ${shortD(addDays(wk,4))}`;
+  const nRows=rows.length+(hybrid?1:0);
+  const cellBase={borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:0,transition:"background .15s, transform .1s"};
+  const chip=(ic,txt,col,bg)=><span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:col,background:bg,borderRadius:20,padding:"5px 10px"}}>{ic} {txt}</span>;
   return(
-    <div className="card">
-      <div style={{background:"#eaf1fb",borderRadius:10,padding:"11px 13px",border:"1px solid #bcd3ee",fontSize:13,color:"#64748b",marginBottom:14}}>
-        💡 Planea tus clases: cambia entre <b>día</b>, <b>semana</b> y <b>mes</b>, y toca las horas libres para reservarlas al instante.
-        <div style={{marginTop:6,fontSize:12,color:"#64748b"}}>
-          Te quedan <b className="count-pop" key={nFree-picked.length} style={{color:nFree-picked.length>0?"#0284c7":"#ca8a04",fontSize:15}}>{nFree-picked.length}</b> sesion{nFree-picked.length!==1?"es":""} libre{nFree-picked.length!==1?"s":""} para reservar
-          <span style={{color:"#94a3b8"}}> · {nBooked} ya reservada{nBooked!==1?"s":""}{picked.length?` · ${picked.length} elegida${picked.length>1?"s":""} ahora`:""}</span>
-        </div>
+    <div style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 200px - env(safe-area-inset-bottom))",minHeight:440}}>
+      {/* Lo que te queda */}
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+        {chip("👥",`${Math.max(0,nFree-pc.length)} clase${nFree-pc.length!==1?"s":""} por reservar`,nFree-pc.length>0?"#0369a1":"#a16207",nFree-pc.length>0?"#e6f2fb":"#fbf1d8")}
+        {hybrid&&chip("🔓",oLeft!==null?`${Math.max(0,oLeft-po.length)} open por reservar`:"open sin tope","#0f766e","#e6f6f3")}
+        {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:800,color:"#16a34a",textDecoration:"none",padding:"5px 4px"}}>Renovar ›</a>}
       </div>
-
-      {/* Elegidas (multi-día) */}
-      {picked.length>0&&(
-        <div style={{marginBottom:14}}>
-          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
-            <span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>ELEGIDAS ({picked.length})</span>
-            <button onClick={()=>setPicked([])} style={{background:"none",border:"none",color:"#94a3b8",fontSize:11,cursor:"pointer",fontWeight:700}}>Vaciar</button>
-          </div>
-          <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
-            {picked.slice().sort().map(k=>{const[d,t]=k.split("|");return(
-              <span key={k} onClick={()=>setPicked(p=>p.filter(x=>x!==k))} style={{display:"inline-flex",alignItems:"center",gap:5,background:"#dff3e6",border:"1px solid #16a34a",color:"#16a34a",borderRadius:20,padding:"4px 10px",fontSize:11,fontWeight:700,cursor:"pointer"}}>
-                {fmtDate(d)} · {t} ✕
-              </span>
-            );})}
-          </div>
-        </div>
-      )}
-
-      {/* Conmutador de vista */}
-      <div style={{display:"flex",gap:6,marginBottom:12,background:"#eaf1fb",borderRadius:12,padding:4}}>
-        {[["day","Día"],["week","Semana"],["month","Mes"]].map(([id,label])=>(
-          <button key={id} onClick={()=>setView(id)} style={{flex:1,padding:"8px 0",fontSize:12,fontWeight:700,borderRadius:9,cursor:"pointer",border:"none",
-            background:view===id?"#fff":"transparent",color:view===id?"#0284c7":"#94a3b8",boxShadow:view===id?"0 1px 3px rgba(15,23,42,.08)":"none"}}>{label}</button>
-        ))}
+      {/* Semana */}
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+        <button type="button" className="btn ghost" style={{padding:"7px 14px",fontSize:16}} disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))}>‹</button>
+        <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800,color:"#0f172a"}}>{lbl}</div>
+        <button type="button" className="btn ghost" style={{padding:"7px 14px",fontSize:16}} onClick={()=>setWk(addDays(wk,7))}>›</button>
       </div>
-
-      {/* Navegación */}
-      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-        <button className="btn ghost" style={{padding:"6px 13px",fontSize:16}} onClick={()=>view==="month"?shiftMonth(-1):view==="week"?shiftDay(-7):shiftDay(-1)}>‹</button>
-        <div style={{fontSize:13,fontWeight:700,textAlign:"center",textTransform:"capitalize"}}>
-          {view==="month"?fmtMonth(date):view==="week"?`${fmtDate(weekDays[0])} – ${fmtDate(weekDays[4])}`:fmtLong(date)}
-        </div>
-        <button className="btn ghost" style={{padding:"6px 13px",fontSize:16}} onClick={()=>view==="month"?shiftMonth(1):view==="week"?shiftDay(7):shiftDay(1)}>›</button>
+      <div style={{flex:1,minHeight:0,display:"grid",gridTemplateColumns:"42px repeat(5,minmax(0,1fr))",gridTemplateRows:`auto repeat(${nRows},minmax(0,1fr))`,gap:4}}>
+        <div/>
+        {days.map(d=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY; return(
+          <div key={d} style={{textAlign:"center",padding:"4px 0",borderRadius:10,background:t?"#0284c7":"transparent",color:t?"#fff":dayClosed(d)?"#cbd5e1":"#0f172a"}}>
+            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",opacity:.8}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
+            <div style={{fontSize:17,fontWeight:800,lineHeight:1.1}}>{x.getDate()}</div>
+          </div>); })}
+        {rows.map(t=>(<React.Fragment key={t}>
+          <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#64748b"}}>{t}</div>
+          {days.map(d=>{ const k=d+"|"+t, m=mine(d,t), sel=picked.includes(k), closed=slotClosed(d,t), past=isPast(d,t), free=freeAt(d,t), w=myWait(d,t);
+            const st=m?"mine":sel?"sel":closed||past?"off":free<=0?"full":"free";
+            const sty={mine:{background:m&&m.status==="completed"?"#16a34a":"#0284c7",color:"#fff",border:"none"},sel:{background:"#16a34a",color:"#fff",border:"none",transform:"scale(.96)"},
+              off:{background:"transparent",color:"transparent",border:"1px dashed #e6ebf3"},full:{background:"#f1f4fa",color:"#94a3b8",border:"1px solid #e6ebf3"},
+              free:{background:"#fff",color:"#16a34a",border:"1.5px solid #bbf7d0",boxShadow:"0 1px 2px rgba(15,23,42,.05)"}}[st];
+            return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapClass(d,t)} aria-label={`${fmtDate(d)} ${t}: ${st==="mine"?"tu clase":st==="sel"?"elegida":st==="full"?"completa":st==="free"?`${free} libres`:"no disponible"}`}
+              style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
+              {st==="mine"&&<><span style={{fontSize:16}}>✓</span><span style={{fontSize:9}}>{m.status==="completed"?"hecha":"tú"}</span></>}
+              {st==="sel"&&<span style={{fontSize:18}}>＋</span>}
+              {st==="free"&&<><span style={{fontSize:15}}>{free}</span><span style={{fontSize:8,fontWeight:700,color:"#86efac"}}>libre{free>1?"s":""}</span></>}
+              {st==="full"&&<span style={{fontSize:9}}>{w?"⏳ espera":"lleno"}</span>}
+            </button>; })}
+        </React.Fragment>))}
+        {hybrid&&<>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}} title="Open · por tu cuenta">🔓</div>
+          {days.map(d=>{ const k=d+"|OPEN", m=myOpen(d), sel=picked.includes(k), off=dayClosed(d)||d<TODAY;
+            const st=m?"mine":sel?"sel":off?"off":"free";
+            const sty={mine:{background:m&&m.status==="done"?"#16a34a":"#0f766e",color:"#fff",border:"none"},sel:{background:"#14b8a6",color:"#fff",border:"none",transform:"scale(.96)"},
+              off:{background:"transparent",color:"transparent",border:"1px dashed #e6ebf3"},free:{background:"#f0faf7",color:"#0f766e",border:"1.5px dashed #5eead4"}}[st];
+            return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapOpen(d)} aria-label={`${fmtDate(d)} open: ${st==="mine"?"reservado":st==="sel"?"elegido":"libre"}`}
+              style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
+              {st==="mine"&&<><span style={{fontSize:14}}>✓</span><span style={{fontSize:9}}>{m.status==="done"?"hecho":"open"}</span></>}
+              {st==="sel"&&<span style={{fontSize:18}}>＋</span>}
+              {st==="free"&&<span style={{fontSize:10}}>open</span>}
+            </button>; })}
+        </>}
       </div>
-
-      {/* ── VISTA DÍA ── */}
-      {view==="day"&&(blockedDay(date)
-        ?<div style={{background:isWeekend(date)?"#edf7ed":"#fbecec",border:`1px solid ${isWeekend(date)?"#c9e6d1":"#f2cccc"}`,borderRadius:10,padding:14,textAlign:"center",fontSize:13,color:isWeekend(date)?"#16a34a":"#dc2626"}}>{isWeekend(date)?"🌴 Fin de semana — sin clases":"🚫 Día no disponible"}</div>
-        :workSlots.length===0
-          ?<div style={{fontSize:12,color:"#94a3b8"}}>No hay horario configurado.</div>
-          :<div style={{display:"flex",flexDirection:"column",gap:8}}>
-            {workSlots.map(t=>{
-              const sel=isPicked(date,t), free=freeAt(date,t), ok=available(date,t), cap=capOf(t);
-              const enrolled=allSessions.filter(s=>s.date===date&&s.time===t)
-                .map(s=>({...s,c:allClients.find(x=>x.id===s.client_id)})).filter(s=>s.c);
-              const estado=isPast(date,t)?"Pasada":slotBlocked(date,t)?"🚫 Bloqueada":free<=0?"Completa":`${free} libre${free>1?"s":""}`;
-              const estCol=sel?"#16a34a":(free<=0||slotBlocked(date,t)||isPast(date,t))?"#dc2626":"#16a34a";
-              return(
-                <div key={t} onClick={()=>toggle(date,t)}
-                  style={{display:"flex",alignItems:"center",gap:12,padding:"10px 12px",borderRadius:12,cursor:ok||sel?"pointer":"default",
-                    background:sel?"#dff3e6":ok?"#edf7ed":"#f1f4fa",border:`1px solid ${sel?"#16a34a":ok?"#14532d":"#e6ebf3"}`,opacity:(slotBlocked(date,t)||isPast(date,t))?0.55:1}}>
-                  <div style={{flexShrink:0,textAlign:"center",minWidth:44}}>
-                    <div className="mono" style={{fontSize:15,fontWeight:700,color:sel?"#16a34a":ok?"#0f172a":"#64748b"}}>{t}</div>
-                    <div style={{fontSize:9,fontWeight:700,marginTop:1,color:estCol}}>{sel?"✓ elegida":estado}</div>
-                  </div>
-                  <div style={{flex:1,display:"flex",flexWrap:"wrap",gap:6,alignItems:"center"}}>
-                    {enrolled.map(s=>{
-                      const yo=s.c.id===client.id;
-                      return yo
-                        ?<div key={s.id} style={{display:"flex",alignItems:"center",gap:6,background:s.c.color+"18",border:`1px solid ${s.c.color}40`,borderRadius:20,padding:"3px 9px 3px 3px"}}>
-                          {s.c.avatar_url
-                            ?<img src={s.c.avatar_url} style={{width:24,height:24,borderRadius:"50%",objectFit:"cover"}}/>
-                            :<div className="ring" style={{width:24,height:24,background:s.c.color+"30",color:s.c.color,fontSize:9}}>{ini(s.c.name)}</div>}
-                          <span style={{fontSize:12,fontWeight:700,color:s.c.color}}>Tú</span>
-                        </div>
-                        :<div key={s.id} title="Plaza ocupada" style={{width:26,height:26,borderRadius:"50%",background:"#cbd5e1",border:"1.5px solid #cbd5e1",display:"flex",alignItems:"center",justifyContent:"center",color:"#64748b",fontSize:14,fontWeight:700}}>•</div>;
-                    })}
-                    {!slotBlocked(date,t)&&!isPast(date,t)&&Array.from({length:free}).map((_,k)=>(
-                      <div key={"f"+k} style={{width:26,height:26,borderRadius:"50%",border:"1.5px dashed #c9e6d1",display:"flex",alignItems:"center",justifyContent:"center",color:"#c9e6d1",fontSize:13}}>+</div>
-                    ))}
-                    {enrolled.length===0&&slotBlocked(date,t)&&<span style={{fontSize:11,color:"#b56b6b"}}>No disponible</span>}
-                  </div>
-                  <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:5}}>
-                    <span className="mono" style={{fontSize:10,fontWeight:700,color:"#94a3b8"}}>{enrolled.length}/{cap}</span>
-                    {free<=0&&!slotBlocked(date,t)&&!isPast(date,t)&&(myWait(date,t)
-                      ?<button onClick={e=>{e.stopPropagation();leaveWaitlist(date,t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ En espera ✓</button>
-                      :<button onClick={e=>{e.stopPropagation();joinWaitlist(date,t);}} style={{background:"#fbf1d8",border:"1px solid #e4cd8c",color:"#ca8a04",borderRadius:8,fontSize:10,fontWeight:700,padding:"4px 8px",cursor:"pointer",whiteSpace:"nowrap"}}>⏳ Espera</button>
-                    )}
-                  </div>
-                </div>
-              );
-            })}
+      {/* Confirmar */}
+      <div style={{marginTop:10}}>
+        {picked.length
+          ?<div style={{display:"flex",gap:8}}>
+            <button type="button" className="btn ghost" style={{padding:"12px 14px"}} onClick={()=>setPicked([])}>✕</button>
+            <button type="button" className="btn grn" disabled={saving} onClick={submit} style={{flex:1,padding:12,justifyContent:"center",fontSize:15,fontWeight:800}}>{saving?"Reservando…":`Reservar ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")}`}</button>
           </div>
-      )}
-
-      {/* ── VISTA SEMANA ── */}
-      {view==="week"&&(workSlots.length===0
-        ?<div style={{fontSize:12,color:"#94a3b8"}}>No hay horario configurado.</div>
-        :<div>
-          <div style={{overflowX:"auto"}}>
-            <div style={{minWidth:330}}>
-              <div style={{display:"grid",gridTemplateColumns:"40px repeat(5,1fr)",gap:4,marginBottom:4}}>
-                <div/>
-                {weekDays.map(d=>(
-                  <div key={d} style={{textAlign:"center"}}>
-                    <div style={{fontSize:10,fontWeight:700,color:d===TODAY?"#0284c7":"#94a3b8",textTransform:"capitalize"}}>{new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"})}</div>
-                    <div style={{fontSize:13,fontWeight:700,color:d===TODAY?"#0284c7":"#0f172a"}}>{new Date(d+"T12:00:00").getDate()}</div>
-                  </div>
-                ))}
-              </div>
-              {workSlots.map(t=>(
-                <div key={t} style={{display:"grid",gridTemplateColumns:"40px repeat(5,1fr)",gap:4,marginBottom:4}}>
-                  <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",display:"flex",alignItems:"center"}}>{t}</div>
-                  {weekDays.map(d=>{
-                    const pk=isPicked(d,t), ok=available(d,t), free=freeAt(d,t);
-                    const full=!ok&&!slotBlocked(d,t)&&!isPast(d,t)&&free<=0;
-                    const bg=pk?"#16a34a":ok?"#edf7ed":full?"#fbecec":"#f1f4fa";
-                    const col=pk?"#fff":ok?"#16a34a":full?"#dc2626":"#cbd5e1";
-                    const bd=pk?"#16a34a":ok?"#c9e6d1":full?"#f2cccc":"#e6ebf3";
-                    return(
-                      <div key={d} onClick={()=>toggle(d,t)} style={{minHeight:36,borderRadius:8,background:bg,border:`1px solid ${bd}`,display:"flex",alignItems:"center",justifyContent:"center",cursor:(ok||pk)?"pointer":"default",fontSize:13,fontWeight:700,color:col}}>
-                        {pk?"✓":slotBlocked(d,t)?"":isPast(d,t)?"·":full?"0":free}
-                      </div>
-                    );
-                  })}
-                </div>
-              ))}
-            </div>
-          </div>
-          <div style={{fontSize:10,color:"#94a3b8",marginTop:8,lineHeight:1.5}}>Nº = plazas libres · <b style={{color:"#16a34a"}}>✓</b> elegida · <b style={{color:"#dc2626"}}>0</b> completa. Toca para reservar.</div>
-        </div>
-      )}
-
-      {/* ── VISTA MES ── */}
-      {view==="month"&&(
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4,marginBottom:6}}>
-            {["L","M","X","J","V","S","D"].map((d,i)=><div key={i} style={{textAlign:"center",fontSize:10,fontWeight:700,color:"#94a3b8"}}>{d}</div>)}
-          </div>
-          <div style={{display:"grid",gridTemplateColumns:"repeat(7,1fr)",gap:4}}>
-            {monthCells.map((c,i)=>{
-              if(!c.cur) return <div key={i}/>;
-              const ds=c.date, we=isWeekend(ds), past=ds<TODAY;
-              const totalFree=(we||past)?0:workSlots.reduce((a,t)=>a+(available(ds,t)?freeAt(ds,t):0),0);
-              const mine=allSessions.some(s=>s.client_id===client.id&&s.date===ds)||picked.some(k=>k.startsWith(ds+"|"));
-              const clickable=!we&&!past;
-              return(
-                <div key={i} onClick={()=>{if(clickable){setDate(ds);setView("day");}}}
-                  style={{minHeight:52,borderRadius:8,padding:3,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,cursor:clickable?"pointer":"default",
-                    background:ds===TODAY?"#eaf1fb":we?"#f1f4fa":"#fff",border:`1px solid ${mine?"#16a34a":ds===TODAY?"#bcd3ee":"#e6ebf3"}`,opacity:past?0.4:1}}>
-                  <div style={{fontSize:12,fontWeight:700,color:ds===TODAY?"#0284c7":"#0f172a"}}>{c.day}</div>
-                  {we?<div style={{fontSize:10}}>🌴</div>
-                    :past?null
-                    :totalFree>0?<div style={{fontSize:8,fontWeight:700,color:"#16a34a"}}>{totalFree} lib</div>
-                    :<div style={{fontSize:8,fontWeight:700,color:"#dc2626"}}>lleno</div>}
-                  {mine&&<div style={{width:5,height:5,borderRadius:"50%",background:"#16a34a"}}/>}
-                </div>
-              );
-            })}
-          </div>
-          <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Toca un día para ver sus horas y reservar. <b style={{color:"#16a34a"}}>●</b> = ya tienes clase ese día.</div>
-        </div>
-      )}
-
-      <button className="btn sky" style={{width:"100%",padding:12,fontSize:13,marginTop:16,opacity:picked.length?1:0.5}} onClick={submit} disabled={saving||picked.length===0}>
-        {saving?"Reservando...":picked.length?`Reservar ${picked.length} clase${picked.length>1?"s":""} 🚀`:"Elige horas libres"}
-      </button>
+          :<div style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap",fontSize:11,color:"#64748b",fontWeight:700,padding:"6px 0"}}>
+            <span><span style={{color:"#16a34a"}}>■</span> libre</span><span><span style={{color:"#0284c7"}}>■</span> tu clase</span><span><span style={{color:"#cbd5e1"}}>■</span> lleno</span>{hybrid&&<span><span style={{color:"#0f766e"}}>■</span> open</span>}
+          </div>}
+      </div>
     </div>
   );
 }
