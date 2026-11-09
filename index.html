@@ -1066,17 +1066,18 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const isWorkSlot = (date,t) => workSlots.includes(t) || extraOf(date).includes(t);
   // Abrir/cerrar una hora extra en un día (se guarda en la config; sin BBDD).
   const openExtraHour = (date,time) => { const ex={...(config.extraSlots||{})}; const set=new Set(ex[date]||[]); set.add(time); ex[date]=[...set].sort(); saveConfig({...config,extraSlots:ex}); };
-  const applyHours = (dates, want) => w(async()=>{
-    const ex={...(config.extraSlots||{})}; let cfgChanged=false, n=0;
+  const applyHours = (dates, want, reason="Cerrada") => w(async()=>{
+    const ex={...(config.extraSlots||{})}; let cfgChanged=false, n=0; const ins=[], del=[];
     for(const d of dates) for(const [t,v] of Object.entries(want)){
-      const isW=workSlots.includes(t), cb=blocked.find(b=>b.date===d&&b.time===t&&/^(Cerrada|Bloqueado)( · |$)/.test(String(b.reason||"Bloqueado")));
-      const other=blocked.some(b=>b.date===d&&b.time===t&&b!==cb); if(other) continue;
-      if(v==="closed"){ if(!cb){ await sb.from("blocked_slots").insert({date:d,time:t,reason:"Cerrada"}); n++; }
+      const isW=workSlots.includes(t), bs=blocked.filter(b=>b.date===d&&b.time===t);
+      if(v==="closed"){ if(!bs.length){ ins.push({date:d,time:t,reason}); n++; }
         if(ex[d]&&ex[d].includes(t)){ ex[d]=ex[d].filter(x=>x!==t); if(!ex[d].length) delete ex[d]; cfgChanged=true; } }
-      else if(v==="open"){ if(cb){ await sb.from("blocked_slots").delete().eq("id",cb.id); n++; }
+      else if(v==="open"){ bs.forEach(b=>{ del.push(b.id); n++; });
         if(!isW&&!(ex[d]||[]).includes(t)){ ex[d]=[...(ex[d]||[]),t].sort(); cfgChanged=true; n++; } }
-      else if(v==="off"){ if(ex[d]&&ex[d].includes(t)){ ex[d]=ex[d].filter(x=>x!==t); if(!ex[d].length) delete ex[d]; cfgChanged=true; n++; } }
+      else if(v==="off"){ bs.forEach(b=>{ del.push(b.id); n++; }); if(ex[d]&&ex[d].includes(t)){ ex[d]=ex[d].filter(x=>x!==t); if(!ex[d].length) delete ex[d]; cfgChanged=true; n++; } }
     }
+    if(ins.length) await sb.from("blocked_slots").insert(ins);
+    if(del.length) await sb.from("blocked_slots").delete().in("id",del);
     if(cfgChanged) await saveConfig({...config,extraSlots:ex},true);
     setOpenHour(null); notify(n?`Horario actualizado ✓ (${n} cambio${n>1?"s":""})`:"Sin cambios");
   });
@@ -2271,8 +2272,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               </button>
               <button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#ca8a04"}}
                 onClick={()=>setShowVacation(true)}>🏖 Vacaciones</button>
-              {schedView==="day"&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#0284c7"}}
-                onClick={()=>setOpenHour(activeDay)}>🕐 Abrir / cerrar horas</button>}
+              {(schedView==="day"||schedView==="week")&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#0284c7"}}
+                onClick={()=>setOpenHour({date:activeDay,scope:schedView==="week"?"week":"day"})}>🔒 Bloquear / abrir horas{schedView==="week"?" de la semana":""}</button>}
               {schedView==="day"&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#7c3aed"}}
                 onClick={()=>setShowValoracion({date:activeDay})}>📋 + Valoración</button>}
               {(schedView==="day"||schedView==="week")&&(()=>{
@@ -2805,7 +2806,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         onValoracion={()=>{const s=slotMenu;setSlotMenu(null);setShowValoracion({date:s.date,time:s.time});}}
         onBlock={(kind,note)=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time,kind,note);}}
         onClose={()=>setSlotMenu(null)}/>}
-      {openHour&&<HoursModal date={openHour} workSlots={workSlots} extraOf={extraOf} blocked={blocked} sessions={sessions} onApply={applyHours} onClose={()=>setOpenHour(null)}/>}
+      {openHour&&<HoursModal date={openHour.date} initialScope={openHour.scope} workSlots={workSlots} extraOf={extraOf} blocked={blocked} sessions={sessions} onApply={applyHours} onClose={()=>setOpenHour(null)}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
@@ -3478,51 +3479,72 @@ function PhotosModal({client,loadAll,notify,onClose}) {
 }
 
 // ── ABRIR HORA EXTRA EN UN DÍA ─────────────────────────────────────────────
-// Abrir y cerrar horas de un día (o de toda la semana) con un toque por hora.
-// Horas de tu horario: abierta ↔ ⛔ cerrada. Fuera de horario: — ↔ abierta (hora extra).
-function HoursModal({date,workSlots,extraOf,blocked,sessions,onApply,onClose}){
-  const [scope,setScope]=React.useState("day"); // day | week
-  const [want,setWant]=React.useState({});       // hora → "open" | "closed" | "off"
-  const dates=scope==="day"?[date]:getWeekDays(mondayOfDate(date)).slice(0,5);
-  const closedB=(d,t)=>blocked.find(b=>b.date===d&&b.time===t&&/^(Cerrada|Bloqueado)( · |$)/.test(String(b.reason||"Bloqueado")));
-  const otherB=(d,t)=>blocked.find(b=>b.date===d&&b.time===t&&!closedB(d,t));
+// Bloquear / abrir horas de un día o de toda la semana (L-V), y repetirlo varias semanas.
+// Horas de tu horario: abierta ↔ bloqueada (con el motivo elegido). Fuera de horario: — ↔ abierta (extra).
+function HoursModal({date,initialScope,workSlots,extraOf,blocked,sessions,onApply,onClose}){
+  const [scope,setScope]=React.useState(initialScope||"day"); // day | week
+  const [weeks,setWeeks]=React.useState(1);
+  const [kind,setKind]=React.useState("Cerrada");
+  const [note,setNote]=React.useState("");
+  const [want,setWant]=React.useState({}); // hora → "open" | "closed" | "off"
+  const base=scope==="day"?[date]:getWeekDays(mondayOfDate(date)).slice(0,5);
+  const dates=Array.from({length:weeks},(_,i)=>base.map(d=>addDays(d,7*i))).flat().filter(d=>d>=TODAY||d===date);
+  const blockOf=(d,t)=>blocked.find(b=>b.date===d&&b.time===t);
   const isWork=(t)=>workSlots.includes(t);
-  const now=(t)=>closedB(date,t)?"closed":isWork(t)||extraOf(date).includes(t)?"open":"off";
+  const nClosed=(t)=>dates.filter(d=>blockOf(d,t)).length;
+  const now=(t)=>{ const n=nClosed(t); if(n&&n===dates.length) return "closed"; if(isWork(t)||dates.every(d=>extraOf(d).includes(t))) return "open"; return "off"; };
   const cur=(t)=>want[t]||now(t);
-  const tap=(t)=>{ if(otherB(date,t)) return; const c=cur(t), nx=c==="closed"?"open":c==="open"?(isWork(t)?"closed":"off"):"open";
-    setWant(w=>{ const n={...w}; if(nx===now(t)) delete n[t]; else n[t]=nx; return n; }); };
+  const tap=(t)=>{ const c=cur(t), nx=c==="closed"?"open":c==="open"?(isWork(t)||!dates.every(d=>extraOf(d).includes(t))?"closed":"off"):"open";
+    setWant(w=>{ const n={...w}; if(nx===now(t)&&!(nx!=="closed"&&nClosed(t))) delete n[t]; else n[t]=nx; return n; }); };
   const hours=[...new Set([...HOURS.filter(t=>t>="06:00"&&t<="22:00"),...workSlots])].sort();
   const changes=Object.keys(want).length;
   const booked=(t)=>dates.reduce((n,d)=>n+(sessions||[]).filter(x=>x.date===d&&x.time===t).length,0);
-  const apply=()=>{ const closing=Object.entries(want).filter(([,v])=>v!=="open").map(([t])=>t), nb=closing.reduce((n,t)=>n+booked(t),0);
-    if(nb&&!window.confirm(`Hay ${nb} reserva${nb>1?"s":""} en las horas que cierras. Se quedan en la agenda y tendrás que moverlas o avisar. ¿Cerrar igualmente?`)) return;
-    onApply(dates,want); };
-  const sty={open:{bg:"#fff",bd:"#bcd3ee",fg:"#0284c7",t:"abierta"},closed:{bg:"#475569",bd:"#475569",fg:"#fff",t:"⛔ cerrada"},off:{bg:"#f1f4fa",bd:"#e6ebf3",fg:"#94a3b8",t:"—"}};
+  const K=BLOCK_KINDS.find(x=>x.k===kind)||BLOCK_KINDS[0];
+  const apply=()=>{ const closing=Object.entries(want).filter(([,v])=>v==="closed").map(([t])=>t), nb=closing.reduce((n,t)=>n+booked(t),0);
+    if(nb&&!window.confirm(`Hay ${nb} reserva${nb>1?"s":""} en las horas que bloqueas. Se quedan en la agenda y tendrás que moverlas o avisar. ¿Bloquear igualmente?`)) return;
+    onApply(dates,want,kind+(note.trim()?" · "+note.trim():"")); };
+  const sty={open:{bg:"#fff",bd:"#bcd3ee",fg:"#0284c7"},closed:{bg:K.fg,bd:K.fg,fg:"#fff"},off:{bg:"#f1f4fa",bd:"#e6ebf3",fg:"#94a3b8"}};
+  const period=scope==="day"?(weeks>1?`los ${new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} de ${weeks} semanas`:capFirst(fmtLong(date))):(weeks>1?`L-V de ${weeks} semanas (desde el ${fmtDate(base[0])})`:`semana del ${fmtDate(base[0])} al ${fmtDate(base[4])}`);
   return(
     <div className="ovl" onClick={onClose}>
-      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:440,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
-        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>🕐 Abrir / cerrar horas</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>{scope==="day"?capFirst(fmtLong(date)):`Semana del ${fmtDate(dates[0])} al ${fmtDate(dates[4])}`} · toca una hora para cambiarla.</p>
-        <div className="seg" style={{marginBottom:10}}>
+      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:460,maxHeight:"94vh",display:"flex",flexDirection:"column"}}>
+        <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>🔒 Bloquear / abrir horas</h2>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>{period} · toca una hora para cambiarla.</p>
+        <div className="seg" style={{marginBottom:8}}>
           <button className={"sb"+(scope==="day"?" on":"")} onClick={()=>setScope("day")} style={{fontSize:12}}>Solo este día</button>
           <button className={"sb"+(scope==="week"?" on":"")} onClick={()=>setScope("week")} style={{fontSize:12}}>Toda la semana (L-V)</button>
         </div>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8,flexWrap:"wrap"}}>
+          <span style={{fontSize:12,fontWeight:700,color:"#475569"}}>Repetir durante</span>
+          <button type="button" className="btn ghost" style={{padding:"3px 10px",fontSize:15}} disabled={weeks<=1} onClick={()=>setWeeks(w=>Math.max(1,w-1))}>−</button>
+          <span className="mono" style={{fontWeight:800,color:"#0284c7",minWidth:18,textAlign:"center"}}>{weeks}</span>
+          <button type="button" className="btn ghost" style={{padding:"3px 10px",fontSize:15}} disabled={weeks>=12} onClick={()=>setWeeks(w=>Math.min(12,w+1))}>+</button>
+          <span style={{fontSize:12,color:"#64748b"}}>semana{weeks>1?"s":""}</span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(4,1fr)",gap:5,marginBottom:6}}>
+          {BLOCK_KINDS.slice().sort((a,b)=>(a.k==="Cerrada"?-1:b.k==="Cerrada"?1:0)).map(x=>{ const on=kind===x.k; return(
+            <button key={x.k} type="button" onClick={()=>setKind(x.k)} style={{padding:"6px 2px",borderRadius:10,cursor:"pointer",fontFamily:"inherit",fontSize:10,fontWeight:800,lineHeight:1.15,
+              background:on?x.fg:x.bg,color:on?"#fff":x.fg,border:`1px solid ${on?x.fg:x.bd}`}}><div style={{fontSize:15}}>{x.ico}</div>{x.k}</button>); })}
+        </div>
+        <input className="inp" value={note} onChange={e=>setNote(e.target.value)} maxLength={40} placeholder={kind==="Clase privada"||kind==="Valoración"?"Nombre o nota (opcional)":"Motivo (opcional): médico, formación…"} style={{marginBottom:8,fontSize:12,padding:"7px 10px"}}/>
         <div style={{flex:1,overflowY:"auto",display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(84px,1fr))",gap:6,minHeight:0}}>
-          {hours.map(t=>{ const o=otherB(date,t), c=cur(t), S=sty[c], ch=want[t]!=null, nb=booked(t); return(
-            <button key={t} type="button" disabled={!!o} onClick={()=>tap(t)} title={o?`Reservada: ${blockInfo(o).label}`:""}
-              style={{position:"relative",padding:"9px 4px",borderRadius:12,cursor:o?"default":"pointer",fontFamily:"inherit",textAlign:"center",
-                background:o?blockInfo(o).bg:S.bg,border:`1.5px solid ${ch?"#f59e0b":o?blockInfo(o).bd:S.bd}`,color:o?blockInfo(o).fg:S.fg}}>
+          {hours.map(t=>{ const c=cur(t), ch=want[t]!=null, nb=booked(t), nc=nClosed(t), b0=blockOf(date,t), bi=b0&&!ch?blockInfo(b0):null;
+            const S=c==="closed"&&!ch&&bi?{bg:bi.fg,bd:bi.fg,fg:"#fff"}:sty[c];
+            const lbl=c==="closed"?(ch?`${K.ico} ${K.k.toLowerCase()}`:bi?`${bi.ico} ${bi.k.toLowerCase()}`:"bloqueada"):c==="open"?(nc&&!ch?`🔒 ${nc}/${dates.length}`:isWork(t)?"abierta":"abierta · extra"):"—";
+            return(
+            <button key={t} type="button" onClick={()=>tap(t)} title={b0?blockInfo(b0).label:""}
+              style={{position:"relative",padding:"9px 4px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"center",background:S.bg,border:`1.5px solid ${ch?"#f59e0b":S.bd}`,color:S.fg}}>
               <div className="mono" style={{fontSize:15,fontWeight:800}}>{t}</div>
-              <div style={{fontSize:10,fontWeight:800,marginTop:1}}>{o?`${blockInfo(o).ico} ${blockInfo(o).k}`:c==="open"&&!isWork(t)?"abierta · extra":S.t}</div>
+              <div style={{fontSize:10,fontWeight:800,marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{lbl}</div>
               {nb>0&&<span style={{position:"absolute",top:3,right:5,fontSize:9,fontWeight:800,color:c==="closed"?"#fde68a":"#0284c7"}}>👥{nb}</span>}
             </button>); })}
         </div>
         <div style={{display:"flex",gap:10,flexWrap:"wrap",fontSize:10,color:"#64748b",fontWeight:700,marginTop:8}}>
-          <span>⬜ abierta</span><span>⬛ ⛔ cerrada</span><span>▫️ — fuera de horario</span><span style={{color:"#b45309"}}>borde naranja = cambio sin guardar</span>
+          <span>⬜ abierta</span><span>🟥 bloqueada</span><span>— fuera de horario</span><span>🔒 3/5 = bloqueada solo algunos días</span><span style={{color:"#b45309"}}>borde naranja = sin guardar</span>
         </div>
         <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
           <button type="button" className="btn ghost" style={{padding:"11px 14px"}} onClick={onClose}>Cancelar</button>
-          <button type="button" className="btn sky" disabled={!changes} style={{flex:1,padding:11,justifyContent:"center",fontWeight:800}} onClick={apply}>{changes?`Guardar ${changes} cambio${changes>1?"s":""}${scope==="week"?" en la semana":""}`:"Toca horas para cambiarlas"}</button>
+          <button type="button" className="btn sky" disabled={!changes} style={{flex:1,padding:11,justifyContent:"center",fontWeight:800}} onClick={apply}>{changes?`Guardar ${changes} cambio${changes>1?"s":""} · ${dates.length} día${dates.length>1?"s":""}`:"Toca horas para cambiarlas"}</button>
         </div>
       </div>
     </div>);
