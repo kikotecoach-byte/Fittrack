@@ -7759,46 +7759,89 @@ const sessionMinutes = (exs) => { const d=(exs||[]).filter(exDone); if(!d.length
   const s=d.reduce((t,e)=>t+(parseInt(e.sets)||1)*(45+(parseInt(e.rest_seconds)||90)),0); return Math.max(30,Math.min(120,Math.round(s/60+10))); };
 const fmtMin = (m) => m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}′`:""}`;
 
-// Silueta con los músculos coloreados (vista frontal o trasera).
+// Silueta anatómica (vista frontal o trasera) con cada músculo coloreado por nivel.
+// Se dibuja la mitad izquierda y se refleja; cada músculo lleva un degradado de volumen encima.
+const BODY_SIL = "M100 50 L91 51 C90 56 90 61 89 64 C82 68 74 70 66 73 C58 75 52 82 50 92 C48 102 47 112 46 122 C45 132 43 142 42 150 C40 158 38 166 38 176 C37 188 37 198 38 208 C35 214 33 222 34 232 C35 239 39 243 44 242 C48 240 48 232 48 226 C48 220 48 214 48 208 C50 196 53 184 55 172 C56 164 57 156 58 150 C60 140 61 130 62 122 C63 116 65 111 68 108 C69 116 70 124 70 132 C72 144 74 154 76 165 C74 174 71 183 70 192 C67 204 65 218 66 232 C66 252 68 272 71 292 C72 300 74 306 74 312 C72 320 70 330 70 342 C71 356 75 368 79 378 C80 382 80 386 78 390 C76 394 80 398 88 398 C94 398 97 396 96 390 C95 386 96 382 96 376 C97 362 98 348 97 334 C96 326 96 318 96 312 C97 300 98 284 98 268 C98 252 99 236 100 220 Z";
+const BODY_FRONT = {
+  "Espalda":   ["M91 62 C85 67 77 70 68 73 C74 75 81 76 87 75 C89 71 90 67 91 62 Z"],
+  "Hombro":    ["M68 74 C58 75 51 82 49 92 C47 102 47 110 48 117 C52 119 56 117 58 111 C60 100 64 92 72 85 C73 80 71 76 68 74 Z"],
+  "Pecho":     ["M98 79 C90 76 80 77 74 82 C67 88 64 98 66 108 C69 116 78 121 88 120 C93 119 97 117 98 114 Z"],
+  "Bíceps":    ["M58 113 C52 118 49 128 48.5 140 C48.5 146 50 150 53 152 C57 152 60 149 61.5 144 C62.5 134 62 122 60 114 Z"],
+  "Antebrazo": ["M47 154 C42 162 39 174 39 188 C39 197 40 203 42 206 C45 200 47 190 49 180 C51 170 52 162 52 156 Z",
+                "M53 156 C54 166 53 178 50.5 190 C49.5 198 48.5 204 47.5 207 L48 207 C51 196 54 184 56 172 C57 166 57 160 56 155 Z"],
+  "Core":      ["M88 123 C92 122 95 121 98 121 L98 134 C95 134 91 135 88 136 C87 131 87 127 88 123 Z",
+                "M87.5 139 C91 138 95 138 98 138 L98 152 C95 152 91 152 87.5 153 C87 148 87 143 87.5 139 Z",
+                "M87 156 C91 156 95 156 98 156 L98 170 C95 170 91 170 87.5 171 C87 166 87 161 87 156 Z",
+                "M87.5 174 C91 174 95 174 98 174 L98 206 C94 201 90 193 88 185 C87.5 181 87.5 177 87.5 174 Z",
+                "M69.5 112 L76 114 C77 117 77 120 76 123 L70.5 122 Z","M70.5 125 L77 124 C78 127 78 130 77 133 L71.5 132 Z",
+                "M72 135 C77 134 82 135 86 137 C86 154 85 170 83 186 C80 189 76 190 72 191 C73.5 182 75.5 173 76 165 C74.5 155 73 145 72 135 Z"],
+  "Cuádriceps":["M70.5 196 C66.5 214 65.5 236 66.5 256 C67.5 276 70.5 292 74.5 304 C78 302 80 292 80 278 C80 252 77 224 72.5 200 Z",
+                "M78.5 203 C76.5 223 76.5 248 79 270 C80 282 82.5 292 85.5 298 C89.5 292 91 280 91 266 C91 244 88 222 83.5 205 Z",
+                "M91.5 262 C87.5 272 86.5 288 88.5 300 C91 307 95.5 308 97.5 303 C98 294 97 280 95 268 Z"],
+  "Aductores": ["M87.5 206 C91.5 213 95.5 216 99.5 220 C99 236 98 250 96 262 C93 256 90.5 246 88.5 236 C86.5 226 86.5 215 87.5 206 Z"],
+  "Gemelo":    ["M74.5 322 C70.5 332 69.5 346 71 358 C72.5 366 75.5 372 78.5 375 C79.5 360 79.5 342 78.5 328 Z",
+                "M80 323 C82 340 83 358 83 377 L86.5 377 C86.5 356 86 338 85 322 Z",
+                "M90 321 C95 331 97 345 96 359 C95 367 93 373 90 376 C88 364 87 350 88 336 C88 330 89 325 90 321 Z"],
+};
+const BODY_FRONT_N = ["M72.5 192 C77 190.5 82 190 85.5 191 C86.5 196 87.5 201 88 206 C83 203 77 200.5 71.5 197.5 Z","M91 52 C92 58 95 64 98.5 70 L96 71.5 C92.5 66 90.5 60 90 54 Z",
+  "M38 209 C35 216 34 226 35 234 C36 240 40 242 44 241 C47 238 48 230 48 222 C48 216 48 212 47 209 Z",
+  "M73.5 199 C80 222 88 252 94.5 292 L92.5 293 C86 254 78 224 72 201 Z",
+  "M76 306 C80 301 92 301 96.5 307 C97.5 314 94 320 86 320 C79 320 75 314 76 306 Z",
+  "M78.5 381 C76 388 77 395 84 397 C90 398 95 397 95.5 392 C95.5 387 95 382 94 379 C89 380 83 380 78.5 381 Z"];
+const BODY_BACK = {
+  "Espalda":   ["M100 51 L92 56 C90 63 86 68 76 71 C71 73 67 74 65 76 C74 79 82 86 88 96 C92 104 96 116 100 130 Z",
+                "M74 88 C69 95 68 104 71 111 C78 112 86 106 90 98 C86 92 81 89 74 88 Z",
+                "M69.5 113 C69.5 130 72 148 77 164 C80 170 85 170 89 165 C94 155 97 143 99 133 C96 125 93 118 90 110 C83 114 76 115 69.5 113 Z"],
+  "Hombro":    ["M66 76 C57 77 51 84 49 95 C47.5 103 47.5 111 48.5 117 C52 119 56 117 58 111 C61 100 66 92 73 86 C72 81 70 78 66 76 Z"],
+  "Tríceps":   ["M58 113 C52 118 48.5 128 47.5 140 C47 146 48.5 150 51.5 152 C56 153 59.5 150 61 144 C62.5 134 62 122 60 114 Z"],
+  "Antebrazo": ["M47 154 C42 162 39 174 39 188 C39 197 40 203 42 206 C45 200 47 190 49 180 C51 170 52 162 52 156 Z",
+                "M53 156 C54 166 53 178 50.5 190 C49.5 198 48.5 204 47.5 207 L48 207 C51 196 54 184 56 172 C57 166 57 160 56 155 Z"],
+  "Core":      ["M77 167 C81 172 86 173 90 171 C90 179 89.5 185 89 190 C83 189 77 190 71.5 192 C73.5 183 75.5 175 77 167 Z"],
+  "Lumbar":    ["M93 134 C89.5 146 88 160 88.5 174 C89 181 92 186 98 187.5 L98 131 C96.5 132 94.5 133 93 134 Z"],
+  "Glúteo":    ["M99 188 C90 186 79 189 73 196 C67 204 66 216 71 226 C76 233 85 235 93 232 C97 230 99 224 99.5 216 Z",
+],
+  "Isquios":   ["M68 235 C66 254 67 276 71 294 C73 302 76 306 80 306 C83 296 84 280 83 262 C82 250 80 240 78 235 Z",
+                "M81 236 C84 254 86 274 87 292 C88 300 91 306 95 306 C98 296 99 280 99 262 C99 252 99 244 98 236 C92 234 86 234 81 236 Z"],
+  "Gemelo":    ["M74 316 C69 326 68 340 70 352 C72 360 76 364 81 362 C84 352 85 338 85 326 C84 320 80 316 74 316 Z",
+                "M86 316 C85 328 86 342 89 354 C91 362 95 364 97.5 358 C99 346 98 330 96 320 C93 316 89 315 86 316 Z",
+                "M71.5 357 C73.5 366 76.5 374 79.5 379 L84 379 C84 371 83 365 82 363 C78 365 74 363 71.5 357 Z",
+                "M88 357 C88.5 366 90 373 91.5 379 L95.5 379 C96.5 371 97 365 97 359 C95 364 91 364 88 357 Z"],
+};
+const BODY_BACK_N = ["M90.5 54 C90.5 60 90 66 88 70 L92 68 C93 63 93 58 92.5 53 Z",
+  "M38 209 C35 216 34 226 35 234 C36 240 40 242 44 241 C47 238 48 230 48 222 C48 216 48 212 47 209 Z",
+  "M77 308 C84 312 92 312 96.5 308 L96.5 315 C90 318 82 318 75.5 315 Z",
+  "M84.5 379 L91 379 C91 385 92 389 93 393 L84 393 C84.5 388 84.5 384 84.5 379 Z",
+  "M78.5 382 C76 389 77 395 84 397 C90 398 95 397 95.5 392 C95.5 387 95 383 94 380 Z"];
 function BodyMap({side,lv,sel,onPick}){
-  const base="#24242c", edge="#3b3b47";
-  const M=(name,shapes)=>{ const L=lv[name]; const on=sel===name; return <g key={name} onClick={()=>onPick(name)} style={{cursor:"pointer"}} role="button" aria-label={`${name}: ${L?L.l:"sin trabajar"}`}>
-    {shapes.map((s,i)=>React.cloneElement(s,{key:i,fill:L?L.c:"#30303a",stroke:on?"#fff":"#0b0b0e",strokeWidth:on?1.6:.8,style:{filter:L&&L.glow?`drop-shadow(0 0 3px ${L.glow})`:"none",transition:"fill .4s"}}))}</g>; };
-  const mir=(el)=>React.cloneElement(el,{transform:`translate(120 0) scale(-1 1) ${el.props.transform||""}`});
-  const both=(el)=>[el,mir(el)];
-  const sil=<g fill={base} stroke={edge} strokeWidth="1">
-    <ellipse cx="60" cy="20" rx="11" ry="13"/>
-    <rect x="54" y="30" width="12" height="10" rx="3"/>
-    <path d="M42 40 Q60 34 78 40 L84 52 L79 100 L76 114 L44 114 L41 100 L36 52 Z"/>
-    {[0,1].map(i=><g key={i} transform={i?"translate(120 0) scale(-1 1)":undefined}>
-      <path d="M36 46 C30 52 27 66 27 82 L22 112 L30 113 L36 84 C38 72 41 60 42 52 Z"/>
-      <ellipse cx="25" cy="119" rx="5" ry="7"/>
-      <path d="M44 110 L60 114 L59 170 L56 208 L44 208 L41 170 C38 150 39 128 44 110 Z"/>
-      <ellipse cx="50" cy="214" rx="8" ry="4.5"/>
-    </g>)}
-  </g>;
-  const front=[
-    M("Hombro",both(<ellipse cx="38" cy="50" rx="7.5" ry="9" transform="rotate(18 38 50)"/>)),
-    M("Pecho",both(<path d="M59 44 C51 42 44 45 42 52 C41 60 47 65 59 63 Z"/>)),
-    M("Bíceps",both(<ellipse cx="32.5" cy="70" rx="5" ry="11" transform="rotate(10 32.5 70)"/>)),
-    M("Antebrazo",both(<ellipse cx="27" cy="96" rx="4.5" ry="13" transform="rotate(10 27 96)"/>)),
-    M("Core",[<path d="M51 66 L69 66 L68 106 Q60 110 52 106 Z"/>,...both(<path d="M45 68 L50 68 L51 104 L46 100 Z"/>)]),
-    M("Cuádriceps",both(<path d="M44 118 C40 132 41 152 46 168 L55 168 C58 150 58 132 55 120 Z"/>)),
-    M("Aductores",both(<path d="M55 118 L59 120 L59 146 L56 150 Z"/>)),
-    M("Gemelo",both(<path d="M44 178 C42 188 43 198 46 204 L54 204 C56 196 56 186 54 178 Z"/>)),
-  ];
-  const back=[
-    M("Espalda",[<path d="M60 33 L45 44 L52 62 L60 74 L68 62 L75 44 Z"/>,...both(<path d="M44 52 C40 64 43 82 53 94 L58 76 L51 62 Z"/>)]),
-    M("Hombro",both(<ellipse cx="38" cy="50" rx="7.5" ry="9" transform="rotate(18 38 50)"/>)),
-    M("Tríceps",both(<ellipse cx="32.5" cy="71" rx="5.5" ry="12" transform="rotate(10 32.5 71)"/>)),
-    M("Antebrazo",both(<ellipse cx="27" cy="96" rx="4.5" ry="13" transform="rotate(10 27 96)"/>)),
-    M("Lumbar",[<rect x="53" y="88" width="14" height="20" rx="4"/>]),
-    M("Glúteo",both(<ellipse cx="51.5" cy="122" rx="9" ry="10"/>)),
-    M("Isquios",both(<path d="M44 134 C41 146 42 160 46 170 L56 170 C58 158 58 144 56 134 Z"/>)),
-    M("Gemelo",both(<ellipse cx="49.5" cy="190" rx="6.5" ry="14"/>)),
-  ];
-  return <svg viewBox="0 0 120 222" style={{width:"100%",maxWidth:150,height:"auto",display:"block",margin:"0 auto"}}>
-    {sil}{side==="front"?front:back}
+  const shapes=side==="front"?BODY_FRONT:BODY_BACK;
+  const mirror="translate(200 0) scale(-1 1)";
+  return <svg viewBox="28 0 144 402" style={{width:"100%",maxWidth:160,height:"auto",display:"block",margin:"0 auto",overflow:"visible"}}>
+    <defs>
+      <linearGradient id="bmSkin" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#2c2c36"/><stop offset=".55" stopColor="#202028"/><stop offset="1" stopColor="#191920"/></linearGradient>
+      <radialGradient id="bmVol" cx=".35" cy=".3" r=".8"><stop offset="0" stopColor="#fff" stopOpacity=".38"/><stop offset=".5" stopColor="#fff" stopOpacity="0"/><stop offset="1" stopColor="#000" stopOpacity=".38"/></radialGradient>
+      <radialGradient id="bmHead" cx=".4" cy=".35" r=".7"><stop offset="0" stopColor="#34343f"/><stop offset="1" stopColor="#1c1c23"/></radialGradient>
+    </defs>
+    {/* Silueta */}
+    <g stroke="#45454f" strokeWidth="1" strokeLinejoin="round">
+      <path d={BODY_SIL} fill="url(#bmSkin)"/><path d={BODY_SIL} fill="url(#bmSkin)" transform={mirror}/>
+      <path d="M100 8 C109 8 115 15 115 26 C115 36 111 45 104 49 C102 50 98 50 96 49 C89 45 85 36 85 26 C85 15 91 8 100 8 Z" fill="url(#bmHead)"/>
+      <ellipse cx="85" cy="29" rx="2.4" ry="4.5" fill="#24242c"/><ellipse cx="115" cy="29" rx="2.4" ry="4.5" fill="#24242c"/>
+    </g>
+    {/* Detalles sin color: rodillas, clavícula / columna */}
+    <g fill="none" stroke="#3a3a45" strokeWidth=".9" strokeLinecap="round">
+      {side==="front"
+        ?<>{[0,1].map(i=><g key={i} transform={i?mirror:undefined}><path d="M98 71 C90 72 81 73 73 75"/></g>)}</>
+        :<><path d="M100 132 L100 186" strokeDasharray="2 2.4"/></>}
+    </g>
+    {/* Zonas sin nivel (cuello, manos, rodillas, pies): dan volumen a la figura */}
+    {[undefined,mirror].map((tf,k)=><g key={k} transform={tf} pointerEvents="none">{(side==="front"?BODY_FRONT_N:BODY_BACK_N).map((d,i)=><g key={i}><path d={d} fill="#2b2b34" stroke="#0b0b0e" strokeWidth=".7" strokeLinejoin="round"/><path d={d} fill="url(#bmVol)"/></g>)}</g>)}
+    {/* Músculos */}
+    {Object.entries(shapes).map(([name,ds])=>{ const L=lv[name], on=sel===name, fill=L?L.c:"#34343e";
+      return <g key={name} onClick={()=>onPick(name)} style={{cursor:"pointer",filter:L&&L.glow?`drop-shadow(0 0 3px ${L.glow})`:"none"}} role="button" aria-label={`${name}: ${L?L.l:"sin trabajar"}`}>
+        {[undefined,mirror].map((tf,k)=><g key={k} transform={tf}>
+          {ds.map((d,i)=><g key={i}><path d={d} fill={fill} stroke={on?"#fff":"#0b0b0e"} strokeWidth={on?1.5:.7} strokeLinejoin="round" style={{transition:"fill .4s"}}/><path d={d} fill="url(#bmVol)" pointerEvents="none"/></g>)}
+        </g>)}
+      </g>; })}
   </svg>;
 }
 
