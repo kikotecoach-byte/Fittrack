@@ -1150,6 +1150,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         else loadAll(); });
     });
   },[clients,leads]);
+  // Ejercicios que hace un cliente ese día (asignados o, si no, los previstos) para el mapa de la sala.
+  const exNamesFor = (c,date) => { const asig=assignedSessions.find(a=>a.client_id===c.id&&a.date===date);
+    if(asig) return assignedExercises.filter(e=>e.session_id===asig.id&&!isWodHeader(e)).map(e=>e.exercise_name);
+    const au=blockForDate(annualBlocks,date,c)?autoRoutineFor(c,date,sessions,annualBlocks):null; return au?au.routine.map(e=>e[0]):[]; };
   const leadOf = (c) => (leads||[]).filter(l=>l.converted_client_id===c.id).sort((a,b)=>String(b.date||"").localeCompare(String(a.date||"")))[0]||null;
   const openValoracion = (c) => { setLeadsClient(c); setShowLeads(true); };
   const saveClientData = (client, f, {codeChanged,activated}) => w(async()=>{
@@ -2388,6 +2392,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   </div>
                                 );})}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
+                                  {slots.length>=2&&<RoomStrip people={slots.map(s=>({client:s.client,exs:exNamesFor(s.client,activeDay)}))} units={config.equipUnits} onOpen={()=>setClassView({date:activeDay,time})}/>}
                                   {isExtra&&<span style={{fontSize:9,fontWeight:700,color:"#65a30d",background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:20,padding:"1px 7px"}}>⏱ extra</span>}
                                   {isExtra&&slots.length===0&&<button title="Cerrar esta hora extra" onClick={()=>closeExtraHour(activeDay,time)} style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"none",border:"1px solid #f2cccc",borderRadius:20,padding:"1px 8px",cursor:"pointer"}}>✕ cerrar</button>}
                                   {isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
@@ -2771,7 +2776,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&(()=>{ const pc=clients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -4096,9 +4101,98 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
 }
 
 // ── VISTA DE CLASE (todas las personas de una hora, desglosado) ────────────
+// ── MAPA DE LA SALA: material y cuellos de botella de una clase ──────────
+// Unidades de cada material (editables en ⚙️ Horario). 99 = sin límite práctico.
+const EQUIP_UNITS_DEF = {barra:2,rackpines:1,multipower:1,legpress:1,legmachine:1,machine:1,poleas:2,remo:1,cardio:1,trineo:1,cuerdas:1,
+  mancuernas:4,kettlebell:4,cajon:2,balon:3,banda:6,comba:4,rueda:2,antebrazo:2,pesocorporal:99,movilidad:99,otros:99};
+// En estos puestos (racks, máquinas…) cada persona ocupa un montaje, pero si hacen el MISMO
+// ejercicio lo comparten rotando: a la vez se necesitan min(personas, ejercicios distintos).
+// En el resto (mancuernas, gomas…) cuenta cuántas personas lo usan a la vez.
+const SETUP_EQ = ["barra","rackpines","multipower","legpress","legmachine","machine","poleas","remo","cardio","trineo","cuerdas"];
+const eqIcon = (k) => String(EQUIP_LABEL[k]||"🎯").split(" ")[0];
+const eqName = (k) => String(EQUIP_LABEL[k]||k).split(" ").slice(1).join(" ")||k;
+// people = [{client, exs:[nombres]}] → puestos ordenados por gravedad
+function roomStations(people, units){
+  const g={};
+  (people||[]).forEach(({client,exs})=>(exs||[]).forEach(n=>{ const k=equipmentOf(n); const st=g[k]=g[k]||{k,ex:{},cl:new Map()};
+    (st.ex[n]=st.ex[n]||[]); if(!st.ex[n].some(c=>c.id===client.id)) st.ex[n].push(client); st.cl.set(client.id,client); }));
+  return Object.values(g).map(st=>{
+    const cap=Math.max(1,parseInt((units||{})[st.k],10)||EQUIP_UNITS_DEF[st.k]||99), setups=Object.keys(st.ex).length, ppl=[...st.cl.values()];
+    const setupBased=SETUP_EQ.includes(st.k), used=setupBased?Math.min(ppl.length,setups):ppl.length, unl=cap>=99;
+    // Ámbar: al límite con varias personas, o muchos cambios de montaje (discos) en el mismo puesto.
+    const status=unl?"ok":used>cap?"red":(ppl.length>1&&(used===cap||(setupBased&&setups>cap)))?"amber":"ok";
+    return {...st,cap,setups,people:ppl,used,setupBased,unl,status};
+  }).sort((a,b)=>({red:0,amber:1,ok:2}[a.status]-{red:0,amber:1,ok:2}[b.status])||(EQUIP_ORDER.indexOf(a.k)-EQUIP_ORDER.indexOf(b.k)));
+}
+const ROOM_COL = {red:{fg:"#dc2626",bg:"#fef2f2",bd:"#fecaca",lbl:"Cuello de botella"},amber:{fg:"#b45309",bg:"#fffbeb",bd:"#fde68a",lbl:"Justo"},ok:{fg:"#16a34a",bg:"#f0fdf4",bd:"#bbf7d0",lbl:"Fluye"}};
+// Mini-tira para la agenda: icono de cada material con su color.
+function RoomStrip({people,units,onOpen}){
+  const st=roomStations(people,units).filter(x=>!x.unl); if(!st.length) return null;
+  const red=st.filter(x=>x.status==="red").length;
+  return <button type="button" onClick={e=>{ e.stopPropagation(); onOpen&&onOpen(); }} title="Material de la sala (toca para ver el mapa)"
+    style={{display:"inline-flex",alignItems:"center",gap:4,flexWrap:"wrap",border:`1px solid ${red?"#fecaca":"#e6ebf3"}`,background:red?"#fef2f2":"#f8fafc",borderRadius:20,padding:"3px 8px",cursor:"pointer",fontFamily:"inherit"}}>
+    <span style={{fontSize:10,fontWeight:800,color:red?"#dc2626":"#64748b"}}>🗺️</span>
+    {st.slice(0,6).map(x=><span key={x.k} style={{display:"inline-flex",alignItems:"center",gap:2,fontSize:12}}>{eqIcon(x.k)}<span style={{width:7,height:7,borderRadius:"50%",background:ROOM_COL[x.status].fg}}/></span>)}
+    {red>0&&<span style={{fontSize:10,fontWeight:800,color:"#dc2626"}}>{red} atasco{red>1?"s":""}</span>}
+  </button>;
+}
+// Mapa completo (vista de la clase): una tarjeta por puesto con barra de ocupación.
+function RoomMap({people,units}){
+  const all=roomStations(people,units); const [open,setOpen]=React.useState(null);
+  if(!all.length) return null;
+  const st=all.filter(x=>!x.unl), free=all.filter(x=>x.unl);
+  const red=st.filter(x=>x.status==="red"), amb=st.filter(x=>x.status==="amber");
+  const sum=red.length?{...ROOM_COL.red,t:`🔴 ${red.length} cuello${red.length>1?"s":""} de botella`}:amb.length?{...ROOM_COL.amber,t:`🟡 ${amb.length} puesto${amb.length>1?"s":""} justo${amb.length>1?"s":""}`}:{...ROOM_COL.ok,t:"🟢 La sala fluye"};
+  const av=(c)=><span key={c.id} title={c.name} style={{width:20,height:20,borderRadius:"50%",background:c.color,color:"#fff",fontSize:8,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",border:"2px solid #fff",marginLeft:-5}}>{ini(c.name)}</span>;
+  const sel=all.find(x=>x.k===open);
+  return(
+    <div style={{background:"#fff",border:"1px solid #e6ebf3",borderRadius:14,padding:"11px 11px 10px",marginBottom:14,boxShadow:"0 1px 3px rgba(15,23,42,.05)"}}>
+      <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:9}}>
+        <span style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>🗺️ Mapa de la sala</span>
+        <span style={{fontSize:11,fontWeight:800,color:sum.fg,background:sum.bg,border:`1px solid ${sum.bd}`,borderRadius:20,padding:"3px 9px"}}>{sum.t}</span>
+      </div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(132px,1fr))",gap:7}}>
+        {st.map(x=>{ const C=ROOM_COL[x.status], boxes=x.unl?0:Math.min(8,Math.max(x.cap,x.used)); return(
+          <button key={x.k} type="button" onClick={()=>setOpen(open===x.k?null:x.k)} aria-expanded={open===x.k}
+            style={{textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:C.bg,border:`1.5px solid ${open===x.k?C.fg:C.bd}`,borderRadius:12,padding:"8px 9px",display:"flex",flexDirection:"column",gap:6}}>
+            <div style={{display:"flex",alignItems:"center",gap:7}}>
+              <span style={{fontSize:24,lineHeight:1}}>{eqIcon(x.k)}</span>
+              <div style={{minWidth:0,flex:1}}>
+                <div style={{fontSize:12,fontWeight:800,color:"#0f172a",lineHeight:1.15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{eqName(x.k)}</div>
+                <div style={{fontSize:10,fontWeight:800,color:C.fg}}>{x.unl?"Sin límite":C.lbl}</div>
+              </div>
+            </div>
+            {!x.unl&&<div style={{display:"flex",gap:3}} aria-label={`${x.used} de ${x.cap}`}>
+              {Array.from({length:boxes},(_,i)=><span key={i} style={{flex:1,height:8,borderRadius:3,background:i<Math.min(x.used,x.cap)?C.fg:i<x.cap?"#e2e8f0":"#dc2626",opacity:i>=x.cap?.55:1}}/>)}
+            </div>}
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
+              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} a la vez${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}`}</span>
+              <span style={{display:"inline-flex",paddingLeft:5}}>{x.people.slice(0,4).map(av)}{x.people.length>4&&<span style={{fontSize:9,fontWeight:800,color:"#64748b",marginLeft:3}}>+{x.people.length-4}</span>}</span>
+            </div>
+          </button>); })}
+      </div>
+      {free.length>0&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",marginTop:st.length?8:0,fontSize:11,color:"#64748b",fontWeight:700}}>
+        <span>Sin límite:</span>{free.map(x=><button key={x.k} type="button" onClick={()=>setOpen(open===x.k?null:x.k)} style={{border:`1px solid ${open===x.k?"#16a34a":"#e6ebf3"}`,background:"#f8fafc",borderRadius:20,padding:"2px 8px",fontSize:11,fontWeight:700,color:"#475569",cursor:"pointer",fontFamily:"inherit"}}>{eqIcon(x.k)} {eqName(x.k)} · {x.people.length}</button>)}
+      </div>}
+      {sel&&<div style={{marginTop:9,background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:12,padding:"9px 11px"}}>
+        <div style={{fontSize:12,fontWeight:800,color:"#0f172a",marginBottom:6}}>{eqIcon(sel.k)} {eqName(sel.k)} · quién hace qué</div>
+        {Object.entries(sel.ex).map(([n,cs])=><div key={n} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderTop:"1px solid #eef1f6"}}>
+          <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#334155"}}>{n}</span>
+          <span style={{display:"inline-flex",paddingLeft:5}}>{cs.map(av)}</span>
+        </div>)}
+        <div style={{fontSize:11,color:ROOM_COL[sel.status].fg,fontWeight:700,marginTop:6,lineHeight:1.4}}>
+          {sel.status==="red"?`Lo necesitan ${sel.used} a la vez y hay ${sel.cap} ${sel.cap>1?"puestos":"puesto"}: escalona el orden (que alguien empiece por otro bloque), junta a dos en el mismo ejercicio o cambia el tipo de sesión de alguien.`
+            :sel.status==="amber"?(sel.used===sel.cap?"Al límite: si alguien se retrasa, habrá espera. Escalonar un poco ayuda.":`Cabe, pero hay ${sel.setups} ejercicios distintos: muchos cambios de discos en el mismo puesto.`)
+            :sel.setupBased&&sel.setups<sel.people.length?"Comparten el mismo ejercicio: rotan en el mismo montaje sin problema.":"Sin esperas previstas."}
+        </div>
+      </div>}
+      <div style={{fontSize:10,color:"#94a3b8",marginTop:7}}>Barra = cuántos lo necesitan a la vez / unidades (ajústalas en ⚙️ Horario). Si hacen el mismo ejercicio comparten el puesto rotando.</div>
+    </div>);
+}
+
 // Muestra el entreno de cada atleta para organizar material/espacio y permite
 // cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
-function ClassViewModal({date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+function ClassViewModal({units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
   const [classTimer,setClassTimer]=React.useState(null);
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
@@ -4114,22 +4208,14 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
     return au?{label:au.label, exs:au.routine.map(e=>({name:e[0],sets:e[1],reps:e[2],proto:e[4],w:null})), assigned:false}:{label:"—",exs:[],assigned:false};
   };
   const rutinas=slot.map(s=>({s, r:rutinaDe(s.client)}));
-  const allEx=[...new Set(rutinas.flatMap(x=>x.r.exs.map(e=>e.name)))];
-  // Agrupado por material/equipo, con nº de personas que lo usan (cuellos de botella).
-  const RANK_KEY = (k)=>{ const i=EQUIP_ORDER.indexOf(k); return i<0?99:i; };
-  const byEquip=(()=>{ const g={};
-    rutinas.forEach(({s,r})=>{ r.exs.forEach(e=>{ const k=equipmentOf(e.name); (g[k]=g[k]||{ex:new Set(),cl:new Set()}); g[k].ex.add(e.name); g[k].cl.add(s.client_id); }); });
-    // Orden: por prioridad de material (barra primero, es el cuello de botella).
-    return Object.entries(g).map(([k,v])=>[k,[...v.ex],v.cl.size]).sort((a,b)=> RANK_KEY(a[0])-RANK_KEY(b[0]));
-  })();
-  // Barra: nº de personas y de ejercicios de barra DISTINTOS (el cuello de botella
-  // real; coincidir en el mismo ejercicio de barra no es problema, se comparte).
-  const barra=byEquip.find(x=>x[0]==="barra");
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{blk?` · ${blk.name}`:""}</p>
+
+        {/* Mapa de la sala: material y cuellos de botella */}
+        <RoomMap people={rutinas.map(({s,r})=>({client:s.client,exs:r.exs.map(e=>e.name)}))} units={units}/>
 
         {onExecClass&&slot.length>0&&(
           <button className="btn sky" style={{width:"100%",padding:11,marginBottom:8,fontSize:13,fontWeight:700}} onClick={onExecClass}>
@@ -4145,39 +4231,6 @@ function ClassViewModal({date,time,sessions,history,clients,assignedSessions,ass
           <button className="btn grn" style={{width:"100%",padding:11,marginBottom:12,fontSize:13,fontWeight:700}} onClick={onQuickAll}>
             ✅ Registrar toda la clase (asistencia + cargas previstas)
           </button>
-        )}
-
-        {/* Aviso de barra: el cuello de botella real */}
-        {barra&&(
-          <div style={{background:barra[1].length>3?"#fbe6e6":"#eef8dd",border:`1px solid ${barra[1].length>3?"#f2cccc":"#cbe8a4"}`,borderRadius:10,padding:"10px 12px",marginBottom:12}}>
-            <div style={{fontSize:12,fontWeight:700,color:barra[1].length>3?"#dc2626":"#65a30d"}}>🟦 Barra: {barra[2]} persona{barra[2]===1?"":"s"} · {barra[1].length} ejercicio{barra[1].length===1?"":"s"} distinto{barra[1].length===1?"":"s"}</div>
-            <div style={{fontSize:11,color:"#64748b",marginTop:3,lineHeight:1.4}}>Coincidir en el <b>mismo</b> ejercicio de barra no es problema (se comparte el rack). El cuello de botella son los <b>ejercicios de barra distintos</b> a la vez{barra[1].length>3?" — hay bastantes, valora escalonar o cambiar el tipo de alguno.":"."}</div>
-          </div>
-        )}
-
-        {/* Material agrupado por equipo (para montar la sala rápido) */}
-        {allEx.length>0&&(
-          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"10px 12px",marginBottom:14}}>
-            <div style={{fontSize:10,color:"#94a3b8",fontWeight:700,marginBottom:8}}>🧰 MATERIAL DE LA SALA (barra primero) · {byEquip.length} tipo{byEquip.length===1?"":"s"} · {allEx.length} ejercicios</div>
-            <div style={{display:"flex",flexDirection:"column",gap:8}}>
-              {byEquip.map(([equip,list,people])=>{
-                const jam=people>=3; // posible cuello de botella
-                return(
-                <div key={equip}>
-                  <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:4,flexWrap:"wrap"}}>
-                    <span style={{fontSize:11,fontWeight:700,color:"#0f172a"}}>{EQUIP_LABEL[equip]||equip}</span>
-                    <span style={{fontSize:10,fontWeight:700,color:jam?"#dc2626":"#16a34a",background:(jam?"#dc2626":"#16a34a")+"14",border:`1px solid ${(jam?"#dc2626":"#16a34a")}30`,borderRadius:20,padding:"1px 8px"}}>{people} pers{jam?" ⚠️":""}</span>
-                    <span style={{fontSize:10,color:"#94a3b8",fontWeight:600}}>{list.length} ej.</span>
-                  </div>
-                  <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
-                    {list.map((n,i)=><span key={i} style={{fontSize:11,fontWeight:600,color:"#0284c7",background:"#fff",border:"1px solid #bcd3ee",borderRadius:20,padding:"3px 9px"}}>{n}</span>)}
-                  </div>
-                </div>
-                );
-              })}
-            </div>
-            <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>⚠️ = 3+ personas usan ese material a la vez (posible cuello de botella).</div>
-          </div>
         )}
 
         {rutinas.map(({s,r})=>{
@@ -6494,6 +6547,20 @@ function ScheduleModal({config,onSave,onClose}) {
             );})}
           </div>
           <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Marca solo lo que tienes. Las rutinas automáticas evitarán el material no disponible.</div>
+        </div>
+        <div style={{marginTop:14,marginBottom:4}}>
+          <span className="lbl">🔢 UNIDADES EN LA SALA (para el mapa de cuellos de botella)</span>
+          <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:6}}>
+            {EQUIP_KEYS.filter(k=>equipOn(cfg,k)&&(EQUIP_UNITS_DEF[k]||99)<99).map(k=>{ const u=parseInt((cfg.equipUnits||{})[k],10)||EQUIP_UNITS_DEF[k]||1;
+              const setU=(v)=>setCfg(c=>({...c,equipUnits:{...(c.equipUnits||{}),[k]:Math.max(1,Math.min(20,v))}}));
+              return <div key={k} style={{display:"flex",alignItems:"center",gap:6,background:"#f1f4fa",borderRadius:9,padding:"5px 8px"}}>
+                <span style={{fontSize:18}}>{eqIcon(k)}</span><span style={{flex:1,minWidth:0,fontSize:11,fontWeight:700,color:"#475569",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{eqName(k)}</span>
+                <button type="button" className="btn ghost" style={{padding:"2px 7px",fontSize:14,lineHeight:1}} onClick={()=>setU(u-1)}>−</button>
+                <span className="mono" style={{width:16,textAlign:"center",fontWeight:800,color:"#0284c7"}}>{u}</span>
+                <button type="button" className="btn ghost" style={{padding:"2px 7px",fontSize:14,lineHeight:1}} onClick={()=>setU(u+1)}>+</button>
+              </div>; })}
+          </div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Cuántos puestos hay de cada cosa (p. ej. 2 racks, 1 multipower, doble polea = 2). Mancuernas/gomas: cuántas personas pueden usarlas a la vez.</div>
         </div>
 
         <div style={{display:"flex",gap:8,marginTop:18}}>
