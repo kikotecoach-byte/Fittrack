@@ -70,7 +70,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .tilt{transform-style:preserve-3d;transition:transform .2s ease,box-shadow .2s ease;}
 .tilt:active{transform:perspective(900px) rotateX(3deg) scale(.975);box-shadow:0 1px 2px rgba(16,24,40,.05);}
 @media(hover:hover){.tilt:hover{transform:perspective(900px) translateY(-2px);box-shadow:0 10px 24px rgba(16,24,40,.08);}}
-@media(prefers-reduced-motion:reduce){.count-pop,.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
+@media(prefers-reduced-motion:reduce){.ember,.ember-flame,.ember-pop,.count-pop,.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
 
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
@@ -109,6 +109,12 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 /* Navegación inferior del atleta (siempre visible, centrada en pantallas grandes) */
 /* Solo opacidad: un transform haría que los modales (position:fixed) quedasen bajo la barra. */
 .portal-root.fade{animation:fadeIn .25s ease backwards;}
+.ember{position:absolute;bottom:-10px;border-radius:50%;background:#ff7a45;box-shadow:0 0 6px #ff7a45;opacity:0;animation:emberUp linear infinite;}
+@keyframes emberUp{0%{transform:translateY(0);opacity:0}10%{opacity:.9}100%{transform:translateY(-110vh);opacity:0}}
+.ember-pop{animation:emberPop .6s cubic-bezier(.34,1.56,.64,1) backwards;}
+@keyframes emberPop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+.ember-flame{display:inline-block;filter:drop-shadow(0 0 14px rgba(255,106,61,.9)) drop-shadow(0 0 28px rgba(242,68,29,.6));animation:flameGlow 2.4s ease-in-out infinite;}
+@keyframes flameGlow{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
 .count-pop{display:inline-block;animation:countPop .5s cubic-bezier(.34,1.56,.64,1) backwards;}
 @keyframes countPop{0%{transform:scale(1.6);color:#16a34a}100%{transform:scale(1)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -7373,7 +7379,7 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
         <ClientSummary noHello noPhase onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
       </>}
 
-      {tab==="reservar"&&<MultiSessionRequest client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
+      {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
 
       {tab==="entreno"&&<div>
         <div className="seg" style={{marginBottom:14}}>
@@ -7764,8 +7770,9 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
 // ── RESERVAR: semana fija a pantalla completa ─────────────────────────────
 // Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
 // En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
-function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, hybrid, loadAll, notify, saving, setSaving}) {
+function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, hybrid, loadAll, notify, saving, setSaving, streak}) {
   const [wk,setWk] = React.useState(()=>mondayOfDate(TODAY));
+  const [celebrate,setCelebrate] = React.useState(null); // pantalla «¡Reservado!» tras confirmar
   const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN"
   const days=Array.from({length:5},(_,i)=>addDays(wk,i));
   const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
@@ -7819,45 +7826,66 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
     if(po.length){ const {error}=await sb.from("open_sessions").insert(po.map(k=>({client_id:client.id,date:k.slice(0,10),status:"planned"})));
       if(error){ setSaving(false); await loadAll(); return notify("Las clases sí, pero las open no se pudieron guardar (avisa a tu trainer)","err"); } }
     await loadAll(); setSaving(false); setPicked([]);
-    notify(`✅ Reservado: ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")} 💪`);
+    setCelebrate({n:pc.length+po.length,nc:pc.length,no:po.length,days:[...new Set(picked.map(k=>k.slice(0,10)))].sort()});
   };
   const cur=mondayOfDate(TODAY), lbl=wk===cur?"Esta semana":wk===addDays(cur,7)?"Próxima semana":`${new Date(wk+"T12:00:00").getDate()} – ${shortD(addDays(wk,4))}`;
   const nRows=rows.length+(hybrid?1:0);
-  const cellBase={borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:0,transition:"background .15s, transform .1s"};
-  const chip=(ic,txt,col,bg)=><span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:col,background:bg,borderRadius:20,padding:"5px 10px"}}>{ic} {txt}</span>;
+  const leftC=Math.max(0,nFree-pc.length), leftO=oLeft!==null?Math.max(0,oLeft-po.length):null;
+  const DL=["L","M","X","J","V"];
+  const hasMine=(d)=>allSessions.some(s=>s.client_id===client.id&&s.date===d)||!!myOpen(d)||picked.some(k=>k.startsWith(d));
+  const cellBase={borderRadius:12,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:0,transition:"background .15s, transform .1s, box-shadow .2s"};
+  const fire="linear-gradient(135deg,#ff7a45,#f2441d)";
   return(
-    <div style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 200px - env(safe-area-inset-bottom))",minHeight:440}}>
-      {/* Lo que te queda */}
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-        {chip("👥",`${Math.max(0,nFree-pc.length)} clase${nFree-pc.length!==1?"s":""} por reservar`,nFree-pc.length>0?"#0369a1":"#a16207",nFree-pc.length>0?"#e6f2fb":"#fbf1d8")}
-        {hybrid&&chip("🔓",oLeft!==null?`${Math.max(0,oLeft-po.length)} open por reservar`:"open sin tope","#0f766e","#e6f6f3")}
-        {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:800,color:"#16a34a",textDecoration:"none",padding:"5px 4px"}}>Renovar ›</a>}
+    <div className="ember-panel" style={{position:"relative",overflow:"hidden",margin:"-4px -6px 0",borderRadius:26,background:"radial-gradient(120% 60% at 50% -5%,rgba(242,68,29,.38),rgba(10,10,12,0) 60%),#0b0b0e",color:"#fff",
+      display:"flex",flexDirection:"column",height:"calc(100dvh - 196px - env(safe-area-inset-bottom))",minHeight:460,padding:"12px 12px 12px",boxShadow:"0 20px 40px rgba(15,23,42,.25)"}}>
+      <Embers/>
+      {/* Llama + número grande */}
+      <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+        <span className="ember-flame" style={{fontSize:34,lineHeight:1}}>🔥</span>
+        <div style={{display:"flex",alignItems:"center",gap:12,width:"100%",marginTop:2}}>
+          <span style={{flex:1,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.25))"}}/>
+          <span style={{fontSize:54,fontWeight:900,lineHeight:1,background:fire,WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent",letterSpacing:-1}}>{leftC}</span>
+          <span style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,.25),transparent)"}}/>
+        </div>
+        <div style={{fontSize:15,fontWeight:800,color:"#ff7a45",marginTop:2}}>{leftC===1?"Clase por reservar":"Clases por reservar"}</div>
+        <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",justifyContent:"center"}}>
+          {streak>0&&<span style={{fontSize:11,fontWeight:800,color:"#fdba74",background:"rgba(255,122,69,.12)",border:"1px solid rgba(255,122,69,.3)",borderRadius:20,padding:"3px 10px"}}>🔥 {streak} sem. seguidas</span>}
+          {hybrid&&<span style={{fontSize:11,fontWeight:800,color:"#fcd34d",background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.3)",borderRadius:20,padding:"3px 10px"}}>🔓 {leftO!==null?`${leftO} open`:"open sin tope"}</span>}
+          {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:800,color:"#86efac",textDecoration:"none",border:"1px solid rgba(134,239,172,.35)",borderRadius:20,padding:"3px 10px"}}>Renovar bono ›</a>}
+        </div>
       </div>
       {/* Semana */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-        <button type="button" className="btn ghost" style={{padding:"7px 14px",fontSize:16}} disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))}>‹</button>
-        <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800,color:"#0f172a"}}>{lbl}</div>
-        <button type="button" className="btn ghost" style={{padding:"7px 14px",fontSize:16}} onClick={()=>setWk(addDays(wk,7))}>›</button>
+      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,margin:"10px 0 8px",flexShrink:0}}>
+        <button type="button" aria-label="Semana anterior" disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:wk<=cur?"rgba(255,255,255,.25)":"#fff",fontSize:18,cursor:wk<=cur?"default":"pointer",fontFamily:"inherit"}}>‹</button>
+        <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800}}>{lbl}</div>
+        <button type="button" aria-label="Semana siguiente" onClick={()=>setWk(addDays(wk,7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,cursor:"pointer",fontFamily:"inherit"}}>›</button>
       </div>
-      <div style={{flex:1,minHeight:0,display:"grid",gridTemplateColumns:"42px repeat(5,minmax(0,1fr))",gridTemplateRows:`auto repeat(${nRows},minmax(0,1fr))`,gap:4}}>
+      <div style={{position:"relative",flex:1,minHeight:0,background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:"40px repeat(5,minmax(0,1fr))",gridTemplateRows:`auto repeat(${nRows},minmax(0,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
         <div/>
-        {days.map(d=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY; return(
-          <div key={d} style={{textAlign:"center",padding:"4px 0",borderRadius:10,background:t?"#0284c7":"transparent",color:t?"#fff":dayClosed(d)?"#cbd5e1":"#0f172a"}}>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",opacity:.8}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
-            <div style={{fontSize:17,fontWeight:800,lineHeight:1.1}}>{x.getDate()}</div>
+        {/* Cabecera de días con «pista» de los días con clase (como una racha) */}
+        {days.map((d,i)=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY, on=hasMine(d), prev=i>0&&hasMine(days[i-1]), next=i<4&&hasMine(days[i+1]); return(
+          <div key={d} style={{textAlign:"center",color:dayClosed(d)?"rgba(255,255,255,.25)":"#fff"}}>
+            <div style={{fontSize:11,fontWeight:800,opacity:.7}}>{DL[i]}</div>
+            <div style={{position:"relative",height:30,display:"flex",alignItems:"center",justifyContent:"center",marginTop:2}}>
+              {on&&<span style={{position:"absolute",top:3,bottom:3,left:prev?-3:"50%",right:next?-3:"50%",background:"rgba(242,68,29,.28)",borderRadius:prev&&next?0:prev?"0 14px 14px 0":next?"14px 0 0 14px":0}}/>}
+              <span style={{position:"relative",width:28,height:28,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:on?13:13,fontWeight:800,
+                background:on?fire:t?"rgba(255,255,255,.14)":"transparent",boxShadow:on?"0 0 14px rgba(242,68,29,.55)":"none",border:t&&!on?"1px solid rgba(255,255,255,.35)":"none"}}>{on?"✓":x.getDate()}</span>
+            </div>
           </div>); })}
         {rows.map(t=>(<React.Fragment key={t}>
-          <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#64748b"}}>{t}</div>
+          <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"rgba(255,255,255,.55)"}}>{t}</div>
           {days.map(d=>{ const k=d+"|"+t, m=mine(d,t), sel=picked.includes(k), closed=slotClosed(d,t), past=isPast(d,t), free=freeAt(d,t), w=myWait(d,t);
             const st=m?"mine":sel?"sel":closed||past?"off":free<=0?"full":"free";
-            const sty={mine:{background:m&&m.status==="completed"?"#16a34a":"#0284c7",color:"#fff",border:"none"},sel:{background:"#16a34a",color:"#fff",border:"none",transform:"scale(.96)"},
-              off:{background:"transparent",color:"transparent",border:"1px dashed #e6ebf3"},full:{background:"#f1f4fa",color:"#94a3b8",border:"1px solid #e6ebf3"},
-              free:{background:"#fff",color:"#16a34a",border:"1.5px solid #bbf7d0",boxShadow:"0 1px 2px rgba(15,23,42,.05)"}}[st];
+            const sty={mine:{background:m&&m.status==="completed"?"linear-gradient(135deg,#22c55e,#15803d)":fire,color:"#fff",border:"none",boxShadow:"0 0 16px rgba(242,68,29,.45)"},
+              sel:{background:"#fff",color:"#f2441d",border:"none",transform:"scale(.95)",boxShadow:"0 0 0 3px rgba(255,122,69,.55)"},
+              off:{background:"transparent",color:"transparent",border:"1px dashed rgba(255,255,255,.06)"},
+              full:{background:"rgba(255,255,255,.04)",color:"rgba(255,255,255,.35)",border:"1px solid rgba(255,255,255,.06)"},
+              free:{background:"rgba(255,255,255,.07)",color:"#fff",border:"1px solid rgba(255,255,255,.1)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapClass(d,t)} aria-label={`${fmtDate(d)} ${t}: ${st==="mine"?"tu clase":st==="sel"?"elegida":st==="full"?"completa":st==="free"?`${free} libres`:"no disponible"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
-              {st==="mine"&&<><span style={{fontSize:16}}>✓</span><span style={{fontSize:9}}>{m.status==="completed"?"hecha":"tú"}</span></>}
-              {st==="sel"&&<span style={{fontSize:18}}>＋</span>}
-              {st==="free"&&<><span style={{fontSize:15}}>{free}</span><span style={{fontSize:8,fontWeight:700,color:"#86efac"}}>libre{free>1?"s":""}</span></>}
+              {st==="mine"&&<span style={{fontSize:17}}>✓</span>}
+              {st==="sel"&&<span style={{fontSize:20,fontWeight:900}}>＋</span>}
+              {st==="free"&&<><span style={{fontSize:15}}>{free}</span><span style={{fontSize:8,fontWeight:700,color:"rgba(255,255,255,.45)"}}>libre{free>1?"s":""}</span></>}
               {st==="full"&&<span style={{fontSize:9}}>{w?"⏳ espera":"lleno"}</span>}
             </button>; })}
         </React.Fragment>))}
@@ -7865,29 +7893,60 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}} title="Open · por tu cuenta">🔓</div>
           {days.map(d=>{ const k=d+"|OPEN", m=myOpen(d), sel=picked.includes(k), off=dayClosed(d)||d<TODAY;
             const st=m?"mine":sel?"sel":off?"off":"free";
-            const sty={mine:{background:m&&m.status==="done"?"#16a34a":"#0f766e",color:"#fff",border:"none"},sel:{background:"#14b8a6",color:"#fff",border:"none",transform:"scale(.96)"},
-              off:{background:"transparent",color:"transparent",border:"1px dashed #e6ebf3"},free:{background:"#f0faf7",color:"#0f766e",border:"1.5px dashed #5eead4"}}[st];
+            const sty={mine:{background:m&&m.status==="done"?"linear-gradient(135deg,#22c55e,#15803d)":"linear-gradient(135deg,#fbbf24,#f59e0b)",color:"#1c1917",border:"none",boxShadow:"0 0 14px rgba(251,191,36,.4)"},
+              sel:{background:"#fff",color:"#d97706",border:"none",transform:"scale(.95)",boxShadow:"0 0 0 3px rgba(251,191,36,.55)"},
+              off:{background:"transparent",color:"transparent",border:"1px dashed rgba(255,255,255,.06)"},
+              free:{background:"rgba(251,191,36,.06)",color:"#fcd34d",border:"1px dashed rgba(251,191,36,.45)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapOpen(d)} aria-label={`${fmtDate(d)} open: ${st==="mine"?"reservado":st==="sel"?"elegido":"libre"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
               {st==="mine"&&<><span style={{fontSize:14}}>✓</span><span style={{fontSize:9}}>{m.status==="done"?"hecho":"open"}</span></>}
-              {st==="sel"&&<span style={{fontSize:18}}>＋</span>}
+              {st==="sel"&&<span style={{fontSize:20,fontWeight:900}}>＋</span>}
               {st==="free"&&<span style={{fontSize:10}}>open</span>}
             </button>; })}
         </>}
       </div>
-      {/* Confirmar */}
-      <div style={{marginTop:10}}>
+      {/* Confirmar: botón tipo píldora */}
+      <div style={{position:"relative",marginTop:10,flexShrink:0}}>
         {picked.length
           ?<div style={{display:"flex",gap:8}}>
-            <button type="button" className="btn ghost" style={{padding:"12px 14px"}} onClick={()=>setPicked([])}>✕</button>
-            <button type="button" className="btn grn" disabled={saving} onClick={submit} style={{flex:1,padding:12,justifyContent:"center",fontSize:15,fontWeight:800}}>{saving?"Reservando…":`Reservar ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")}`}</button>
+            <button type="button" aria-label="Quitar selección" onClick={()=>setPicked([])} style={{width:50,borderRadius:26,border:"1px solid rgba(255,255,255,.18)",background:"transparent",color:"#fff",fontSize:16,cursor:"pointer"}}>✕</button>
+            <button type="button" disabled={saving} onClick={submit} style={{flex:1,height:50,borderRadius:26,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 0 24px rgba(242,68,29,.35)"}}>
+              {saving?"Reservando…":`Reservar ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")}  ›`}</button>
           </div>
-          :<div style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap",fontSize:11,color:"#64748b",fontWeight:700,padding:"6px 0"}}>
-            <span><span style={{color:"#16a34a"}}>■</span> libre</span><span><span style={{color:"#0284c7"}}>■</span> tu clase</span><span><span style={{color:"#cbd5e1"}}>■</span> lleno</span>{hybrid&&<span><span style={{color:"#0f766e"}}>■</span> open</span>}
+          :<div style={{display:"flex",justifyContent:"center",gap:14,flexWrap:"wrap",fontSize:11,color:"rgba(255,255,255,.55)",fontWeight:700,padding:"8px 0"}}>
+            <span>▢ libre</span><span style={{color:"#ff7a45"}}>● tu clase</span><span>▫ lleno</span>{hybrid&&<span style={{color:"#fcd34d"}}>● open</span>}
           </div>}
       </div>
+      {celebrate&&<BookedCelebration data={celebrate} onClose={()=>setCelebrate(null)}/>}
     </div>
   );
+}
+// Brasas que suben en el fondo de Reservar (decorativo).
+function Embers(){
+  const dots=React.useMemo(()=>Array.from({length:14},(_,i)=>({l:(i*37)%100,d:(i*0.7)%6,s:2+(i%3),t:7+(i%5)})),[]);
+  return <div aria-hidden="true" style={{position:"absolute",inset:0,pointerEvents:"none",overflow:"hidden"}}>
+    {dots.map((x,i)=><span key={i} className="ember" style={{left:`${x.l}%`,width:x.s,height:x.s,animationDelay:`-${x.d}s`,animationDuration:`${x.t}s`}}/>)}
+  </div>;
+}
+// Pantalla de celebración tras reservar (estilo «New streak»).
+function BookedCelebration({data,onClose}){
+  const days=data.days, DL=["D","L","M","X","J","V","S"];
+  return <div role="dialog" aria-label="Reserva confirmada" onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",
+    background:"radial-gradient(80% 55% at 50% 40%,rgba(242,68,29,.75),rgba(120,20,8,.35) 45%,rgba(11,11,14,0) 75%),#0b0b0e",padding:"max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom))"}}>
+    <div aria-hidden="true" style={{position:"absolute",inset:0,background:"conic-gradient(from 230deg at 50% 42%,transparent 0 12%,rgba(255,255,255,.07) 14% 20%,transparent 22% 78%,rgba(255,255,255,.07) 80% 86%,transparent 88%)",pointerEvents:"none"}}/>
+    <Embers/>
+    <span className="ember-flame" style={{fontSize:56,lineHeight:1,position:"relative"}}>🔥</span>
+    <div className="ember-pop" style={{fontSize:150,fontWeight:900,lineHeight:.95,position:"relative",textShadow:"0 10px 40px rgba(0,0,0,.35)"}}>{data.n}</div>
+    <div style={{fontSize:22,fontWeight:800,position:"relative",marginTop:6}}>¡Reservado!</div>
+    <div style={{fontSize:13,fontWeight:700,opacity:.8,position:"relative",marginTop:4}}>{[data.nc?`${data.nc} clase${data.nc>1?"s":""}`:"",data.no?`${data.no} open`:""].filter(Boolean).join(" + ")} · ¡a por ello! 💪</div>
+    <div style={{position:"relative",marginTop:26,background:"rgba(0,0,0,.35)",border:"1px solid rgba(255,255,255,.12)",borderRadius:22,padding:"12px 16px",display:"flex",gap:12,backdropFilter:"blur(8px)"}}>
+      {days.slice(0,7).map(d=>{ const x=new Date(d+"T12:00:00"); return <div key={d} style={{textAlign:"center"}}>
+        <div style={{fontSize:11,fontWeight:800,opacity:.75}}>{DL[x.getDay()]} {x.getDate()}</div>
+        <div style={{marginTop:6,width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg,#ff7a45,#f2441d)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,boxShadow:"0 0 16px rgba(242,68,29,.6)"}}>✓</div>
+      </div>; })}
+    </div>
+    <button type="button" onClick={onClose} style={{position:"relative",marginTop:28,width:"min(340px,100%)",height:54,borderRadius:28,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:17,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Continuar  ›</button>
+  </div>;
 }
 
 // ── CLIENT CALENDAR ───────────────────────────────────────────────────────
