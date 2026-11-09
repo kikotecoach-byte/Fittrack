@@ -142,6 +142,10 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 @keyframes dkPulse{0%{box-shadow:0 0 0 0 rgba(255,106,61,.7)}70%{box-shadow:0 0 0 8px rgba(255,106,61,0)}100%{box-shadow:0 0 0 0 rgba(255,106,61,0)}}
 .dk-stat{display:flex;align-items:center;gap:10px;width:100%;padding:6px 0;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;}
 .dk-row{display:flex;align-items:center;gap:11px;width:100%;padding:10px 11px;border:none;border-radius:14px;background:#1e1e25;cursor:pointer;text-align:left;font-family:inherit;transition:opacity .2s;}
+.dk-panel{background:radial-gradient(100% 50% at 50% 0%,rgba(242,68,29,.16),transparent 70%),#0b0b0e;border-radius:26px;padding:16px 12px 14px;box-shadow:0 14px 34px rgba(11,11,14,.28);}
+.dk-seg{display:flex;background:#1a1a20;border-radius:999px;padding:4px;gap:2px;}
+.dk-seg button{flex:1;border:none;background:none;color:#c6c6d0;font-family:inherit;font-weight:800;font-size:14px;padding:9px 0;border-radius:999px;cursor:pointer;transition:background .2s,color .2s;}
+.dk-seg button.on{background:#3a3a44;color:#fff;}
 .dk-lg{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 .mobile-topbar{
   display:flex !important;align-items:center;justify-content:space-between;
@@ -7592,7 +7596,7 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
           :ppView==="hist"&&<AthleteHistory client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
       </div>}
 
-      {tab==="progreso"&&<ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
+      {tab==="progreso"&&<ProgressTab client={client} history={allHistory} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
 
       {tab==="comunidad"&&<ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>}
     </div>
@@ -7738,6 +7742,136 @@ function funLine(x,idx=0){
   const c=extra.length?extra[(hashStr(x.name)+idx)%extra.length]:"";
   return c?`${a} ${c}`:a;
 }
+// ── ESTADÍSTICAS DEL ATLETA (Progreso): periodo, entrenos, tiempo, kilos y nivel por músculo ──
+// Nivel de cada músculo según las series semanales que le dedica en el periodo
+// (músculo principal = 1 serie, secundarios = ½): Oro ≥10/sem · Plata ≥6 · Bronce ≥3 · Madera >0.
+const LVL = [
+  {k:"oro",l:"Oro",min:10,c:"#fbbf24",glow:"rgba(251,191,36,.7)"},
+  {k:"plata",l:"Plata",min:6,c:"#d4d8e2",glow:"rgba(212,216,226,.5)"},
+  {k:"bronce",l:"Bronce",min:3,c:"#cd7f32",glow:"rgba(205,127,50,.5)"},
+  {k:"madera",l:"Madera",min:0.01,c:"#7a5a3c",glow:null},
+];
+const lvlOf = (perWeek) => LVL.find(x=>perWeek>=x.min)||null;
+const MAP_MUSCLES = ["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Core","Lumbar","Glúteo","Cuádriceps","Isquios","Aductores","Gemelo"];
+const MAIN_MUSCLES = ["Pecho","Espalda","Hombro","Bíceps","Tríceps","Core","Glúteo","Cuádriceps","Isquios"];
+// Duración aproximada de una sesión: series × (trabajo + descanso) + calentamiento; si no hay datos, 60 min.
+const sessionMinutes = (exs) => { const d=(exs||[]).filter(exDone); if(!d.length) return 60;
+  const s=d.reduce((t,e)=>t+(parseInt(e.sets)||1)*(45+(parseInt(e.rest_seconds)||90)),0); return Math.max(30,Math.min(120,Math.round(s/60+10))); };
+const fmtMin = (m) => m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}′`:""}`;
+
+// Silueta con los músculos coloreados (vista frontal o trasera).
+function BodyMap({side,lv,sel,onPick}){
+  const base="#24242c", edge="#3b3b47";
+  const M=(name,shapes)=>{ const L=lv[name]; const on=sel===name; return <g key={name} onClick={()=>onPick(name)} style={{cursor:"pointer"}} role="button" aria-label={`${name}: ${L?L.l:"sin trabajar"}`}>
+    {shapes.map((s,i)=>React.cloneElement(s,{key:i,fill:L?L.c:"#30303a",stroke:on?"#fff":"#0b0b0e",strokeWidth:on?1.6:.8,style:{filter:L&&L.glow?`drop-shadow(0 0 3px ${L.glow})`:"none",transition:"fill .4s"}}))}</g>; };
+  const mir=(el)=>React.cloneElement(el,{transform:`translate(120 0) scale(-1 1) ${el.props.transform||""}`});
+  const both=(el)=>[el,mir(el)];
+  const sil=<g fill={base} stroke={edge} strokeWidth="1">
+    <ellipse cx="60" cy="20" rx="11" ry="13"/>
+    <rect x="54" y="30" width="12" height="10" rx="3"/>
+    <path d="M42 40 Q60 34 78 40 L84 52 L79 100 L76 114 L44 114 L41 100 L36 52 Z"/>
+    {[0,1].map(i=><g key={i} transform={i?"translate(120 0) scale(-1 1)":undefined}>
+      <path d="M36 46 C30 52 27 66 27 82 L22 112 L30 113 L36 84 C38 72 41 60 42 52 Z"/>
+      <ellipse cx="25" cy="119" rx="5" ry="7"/>
+      <path d="M44 110 L60 114 L59 170 L56 208 L44 208 L41 170 C38 150 39 128 44 110 Z"/>
+      <ellipse cx="50" cy="214" rx="8" ry="4.5"/>
+    </g>)}
+  </g>;
+  const front=[
+    M("Hombro",both(<ellipse cx="38" cy="50" rx="7.5" ry="9" transform="rotate(18 38 50)"/>)),
+    M("Pecho",both(<path d="M59 44 C51 42 44 45 42 52 C41 60 47 65 59 63 Z"/>)),
+    M("Bíceps",both(<ellipse cx="32.5" cy="70" rx="5" ry="11" transform="rotate(10 32.5 70)"/>)),
+    M("Antebrazo",both(<ellipse cx="27" cy="96" rx="4.5" ry="13" transform="rotate(10 27 96)"/>)),
+    M("Core",[<path d="M51 66 L69 66 L68 106 Q60 110 52 106 Z"/>,...both(<path d="M45 68 L50 68 L51 104 L46 100 Z"/>)]),
+    M("Cuádriceps",both(<path d="M44 118 C40 132 41 152 46 168 L55 168 C58 150 58 132 55 120 Z"/>)),
+    M("Aductores",both(<path d="M55 118 L59 120 L59 146 L56 150 Z"/>)),
+    M("Gemelo",both(<path d="M44 178 C42 188 43 198 46 204 L54 204 C56 196 56 186 54 178 Z"/>)),
+  ];
+  const back=[
+    M("Espalda",[<path d="M60 33 L45 44 L52 62 L60 74 L68 62 L75 44 Z"/>,...both(<path d="M44 52 C40 64 43 82 53 94 L58 76 L51 62 Z"/>)]),
+    M("Hombro",both(<ellipse cx="38" cy="50" rx="7.5" ry="9" transform="rotate(18 38 50)"/>)),
+    M("Tríceps",both(<ellipse cx="32.5" cy="71" rx="5.5" ry="12" transform="rotate(10 32.5 71)"/>)),
+    M("Antebrazo",both(<ellipse cx="27" cy="96" rx="4.5" ry="13" transform="rotate(10 27 96)"/>)),
+    M("Lumbar",[<rect x="53" y="88" width="14" height="20" rx="4"/>]),
+    M("Glúteo",both(<ellipse cx="51.5" cy="122" rx="9" ry="10"/>)),
+    M("Isquios",both(<path d="M44 134 C41 146 42 160 46 170 L56 170 C58 158 58 144 56 134 Z"/>)),
+    M("Gemelo",both(<ellipse cx="49.5" cy="190" rx="6.5" ry="14"/>)),
+  ];
+  return <svg viewBox="0 0 120 222" style={{width:"100%",maxWidth:150,height:"auto",display:"block",margin:"0 auto"}}>
+    {sil}{side==="front"?front:back}
+  </svg>;
+}
+
+function AthleteStats({client,history,assignedSessions,assignedExercises}){
+  const [per,setPer]=React.useState("mes"); // semana | mes | año | todo
+  const [sel,setSel]=React.useState(null);
+  const [info,setInfo]=React.useState(false);
+  const sess=athleteSessions(client,history,assignedSessions,assignedExercises);
+  const log=strengthLog(client,assignedSessions,assignedExercises);
+  const first=[...sess.map(x=>x.date),...log.map(x=>x.date)].sort()[0]||TODAY;
+  const range=(p,back)=>{ // [desde, hasta) del periodo (back=1 → el anterior)
+    const d=new Date(TODAY+"T12:00:00");
+    if(p==="semana"){ const m=addDays(mondayOfDate(TODAY),-7*back); return [m,addDays(m,7)]; }
+    if(p==="mes"){ const a=new Date(d.getFullYear(),d.getMonth()-back,1,12), b=new Date(d.getFullYear(),d.getMonth()-back+1,1,12); return [a.toISOString().slice(0,10),b.toISOString().slice(0,10)]; }
+    if(p==="año"){ const y=d.getFullYear()-back; return [`${y}-01-01`,`${y+1}-01-01`]; }
+    return back?null:[first,addDays(TODAY,1)]; };
+  const calc=(r)=>{ if(!r) return null; const [a,b]=r, inR=(x)=>x>=a&&x<b;
+    const ss=sess.filter(x=>inR(x.date)), lg=log.filter(x=>inR(x.date));
+    const days=Math.max(1,(Math.min(new Date(b+"T12:00:00"),new Date(addDays(TODAY,1)+"T12:00:00"))-new Date((a<first?first:a)+"T12:00:00"))/86400000);
+    const sets={}; lg.forEach(x=>{ const ms=musclesOf(x.name).filter(m=>MAP_MUSCLES.includes(m)); ms.forEach((m,i)=>{ sets[m]=(sets[m]||0)+x.sets*(i===0?1:.5); }); });
+    const weeks=Math.max(1,days/7), lv={}; MAP_MUSCLES.forEach(m=>{ lv[m]=lvlOf((sets[m]||0)/weeks); });
+    return {n:ss.length,min:ss.reduce((t,x)=>t+sessionMinutes(x.exs),0),ton:Math.round(lg.reduce((t,x)=>t+(x.ton||0),0)),sets,weeks,lv}; };
+  const cur=calc(range(per,0)), prev=calc(range(per,1));
+  const score=(l)=>l?4-LVL.indexOf(l):0;
+  const avg=MAIN_MUSCLES.reduce((t,m)=>t+score(cur.lv[m]),0)/MAIN_MUSCLES.length;
+  const overall=avg>=0.5?LVL[4-Math.max(1,Math.min(4,Math.round(avg)))]:null;
+  const counts=LVL.map(L=>({L,n:MAP_MUSCLES.filter(m=>cur.lv[m]===L).length}));
+  const PER=[["semana","Semana"],["mes","Mes"],["año","Año"],["todo","Todo"]];
+  const prevTxt={semana:"la semana pasada",mes:"el mes pasado",año:"el año pasado"}[per];
+  const delta=(a,b,fmt)=>{ if(!prev||b==null) return null; const d=a-b; if(!d) return <span style={{color:DK.dim}}>= que {prevTxt}</span>; return <span style={{color:d>0?DK.grn:DK.red}}>{d>0?"▲ +":"▼ −"}{fmt(Math.abs(d))} vs {prevTxt}</span>; };
+  const Ic=({ic,big})=><span style={{width:big?56:36,height:big?56:36,borderRadius:"50%",background:"rgba(255,122,69,.12)",display:"grid",placeItems:"center",fontSize:big?24:17,flexShrink:0}}>{ic}</span>;
+  const Box=({ic,l,v,d,wide})=>wide
+    ?<div className="dk-card" style={{padding:14,display:"flex",alignItems:"center",gap:12,gridColumn:"1 / -1",borderRadius:20}}><Ic ic={ic} big/>
+      <span style={{minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:800,color:DK.tx}}>{l}</span>
+        <span key={per+v} className="count-pop" style={{display:"block",fontSize:28,fontWeight:800,color:DK.sub,lineHeight:1.15}}>{v}</span>
+        {d&&<span style={{display:"block",fontSize:10,fontWeight:700,marginTop:1}}>{d}</span>}</span></div>
+    :<div className="dk-card" style={{padding:"12px 13px",borderRadius:20,minWidth:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:9}}><Ic ic={ic}/><span style={{fontSize:13,fontWeight:800,color:DK.tx}}>{l}</span></div>
+      <div key={per+v} className="count-pop" style={{fontSize:24,fontWeight:800,color:DK.sub,lineHeight:1.15,marginTop:8,whiteSpace:"nowrap"}}>{v}</div>
+      {d&&<div style={{fontSize:10,fontWeight:700,marginTop:2}}>{d}</div>}</div>;
+  const sl=sel&&cur.lv[sel], spw=sel?Math.round((cur.sets[sel]||0)/cur.weeks*10)/10:0, nxt=sel?[...LVL].reverse().find(L=>L.min>spw):null;
+  return(
+    <div className="dk-panel" style={{marginBottom:16}}>
+      <div style={{fontSize:20,fontWeight:800,color:DK.tx,textAlign:"center",marginBottom:12}}>Tus estadísticas</div>
+      <div className="dk-seg" role="tablist">{PER.map(([k,l])=><button key={k} role="tab" aria-selected={per===k} className={per===k?"on":""} onClick={()=>{ setPer(k); setSel(null); }}>{l}</button>)}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:14}}>
+        <Box ic="🏋️" l="Entrenos" v={cur.n} d={delta(cur.n,prev&&prev.n,x=>x)}/>
+        <Box ic="⏱️" l="Tiempo" v={cur.n?fmtMin(cur.min):"0 min"} d={delta(cur.min,prev&&prev.min,fmtMin)}/>
+        <Box wide ic="🏆" l="Peso total levantado" v={`${cur.ton.toLocaleString("es-ES")} kg`} d={delta(cur.ton,prev&&prev.ton,x=>`${x.toLocaleString("es-ES")} kg`)}/>
+      </div>
+      <div className="dk-card" style={{marginTop:10,borderRadius:22}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+          <div><div style={{fontSize:13,color:DK.mu,fontWeight:700}}>Tu nivel</div>
+            <div style={{fontSize:28,fontWeight:800,color:overall?overall.c:DK.mu,lineHeight:1.15,textShadow:overall&&overall.glow?`0 0 18px ${overall.glow}`:"none"}}>{overall?overall.l:"Empezando"}</div></div>
+          <button type="button" onClick={()=>setInfo(v=>!v)} aria-label="Cómo se calcula" style={{width:30,height:30,borderRadius:"50%",border:`1.5px solid ${DK.ac2}`,background:"none",color:DK.ac2,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>i</button>
+        </div>
+        {info&&<div style={{fontSize:12,color:DK.sub,lineHeight:1.45,background:DK.card2,borderRadius:12,padding:"9px 11px",marginTop:8}}>Cada músculo sube de nivel según las <b>series por semana</b> que le dedicas en este periodo (el músculo principal del ejercicio cuenta 1 serie y los que ayudan, ½): <b style={{color:LVL[0].c}}>Oro</b> 10 o más · <b style={{color:LVL[1].c}}>Plata</b> 6 · <b style={{color:LVL[2].c}}>Bronce</b> 3 · <b style={{color:LVL[3].c}}>Madera</b> menos de 3. Toca un músculo para verlo.</div>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+          <div><BodyMap side="front" lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DELANTE</div></div>
+          <div><BodyMap side="back" lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DETRÁS</div></div>
+        </div>
+        {sel&&<div className="ember-pop" style={{marginTop:10,background:DK.card2,borderRadius:12,padding:"9px 12px",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{width:12,height:12,borderRadius:"50%",background:sl?sl.c:"#30303a",flexShrink:0}}/>
+          <span style={{flex:1,fontSize:13,color:DK.sub}}><b style={{color:DK.tx}}>{sel}</b> · {String(spw).replace(".",",")} series/sem · <b style={{color:sl?sl.c:DK.mu}}>{sl?sl.l:"sin trabajar"}</b>{nxt?<span style={{color:DK.mu}}> · {String(Math.round((nxt.min-spw)*10)/10).replace(".",",")} más para {nxt.l}</span>:""}</span>
+          <button type="button" onClick={()=>setSel(null)} style={{border:"none",background:"none",color:DK.dim,fontSize:16,cursor:"pointer"}} aria-label="Cerrar">✕</button>
+        </div>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:7,marginTop:12}}>
+          {counts.map(({L,n})=><span key={L.k} style={{display:"inline-flex",alignItems:"center",gap:6,background:DK.card2,borderRadius:999,padding:"6px 12px",fontSize:12,fontWeight:800,color:DK.tx}}><span style={{width:9,height:9,borderRadius:"50%",background:L.c,boxShadow:L.glow?`0 0 6px ${L.glow}`:"none"}}/>{L.l}: {n}</span>)}
+        </div>
+      </div>
+    </div>);
+}
+
 function StrengthView({client,assignedSessions,assignedExercises}){
   const log=strengthLog(client,assignedSessions,assignedExercises);
   const exs=strengthByExercise(log);
@@ -8708,7 +8842,7 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
 }
 
 // ── PROGRESS TAB ──────────────────────────────────────────────────────────
-function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises}) {
+function ProgressTab({client, history, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises}) {
   const [view, setView] = React.useState("fuerza");
   const [showLog, setShowLog] = React.useState(false);
   const [showPR, setShowPR] = React.useState(false);
@@ -8773,6 +8907,7 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
 
   return(
     <div>
+      <AthleteStats client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
       <div className="seg" style={{marginBottom:14}}>
         {[["fuerza","💪","Fuerza"],["volumen","📊","Volumen"],["stats","📏","Medidas"],["photos","📸","Fotos"],["badges","🏆","Logros"]].map(([id,ic,label])=>(
           <button key={id} className={"sb"+(view===id?" on":"")} onClick={()=>setView(id)} style={{fontSize:11,padding:"6px 2px",lineHeight:1.15,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}><span style={{fontSize:15}}>{ic}</span>{label}</button>
