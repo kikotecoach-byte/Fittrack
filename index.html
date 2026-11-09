@@ -7746,10 +7746,10 @@ function funLine(x,idx=0){
 // Nivel de cada músculo según las series semanales que le dedica en el periodo
 // (músculo principal = 1 serie, secundarios = ½): Oro ≥10/sem · Plata ≥6 · Bronce ≥3 · Madera >0.
 const LVL = [
-  {k:"oro",l:"Oro",min:10,c:"#fbbf24",glow:"rgba(251,191,36,.7)"},
-  {k:"plata",l:"Plata",min:6,c:"#d4d8e2",glow:"rgba(212,216,226,.5)"},
-  {k:"bronce",l:"Bronce",min:3,c:"#cd7f32",glow:"rgba(205,127,50,.5)"},
-  {k:"madera",l:"Madera",min:0.01,c:"#7a5a3c",glow:null},
+  {k:"oro",l:"Oro",min:10,c:"#ffd23f",glow:"rgba(255,210,63,.7)"},
+  {k:"plata",l:"Plata",min:6,c:"#c9cdd8",glow:"rgba(201,205,216,.45)"},
+  {k:"bronce",l:"Bronce",min:3,c:"#c47f36",glow:"rgba(196,127,54,.45)"},
+  {k:"madera",l:"Madera",min:0.01,c:"#8a5a2e",glow:null},
 ];
 const lvlOf = (perWeek) => LVL.find(x=>perWeek>=x.min)||null;
 const MAP_MUSCLES = ["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Core","Lumbar","Glúteo","Cuádriceps","Isquios","Aductores","Gemelo"];
@@ -7813,35 +7813,33 @@ const BODY_BACK_N = ["M90.5 54 C90.5 60 90 66 88 70 L92 68 C93 63 93 58 92.5 53 
   "M84.5 379 L91 379 C91 385 92 389 93 393 L84 393 C84.5 388 84.5 384 84.5 379 Z",
   "M78.5 382 C76 389 77 395 84 397 C90 398 95 397 95.5 392 C95.5 387 95 383 94 380 Z"];
 function BodyMap({side,lv,sel,onPick}){
+  // Estilo «lámina»: cuerpo negro con contornos finos grises; los músculos trabajados, en color plano.
   const shapes=side==="front"?BODY_FRONT:BODY_BACK;
-  const mirror="translate(200 0) scale(-1 1)";
+  const mirror="translate(200 0) scale(-1 1)", INK="#0c0c0f", LINE="#8d8d98", SUB="#5c5c68";
+  const both=(el)=>[undefined,mirror].map((tf,k)=><g key={k} transform={tf}>{el}</g>);
+  const det=side==="front"
+    ?["M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233", "M80 389 L80 395","M84 390 L84 397","M88 390 L88 397.5","M92 390 L92 397",
+      "M98 71 C90 72 81 73 73 75","M54 140 C55 132 56 124 57 118","M44 168 C46 180 46 192 44 202"]
+    :["M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233","M72 120 C76 132 80 146 86 158","M80 245 C80 262 81 280 82 296","M89 386 L89 393"];
   return <svg viewBox="28 0 144 402" style={{width:"100%",maxWidth:160,height:"auto",display:"block",margin:"0 auto",overflow:"visible"}}>
-    <defs>
-      <linearGradient id="bmSkin" x1="0" y1="0" x2="1" y2="0"><stop offset="0" stopColor="#2c2c36"/><stop offset=".55" stopColor="#202028"/><stop offset="1" stopColor="#191920"/></linearGradient>
-      <radialGradient id="bmVol" cx=".35" cy=".3" r=".8"><stop offset="0" stopColor="#fff" stopOpacity=".38"/><stop offset=".5" stopColor="#fff" stopOpacity="0"/><stop offset="1" stopColor="#000" stopOpacity=".38"/></radialGradient>
-      <radialGradient id="bmHead" cx=".4" cy=".35" r=".7"><stop offset="0" stopColor="#34343f"/><stop offset="1" stopColor="#1c1c23"/></radialGradient>
-    </defs>
     {/* Silueta */}
-    <g stroke="#45454f" strokeWidth="1" strokeLinejoin="round">
-      <path d={BODY_SIL} fill="url(#bmSkin)"/><path d={BODY_SIL} fill="url(#bmSkin)" transform={mirror}/>
-      <path d="M100 8 C109 8 115 15 115 26 C115 36 111 45 104 49 C102 50 98 50 96 49 C89 45 85 36 85 26 C85 15 91 8 100 8 Z" fill="url(#bmHead)"/>
-      <ellipse cx="85" cy="29" rx="2.4" ry="4.5" fill="#24242c"/><ellipse cx="115" cy="29" rx="2.4" ry="4.5" fill="#24242c"/>
+    <g stroke={LINE} strokeWidth="1.1" strokeLinejoin="round" fill={INK}>
+      {both(<path d={BODY_SIL}/>)}
+      <path d="M100 8 C109 8 115 15 115 26 C115 36 111 45 104 49 C102 50 98 50 96 49 C89 45 85 36 85 26 C85 15 91 8 100 8 Z"/>
+      <path d="M85.5 24 C83 24 82.5 30 84 34 C85 36 86 35 86.5 33 Z"/><path d="M114.5 24 C117 24 117.5 30 116 34 C115 36 114 35 113.5 33 Z"/>
     </g>
-    {/* Detalles sin color: rodillas, clavícula / columna */}
-    <g fill="none" stroke="#3a3a45" strokeWidth=".9" strokeLinecap="round">
-      {side==="front"
-        ?<>{[0,1].map(i=><g key={i} transform={i?mirror:undefined}><path d="M98 71 C90 72 81 73 73 75"/></g>)}</>
-        :<><path d="M100 132 L100 186" strokeDasharray="2 2.4"/></>}
-    </g>
-    {/* Zonas sin nivel (cuello, manos, rodillas, pies): dan volumen a la figura */}
-    {[undefined,mirror].map((tf,k)=><g key={k} transform={tf} pointerEvents="none">{(side==="front"?BODY_FRONT_N:BODY_BACK_N).map((d,i)=><g key={i}><path d={d} fill="#2b2b34" stroke="#0b0b0e" strokeWidth=".7" strokeLinejoin="round"/><path d={d} fill="url(#bmVol)"/></g>)}</g>)}
+    {/* Zonas sin nivel (cuello, manos, rodillas, pies) */}
+    <g pointerEvents="none" fill={INK} stroke={SUB} strokeWidth=".8" strokeLinejoin="round">{both((side==="front"?BODY_FRONT_N:BODY_BACK_N).map((d,i)=><path key={i} d={d}/>))}</g>
     {/* Músculos */}
-    {Object.entries(shapes).map(([name,ds])=>{ const L=lv[name], on=sel===name, fill=L?L.c:"#34343e";
-      return <g key={name} onClick={()=>onPick(name)} style={{cursor:"pointer",filter:L&&L.glow?`drop-shadow(0 0 3px ${L.glow})`:"none"}} role="button" aria-label={`${name}: ${L?L.l:"sin trabajar"}`}>
-        {[undefined,mirror].map((tf,k)=><g key={k} transform={tf}>
-          {ds.map((d,i)=><g key={i}><path d={d} fill={fill} stroke={on?"#fff":"#0b0b0e"} strokeWidth={on?1.5:.7} strokeLinejoin="round" style={{transition:"fill .4s"}}/><path d={d} fill="url(#bmVol)" pointerEvents="none"/></g>)}
-        </g>)}
+    {Object.entries(shapes).map(([name,ds])=>{ const L=lv[name], on=sel===name;
+      return <g key={name} onClick={()=>onPick(name)} style={{cursor:"pointer",filter:L&&L.k==="oro"?"drop-shadow(0 0 2.5px rgba(255,210,63,.75))":"none"}} role="button" aria-label={`${name}: ${L?L.l:"sin trabajar"}`}>
+        {both(ds.map((d,i)=><path key={i} d={d} fill={L?L.c:INK} stroke={on?"#fff":L?"#1b1206":SUB} strokeWidth={on?1.6:.8} strokeLinejoin="round" style={{transition:"fill .4s"}}/>))}
       </g>; })}
+    {/* Líneas de detalle (dedos, fibras, línea media) */}
+    <g fill="none" stroke={SUB} strokeWidth=".6" strokeLinecap="round" pointerEvents="none" opacity=".9">
+      {both(det.map((d,i)=><path key={i} d={d}/>))}
+      {side==="front"?<path d="M100 76 L100 120"/>:<path d="M100 52 L100 186"/>}
+    </g>
   </svg>;
 }
 
