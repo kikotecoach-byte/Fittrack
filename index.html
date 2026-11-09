@@ -503,6 +503,13 @@ const dayTypeLabel = (id) => (DAY_LABEL&&DAY_LABEL[id]) || "Sesión";
 // la posición de la sesión entre los días que REALMENTE viene esa semana
 // (sus reservas). Los días habituales de la ficha solo marcan el tamaño mínimo
 // del microciclo.
+// Botón redondo de la cabecera de la agenda a pantalla completa.
+const fitBtn = (low, extra={}) => ({width:low?32:38,height:low?32:38,flexShrink:0,borderRadius:"50%",border:"1px solid #e6ebf3",background:"#fff",color:"#0284c7",fontSize:low?16:19,fontWeight:800,lineHeight:1,cursor:"pointer",display:"flex",alignItems:"center",justifyContent:"center",padding:0,fontFamily:"inherit",...extra});
+// Márgenes seguros del móvil (notch, barra de estado, barra de inicio) en px.
+const readSafeInsets = () => { try{ const d=document.createElement("div");
+  d.style.cssText="position:fixed;top:0;left:0;visibility:hidden;pointer-events:none;padding:env(safe-area-inset-top) env(safe-area-inset-right) env(safe-area-inset-bottom) env(safe-area-inset-left)";
+  document.body.appendChild(d); const cs=getComputedStyle(d); const r={t:parseFloat(cs.paddingTop)||0,r:parseFloat(cs.paddingRight)||0,b:parseFloat(cs.paddingBottom)||0,l:parseFloat(cs.paddingLeft)||0}; d.remove(); return r;
+  }catch(e){ return {t:0,r:0,b:0,l:0}; } };
 // ── MODALIDAD HÍBRIDA (clases con el coach + días «open» por su cuenta) ──
 // La modalidad va en la ficha (profile.plan_type = "hibrido", profile.open_per_week);
 // los días open, en la tabla open_sessions (docs/hibrido.sql).
@@ -911,7 +918,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const [vw,setVw] = React.useState(()=>typeof window!=="undefined"?window.innerWidth:390);
   const DOCK_W = 440; // ancho de la ficha acoplada (iPad en horizontal)
   const [vh,setVh] = React.useState(()=>typeof window!=="undefined"?window.innerHeight:780);
-  React.useEffect(()=>{ const f=()=>{ setVw(window.innerWidth); setVh(window.visualViewport?window.visualViewport.height:window.innerHeight); };
+  const [safe,setSafe] = React.useState(()=>typeof document!=="undefined"?readSafeInsets():{t:0,r:0,b:0,l:0});
+  React.useEffect(()=>{ const f=()=>{ setVw(window.innerWidth); setVh(window.visualViewport?window.visualViewport.height:window.innerHeight); setTimeout(()=>setSafe(readSafeInsets()),60); };
     window.addEventListener("resize",f); window.addEventListener("orientationchange",f); if(window.visualViewport) window.visualViewport.addEventListener("resize",f);
     return ()=>{ window.removeEventListener("resize",f); window.removeEventListener("orientationchange",f); if(window.visualViewport) window.visualViewport.removeEventListener("resize",f); }; },[]);
   // Pantalla completa: además de ocupar toda la vista, oculta la barra del navegador si se puede.
@@ -1584,10 +1592,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
       {/* ── AGENDA A PANTALLA COMPLETA (día / semana sin scroll) ── */}
       {fitMode&&view==="schedule"&&(schedView==="day"||schedView==="week")&&(()=>{
-        const week=schedView==="week", W=vw-(docked?DOCK_W:0), low=vh<500, headH=low?38:46, availH=Math.max(200,vh-headH-(low?4:10));
+        const low=vh<500, padT=Math.max(low?4:8,safe.t), padB=Math.max(6,safe.b), padL=Math.max(8,safe.l+(safe.l?4:0)), padR=docked?8:Math.max(8,safe.r+(safe.r?4:0));
+        const week=schedView==="week", W=vw-(docked?DOCK_W:0)-padL-padR, headH=low?42:52, availH=Math.max(200,vh-padT-padB-headH-(low?6:10));
+        const nowHM=new Date().toTimeString().slice(0,5), curHour=nowHM.slice(0,2)+":00";
         const shift=(dir)=>{ const d=new Date(activeDay+"T12:00:00"); d.setDate(d.getDate()+(week?7:1)*dir); setActiveDay(d.toISOString().split("T")[0]); };
-        const lbl=week?(()=>{ const wd=getWeekDays(mondayOfDate(activeDay)).slice(0,5); const o={day:"numeric",month:"short"}; return `${new Date(wd[0]+"T12:00:00").toLocaleDateString("es-ES",o)} — ${new Date(wd[4]+"T12:00:00").toLocaleDateString("es-ES",o)}`; })()
-          :new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"short"});
+        const lbl=week?(()=>{ const wd=getWeekDays(mondayOfDate(activeDay)).slice(0,5), a=new Date(wd[0]+"T12:00:00"), z=new Date(wd[4]+"T12:00:00"), m=(x)=>x.toLocaleDateString("es-ES",{month:"short"}).replace(".","");
+          return a.getMonth()===z.getMonth()?`${a.getDate()}–${z.getDate()} ${m(z)}`:`${a.getDate()} ${m(a)} – ${z.getDate()} ${m(z)}`; })()
+          :new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",vw<520?{weekday:"short",day:"numeric",month:"short"}:{weekday:"long",day:"numeric",month:"short"}).replace(/\./g,"");
         const short=(t)=>String(t||"").replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/,"").replace(/\s*\(.*\)/,"").split("·")[0].trim();
         const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&clients.find(c=>c.id===dragSess.client_id);
         const Chip=({s,fs,label,sub,narrow,line2})=>{ const done=s.status==="completed"; if(line2) return(
@@ -1617,11 +1628,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           const usedDay=(d)=>sessions.some(s=>s.date===d)||extraOf(d).length>0||(leads||[]).some(l=>l.date===d&&l.time);
           const days=all7.filter((d,i)=>i<5||usedDay(d));
           const slots=Array.from(new Set([...workSlots,...days.flatMap(d=>extraOf(d)),...sessions.filter(s=>days.includes(s.date)).map(s=>s.time)])).sort();
-          const timeW=36, dayHeadH=low?22:30, gap=2;
+          const timeW=38, dayHeadH=low?26:36, gap=low?3:4;
           const busy=(t)=>days.some(d=>sessions.some(s=>s.date===d&&s.time===t)||(leads||[]).some(l=>l.date===d&&l.time===t));
           const nBusy=slots.filter(busy).length, nEmpty=slots.length-nBusy, emptyH=nBusy?Math.min(30,Math.max(16,(availH-dayHeadH)/slots.length*0.45)):0;
           const rowH=(availH-dayHeadH-gap*slots.length-emptyH*nEmpty)/Math.max(1,nBusy||slots.length);
-          const colW=(W-12-timeW-gap*days.length)/days.length;
+          const colW=(W-timeW-gap*days.length)/days.length;
           const items=(d,t)=>sessions.filter(s=>s.date===d&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===d&&l.time===t).length;
           let maxItems=1; days.forEach(d=>slots.forEach(t=>{ maxItems=Math.max(maxItems,items(d,t)+(dragId?1:0)); }));
           const {fs,cols,cap}=fitFont(rowH,colW,maxItems);
@@ -1630,11 +1641,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           body=(<div style={{height:availH,display:"flex",flexDirection:"column",gap}}>
             <div style={{display:"grid",gridTemplateColumns:grid,gap,height:dayHeadH,flexShrink:0}}>
               <div/>
-              {days.map(d=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY; return <div key={d} onClick={()=>{ setActiveDay(d); setSchedView("day"); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,borderRadius:7,background:t?"#dcebfb":"#fff",border:`1px solid ${t?"#93c5fd":"#e6ebf3"}`,cursor:"pointer",fontWeight:800,fontSize:12,color:t?"#0284c7":"#0f172a",textTransform:"capitalize"}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")} <span className="mono">{x.getDate()}</span></div>; })}
+              {days.map(d=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY; return <div key={d} onClick={()=>{ setActiveDay(d); setSchedView("day"); }} style={{display:"flex",alignItems:"center",justifyContent:"center",gap:5,borderRadius:10,background:t?"#0284c7":"#fff",color:t?"#fff":undefined,border:`1px solid ${t?"#0284c7":"#e6ebf3"}`,boxShadow:t?"0 4px 12px rgba(2,132,199,.25)":"0 1px 2px rgba(15,23,42,.05)",cursor:"pointer",fontWeight:800,fontSize:low?12:13,color:t?"#fff":"#0f172a",textTransform:"capitalize"}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")} <span className="mono">{x.getDate()}</span></div>; })}
             </div>
             {slots.map(time=>(
               <div key={time} style={{display:"grid",gridTemplateColumns:grid,gap,height:(nBusy&&!busy(time))?emptyH:rowH,flexShrink:0}}>
-                <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:Math.min(12,Math.max(9,((nBusy&&!busy(time))?emptyH:rowH)/2.4)),fontWeight:800,color:"#64748b"}}>{time}</div>
+                <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:Math.min(12,Math.max(9,((nBusy&&!busy(time))?emptyH:rowH)/2.4)),fontWeight:800,
+                  color:days.includes(TODAY)&&time===curHour?"#fff":"#64748b",background:days.includes(TODAY)&&time===curHour?"#0284c7":"transparent",borderRadius:8}}>{time}</div>
                 {days.map(day=>{
                   const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL"), slotBlocked=isBlkDay||isBlocked(day,time);
                   const ss=sessions.filter(s=>s.date===day&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
@@ -1644,8 +1656,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   const room=cap-(isDrop&&dragCli?1:0), shown=all.length>room?all.slice(0,Math.max(0,room-1)):all, extra=all.length-shown.length;
                   return(
                     <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} className={isDrop?"drag-target":""} onClick={()=>{ if(!isBlkDay) setSlotMenu({date:day,time}); }}
-                      style={{borderRadius:6,padding:2,overflow:"hidden",display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:2,alignContent:"start",cursor:"pointer",
-                        background:isDrop?"#dcebfb":slotBlocked?((blockAt(day,time)||{}).bg||"#fbecec"):"#fff",border:isDrop?"1px solid #0284c7":slotBlocked?`1px solid ${(blockAt(day,time)||{}).bd||"#f2cccc"}`:all.length?"1px solid #cbd5e1":"1px solid #eef1f7"}}>
+                      style={{borderRadius:10,padding:3,overflow:"hidden",display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:2,alignContent:"start",cursor:"pointer",
+                        background:isDrop?"#dcebfb":slotBlocked?((blockAt(day,time)||{}).bg||"#fbecec"):day===TODAY?"#f5faff":"#fff",
+                        border:isDrop?"1px solid #0284c7":slotBlocked?`1px solid ${(blockAt(day,time)||{}).bd||"#f2cccc"}`:day===TODAY&&time===curHour?"1.5px solid #7cc4f0":all.length?"1px solid #cbd5e1":"1px solid #eef1f7",
+                        boxShadow:all.length?"0 1px 3px rgba(15,23,42,.06)":"none"}}>
                       {slotBlocked&&!all.length&&(()=>{ const bi=blockAt(day,time); return <div style={{fontSize:10,fontWeight:800,color:bi?bi.fg:"#b56b6b",textAlign:"center",gridColumn:"1/-1",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bi?`${bi.ico} ${colW>90?bi.label:""}`:"🚫"}</div>; })()}
                       {shown.map(it=>it.t==="s"
                         ?(()=>{ const nm=it.s.client.name.split(" "); return <Chip key={it.s.id} s={it.s} fs={fs} narrow={(colW/cols)<fs*6+26} label={initial&&nm[1]?`${nm[0]} ${nm[1][0]}.`:nm[0]}/>; })()
@@ -1658,13 +1672,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             ))}
           </div>);
         } else {
-          const slots=daySlots, timeW=50, gap=3;
+          const slots=daySlots, timeW=54, gap=low?3:5;
           const dayOff=(isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL"))&&extraOf(activeDay).length===0;
           if(dayOff||!slots.length) body=<div style={{height:availH,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#64748b"}}>{isWeekend(activeDay)?"🌴 Fin de semana — libre":"🚫 Día no disponible"}</div>;
           else {
             const busyD=(t)=>sessions.some(s=>s.date===activeDay&&s.time===t)||(leads||[]).some(l=>l.date===activeDay&&l.time===t);
             const nB=slots.filter(busyD).length, nE=slots.length-nB, eH=nB?Math.min(34,Math.max(20,availH/slots.length*0.5)):0;
-            const rowH=(availH-gap*(slots.length-1)-eH*nE)/Math.max(1,nB||slots.length), areaW=W-12-timeW-gap-6;
+            const rowH=(availH-gap*(slots.length-1)-eH*nE)/Math.max(1,nB||slots.length), areaW=W-timeW-gap-6;
             const items=(t)=>sessions.filter(s=>s.date===activeDay&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===activeDay&&l.time===t).length;
             let maxItems=1; slots.forEach(t=>{ maxItems=Math.max(maxItems,items(t)+(dragId?1:0)); });
             // Con espacio: letra grande y segunda línea con lo que le toca.
@@ -1685,13 +1699,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 return(
                   <div key={time} style={{display:"flex",gap,height:(nB&&!busyD(time))?eH:rowH,flexShrink:0}}>
                     <div onClick={()=>{ if(slotBlocked) return; if(ss.length) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
-                      style={{width:timeW,flexShrink:0,borderRadius:7,background:"#fff",border:"1px solid #e6ebf3",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
-                      <span className="mono" style={{fontSize:Math.min(14,Math.max(10,((nB&&!busyD(time))?eH:rowH)/2.6)),fontWeight:800,color:ss.length?"#0284c7":"#64748b"}}>{time}</span>
-                      {isWork&&ss.length>0&&rowH>=34&&<span style={{fontSize:9,fontWeight:800,color:ss.length>=cp?"#ca8a04":"#16a34a"}}>{ss.length}/{cp}</span>}
+                      style={{width:timeW,flexShrink:0,borderRadius:12,background:activeDay===TODAY&&time===curHour?"#0284c7":"#fff",border:`1px solid ${activeDay===TODAY&&time===curHour?"#0284c7":"#e6ebf3"}`,boxShadow:"0 1px 2px rgba(15,23,42,.05)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",cursor:"pointer"}}>
+                      <span className="mono" style={{fontSize:Math.min(15,Math.max(10,((nB&&!busyD(time))?eH:rowH)/2.6)),fontWeight:800,color:activeDay===TODAY&&time===curHour?"#fff":ss.length?"#0284c7":"#64748b"}}>{time}</span>
+                      {isWork&&ss.length>0&&rowH>=34&&<span style={{fontSize:9,fontWeight:800,color:activeDay===TODAY&&time===curHour?"#e0f2fe":ss.length>=cp?"#ca8a04":"#16a34a"}}>{ss.length}/{cp}</span>}
                     </div>
                     <div data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={isDrop?"drag-target":""} onClick={()=>setSlotMenu({date:activeDay,time})}
-                      style={{flex:1,minWidth:0,borderRadius:7,padding:3,overflow:"hidden",display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:3,alignContent:"center",cursor:"pointer",
-                        background:isDrop?"#dcebfb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"#fff":"#f1f4fa",border:isDrop?"1px solid #0284c7":slotBlocked?`1px solid ${(blockAt(activeDay,time)||{}).bd||"#f2cccc"}`:"1px solid #e6ebf3"}}>
+                      style={{flex:1,minWidth:0,borderRadius:12,padding:4,overflow:"hidden",display:"grid",gridTemplateColumns:`repeat(${cols},minmax(0,1fr))`,gap:4,alignContent:"center",cursor:"pointer",
+                        background:isDrop?"#dcebfb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"#fff":"#f1f4fa",
+                        border:isDrop?"1px solid #0284c7":slotBlocked?`1px solid ${(blockAt(activeDay,time)||{}).bd||"#f2cccc"}`:activeDay===TODAY&&time===curHour?"1.5px solid #7cc4f0":"1px solid #e6ebf3",
+                        boxShadow:all.length?"0 1px 3px rgba(15,23,42,.06)":"none"}}>
                       {slotBlocked&&(()=>{ const bi=blockAt(activeDay,time)||blockInfo(null); return <div style={{fontSize:Math.min(15,Math.max(11,fs)),fontWeight:800,color:bi.fg,gridColumn:"1/-1"}}>{bi.ico} {bi.label}</div>; })()}
                       {shown.map(it=>{ if(it.t==="v") return <ValChip key={it.l.id} l={it.l} fs={fs}/>;
                         const s=it.s, nm=s.client.name.split(" ");
@@ -1708,18 +1724,22 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           }
         }
         return(
-          <div data-fit="1" style={{position:"fixed",left:0,right:docked?DOCK_W:0,top:0,height:vh,zIndex:150,background:"#eef1f7",display:"flex",flexDirection:"column",padding:"0 6px",boxSizing:"border-box"}}
+          <div data-fit="1" style={{position:"fixed",left:0,right:docked?DOCK_W:0,top:0,height:vh,zIndex:150,background:"linear-gradient(180deg,#e9eef6,#eef1f7 40%)",display:"flex",flexDirection:"column",padding:`${padT}px ${padR}px ${padB}px ${padL}px`,boxSizing:"border-box"}}
             onTouchStart={e=>{ const t=e.touches[0]; fitSwipe.current={x:t.clientX,y:t.clientY,ts:Date.now()}; }}
             onTouchEnd={e=>{ const st=fitSwipe.current; fitSwipe.current=null; if(!st||dragRef.current||justDragged.current) return; const t=e.changedTouches[0]; const dx=t.clientX-st.x, dy=t.clientY-st.y;
               if(Math.abs(dx)>70&&Math.abs(dy)<60&&Date.now()-st.ts<700) shift(dx<0?1:-1); }}>
-            <div style={{height:headH,flexShrink:0,display:"flex",alignItems:"center",gap:6}}>
-              <button className="btn ghost" style={{padding:"6px 10px",fontSize:14}} onClick={exitFit} title="Salir de pantalla completa">✕</button>
-              <button className="btn ghost" style={{padding:"6px 10px",fontSize:14}} onClick={()=>shift(-1)}>‹</button>
-              <div style={{flex:1,minWidth:0,textAlign:"center",fontSize:13,fontWeight:800,color:"#0f172a",textTransform:"capitalize",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{lbl}</div>
-              <button className="btn ghost" style={{padding:"6px 10px",fontSize:14}} onClick={()=>shift(1)}>›</button>
-              {activeDay!==TODAY&&<button className="btn ghost" style={{padding:"6px 8px",fontSize:11}} onClick={()=>setActiveDay(TODAY)}>Hoy</button>}
-              <div style={{display:"flex",background:"#e6ebf3",borderRadius:9,padding:2}}>
-                {[["day","Día"],["week","Sem."]].map(([k,l])=><button key={k} onClick={()=>setSchedView(k)} style={{border:"none",borderRadius:7,padding:"5px 9px",fontSize:12,fontWeight:800,cursor:"pointer",background:schedView===k?"#fff":"transparent",color:schedView===k?"#0284c7":"#64748b"}}>{l}</button>)}
+            <div style={{height:headH-(low?6:10),marginBottom:low?6:10,flexShrink:0,display:"flex",alignItems:"center",gap:low?5:8,background:"#fff",borderRadius:14,padding:"0 6px",boxShadow:"0 2px 10px rgba(15,23,42,.08)",border:"1px solid #e6ebf3"}}>
+              <button type="button" onClick={exitFit} title="Salir de pantalla completa" aria-label="Salir de pantalla completa" style={fitBtn(low,{background:"#f1f4fa",color:"#475569"})}>✕</button>
+              <button type="button" onClick={()=>shift(-1)} aria-label={week?"Semana anterior":"Día anterior"} style={fitBtn(low)}>‹</button>
+              <div style={{flex:1,minWidth:0,display:"flex",alignItems:"center",justifyContent:"center",gap:6}}>
+                <span style={{fontSize:low?13:15,fontWeight:800,color:"#0f172a",textTransform:"capitalize",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{lbl}</span>
+                {(week?getWeekDays(mondayOfDate(activeDay)).includes(TODAY):activeDay===TODAY)
+                  ?<span style={{fontSize:10,fontWeight:800,color:"#0284c7",background:"#e0f2fe",borderRadius:20,padding:"2px 8px",flexShrink:0}}>HOY</span>
+                  :<button type="button" onClick={()=>setActiveDay(TODAY)} style={{fontSize:11,fontWeight:800,color:"#0284c7",background:"#fff",border:"1px solid #bcd3ee",borderRadius:20,padding:"3px 9px",cursor:"pointer",flexShrink:0,fontFamily:"inherit"}}>Ir a hoy</button>}
+              </div>
+              <button type="button" onClick={()=>shift(1)} aria-label={week?"Semana siguiente":"Día siguiente"} style={fitBtn(low)}>›</button>
+              <div style={{display:"flex",background:"#eef1f6",borderRadius:11,padding:3,flexShrink:0}}>
+                {[["day","Día"],["week","Semana"]].map(([k,l])=><button key={k} type="button" onClick={()=>setSchedView(k)} style={{border:"none",borderRadius:8,padding:low?"5px 9px":"7px 12px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:schedView===k?"#fff":"transparent",color:schedView===k?"#0284c7":"#64748b",boxShadow:schedView===k?"0 1px 3px rgba(15,23,42,.12)":"none"}}>{vw<420&&k==="week"?"Sem.":l}</button>)}
               </div>
             </div>
             {body}
@@ -4853,7 +4873,8 @@ function WodTimer({wod,onClose,onSave}) {
   const fmtName=(WOD_FORMATS.find(x=>x[0]===f)||[])[1];
   const btn=(txt,onClick,style={})=><button onClick={onClick} style={{border:"none",borderRadius:14,padding:"14px 18px",fontSize:16,fontWeight:800,cursor:"pointer",...style}}>{txt}</button>;
   return(
-    <div onClick={e=>e.stopPropagation()} style={{position:"fixed",inset:0,zIndex:2000,background:bg,color:"#fff",display:"flex",flexDirection:"column",padding:"14px 16px calc(14px + env(safe-area-inset-bottom))",transition:"background .3s"}}>
+    <div onClick={e=>e.stopPropagation()} style={{position:"fixed",inset:0,zIndex:2000,background:bg,color:"#fff",display:"flex",flexDirection:"column",transition:"background .3s",boxSizing:"border-box",
+      padding:"max(14px, calc(env(safe-area-inset-top) + 6px)) max(16px, calc(env(safe-area-inset-right) + 8px)) max(14px, calc(env(safe-area-inset-bottom) + 6px)) max(16px, calc(env(safe-area-inset-left) + 8px))"}}>
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
         <div style={{minWidth:0}}>
           <div style={{fontSize:12,color:"#94a3b8",fontWeight:700}}>{fmtName}{f!=="intervalos"?` · ${cfg.minutes}'`:""}{(f==="for_time"||f==="intervalos")?` · ${cfg.rounds} rondas`:""}</div>
@@ -5958,7 +5979,7 @@ function RestTimerHost(){
   const btn={border:"1px solid #dbe2ec",background:"#fff",color:"#334155",borderRadius:10,padding:"8px 9px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",minWidth:40};
   return(
     <div role="timer" aria-live="polite" aria-label={done?"Descanso terminado":`Descanso: quedan ${Math.ceil(left)} segundos`}
-      style={{position:"fixed",left:12,right:12,top:"calc(10px + env(safe-area-inset-top))",zIndex:450,display:"flex",justifyContent:"center",pointerEvents:"none"}}>
+      style={{position:"fixed",left:"max(12px, env(safe-area-inset-left))",right:"max(12px, env(safe-area-inset-right))",top:"calc(10px + env(safe-area-inset-top))",zIndex:450,display:"flex",justifyContent:"center",pointerEvents:"none"}}>
       <div className="fade" style={{pointerEvents:"auto",width:"100%",maxWidth:440,background:done?"#ecfdf3":"#fff",border:`1.5px solid ${done?"#86efac":"#bcd3ee"}`,borderRadius:18,boxShadow:"0 10px 30px rgba(15,23,42,.18)",padding:"10px 12px"}}>
         <div style={{display:"flex",alignItems:"center",gap:10}}>
           <button type="button" onClick={()=>setPresets(p=>!p)} title="Cambiar el tiempo" aria-label="Cambiar el tiempo" style={{position:"relative",width:48,height:48,flexShrink:0,border:"none",background:"none",padding:0,cursor:"pointer"}}>
