@@ -2826,7 +2826,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&(()=>{ const pc=clients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -4186,19 +4186,19 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
 // ── VISTA DE CLASE (todas las personas de una hora, desglosado) ────────────
 // ── MAPA DE LA SALA: material y cuellos de botella de una clase ──────────
 // Unidades de cada material (editables en ⚙️ Horario). 99 = sin límite práctico.
-const EQUIP_UNITS_DEF = {barra:2,rackpines:1,multipower:1,legpress:1,legmachine:1,machine:1,poleas:2,remo:1,cardio:1,trineo:1,cuerdas:1,
+const EQUIP_UNITS_DEF = {barra:2,barraz:1,safetybar:1,bancoplano:1,bancoinclinable:1,rackpines:1,multipower:1,legpress:1,legmachine:1,machine:1,poleas:2,remo:1,cardio:1,trineo:1,cuerdas:1,
   mancuernas:4,kettlebell:4,cajon:2,balon:3,banda:6,comba:4,rueda:2,antebrazo:2,pesocorporal:99,movilidad:99,otros:99};
 // En estos puestos (racks, máquinas…) cada persona ocupa un montaje, pero si hacen el MISMO
 // ejercicio lo comparten rotando: a la vez se necesitan min(personas, ejercicios distintos).
 // En el resto (mancuernas, gomas…) cuenta cuántas personas lo usan a la vez.
-const SETUP_EQ = ["barra","rackpines","multipower","legpress","legmachine","machine","poleas","remo","cardio","trineo","cuerdas"];
+const SETUP_EQ = ["barra","barraz","safetybar","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","machine","poleas","remo","cardio","trineo","cuerdas"];
 const eqIcon = (k) => String(EQUIP_LABEL[k]||"🎯").split(" ")[0];
 const eqName = (k) => String(EQUIP_LABEL[k]||k).split(" ").slice(1).join(" ")||k;
 // people = [{client, exs:[nombres]}] → puestos ordenados por gravedad
 function roomStations(people, units){
   const g={};
-  (people||[]).forEach(({client,exs})=>(exs||[]).forEach(n=>{ const k=equipmentOf(n); const st=g[k]=g[k]||{k,ex:{},cl:new Map()};
-    (st.ex[n]=st.ex[n]||[]); if(!st.ex[n].some(c=>c.id===client.id)) st.ex[n].push(client); st.cl.set(client.id,client); }));
+  (people||[]).forEach(({client,exs})=>(exs||[]).forEach(n=>equipNeeds(n).forEach(k=>{ const st=g[k]=g[k]||{k,ex:{},cl:new Map()};
+    (st.ex[n]=st.ex[n]||[]); if(!st.ex[n].some(c=>c.id===client.id)) st.ex[n].push(client); st.cl.set(client.id,client); })));
   return Object.values(g).map(st=>{
     const cap=Math.max(1,parseInt((units||{})[st.k],10)||EQUIP_UNITS_DEF[st.k]||99), setups=Object.keys(st.ex).length, ppl=[...st.cl.values()];
     const setupBased=SETUP_EQ.includes(st.k), used=setupBased?Math.min(ppl.length,setups):ppl.length, unl=cap>=99;
@@ -4275,7 +4275,30 @@ function RoomMap({people,units}){
 
 // Muestra el entreno de cada atleta para organizar material/espacio y permite
 // cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
-function ClassViewModal({units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+// Ejercicios de una persona en la vista de clase: asa ⠿ para ordenarlos arrastrando
+// (cada ejercicio o un WOD entero). Se guarda al soltar.
+function ClassExList({raw,loadAll,notify}){
+  const rows=raw||[], bl=wodBlocks(rows), units=[];
+  for(let i=0;i<rows.length;){ const b=bl.find(x=>x.rows[0]===rows[i]); if(b){ units.push({key:"w"+b.rows[0].id,b,rows:b.rows}); i+=b.rows.length; } else { units.push({key:"e"+rows[i].id,ex:rows[i],rows:[rows[i]]}); i++; } }
+  const by=Object.fromEntries(units.map(u=>[u.key,u]));
+  const [busy,setBusy]=React.useState(false);
+  const ds=useDragSort(units.map(u=>u.key),async(keys)=>{ setBusy(true);
+    const flat=keys.flatMap(k=>(by[k]||{rows:[]}).rows);
+    for(let i=0;i<flat.length;i++) if(flat[i].order_index!==i) await sb.from("assigned_exercises").update({order_index:i}).eq("id",flat[i].id);
+    await loadAll(); setBusy(false); notify&&notify("Orden guardado ✓"); });
+  return <div style={{display:"flex",flexDirection:"column",gap:3,opacity:busy?.7:1}}>
+    {ds.order.map((k,ui)=>{ const u=by[k]; if(!u) return null; const e=u.ex, b=u.b; return(
+      <div key={k} ref={ds.bind(k)} style={{...ds.styleOf(ui),display:"flex",alignItems:"center",gap:8,fontSize:12,background:ds.dragging&&ui===ds.order.indexOf(k)?"#fff":undefined,borderRadius:8,
+        ...(b?{background:"#fff7ed",border:"1px solid #fed7aa",padding:"3px 8px 3px 3px"}:{padding:"1px 0"})}}>
+        <button type="button" {...ds.handle(ui,e?e.exercise_name:b.title)} disabled={busy} style={{minHeight:26,width:22,fontSize:14,...(b?{borderColor:"#fdba74",color:"#9a3412"}:{})}}>⠿</button>
+        {e?<>
+          <span style={{flex:1,minWidth:0,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.exercise_name}</span>
+          <span className="mono" style={{color:"#64748b",whiteSpace:"nowrap"}}>{e.sets}×{e.reps}{e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}</span></>
+        :<span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><b style={{color:"#9a3412"}}>🔥 {b.title}</b> <span style={{color:"#7c2d12"}}>{b.list.map(m=>m.name).join(" · ")}</span></span>}
+      </div>); })}
+  </div>;
+}
+function ClassViewModal({units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,loadAll,notify,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
   const [classTimer,setClassTimer]=React.useState(null);
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
@@ -4341,16 +4364,19 @@ function ClassViewModal({units,date,time,sessions,history,clients,assignedSessio
                 {onExec&&<button className="btn ghost" style={{fontSize:12,padding:"6px 9px"}} onClick={()=>onExec(c)} title="Ejecutar con cargas exactas">▶</button>}
               </div>
 
-              {/* Ejercicios desglosados */}
+              {/* Ejercicios desglosados (si ya tiene su entreno creado, se ordenan arrastrando) */}
               {r.exs.length===0
                 ?<div style={{fontSize:12,color:"#94a3b8"}}>Sin ejercicios (genera o asigna un tipo abajo).</div>
-                :<div style={{display:"flex",flexDirection:"column",gap:3}}>
+                :r.assigned&&loadAll
+                  ?<ClassExList raw={r.raw} loadAll={loadAll} notify={notify}/>
+                  :<div style={{display:"flex",flexDirection:"column",gap:3}}>
                   {r.exs.map((e,i)=>(
                     <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12}}>
                       <span style={{color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</span>
                       <span className="mono" style={{color:"#64748b",whiteSpace:"nowrap"}}>{e.sets}×{e.reps}{e.w?` · ${e.w}kg`:""}</span>
                     </div>
                   ))}
+                  {!r.assigned&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Previsto: elige el tipo o edítalo (✏️) para crearlo y poder ordenarlo arrastrando.</div>}
                 </div>
               }
 
@@ -4419,7 +4445,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
       <span style={{flex:1,minWidth:0}}>
         <span style={{display:"block",fontSize:13,fontWeight:700,color:"#0f172a"}}>{x.name}{x.custom&&<span style={{fontSize:9,fontWeight:800,color:"#7c3aed",marginLeft:6}}>PROPIO</span>}</span>
-        <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><CxTag name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(EQUIP_LABEL[equipmentOf(x.name)]||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
+        <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><CxTag name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(equipTxt(x.name)||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
       </span>
       <span style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{hint||`${x.sets}×${x.reps}`}</span>
     </button>
@@ -4445,7 +4471,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     <div className="ovl" style={{zIndex:1500}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>{title||"Elegir ejercicio"}</h2>
-        {current&&<div style={{fontSize:11,color:"#64748b",marginBottom:8}}>Ahora: <b style={{color:"#0f172a"}}>{current}</b> · <MuscleTags name={current}/> · {EQUIP_LABEL[equipmentOf(current)]||""}</div>}
+        {current&&<div style={{fontSize:11,color:"#64748b",marginBottom:8}}>Ahora: <b style={{color:"#0f172a"}}>{current}</b> · <MuscleTags name={current}/> · {equipTxt(current)||""}</div>}
         {!creating?<>
           <input className="inp" autoFocus={!current} placeholder="🔍 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:8,flexShrink:0}}/>
           <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:5,flexShrink:0}}>
@@ -4662,7 +4688,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                   <button type="button" {...ds.handle(ui,ex.exercise_name)} disabled={saving}>⠿</button>
                   <button onClick={()=>setPicker({mode:"swap",ex})} disabled={saving} title="Cambiar ejercicio (sustitutos, músculo, material o crear uno)" style={{flex:1,minWidth:0,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 9px"}}>
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
-                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
+                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{equipTxt(ex.exercise_name)||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
                   </button>
                   <button className="btn ghost" title="Cargas y evolución de este ejercicio" onClick={()=>openExHistory(client,ex.exercise_name)} style={{padding:"6px 8px",fontSize:12}}>📈</button>
                   <button className="btn ghost" title={ex.protocol==="isometrico"?"Quitar isométrico":"Hacer isométrico (por segundos)"} disabled={saving} onClick={()=>toggleIso(ex)} style={{padding:"6px 8px",fontSize:12,fontWeight:800,...(ex.protocol==="isometrico"?{background:"#e0ecfb",border:"1px solid #93c5fd",color:"#0369a1"}:{})}}>⏸️</button>
@@ -10142,7 +10168,7 @@ const exerciseCatalog = () => {
   return [...out.values()];
 };
 // Sustitutos de un ejercicio: mismo patrón y músculo principal, con material disponible primero.
-const LOADED_EQ=["barra","multipower","rackpines","mancuernas","legpress","legmachine","machine","poleas","kettlebell","trineo"];
+const LOADED_EQ=["barra","barraz","safetybar","multipower","rackpines","mancuernas","legpress","legmachine","machine","poleas","kettlebell","trineo"];
 const substitutesFor = (name, limit=10) => {
   const cat=exerciseCatalog(), cur=cat.find(x=>x.name===name)||{};
   const pat=patternOf(name), mus=musclesOf(name), prim=mus[0], eq=equipmentOf(name), loaded=LOADED_EQ.includes(eq);
@@ -10634,6 +10660,8 @@ const HYROX_REPS = {"SkiErg":"500 m","Sled push (empuje trineo)":"25-50 m","Sled
 // Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
 // Devuelve una CLAVE de equipo; la etiqueta visible está en EQUIP_LABEL.
 const EQUIP = [
+  [/barra z|barra ez|\bez bar/i,"barraz"],
+  [/safety bar|\bssb\b/i,"safetybar"],
   [/wall sit|en pared|contra pared|squeeze|zancada isom|split squat hold|puente de (glúteo|gluteo|isquios) isom|bird-dog isom|dead bug isom|copenhagen isom|colgado pasivo|dead hang|gemelos? isom/i,"pesocorporal"],
   [/spanish squat/i,"otros"],
   [/medio muslo|imtp/i,"rackpines"],
@@ -10665,27 +10693,37 @@ const EQUIP = [
 const EQUIP_LABEL = {
   multipower:"🔩 Multipower / Smith", rackpines:"🏗️ Rack / pines", kettlebell:"🔔 Kettlebell",
   legpress:"🦵 Prensa / Hack", legmachine:"🦿 Máquina piernas (ext/curl)", machine:"🏭 Máquinas",
-  poleas:"🪢 Poleas / cable", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barra / rack",
+  poleas:"🪢 Poleas / cable", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barra recta / rack",
   pesocorporal:"🤸 Peso corporal", comba:"🪀 Comba", cuerdas:"🪢 Cuerdas de batalla",
   trineo:"🛷 Trineo", balon:"⚽ Balón medicinal", cajon:"📦 Cajón / pliometría",
-  banda:"🎗️ Banda elástica", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (bici, SkiErg, cinta)", remo:"🚣 Remo ergómetro",
+  banda:"🎗️ Banda elástica", barraz:"〰️ Barra Z", safetybar:"🛡️ Safety bar (SSB)", bancoplano:"🛏️ Banco plano", bancoinclinable:"📐 Banco reclinable", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (bici, SkiErg, cinta)", remo:"🚣 Remo ergómetro",
   antebrazo:"🤏 Antebrazo / agarre", movilidad:"🧘 Movilidad / suelo", otros:"🎯 Otros / analítico",
 };
 // Orden y etiquetas para el editor de material.
-const EQUIP_KEYS = ["barra","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
+const EQUIP_KEYS = ["barra","barraz","safetybar","bancoplano","bancoinclinable","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
 // Ejercicios creados por el entrenador (tabla "exercises"): nombre en minúsculas → {name, equip, muscles, cat, sets, reps, rest}.
 let CUSTOM_EX = {};
 const equipmentOf = (name) => { const c=CUSTOM_EX[String(name||"").toLowerCase()]; if(c&&c.equip) return c.equip; for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
-const equipmentLabel = (name) => EQUIP_LABEL[equipmentOf(name)] || EQUIP_LABEL.otros;
+const equipmentLabel = (name) => equipTxt(name) || EQUIP_LABEL.otros;
 // Prioridad de material: barra/rack/multipower PRIMERO (es el cuello de botella),
 // luego máquinas de pierna, mancuernas, poleas y por último peso corporal/cardio.
-const EQUIP_ORDER = ["barra","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","remo","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
+const EQUIP_ORDER = ["barra","safetybar","barraz","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","remo","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
 const equipRank = (name) => { const i=EQUIP_ORDER.indexOf(equipmentOf(name)); return i<0?99:i; };
 
 // Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
 let GYM_EQUIP = null;
 const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; };
-const equipOk = (name) => { if(!GYM_EQUIP) return true; const v=GYM_EQUIP[equipmentOf(name)]; return v===undefined?true:!!v; };
+// Banco que necesita (además de su material principal): reclinable para inclinados,
+// sentados con respaldo o apoyo de pecho; plano para press banca, hip thrust, press francés…
+const benchOf = (name) => { const n=String(name||"");
+  if(/m[áa]quina|polea(?!.*inclinad)|peck deck|predicador|banco romano|hiperextensi/i.test(n)) return null;
+  if(/inclinad|declinad|reclinab|press militar sentado|apoyo pecho|face-down|y-t-w/i.test(n)) return "bancoinclinable";
+  if(/press banca|press mancuernas (plano|neutro)|press desde pines|aperturas con mancuernas|hip thrust|press franc[ée]s|pullover con mancuerna|remo mancuerna unilateral \(banco\)|fondos de tr[íi]ceps \(banco\)|elevaci[óo]n de piernas en banco|talones en banco|curl concentrado|\(banco\)|en banco/i.test(n)) return "bancoplano";
+  return null; };
+// Todo el material que necesita un ejercicio (principal + banco).
+const equipNeeds = (name) => { const a=[equipmentOf(name)], b=benchOf(name); if(b&&!a.includes(b)) a.push(b); return a; };
+const equipTxt = (name) => equipNeeds(name).map(k=>EQUIP_LABEL[k]||"").filter(Boolean).join(" + ");
+const equipOk = (name) => { if(!GYM_EQUIP) return true; return equipNeeds(name).every(k=>{ const v=GYM_EQUIP[k]; return v===undefined?true:!!v; }); };
 
 const DAY_TYPES = [
   ["fuerzaA","💪 Fuerza · Tren inferior"],["fuerzaB","💪 Fuerza · Tren superior"],
