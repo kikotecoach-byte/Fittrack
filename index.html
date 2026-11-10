@@ -70,7 +70,7 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 .tilt{transform-style:preserve-3d;transition:transform .2s ease,box-shadow .2s ease;}
 .tilt:active{transform:perspective(900px) rotateX(3deg) scale(.975);box-shadow:0 1px 2px rgba(16,24,40,.05);}
 @media(hover:hover){.tilt:hover{transform:perspective(900px) translateY(-2px);box-shadow:0 10px 24px rgba(16,24,40,.08);}}
-@media(prefers-reduced-motion:reduce){.count-pop,.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
+@media(prefers-reduced-motion:reduce){.ember,.ember-flame,.ember-pop,.dk-dot,.count-pop,.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
 
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
@@ -109,6 +109,12 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 /* Navegación inferior del atleta (siempre visible, centrada en pantallas grandes) */
 /* Solo opacidad: un transform haría que los modales (position:fixed) quedasen bajo la barra. */
 .portal-root.fade{animation:fadeIn .25s ease backwards;}
+.ember{position:absolute;bottom:-10px;border-radius:50%;background:#ff7a45;box-shadow:0 0 6px #ff7a45;opacity:0;animation:emberUp linear infinite;}
+@keyframes emberUp{0%{transform:translateY(0);opacity:0}10%{opacity:.9}100%{transform:translateY(-110vh);opacity:0}}
+.ember-pop{animation:emberPop .6s cubic-bezier(.34,1.56,.64,1) backwards;}
+@keyframes emberPop{0%{transform:scale(.4);opacity:0}100%{transform:scale(1);opacity:1}}
+.ember-flame{display:inline-block;filter:drop-shadow(0 0 14px rgba(255,106,61,.9)) drop-shadow(0 0 28px rgba(242,68,29,.6));animation:flameGlow 2.4s ease-in-out infinite;}
+@keyframes flameGlow{0%,100%{transform:scale(1)}50%{transform:scale(1.07)}}
 .count-pop{display:inline-block;animation:countPop .5s cubic-bezier(.34,1.56,.64,1) backwards;}
 @keyframes countPop{0%{transform:scale(1.6);color:#16a34a}100%{transform:scale(1)}}
 @keyframes fadeIn{from{opacity:0}to{opacity:1}}
@@ -116,6 +122,31 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
   padding:8px 0 calc(12px + env(safe-area-inset-bottom));backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 -2px 14px rgba(16,24,40,.06);}
 .portal-nav-in{max-width:480px;margin:0 auto;display:flex;justify-content:space-around;align-items:center;}
 .portal-nav .bnav-btn{min-width:0;flex:1;padding:4px 2px;}
+/* Barra del atleta en oscuro con botón central de reservar */
+.portal-nav.dk{background:rgba(14,14,18,.94);border-top:1px solid rgba(255,255,255,.06);box-shadow:0 -8px 26px rgba(0,0,0,.35);}
+.portal-nav.dk .bnav-btn{color:#7d7d89;}
+.portal-nav.dk .bnav-btn.on{color:#ff7a45;}
+.portal-nav.dk .bnav-btn .ico3d{filter:saturate(.35) brightness(.9);opacity:.6;}
+.portal-nav.dk .bnav-btn.on .ico3d{filter:drop-shadow(0 4px 10px rgba(255,106,61,.45));opacity:1;}
+.bnav-fab{width:56px;height:56px;border-radius:50%;margin-top:-30px;display:grid;place-items:center;color:#fff;font-size:30px;font-weight:400;line-height:1;
+  background:linear-gradient(135deg,#ff7a45,#f2441d);box-shadow:0 8px 22px rgba(242,68,29,.55),0 0 0 5px #0e0e12;transition:transform .15s ease;}
+.bnav-center.on .bnav-fab{transform:scale(1.06);box-shadow:0 8px 26px rgba(242,68,29,.75),0 0 0 5px #0e0e12;}
+/* Tarjetas del Inicio oscuro del atleta */
+.dk-card{background:#15151a;border:1px solid rgba(255,255,255,.07);border-radius:22px;padding:16px;box-shadow:0 10px 30px rgba(0,0,0,.35);}
+.dk-press:active{transform:scale(.985);}
+.dk-note{background:#15151a;border:1px solid rgba(255,255,255,.1);border-radius:16px;padding:12px 14px;margin-bottom:12px;font-size:13px;color:#c6c6d0;}
+.dk-pill{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,#ff7a45,#f2441d);color:#fff;font-weight:800;font-size:13px;border-radius:999px;padding:9px 16px;font-family:inherit;box-shadow:0 6px 18px rgba(242,68,29,.4);}
+.dk-ghost{background:rgba(255,255,255,.06);color:#c6c6d0;border:1px solid rgba(255,255,255,.1);border-radius:999px;padding:7px 13px;font-size:12px;font-weight:700;cursor:pointer;font-family:inherit;}
+.dk-coach{display:inline-flex;align-items:center;gap:7px;flex-shrink:0;text-decoration:none;background:rgba(255,106,61,.12);border:1px solid rgba(255,106,61,.4);color:#ff9a6a;font-weight:800;font-size:12px;border-radius:999px;padding:7px 13px;}
+.dk-dot{width:8px;height:8px;border-radius:50%;background:#ff6a3d;box-shadow:0 0 0 0 rgba(255,106,61,.7);animation:dkPulse 2s infinite;}
+@keyframes dkPulse{0%{box-shadow:0 0 0 0 rgba(255,106,61,.7)}70%{box-shadow:0 0 0 8px rgba(255,106,61,0)}100%{box-shadow:0 0 0 0 rgba(255,106,61,0)}}
+.dk-stat{display:flex;align-items:center;gap:10px;width:100%;padding:6px 0;border:none;background:none;cursor:pointer;text-align:left;font-family:inherit;}
+.dk-row{display:flex;align-items:center;gap:11px;width:100%;padding:10px 11px;border:none;border-radius:14px;background:#1e1e25;cursor:pointer;text-align:left;font-family:inherit;transition:opacity .2s;}
+.dk-panel{background:radial-gradient(100% 50% at 50% 0%,rgba(242,68,29,.16),transparent 70%),#0b0b0e;border-radius:26px;padding:16px 12px 14px;box-shadow:0 14px 34px rgba(11,11,14,.28);}
+.dk-seg{display:flex;background:#1a1a20;border-radius:999px;padding:4px;gap:2px;}
+.dk-seg button{flex:1;border:none;background:none;color:#c6c6d0;font-family:inherit;font-weight:800;font-size:14px;padding:9px 0;border-radius:999px;cursor:pointer;transition:background .2s,color .2s;}
+.dk-seg button.on{background:#3a3a44;color:#fff;}
+.dk-lg{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 .mobile-topbar{
   display:flex !important;align-items:center;justify-content:space-between;
   padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 12px calc(14px + env(safe-area-inset-left));border-bottom:1px solid #e6ebf3;
@@ -250,6 +281,9 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 /* Drag & drop de sesiones */
 .drag-ghost{animation:dragpop .14s ease both;transform-origin:left center;}
 @keyframes dragpop{from{opacity:0;transform:scale(.8) rotate(-4deg)}to{opacity:1;transform:scale(1.05) rotate(-3deg)}}
+.drag-grip{touch-action:none;cursor:grab;border:1px solid #cfd8e6;background:#fff;color:#64748b;border-radius:8px;width:26px;align-self:stretch;min-height:40px;display:flex;align-items:center;justify-content:center;font-size:17px;line-height:1;padding:0;flex-shrink:0;-webkit-user-select:none;user-select:none;font-family:inherit;}
+.drag-grip:active,body.dragging .drag-grip{cursor:grabbing;background:#eef4fc;color:#0284c7;}
+body.dragging{cursor:grabbing;}
 .drag-src{opacity:.35 !important;outline:2px dashed #0284c7;outline-offset:1px;transform:scale(.95);transition:transform .15s,opacity .15s;}
 .drag-target{animation:dragtarget .9s ease-in-out infinite;}
 .drag-landed{animation:draglanded .9s cubic-bezier(.2,.8,.2,1);}
@@ -2792,7 +2826,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&(()=>{ const pc=clients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -3389,7 +3423,7 @@ const PHASE_TXT = {
   hibrido:"Combinamos fuerza y trabajo metabólico para rendir y gastar más energía.",
   descarga:"Semana de descarga: bajamos la intensidad para recuperarte y volver más fuerte.",
 };
-function ClientSummary({client,history,assignedSessions,assignedExercises,progress,annualBlocks,sessions,noHello,noPhase,onSeeAllStrength}){
+function ClientSummary({client,history,assignedSessions,assignedExercises,progress,annualBlocks,sessions,noHello,noPhase,noConstancy,dark,onSeeAllStrength}){
   const {photos}=useClientPhotos(client.id);
   const hist=(history||[]).filter(h=>h.client_id===client.id&&h.date&&h.date<=TODAY);
   const sess=athleteSessions(client,history,assignedSessions,assignedExercises);
@@ -3407,17 +3441,20 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
   const body=MEASURES.map(m=>{ const pts=pr.filter(p=>p[m.k]!=null); if(!pts.length) return null; const f=pts[0], l=pts[pts.length-1], d=Math.round((l[m.k]-f[m.k])*10)/10; return {m,l:l[m.k],d,n:pts.length,tone:changeTone(m,d,client.goal),since:f.date}; }).filter(Boolean).slice(0,4);
   const blk=blockForDate(annualBlocks,TODAY,client);
   const next=(sessions||[]).filter(s=>s.client_id===client.id&&s.date>=TODAY&&s.status!=="completed"&&!s.requested).sort((a,b)=>(a.date+a.time).localeCompare(b.date+b.time))[0];
-  const Card=({icon,title,children})=><div className="card" style={{marginBottom:12,padding:"14px 14px"}}>
-    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><Ico k={icon} size={26}/><span style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{title}</span></div>{children}</div>;
-  const Big=({v,l,sub})=><div style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"10px 10px",textAlign:"center"}}>
-    <div style={{fontSize:24,fontWeight:800,color:"#0f172a",lineHeight:1.1}}>{v}</div><div style={{fontSize:11,fontWeight:600,color:"#64748b",marginTop:2}}>{l}</div>{sub&&<div style={{fontSize:10,color:"#94a3b8"}}>{sub}</div>}</div>;
+  // Paleta: clara (coach / modal) u oscura (Inicio del atleta)
+  const P=dark?{tx:"#f4f4f6",mu:"#9b9ba8",sub:"#c6c6d0",dim:"#6b6b78",bg2:"#1e1e25",bd2:"1px solid rgba(255,255,255,.06)",line:"1px solid rgba(255,255,255,.07)",ac:"#ff7a45",acBd:"1px solid rgba(255,122,69,.4)"}
+    :{tx:"#0f172a",mu:"#64748b",sub:"#475569",dim:"#94a3b8",bg2:"#f8fafc",bd2:"1px solid #eef1f6",line:"1px solid #f1f4f8",ac:"#0284c7",acBd:"1px solid #bcd3ee"};
+  const Card=({icon,title,children})=><div className={dark?"dk-card":"card"} style={{marginBottom:dark?14:12,padding:"14px 14px"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:10}}><Ico k={icon} size={26}/><span style={{fontSize:15,fontWeight:800,color:P.tx}}>{title}</span></div>{children}</div>;
+  const Big=({v,l,sub})=><div style={{background:P.bg2,border:P.bd2,borderRadius:12,padding:"10px 10px",textAlign:"center"}}>
+    <div style={{fontSize:24,fontWeight:800,color:P.tx,lineHeight:1.1}}>{v}</div><div style={{fontSize:11,fontWeight:600,color:P.mu,marginTop:2}}>{l}</div>{sub&&<div style={{fontSize:10,color:P.dim}}>{sub}</div>}</div>;
   return(
     <div>
       {!noHello&&<div style={{marginBottom:14}}>
-        <div style={{fontSize:22,fontWeight:800,color:"#0f172a"}}>¡Hola, {client.name.split(" ")[0]}! 👋</div>
-        <div style={{fontSize:13,color:"#64748b",marginTop:2}}>{days.length?`Llevas ${days.length} entrenamiento${days.length!==1?"s":""} conmigo.`:"Aquí verás tu evolución en cuanto empieces."}{next?` Próximo: ${new Date(next.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric"})} a las ${next.time}.`:""}</div>
+        <div style={{fontSize:22,fontWeight:800,color:P.tx}}>¡Hola, {client.name.split(" ")[0]}! 👋</div>
+        <div style={{fontSize:13,color:P.mu,marginTop:2}}>{days.length?`Llevas ${days.length} entrenamiento${days.length!==1?"s":""} conmigo.`:"Aquí verás tu evolución en cuanto empieces."}{next?` Próximo: ${new Date(next.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric"})} a las ${next.time}.`:""}</div>
       </div>}
-      <Card icon="calendar" title="Tu constancia">
+      {!noConstancy&&<Card icon="calendar" title="Tu constancia">
         <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:12}}>
           <Big v={thisMonth} l="este mes" sub={prevMonth?`${prevMonth} el mes pasado`:null}/>
           <Big v={streak} l={streak===1?"semana seguida":"semanas seguidas"}/>
@@ -3425,36 +3462,36 @@ function ClientSummary({client,history,assignedSessions,assignedExercises,progre
         </div>
         <div style={{display:"flex",alignItems:"flex-end",gap:6,height:70}} aria-label="Entrenos por semana, últimas 8 semanas">
           {perWeek.map((n,i)=><div key={i} title={`Semana del ${fmtD(weeks[i])}: ${n}`} style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",gap:3}}>
-            <span style={{fontSize:10,fontWeight:700,color:n?"#0f172a":"#cbd5e1"}}>{n}</span>
-            <div style={{width:"100%",maxWidth:24,height:Math.max(3,n/maxW*46),background:i===7?"#0284c7":"#bfdcf2",borderRadius:"4px 4px 0 0"}}/>
+            <span style={{fontSize:10,fontWeight:700,color:n?P.tx:"#cbd5e1"}}>{n}</span>
+            <div style={{width:"100%",maxWidth:24,height:Math.max(3,n/maxW*46),background:i===7?P.ac:"#bfdcf2",borderRadius:"4px 4px 0 0"}}/>
           </div>)}
         </div>
-        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:"#94a3b8",marginTop:4}}><span>hace 8 semanas</span><span>esta semana</span></div>
-      </Card>
+        <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:P.dim,marginTop:4}}><span>hace 8 semanas</span><span>esta semana</span></div>
+      </Card>}
       {lifts.length>0&&<Card icon="chart" title="Tu fuerza">
-        {lifts.map((x,li)=><button key={x.key} type="button" onClick={()=>openExHistory(client,x.name)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 0",border:"none",borderTop:"1px solid #f1f4f8",background:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
-          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{x.name}</div><div style={{fontSize:12,color:"#475569",marginTop:2,lineHeight:1.4}}>{funLine(x,li)}</div></div>
-          <div style={{textAlign:"right",flexShrink:0}}>{x.best&&<div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}<div style={{fontSize:10,color:"#94a3b8"}}>tu mejor marca</div><div style={{fontSize:11,fontWeight:800,color:"#0284c7",marginTop:2}}>Ver todo ›</div></div>
+        {lifts.map((x,li)=><button key={x.key} type="button" onClick={()=>openExHistory(client,x.name)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 0",border:"none",borderTop:P.line,background:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+          <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:P.tx}}>{x.name}</div><div style={{fontSize:12,color:P.sub,marginTop:2,lineHeight:1.4}}>{funLine(x,li)}</div></div>
+          <div style={{textAlign:"right",flexShrink:0}}>{x.best&&<div style={{fontSize:14,fontWeight:800,color:P.tx}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}<div style={{fontSize:10,color:P.dim}}>tu mejor marca</div><div style={{fontSize:11,fontWeight:800,color:P.ac,marginTop:2}}>Ver todo ›</div></div>
         </button>)}
         {onSeeAllStrength
-          ?<button type="button" className="btn ghost" style={{width:"100%",padding:9,marginTop:6,fontSize:12,fontWeight:800,color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={onSeeAllStrength}>💪 Ver todos mis ejercicios y récords</button>
-          :<div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Toca un ejercicio para ver toda su evolución.</div>}
+          ?<button type="button" className="btn ghost" style={{width:"100%",padding:9,marginTop:6,fontSize:12,fontWeight:800,color:P.ac,border:P.acBd,background:dark?"transparent":undefined}} onClick={onSeeAllStrength}>💪 Ver todos mis ejercicios y récords</button>
+          :<div style={{fontSize:10,color:P.dim,marginTop:4}}>Toca un ejercicio para ver toda su evolución.</div>}
       </Card>}
       {body.length>0&&<Card icon="check" title="Tu cuerpo">
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
-          {body.map(b=><div key={b.m.k} style={{background:"#f8fafc",border:"1px solid #eef1f6",borderRadius:12,padding:"9px 10px"}}>
-            <div style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{b.m.l}</div>
-            <div style={{fontSize:19,fontWeight:800,color:"#0f172a"}}>{fmtKgN(b.l)} <span style={{fontSize:11,fontWeight:600,color:"#64748b"}}>{b.m.u}</span></div>
-            {b.n>1&&<div style={{fontSize:12,fontWeight:800,color:TONE_COL[b.tone]}}>{b.d>0?"▲ +":b.d<0?"▼ ":"= "}{b.d!==0?`${fmtKgN(Math.abs(b.d))} ${b.m.u}`:"igual"}<span style={{fontWeight:600,color:"#94a3b8"}}> · desde {fmtD(b.since)}</span></div>}
+          {body.map(b=><div key={b.m.k} style={{background:P.bg2,border:P.bd2,borderRadius:12,padding:"9px 10px"}}>
+            <div style={{fontSize:11,fontWeight:700,color:P.mu}}>{b.m.l}</div>
+            <div style={{fontSize:19,fontWeight:800,color:P.tx}}>{fmtKgN(b.l)} <span style={{fontSize:11,fontWeight:600,color:P.mu}}>{b.m.u}</span></div>
+            {b.n>1&&<div style={{fontSize:12,fontWeight:800,color:TONE_COL[b.tone]}}>{b.d>0?"▲ +":b.d<0?"▼ ":"= "}{b.d!==0?`${fmtKgN(Math.abs(b.d))} ${b.m.u}`:"igual"}<span style={{fontWeight:600,color:P.dim}}> · desde {fmtD(b.since)}</span></div>}
           </div>)}
         </div>
       </Card>}
       {new Set(photos.map(p=>p.taken_on).filter(Boolean)).size>=2&&<Card icon="clipboard" title="Tu cambio"><PhotoCompare photos={photos} size={180}/></Card>}
       {blk&&!noPhase&&<Card icon="program" title="En qué estamos ahora">
-        <div style={{fontSize:13,fontWeight:700,color:"#0284c7"}}>{blk.name}</div>
-        <div style={{fontSize:13,color:"#475569",marginTop:3,lineHeight:1.45}}>{isTestBlock(blk)?"Semana de test: medimos cuánto has mejorado.":(PHASE_TXT[blk.type]||"")}</div>
+        <div style={{fontSize:13,fontWeight:700,color:P.ac}}>{blk.name}</div>
+        <div style={{fontSize:13,color:P.sub,marginTop:3,lineHeight:1.45}}>{isTestBlock(blk)?"Semana de test: medimos cuánto has mejorado.":(PHASE_TXT[blk.type]||"")}</div>
       </Card>}
-      {!days.length&&!body.length&&!lifts.length&&<div style={{fontSize:13,color:"#64748b",textAlign:"center",padding:20}}>Todavía no hay datos. ¡Vamos a por el primer entreno! 💪</div>}
+      {!dark&&!days.length&&!body.length&&!lifts.length&&<div style={{fontSize:13,color:P.mu,textAlign:"center",padding:20}}>Todavía no hay datos. ¡Vamos a por el primer entreno! 💪</div>}
     </div>
   );
 }
@@ -4149,19 +4186,19 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
 // ── VISTA DE CLASE (todas las personas de una hora, desglosado) ────────────
 // ── MAPA DE LA SALA: material y cuellos de botella de una clase ──────────
 // Unidades de cada material (editables en ⚙️ Horario). 99 = sin límite práctico.
-const EQUIP_UNITS_DEF = {barra:2,rackpines:1,multipower:1,legpress:1,legmachine:1,machine:1,poleas:2,remo:1,cardio:1,trineo:1,cuerdas:1,
+const EQUIP_UNITS_DEF = {barra:2,barraz:1,safetybar:1,bancoplano:1,bancoinclinable:1,rackpines:1,multipower:1,legpress:1,legmachine:1,machine:1,poleas:2,remo:1,cardio:1,trineo:1,cuerdas:1,
   mancuernas:4,kettlebell:4,cajon:2,balon:3,banda:6,comba:4,rueda:2,antebrazo:2,pesocorporal:99,movilidad:99,otros:99};
 // En estos puestos (racks, máquinas…) cada persona ocupa un montaje, pero si hacen el MISMO
 // ejercicio lo comparten rotando: a la vez se necesitan min(personas, ejercicios distintos).
 // En el resto (mancuernas, gomas…) cuenta cuántas personas lo usan a la vez.
-const SETUP_EQ = ["barra","rackpines","multipower","legpress","legmachine","machine","poleas","remo","cardio","trineo","cuerdas"];
+const SETUP_EQ = ["barra","barraz","safetybar","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","machine","poleas","remo","cardio","trineo","cuerdas"];
 const eqIcon = (k) => String(EQUIP_LABEL[k]||"🎯").split(" ")[0];
 const eqName = (k) => String(EQUIP_LABEL[k]||k).split(" ").slice(1).join(" ")||k;
 // people = [{client, exs:[nombres]}] → puestos ordenados por gravedad
 function roomStations(people, units){
   const g={};
-  (people||[]).forEach(({client,exs})=>(exs||[]).forEach(n=>{ const k=equipmentOf(n); const st=g[k]=g[k]||{k,ex:{},cl:new Map()};
-    (st.ex[n]=st.ex[n]||[]); if(!st.ex[n].some(c=>c.id===client.id)) st.ex[n].push(client); st.cl.set(client.id,client); }));
+  (people||[]).forEach(({client,exs})=>(exs||[]).forEach(n=>equipNeeds(n).forEach(k=>{ const st=g[k]=g[k]||{k,ex:{},cl:new Map()};
+    (st.ex[n]=st.ex[n]||[]); if(!st.ex[n].some(c=>c.id===client.id)) st.ex[n].push(client); st.cl.set(client.id,client); })));
   return Object.values(g).map(st=>{
     const cap=Math.max(1,parseInt((units||{})[st.k],10)||EQUIP_UNITS_DEF[st.k]||99), setups=Object.keys(st.ex).length, ppl=[...st.cl.values()];
     const setupBased=SETUP_EQ.includes(st.k), used=setupBased?Math.min(ppl.length,setups):ppl.length, unl=cap>=99;
@@ -4238,7 +4275,30 @@ function RoomMap({people,units}){
 
 // Muestra el entreno de cada atleta para organizar material/espacio y permite
 // cambiar el tipo de sesión de cada uno para adaptarlo a la sala.
-function ClassViewModal({units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+// Ejercicios de una persona en la vista de clase: asa ⠿ para ordenarlos arrastrando
+// (cada ejercicio o un WOD entero). Se guarda al soltar.
+function ClassExList({raw,loadAll,notify}){
+  const rows=raw||[], bl=wodBlocks(rows), units=[];
+  for(let i=0;i<rows.length;){ const b=bl.find(x=>x.rows[0]===rows[i]); if(b){ units.push({key:"w"+b.rows[0].id,b,rows:b.rows}); i+=b.rows.length; } else { units.push({key:"e"+rows[i].id,ex:rows[i],rows:[rows[i]]}); i++; } }
+  const by=Object.fromEntries(units.map(u=>[u.key,u]));
+  const [busy,setBusy]=React.useState(false);
+  const ds=useDragSort(units.map(u=>u.key),async(keys)=>{ setBusy(true);
+    const flat=keys.flatMap(k=>(by[k]||{rows:[]}).rows);
+    for(let i=0;i<flat.length;i++) if(flat[i].order_index!==i) await sb.from("assigned_exercises").update({order_index:i}).eq("id",flat[i].id);
+    await loadAll(); setBusy(false); notify&&notify("Orden guardado ✓"); });
+  return <div style={{display:"flex",flexDirection:"column",gap:3,opacity:busy?.7:1}}>
+    {ds.order.map((k,ui)=>{ const u=by[k]; if(!u) return null; const e=u.ex, b=u.b; return(
+      <div key={k} ref={ds.bind(k)} style={{...ds.styleOf(ui),display:"flex",alignItems:"center",gap:8,fontSize:12,background:ds.dragging&&ui===ds.order.indexOf(k)?"#fff":undefined,borderRadius:8,
+        ...(b?{background:"#fff7ed",border:"1px solid #fed7aa",padding:"3px 8px 3px 3px"}:{padding:"1px 0"})}}>
+        <button type="button" {...ds.handle(ui,e?e.exercise_name:b.title)} disabled={busy} style={{minHeight:26,width:22,fontSize:14,...(b?{borderColor:"#fdba74",color:"#9a3412"}:{})}}>⠿</button>
+        {e?<>
+          <span style={{flex:1,minWidth:0,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.exercise_name}</span>
+          <span className="mono" style={{color:"#64748b",whiteSpace:"nowrap"}}>{e.sets}×{e.reps}{e.prescribed_weight?` · ${e.prescribed_weight}kg`:""}</span></>
+        :<span style={{flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><b style={{color:"#9a3412"}}>🔥 {b.title}</b> <span style={{color:"#7c2d12"}}>{b.list.map(m=>m.name).join(" · ")}</span></span>}
+      </div>); })}
+  </div>;
+}
+function ClassViewModal({units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,loadAll,notify,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
   const [classTimer,setClassTimer]=React.useState(null);
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
@@ -4304,16 +4364,19 @@ function ClassViewModal({units,date,time,sessions,history,clients,assignedSessio
                 {onExec&&<button className="btn ghost" style={{fontSize:12,padding:"6px 9px"}} onClick={()=>onExec(c)} title="Ejecutar con cargas exactas">▶</button>}
               </div>
 
-              {/* Ejercicios desglosados */}
+              {/* Ejercicios desglosados (si ya tiene su entreno creado, se ordenan arrastrando) */}
               {r.exs.length===0
                 ?<div style={{fontSize:12,color:"#94a3b8"}}>Sin ejercicios (genera o asigna un tipo abajo).</div>
-                :<div style={{display:"flex",flexDirection:"column",gap:3}}>
+                :r.assigned&&loadAll
+                  ?<ClassExList raw={r.raw} loadAll={loadAll} notify={notify}/>
+                  :<div style={{display:"flex",flexDirection:"column",gap:3}}>
                   {r.exs.map((e,i)=>(
                     <div key={i} style={{display:"flex",justifyContent:"space-between",gap:10,fontSize:12}}>
                       <span style={{color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{e.name}</span>
                       <span className="mono" style={{color:"#64748b",whiteSpace:"nowrap"}}>{e.sets}×{e.reps}{e.w?` · ${e.w}kg`:""}</span>
                     </div>
                   ))}
+                  {!r.assigned&&<div style={{fontSize:10,color:"#94a3b8",marginTop:2}}>Previsto: elige el tipo o edítalo (✏️) para crearlo y poder ordenarlo arrastrando.</div>}
                 </div>
               }
 
@@ -4382,7 +4445,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
       <span style={{flex:1,minWidth:0}}>
         <span style={{display:"block",fontSize:13,fontWeight:700,color:"#0f172a"}}>{x.name}{x.custom&&<span style={{fontSize:9,fontWeight:800,color:"#7c3aed",marginLeft:6}}>PROPIO</span>}</span>
-        <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><CxTag name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(EQUIP_LABEL[equipmentOf(x.name)]||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
+        <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><CxTag name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(equipTxt(x.name)||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
       </span>
       <span style={{fontSize:11,color:"#94a3b8",whiteSpace:"nowrap"}}>{hint||`${x.sets}×${x.reps}`}</span>
     </button>
@@ -4408,7 +4471,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     <div className="ovl" style={{zIndex:1500}} onClick={e=>{ e.stopPropagation(); onClose(); }}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"92vh",display:"flex",flexDirection:"column"}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>{title||"Elegir ejercicio"}</h2>
-        {current&&<div style={{fontSize:11,color:"#64748b",marginBottom:8}}>Ahora: <b style={{color:"#0f172a"}}>{current}</b> · <MuscleTags name={current}/> · {EQUIP_LABEL[equipmentOf(current)]||""}</div>}
+        {current&&<div style={{fontSize:11,color:"#64748b",marginBottom:8}}>Ahora: <b style={{color:"#0f172a"}}>{current}</b> · <MuscleTags name={current}/> · {equipTxt(current)||""}</div>}
         {!creating?<>
           <input className="inp" autoFocus={!current} placeholder="🔍 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:8,flexShrink:0}}/>
           <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:5,flexShrink:0}}>
@@ -4473,6 +4536,65 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
 // Permite cambiar, quitar, añadir y ajustar los ejercicios del entreno de una
 // persona en un día concreto (p. ej. si tiene una molestia se sustituye el
 // ejercicio que le duele). Respeta el material disponible del gimnasio.
+// ── ORDENAR ARRASTRANDO (ratón y dedo) ──────────────────────────────────────
+// useDragSort(keys, onDrop): cada elemento registra su nodo con bind(key) y su asa con
+// handle(i). Al pulsar el asa la lista pasa a filas compactas (compact=true) para que
+// quepa entera, la fila sigue al dedo y al soltar llama onDrop(nuevoOrdenDeClaves).
+// El nuevo orden se mantiene en pantalla hasta que llegan los datos guardados.
+function useDragSort(keys, onDrop){
+  const nodes=React.useRef({}), st=React.useRef(null);
+  const [drag,setDrag]=React.useState(null); // {from,to,dy,H}
+  const [compact,setCompact]=React.useState(false);
+  const [opt,setOpt]=React.useState(null);   // orden provisional tras soltar
+  const sig=keys.join("|");
+  React.useEffect(()=>{ setOpt(null); },[sig]);
+  const order=opt&&opt.base===sig?opt.keys:keys;
+  const calc=()=>{ const s=st.current; if(!s||!s.rects) return; const off=s.sc.scrollTop-s.s0, y=s.y+off; let to=0;
+    s.rects.forEach((r,k)=>{ if(k!==s.from&&r&&r.top+r.height/2<y) to++; }); s.to=to; setDrag({from:s.from,to,dy:y-s.c0,H:s.H}); };
+  const finish=(commit)=>{ const s=st.current; if(!s) return; st.current=null; cancelAnimationFrame(s.raf);
+    window.removeEventListener("pointermove",s.mv); window.removeEventListener("pointerup",s.upH); window.removeEventListener("pointercancel",s.cc);
+    try{ document.body.classList.remove("dragging"); }catch(e){}
+    setDrag(null); setCompact(false);
+    if(commit&&s.rects&&s.to!==s.from){ const k=s.order.slice(); const [x]=k.splice(s.from,1); k.splice(s.to,0,x); setOpt({base:s.sig,keys:k}); onDrop(k); } };
+  const start=(e,i)=>{ if(e.button>0||st.current) return; e.preventDefault(); e.stopPropagation();
+    const el=nodes.current[order[i]]; if(!el) return;
+    const s={from:i,to:i,y:e.clientY,order:order.slice(),sig,sc:el.closest(".mdl")||document.scrollingElement,raf:0,rects:null};
+    s.mv=(ev)=>{ ev.preventDefault(); s.y=ev.clientY; calc(); };
+    s.upH=()=>finish(true); s.cc=()=>finish(false);
+    st.current=s;
+    window.addEventListener("pointermove",s.mv,{passive:false}); window.addEventListener("pointerup",s.upH); window.addEventListener("pointercancel",s.cc);
+    try{ document.body.classList.add("dragging"); }catch(err){}
+    setCompact(true); };
+  // Ya en filas compactas: coloca la fila bajo el dedo, mide y arranca el arrastre.
+  React.useLayoutEffect(()=>{ const s=st.current; if(!compact||!s||s.rects) return;
+    const el=nodes.current[s.order[s.from]]; if(!el){ finish(false); return; }
+    const r0=el.getBoundingClientRect(); s.sc.scrollTop+=(r0.top+r0.height/2)-s.y;
+    const rects=s.order.map(k=>nodes.current[k]?nodes.current[k].getBoundingClientRect():null), r=rects[s.from];
+    const nx=rects[s.from+1]||rects[s.from-1], gap=nx?Math.max(0,Math.abs((nx.top>r.top?nx.top-r.bottom:r.top-nx.bottom))):6;
+    Object.assign(s,{rects,s0:s.sc.scrollTop,c0:r.top+r.height/2,H:r.height+gap});
+    const tick=()=>{ const b=s.sc===document.scrollingElement?{top:0,bottom:window.innerHeight}:s.sc.getBoundingClientRect();
+      const v=s.y<b.top+56?-(b.top+56-s.y)/4:s.y>b.bottom-56?(s.y-(b.bottom-56))/4:0;
+      if(v){ s.sc.scrollTop+=Math.max(-16,Math.min(16,v)); calc(); } s.raf=requestAnimationFrame(tick); };
+    s.raf=requestAnimationFrame(tick); calc(); },[compact]);
+  React.useEffect(()=>()=>finish(false),[]);
+  const styleOf=(i)=>{ if(!drag) return {transition:"transform .2s"}; const {from,to,dy,H}=drag;
+    if(i===from) return {transform:`translateY(${dy}px) scale(1.03)`,zIndex:20,position:"relative",boxShadow:"0 14px 30px rgba(15,23,42,.28)",borderRadius:10,opacity:.97};
+    const sh=i>from&&i<=to?-H:i<from&&i>=to?H:0; return {transform:sh?`translateY(${sh}px)`:"none",transition:"transform .18s"}; };
+  const bind=(k)=>(el)=>{ if(el) nodes.current[k]=el; else delete nodes.current[k]; };
+  const handle=(i,label)=>({onPointerDown:(e)=>start(e,i),
+    onKeyDown:(e)=>{ const d=e.key==="ArrowUp"?-1:e.key==="ArrowDown"?1:0; if(!d) return; e.preventDefault(); const to=i+d; if(to<0||to>=order.length) return;
+      const k=order.slice(); const [x]=k.splice(i,1); k.splice(to,0,x); setOpt({base:sig,keys:k}); onDrop(k); },
+    "aria-label":`Arrastrar para ordenar${label?`: ${label}`:""} (o flechas ↑ ↓)`,title:"Mantén y arrastra para ordenar",className:"drag-grip"});
+  return {order,styleOf,bind,handle,compact,dragging:!!drag};
+}
+// Fila compacta que se ve mientras se arrastra.
+function DragRow({grip,title,sub,wod}){
+  return <div style={{display:"flex",alignItems:"center",gap:8,background:wod?"#fff7ed":"#fff",border:`1px solid ${wod?"#fdba74":"#cfd8e6"}`,borderRadius:10,padding:"6px 10px 6px 6px",minHeight:44}}>
+    <span className="drag-grip" style={{minHeight:32,...(wod?{borderColor:"#fdba74",color:"#9a3412"}:{})}} aria-hidden="true">⠿</span>
+    <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:800,color:wod?"#9a3412":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{wod?"🔥 ":""}{title}</span>
+      {sub&&<span style={{display:"block",fontSize:11,color:wod?"#7c2d12":"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</span>}</span>
+  </div>;
+}
 function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,sessions,annualBlocks,exercises,onGenerate,onAdjust,onSetLevel,loadAll,notify,onClose}) {
   const [lv,setLv]=React.useState(()=>levelOf(client));
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
@@ -4516,6 +4638,10 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   });
   const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
   const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
+  // Unidades que se arrastran: cada ejercicio suelto o un WOD/protocolo entero (todas sus filas juntas).
+  const units=[]; for(let i=0;i<exs.length;){ const b=blocks.find(x=>x.rows[0]===exs[i]); if(b){ units.push({key:"w"+b.rows[0].id,b,rows:b.rows}); i+=b.rows.length; } else { units.push({key:"e"+exs[i].id,ex:exs[i],rows:[exs[i]]}); i++; } }
+  const unitBy=Object.fromEntries(units.map(u=>[u.key,u]));
+  const ds=useDragSort(units.map(u=>u.key),(keys)=>w(async()=>{ await renumber(keys.flatMap(k=>(unitBy[k]||{rows:[]}).rows)); notify("Orden guardado ✓"); }));
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
   const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name,it.reps||"10-12"),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
   const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName,lib?lib[2]:"10-12"),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
@@ -4553,16 +4679,16 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
           </div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
-            {exs.filter(ex=>!inBlock.has(ex.id)).map((ex,ni,arrN)=>(
+            {units.length>1&&<div style={{fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14,color:"#94a3b8"}}>⠿</span> Mantén el asa y arrastra para ordenar ejercicios o un WOD entero.</div>}
+            {ds.order.map((k,ui)=>{ const u=unitBy[k]; if(!u) return null; return <div key={k} ref={ds.bind(k)} style={ds.styleOf(ui)}>
+              {ds.compact?(u.ex?<DragRow title={u.ex.exercise_name} sub={`${u.ex.sets||"—"} × ${u.ex.reps||"—"}${u.ex.prescribed_weight?` · ${fmtKgN(u.ex.prescribed_weight)} kg`:""}`}/>:<DragRow wod title={u.b.title} sub={u.b.list.map(m=>m.name).join(" · ")}/>)
+              :u.ex?(()=>{ const ex=u.ex; return (
               <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,border:"1px solid #dbe2ec"}}>
                 <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
-                  <div style={{display:"flex",flexDirection:"column",gap:2}}>
-                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===0} onClick={()=>moveEx(ex,-1)} title="Subir">▲</button>
-                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===arrN.length-1} onClick={()=>moveEx(ex,1)} title="Bajar">▼</button>
-                  </div>
+                  <button type="button" {...ds.handle(ui,ex.exercise_name)} disabled={saving}>⠿</button>
                   <button onClick={()=>setPicker({mode:"swap",ex})} disabled={saving} title="Cambiar ejercicio (sustitutos, músculo, material o crear uno)" style={{flex:1,minWidth:0,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 9px"}}>
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
-                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
+                    <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{equipTxt(ex.exercise_name)||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
                   </button>
                   <button className="btn ghost" title="Cargas y evolución de este ejercicio" onClick={()=>openExHistory(client,ex.exercise_name)} style={{padding:"6px 8px",fontSize:12}}>📈</button>
                   <button className="btn ghost" title={ex.protocol==="isometrico"?"Quitar isométrico":"Hacer isométrico (por segundos)"} disabled={saving} onClick={()=>toggleIso(ex)} style={{padding:"6px 8px",fontSize:12,fontWeight:800,...(ex.protocol==="isometrico"?{background:"#e0ecfb",border:"1px solid #93c5fd",color:"#0369a1"}:{})}}>⏸️</button>
@@ -4587,24 +4713,26 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota solo de esta sesión (p. ej. hoy rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
                 <GestureNotes clientId={client.id} exercise={ex.exercise_name} notify={notify}/>
               </div>
-            ))}
-            {/* WOD / bloques metabólicos */}
-            <div style={{marginTop:4}}>
-              <div style={{fontSize:11,fontWeight:800,color:"#9a3412",marginBottom:6}}>🔥 WOD / METABÓLICO {blocks.length?`(${blocks.length})`:""}</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {blocks.map((b,bi)=> editWod===bi
+            );})()
+              :(()=>{ const b=u.b, bi=blocks.indexOf(b); return editWod===bi
                   ?<WodEditor key={"e"+bi} initial={{format:b.format,minutes:b.minutes,rounds:b.rounds,moves:b.list.length?b.list:[{name:"",reps:""}]}} saving={saving}
                       onSave={(cfg)=>saveWod(b,cfg)} onCancel={()=>setEditWod(null)} onDelete={()=>delWod(b)} onMoveBlock={(d)=>moveWod(b,d)}/>
                   :<div key={"b"+bi} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"9px 11px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <button type="button" {...ds.handle(ui,b.title)} disabled={saving} style={{borderColor:"#fdba74",color:"#9a3412"}}>⠿</button>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{b.title}</div>
+                        <div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{b.title} <span style={{fontSize:10,fontWeight:700,color:"#c2410c"}}>· {b.rows.length} fila{b.rows.length!==1?"s":""}, se mueve entero</span></div>
                         <div style={{fontSize:11,color:"#7c2d12"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")||"Sin movimientos"}</div>
                       </div>
                       <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Temporizador" onClick={()=>setTimerWod(b)}>⏱</button>
                       <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Editar WOD" onClick={()=>setEditWod(bi)}>✏️</button>
                     </div>
-                  </div>)}
+                  </div>; })()}
+            </div>; })}
+            {/* WOD / bloques metabólicos */}
+            <div style={{marginTop:4}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#9a3412",marginBottom:6}}>🔥 WOD / METABÓLICO {blocks.length?`(${blocks.length})`:""}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {editWod==="new"
                   ?<WodEditor saving={saving} onSave={(cfg)=>saveWod(null,cfg)} onCancel={()=>setEditWod(null)}/>
                   :<button className="btn ghost" style={{fontSize:12,padding:"9px",border:"1px dashed #fdba74",color:"#9a3412",fontWeight:700}} disabled={saving} onClick={()=>setEditWod("new")}>＋ Añadir WOD (AMRAP, EMOM, For Time, Hyrox…)</button>}
@@ -4700,6 +4828,7 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,payments,c
 
         <ProfileSummary client={client} compact/>
         {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
+        <DietCoachBox client={client} onEdit={onEditData}/>
         <div style={{marginBottom:14}}>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
             <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
@@ -6786,6 +6915,21 @@ function EditClientModal({client,clients,saving,lead,onValoracion,onSave,onClose
           <input type="number" min="1" max="7" className="inp" placeholder="Sin límite" value={f.profile.open_per_week||""} onChange={e=>setP("open_per_week",e.target.value)}/>
           <div style={{fontSize:11,color:"#0f766e",marginTop:6,lineHeight:1.4}}>Las clases siguen con su bono y aforo de siempre. Los días open los reserva desde su app (no gastan bono ni ocupan plaza de clase) y su planificación semanal los cuenta como días de entreno. Déjalo vacío si son ilimitadas.</div>
         </div>}
+        {sec("🥗 DIETA (la ve en su app)")}
+        {(()=>{ const d=(f.profile.diet_plan&&typeof f.profile.diet_plan==="object")?f.profile.diet_plan:{}, mk=macroKcal(d);
+          const setD=(k,v)=>setF(x=>{ const cur=(x.profile.diet_plan&&typeof x.profile.diet_plan==="object")?x.profile.diet_plan:{}; const nd={...cur,[k]:v}; Object.keys(nd).forEach(z=>{ if(nd[z]===""||nd[z]==null) delete nd[z]; }); return {...x,profile:{...x.profile,diet_plan:Object.keys(nd).length?nd:""}}; });
+          const num=(k,l,ph)=><div><span className="lbl">{l}</span><input type="number" min="0" step="any" inputMode="decimal" className="inp" placeholder={ph} value={d[k]||""} onChange={e=>setD(k,e.target.value)}/></div>;
+          return <div style={{background:"#effaf3",border:"1px solid #c9e6d1",borderRadius:10,padding:"9px 11px",marginBottom:4}}>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(88px,1fr))",gap:8}}>
+              {num("kcal","KCAL / DÍA",mk?String(mk):"2000")}{num("p","PROTEÍNA (g)","140")}{num("c","CARBOS (g)","220")}{num("f","GRASAS (g)","70")}{num("water","AGUA (litros)","2")}
+            </div>
+            {mk>0&&!d.kcal&&<div style={{fontSize:10,color:"#3f7a52",marginTop:4}}>Por macros salen ≈ {mk.toLocaleString("es-ES")} kcal (se mostrará eso si no pones kcal).</div>}
+            <span className="lbl" style={{marginTop:8,display:"block"}}>COMIDAS DEL DÍA (una por línea · «Nombre: qué come»)</span>
+            <textarea className="inp" rows={4} placeholder={"Desayuno: avena con leche y fruta\nComida: arroz, pollo y verduras\nMerienda: yogur y frutos secos\nCena: pescado con ensalada"} value={d.meals||""} onChange={e=>setD("meals",e.target.value)} style={{resize:"vertical"}}/>
+            <span className="lbl" style={{marginTop:8,display:"block"}}>NOTAS PARA ÉL/ELLA</span>
+            <textarea className="inp" rows={2} placeholder="Bebe agua antes de cada comida, nada de refrescos…" value={d.notes||""} onChange={e=>setD("notes",e.target.value)} style={{resize:"vertical"}}/>
+            <div style={{fontSize:11,color:"#3f7a52",marginTop:6,lineHeight:1.4}}>En su Inicio marcará cada comida y los vasos de agua; tú verás cómo lo cumple en su ficha rápida.</div>
+          </div>; })()}
         {sec("FICHA PERSONAL")}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8}}>
           {PROFILE_FIELDS.map(x=><div key={x.k} style={x.t==="area"?{gridColumn:"1 / -1"}:undefined}>
@@ -7150,6 +7294,112 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
 }
 
 // ── CLIENT PORTAL ──────────────────────────────────────────────────────────
+// ── DIETA (plan en clients.profile.diet_plan · registro diario en diet_logs) ──
+// Plan: {kcal, p, c, f (gramos), water (litros), meals ("Desayuno: avena…" una por línea), notes}.
+// diet_logs (docs/dieta.sql): por día, qué comidas ha marcado y cuántos vasos de agua lleva.
+const DK = {bg:"#0b0b0e",card:"#15151a",card2:"#1e1e25",line:"rgba(255,255,255,.07)",tx:"#f4f4f6",mu:"#9b9ba8",sub:"#c6c6d0",dim:"#5f5f6b",
+  ac:"#ff6a3d",ac2:"#ff7a45",acG:"linear-gradient(135deg,#ff7a45,#f2441d)",gold:"#fbbf24",teal:"#2dd4bf",grn:"#34d399",red:"#f87171",blue:"#60a5fa"};
+const dietOf = (c) => { const d=profileOf(c).diet_plan; return d&&typeof d==="object"?d:null; };
+const dietMeals = (plan) => String((plan&&plan.meals)||"").split("\n").map(s=>s.trim()).filter(Boolean).map(s=>{ const i=s.indexOf(":"); return i>0&&i<=30?{n:s.slice(0,i).trim(),d:s.slice(i+1).trim()}:{n:s,d:""}; });
+const hasDiet = (c) => { const p=dietOf(c); return !!p&&!!(p.kcal||p.p||p.c||p.f||p.water||p.notes||dietMeals(p).length); };
+const dietGlasses = (plan) => { const l=parseFloat(String((plan&&plan.water)||"").replace(",",".")); return l>0?Math.min(16,Math.max(1,Math.round(l*4))):8; }; // vasos de 250 ml
+const macroKcal = (p) => Math.round((parseFloat(p.p)||0)*4+(parseFloat(p.c)||0)*4+(parseFloat(p.f)||0)*9);
+const fmtL = (v) => (Math.round(v*100)/100).toLocaleString("es-ES");
+
+// Tarjeta del atleta (Inicio, en oscuro): comidas del día, macros y agua.
+function DietCard({client}){
+  const plan=dietOf(client), meals=dietMeals(plan), goalW=dietGlasses(plan), has=hasDiet(client);
+  const lsKey=`kk_diet_${client.id}_${TODAY}`;
+  const [log,setLog]=React.useState(()=>{ try{ const v=JSON.parse(localStorage.getItem(lsKey)||"null"); if(v&&Array.isArray(v.meals)) return v; }catch(e){} return {meals:[],water:0}; });
+  const [week,setWeek]=React.useState([]);
+  React.useEffect(()=>{ let off=false; (async()=>{ try{
+    const r=await sb.from("diet_logs").select("*").eq("client_id",client.id).gte("date",addDays(TODAY,-6));
+    if(off||!r||r.error) return; const rows=r.data||[]; setWeek(rows);
+    const t=rows.find(x=>String(x.date).slice(0,10)===TODAY); if(t) setLog({meals:(t.meals||[]).map(Number),water:parseInt(t.water)||0});
+  }catch(e){} })(); return ()=>{ off=true; }; },[client.id]);
+  const save=async(nx)=>{
+    setLog(nx); try{ localStorage.setItem(lsKey,JSON.stringify(nx)); }catch(e){}
+    setWeek(w=>[...w.filter(x=>String(x.date).slice(0,10)!==TODAY),{date:TODAY,meals:nx.meals,water:nx.water}]);
+    try{ await sb.from("diet_logs").upsert({client_id:client.id,date:TODAY,meals:nx.meals,water:nx.water,updated_at:new Date().toISOString()},{onConflict:"client_id,date"}); }catch(e){}
+  };
+  const toggleMeal=(i)=>save({...log,meals:log.meals.includes(i)?log.meals.filter(x=>x!==i):[...log.meals,i].sort((a,b)=>a-b)});
+  const tapGlass=(i)=>save({...log,water:log.water===i+1?i:i+1});
+  const done=meals.filter((m,i)=>log.meals.includes(i)).length, all=meals.length>0&&done===meals.length;
+  const kcal=parseInt(plan&&plan.kcal)||(plan?macroKcal(plan):0);
+  const R=36, C=2*Math.PI*R, frac=meals.length?done/meals.length:0;
+  const macros=plan?[["Proteína",plan.p,4,DK.ac2],["Carbohidratos",plan.c,4,DK.gold],["Grasas",plan.f,9,DK.blue]].filter(m=>parseFloat(m[1])>0):[];
+  const mk=Math.max(1,macros.reduce((s,m)=>s+parseFloat(m[1])*m[2],0));
+  // Últimos 7 días: % de comidas hechas (o agua si no hay comidas en el plan)
+  const days7=Array.from({length:7},(_,i)=>addDays(TODAY,i-6)).map(d=>{ const x=week.find(w=>String(w.date).slice(0,10)===d); const v=x?(meals.length?Math.min(1,(x.meals||[]).length/meals.length):Math.min(1,(parseInt(x.water)||0)/goalW)):0; return {d,v}; });
+  const title=(t,right)=><div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:12}}>
+    <div style={{display:"flex",alignItems:"center",gap:9}}><span style={{width:34,height:34,borderRadius:"50%",background:DK.card2,display:"grid",placeItems:"center",fontSize:17}}>🥗</span><span style={{fontSize:16,fontWeight:800,color:DK.tx}}>{t}</span></div>{right}</div>;
+  return(
+    <div className="dk-card" style={{marginBottom:14}} aria-label="Tu dieta">
+      {title(has?"Tu dieta de hoy":"Tu dieta",kcal?<span style={{fontSize:13,fontWeight:800,color:DK.ac2,whiteSpace:"nowrap"}}>{kcal.toLocaleString("es-ES")} kcal</span>:null)}
+      {!has&&<div style={{fontSize:13,color:DK.mu,lineHeight:1.45,marginBottom:12}}>Aún no tienes un plan de comidas. Pídeselo a tu coach y lo verás aquí para ir marcando lo que comes cada día.
+        <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, me gustaría tener mi plan de dieta 🥗`)} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><span className="dk-pill" style={{marginTop:10}}>🥗 Pedir mi dieta ›</span></a></div>}
+      {(meals.length>0||macros.length>0)&&<div style={{display:"flex",alignItems:"center",gap:16,marginBottom:meals.length?14:6}}>
+        {meals.length>0&&<div style={{position:"relative",width:92,height:92,flexShrink:0}} role="img" aria-label={`${done} de ${meals.length} comidas hechas`}>
+          <svg width="92" height="92" viewBox="0 0 92 92" aria-hidden="true"><defs><linearGradient id="dkDietG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#34d399"/><stop offset="1" stopColor="#10b981"/></linearGradient></defs>
+            <circle cx="46" cy="46" r={R} fill="none" stroke="rgba(255,255,255,.07)" strokeWidth="9"/>
+            <circle cx="46" cy="46" r={R} fill="none" stroke="url(#dkDietG)" strokeWidth="9" strokeLinecap="round" strokeDasharray={`${frac*C} ${C}`} transform="rotate(-90 46 46)" style={{transition:"stroke-dasharray .5s",filter:"drop-shadow(0 0 6px rgba(52,211,153,.55))"}}/></svg>
+          <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <span key={done} className="count-pop" style={{fontSize:24,fontWeight:800,color:DK.tx,lineHeight:1}}>{done}<span style={{fontSize:13,color:DK.mu}}>/{meals.length}</span></span>
+            <span style={{fontSize:9,fontWeight:800,color:DK.mu,letterSpacing:.4}}>COMIDAS</span></div>
+        </div>}
+        {macros.length>0&&<div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:9}}>
+          {macros.map(([l,g,k,c])=><div key={l}>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:12,fontWeight:700,color:DK.sub,marginBottom:4}}><span>{l}</span><span style={{color:DK.tx,fontWeight:800}}>{fmtKgN(parseFloat(g))} g</span></div>
+            <div style={{height:6,borderRadius:4,background:"rgba(255,255,255,.07)",overflow:"hidden"}}><div style={{width:`${Math.round(parseFloat(g)*k/mk*100)}%`,height:"100%",background:c,borderRadius:4,boxShadow:`0 0 8px ${c}`}}/></div>
+          </div>)}
+        </div>}
+      </div>}
+      {meals.length>0&&<div style={{display:"flex",flexDirection:"column",gap:7,marginBottom:14}}>
+        {meals.map((m,i)=>{ const on=log.meals.includes(i); return(
+          <button key={i} type="button" onClick={()=>toggleMeal(i)} aria-pressed={on} className="dk-row" style={{opacity:on?.72:1}}>
+            <span style={{width:26,height:26,borderRadius:"50%",flexShrink:0,display:"grid",placeItems:"center",fontSize:13,fontWeight:900,color:"#0b0b0e",background:on?DK.grn:"transparent",border:on?"none":`2px solid ${DK.dim}`,boxShadow:on?"0 0 10px rgba(52,211,153,.55)":"none"}}>{on?"✓":""}</span>
+            <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:14,fontWeight:800,color:DK.tx,textDecoration:on?"line-through":"none"}}>{m.n}</span>{m.d&&<span style={{display:"block",fontSize:12,color:DK.mu,marginTop:1,lineHeight:1.35}}>{m.d}</span>}</span>
+          </button>); })}
+        {all&&<div className="ember-pop" style={{textAlign:"center",fontSize:13,fontWeight:800,color:DK.grn,marginTop:2}}>¡Día de dieta completado! 🔥</div>}
+      </div>}
+      <div style={{background:DK.card2,borderRadius:14,padding:"11px 12px"}}>
+        <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginBottom:8}}>
+          <span style={{fontSize:13,fontWeight:800,color:DK.tx}}>💧 Agua</span>
+          <span style={{fontSize:12,fontWeight:700,color:DK.mu}}><b key={log.water} className="count-pop" style={{color:"#7dd3fc",fontSize:14}}>{fmtL(log.water*.25)}</b> / {fmtL(goalW*.25)} L</span>
+        </div>
+        <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(8,goalW)},1fr)`,gap:6}}>
+          {Array.from({length:goalW},(_,i)=>{ const on=i<log.water; return <button key={i} type="button" onClick={()=>tapGlass(i)} aria-label={`Vaso ${i+1}${on?" (bebido)":""}`} style={{height:34,borderRadius:"6px 6px 10px 10px",border:on?"none":"1.5px solid rgba(125,211,252,.35)",cursor:"pointer",background:on?"linear-gradient(180deg,#7dd3fc,#0ea5e9)":"transparent",boxShadow:on?"0 0 10px rgba(14,165,233,.5)":"none",padding:0}}/>; })}
+        </div>
+        <div style={{fontSize:10,color:DK.dim,marginTop:6}}>Cada vaso son 250 ml · toca para marcar</div>
+      </div>
+      {plan&&plan.notes&&<div style={{marginTop:12,fontSize:12,color:DK.sub,lineHeight:1.45,whiteSpace:"pre-wrap"}}><b style={{color:DK.ac2}}>📝 Tu coach:</b> {plan.notes}</div>}
+      {has&&<div style={{display:"flex",alignItems:"center",gap:10,marginTop:14}}>
+        <span style={{fontSize:11,fontWeight:800,color:DK.mu,whiteSpace:"nowrap"}}>Tu semana</span>
+        <div style={{flex:1,display:"flex",gap:5}}>{days7.map(({d,v})=><div key={d} title={`${fmtD(d)}: ${Math.round(v*100)}%`} style={{flex:1,textAlign:"center"}}>
+          <div style={{height:8,borderRadius:4,background:v>0?`rgba(52,211,153,${.25+v*.75})`:"rgba(255,255,255,.07)",boxShadow:v>=1?"0 0 8px rgba(52,211,153,.6)":"none"}}/>
+          <div style={{fontSize:9,fontWeight:700,color:d===TODAY?DK.ac2:DK.dim,marginTop:3}}>{"DLMXJVS"[new Date(d+"T12:00:00").getDay()]}</div></div>)}</div>
+      </div>}
+    </div>);
+}
+
+// Ficha rápida del coach: el plan de dieta y cómo lo va cumpliendo (últimos 7 días).
+function DietCoachBox({client,onEdit}){
+  const plan=dietOf(client), meals=dietMeals(plan), goalW=dietGlasses(plan);
+  const [rows,setRows]=React.useState(null);
+  React.useEffect(()=>{ if(!hasDiet(client)) return; let off=false; (async()=>{ try{ const r=await sb.from("diet_logs").select("*").eq("client_id",client.id).gte("date",addDays(TODAY,-6)); if(!off) setRows(r&&!r.error?(r.data||[]):[]); }catch(e){ if(!off) setRows([]); } })(); return ()=>{ off=true; }; },[client.id]);
+  if(!hasDiet(client)) return null;
+  const kcal=parseInt(plan.kcal)||macroKcal(plan);
+  const mealPct=rows&&meals.length?Math.round(rows.reduce((s,x)=>s+Math.min(meals.length,(x.meals||[]).length),0)/(7*meals.length)*100):null;
+  const waterAvg=rows&&rows.length?rows.reduce((s,x)=>s+(parseInt(x.water)||0),0)/7:null;
+  return <div style={{background:"#effaf3",border:"1px solid #c9e6d1",borderRadius:10,padding:"9px 11px",marginBottom:14,fontSize:12,color:"#166534"}}>
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+      <b>🥗 Dieta{kcal?` · ${kcal.toLocaleString("es-ES")} kcal`:""}{plan.p?` · P ${plan.p} g`:""}{plan.c?` · C ${plan.c} g`:""}{plan.f?` · G ${plan.f} g`:""}</b>
+      {onEdit&&<button className="btn ghost" style={{fontSize:10,padding:"3px 8px"}} onClick={onEdit}>✏️</button>}
+    </div>
+    <div style={{color:"#3f7a52",marginTop:3}}>{rows==null?"Cargando cumplimiento…":rows.length?`Últimos 7 días: ${mealPct!=null?`${mealPct}% de comidas hechas · `:""}💧 ${fmtL((waterAvg||0)*.25)} L/día de media (objetivo ${fmtL(goalW*.25)} L)`:"Aún no ha marcado nada en su app esta semana."}</div>
+  </div>;
+}
+
 function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
@@ -7206,14 +7456,17 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
   const nTrained=athleteSessions(client,allHistory,myAssignedSessions,myAssignedExercises).length;
   const nextPlan=nextSess&&nextSess.date!==TODAY?planForDate(client,nextSess.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null;
   const go=(t)=>{ setTab(t); try{ window.scrollTo({top:0}); }catch(e){} };
-  const NAV=[["inicio","home","Inicio"],["reservar","calendar","Reservar"],["entreno","clients","Entreno"],["progreso","chart","Progreso"],["comunidad","forum","Comunidad"]];
+  const NAV=[["inicio","home","Inicio"],["entreno","clients","Entreno"],["reservar","calendar","Reservar"],["progreso","chart","Progreso"],["comunidad","forum","Comunidad"]];
+  // En Inicio el fondo de la página es oscuro (también al estirar la pantalla en el móvil)
+  React.useEffect(()=>{ if(preview||tab!=="inicio") return; const h=document.documentElement, b=document.body, ph=h.style.background, pb=b.style.background;
+    h.style.background=DK.bg; b.style.background=DK.bg; return ()=>{ h.style.background=ph; b.style.background=pb; }; },[tab,preview]);
   const Sec=({children})=><div style={{fontSize:11,color:"#64748b",fontWeight:800,letterSpacing:.3,margin:"20px 2px 9px",textTransform:"uppercase"}}>{children}</div>;
   return(<>
     <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"18px 16px calc(100px + env(safe-area-inset-bottom))"}} className="fade portal-root">
       <ExerciseHistoryHost assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} notify={notify}/>
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#0284c7,#16a34a)",zIndex:500}}/>}
-      {/* Cabecera compacta: quién soy, sesiones que me quedan y salir */}
-      <div style={{display:"flex",alignItems:"center",gap:11,marginBottom:16}}>
+      {/* Cabecera compacta: quién soy, sesiones que me quedan y salir (Inicio tiene la suya) */}
+      {tab!=="inicio"&&<div style={{display:"flex",alignItems:"center",gap:11,marginBottom:16}}>
         {client.avatar_url
           ? <img src={client.avatar_url} style={{width:42,height:42,borderRadius:"50%",objectFit:"cover",border:`2px solid ${client.color}`,flexShrink:0}}/>
           : <div className="ring" style={{width:42,height:42,background:client.color+"25",color:client.color,fontSize:15,border:`2px solid ${client.color}50`,flexShrink:0}}>{ini(client.name)}</div>}
@@ -7226,154 +7479,200 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
           <div style={{fontSize:8,fontWeight:800,color:"#94a3b8"}}>LIBRES</div>
         </button>
         <button className={preview?"btn sky":"btn ghost"} style={{fontSize:12,padding:"6px 10px"}} onClick={onLogout}>{preview?"← Panel":"Salir"}</button>
-      </div>
+      </div>}
 
       {tab==="inicio"&&<>
-      {/* Welcome message */}
-        {client.welcome_msg&&(
-          <div style={{background:"#eaf1fb",border:"1px solid #bcd3ee",borderRadius:14,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#64748b"}}>
-            💬 {client.welcome_msg}
+        {/* Fondo oscuro a pantalla completa solo en Inicio */}
+        <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:-1,background:"radial-gradient(90% 40% at 85% -5%,rgba(242,68,29,.20),transparent 70%),#0b0b0e",pointerEvents:"none"}}/>
+        {/* Cabecera: marca, saludo y acceso directo a su coach */}
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:18}}>
+          <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
+            <span style={{width:32,height:32,borderRadius:10,background:DK.acG,display:"grid",placeItems:"center",fontSize:16,boxShadow:"0 4px 16px rgba(242,68,29,.5)",flexShrink:0}}>🔥</span>
+            <span style={{fontWeight:800,letterSpacing:1.6,fontSize:13,color:DK.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{GYM_NAME.toUpperCase()}</span>
           </div>
-        )}
-
-        {/* Aviso primera sesión */}
-        {myHistory.length===0 && allSessions.some(s=>s.client_id===client.id) && (
-          <div style={{background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:14,padding:"12px 16px",marginBottom:16,fontSize:13,color:"#7c3aed",fontWeight:600}}>
-            🎉 ¡Tu primera sesión! Bienvenido/a a {GYM_NAME}. ¡A por ello! 💪
+          <div style={{display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
+            <button className="dk-ghost" onClick={onLogout}>{preview?"← Panel":"Salir"}</button>
+            {client.avatar_url
+              ? <img src={client.avatar_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",border:`2px solid ${DK.ac2}`,boxShadow:"0 0 12px rgba(255,122,69,.45)"}}/>
+              : <div className="ring" style={{width:40,height:40,background:DK.card2,color:DK.tx,fontSize:14,border:`2px solid ${DK.ac2}`,boxShadow:"0 0 12px rgba(255,122,69,.45)"}}>{ini(client.name)}</div>}
           </div>
-        )}
+        </div>
+        {(()=>{ const h=new Date().getHours(), hello=h>=6&&h<14?"Buenos días":h>=14&&h<21?"Buenas tardes":"Buenas noches"; return(
+        <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:12,marginBottom:20}}>
+          <div style={{minWidth:0}}>
+            <div style={{fontSize:14,color:DK.mu,fontWeight:600}}>{hello},</div>
+            <div style={{fontSize:30,fontWeight:800,color:DK.tx,lineHeight:1.1,letterSpacing:-.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{client.name.split(" ")[0]} 👋</div>
+            <div style={{fontSize:13,color:DK.mu,marginTop:5}}>{streak>0?<>🔥 <b style={{color:DK.ac2}}>{streak} {streak===1?"semana":"semanas"}</b> seguidas entrenando</>:"Vamos a por la semana 💪"}</div>
+          </div>
+          <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-coach" aria-label="Escribir a tu coach por WhatsApp"><span className="dk-dot"/>Tu coach</a>
+        </div>); })()}
 
-        {/* Aviso última sesión del bono / sin bono */}
+        {/* Avisos */}
+        {client.welcome_msg&&<div className="dk-note" style={{borderColor:"rgba(96,165,250,.3)"}}>💬 {client.welcome_msg}</div>}
+        {myHistory.length===0 && allSessions.some(s=>s.client_id===client.id) && <div className="dk-note" style={{borderColor:"rgba(167,139,250,.35)",color:"#c4b5fd",fontWeight:700}}>🎉 ¡Tu primera sesión! Bienvenido/a a {GYM_NAME}. ¡A por ello! 💪</div>}
         {client.sessions_left<=1 && (
-          <div style={{background:client.sessions_left<=0?"#fbe6e6":"#fbf1d8",border:`1px solid ${client.sessions_left<=0?"#f2cccc":"#e4cd8c"}`,borderRadius:14,padding:"12px 16px",marginBottom:16}}>
-            <div style={{fontSize:13,fontWeight:700,color:client.sessions_left<=0?"#dc2626":"#b8860b",marginBottom:8}}>
+          <div className="dk-note" style={{borderColor:client.sessions_left<=0?"rgba(248,113,113,.45)":"rgba(251,191,36,.4)"}}>
+            <div style={{fontSize:13,fontWeight:800,color:client.sessions_left<=0?DK.red:DK.gold,marginBottom:9}}>
               {client.sessions_left<0 ? `🧾 Tienes ${owedOf(client)} sesión(es) pendientes de pago (se descuentan del próximo bono)` : client.sessions_left<=0 ? "🚫 Te has quedado sin sesiones del bono" : "⏳ Te queda tu última sesión del bono"}
             </div>
-            <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer">
-              <button className="btn wa" style={{fontSize:12,padding:"8px 14px",justifyContent:"center"}}>📱 Renovar con mi trainer</button>
-            </a>
+            <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{textDecoration:"none"}}><span className="dk-pill">📱 Renovar con mi trainer ›</span></a>
           </div>
         )}
-
-        {/* Aviso: se ha liberado un hueco de tu lista de espera */}
         {freedWaits.map(w=>(
-          <div key={w.id} style={{background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:14,padding:"12px 14px",marginBottom:12}}>
-            <div style={{fontSize:13,fontWeight:700,color:"#65a30d",marginBottom:2}}>🎉 ¡Hueco libre a las {w.time}!</div>
-            <div style={{fontSize:12,color:"#6b7a3f",marginBottom:10}}>Se ha liberado tu clase en espera del {fmtDate(w.date)}. ¡Corre, reserva antes de que se ocupe!</div>
+          <div key={w.id} className="dk-note" style={{borderColor:"rgba(52,211,153,.45)"}}>
+            <div style={{fontSize:13,fontWeight:800,color:DK.grn,marginBottom:2}}>🎉 ¡Hueco libre a las {w.time}!</div>
+            <div style={{fontSize:12,color:DK.mu,marginBottom:10}}>Se ha liberado tu clase en espera del {fmtDate(w.date)}. ¡Corre, reserva antes de que se ocupe!</div>
             <div style={{display:"flex",gap:8}}>
-              <button className="btn grn" style={{flex:1,padding:"9px",justifyContent:"center"}} disabled={saving} onClick={()=>grabWaitlistSpot(w)}>Reservar ahora 🚀</button>
-              <button className="btn ghost" style={{padding:"9px 12px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
+              <button className="dk-pill" style={{flex:1,justifyContent:"center",border:"none",cursor:"pointer"}} disabled={saving} onClick={()=>grabWaitlistSpot(w)}>Reservar ahora 🚀</button>
+              <button className="dk-ghost" onClick={()=>leaveWait(w.id)}>Quitar</button>
             </div>
           </div>
         ))}
-        {/* Recordatorio de esperas aún llenas */}
         {myWaits.filter(w=>!freedWaits.some(f=>f.id===w.id)).map(w=>(
-          <div key={w.id} style={{background:"#fbf4e3",border:"1px solid #ecdfb0",borderRadius:12,padding:"9px 13px",marginBottom:10,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-            <div style={{fontSize:12,color:"#a1873c"}}>⏳ En espera · {fmtDate(w.date)} a las {w.time}</div>
-            <button className="btn ghost" style={{fontSize:11,padding:"5px 9px"}} onClick={()=>leaveWait(w.id)}>Quitar</button>
+          <div key={w.id} className="dk-note" style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,padding:"9px 13px"}}>
+            <div style={{fontSize:12,color:DK.gold}}>⏳ En espera · {fmtDate(w.date)} a las {w.time}</div>
+            <button className="dk-ghost" onClick={()=>leaveWait(w.id)}>Quitar</button>
           </div>
         ))}
 
-
-        {/* 1 · Lo más importante: su próxima sesión y las que tiene agendadas */}
         {(()=>{ // Clases reservadas y, en híbrido, también sus días open (por su cuenta)
           const all=[...mySessions,...myOpensUp].sort((x,y)=>(x.date+(x.time||"99")).localeCompare(y.date+(y.time||"99")));
           const hero=all.find(x=>!x.requested)||null, ups=all.filter(x=>x!==hero), hc=hero?daysUntil(hero.date):null;
-          const hp=hero&&hero.date!==TODAY?planForDate(client,hero.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null;
-          const tm=(x)=>x.open?(x.time||"a tu hora"):x.time;
-          const tile=(d,big)=>{ const x=new Date(d+"T12:00:00"); return <div style={{width:big?62:44,flexShrink:0,textAlign:"center",background:"#fff",borderRadius:big?14:10,padding:big?"7px 0":"4px 0",boxShadow:big?"0 4px 12px rgba(15,23,42,.18)":"none",border:big?"none":"1px solid #e6ebf3"}}>
-            <div style={{fontSize:big?11:9,fontWeight:800,color:"#0284c7",textTransform:"uppercase"}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
-            <div style={{fontSize:big?28:17,fontWeight:800,color:"#0f172a",lineHeight:1.05}}>{x.getDate()}</div>
-            <div style={{fontSize:big?10:8,fontWeight:700,color:"#94a3b8",textTransform:"uppercase"}}>{x.toLocaleDateString("es-ES",{month:"short"}).replace(".","")}</div></div>; };
-          return(
-          <div className="card" style={{marginBottom:12,padding:0,overflow:"hidden",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.22)"}}>
-            <div style={{background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",padding:"15px 16px"}}>
-              <div style={{fontSize:12,fontWeight:800,opacity:.85,letterSpacing:.4}}>TU PRÓXIMA SESIÓN</div>
-              {hero
-                ?<>
-                  <div style={{display:"flex",alignItems:"center",gap:14,marginTop:9}}>
-                    {tile(hero.date,true)}
-                    <div style={{minWidth:0}}>
-                      <div style={{fontSize:24,fontWeight:800,lineHeight:1.1,textTransform:"capitalize"}}>{hc===0?"Hoy":hc===1?"Mañana":new Date(hero.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {tm(hero)}</div>
-                      {hero.open&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,background:"rgba(255,255,255,.2)",borderRadius:20,padding:"2px 9px",marginTop:4}}>🔓 Open · vas por tu cuenta</div>}
-                      <div style={{fontSize:13,fontWeight:700,opacity:.9,marginTop:2}}>{hc===0?"¡Es hoy! 💪":hc===1?"Mañana toca 💪":`Dentro de ${hc} días`}</div>
-                      {hp&&<div style={{fontSize:13,fontWeight:800,marginTop:3}}>🏋️ Te toca: {hp.label}</div>}
-                    </div>
-                  </div>
-                  {(hp||hc===0)&&<button className="btn" style={{width:"100%",marginTop:12,padding:10,justifyContent:"center",fontSize:13,fontWeight:800,background:"#fff",color:"#0284c7",border:"none"}} onClick={()=>{ setPpView(hc===0?"hoy":"next"); go("entreno"); }}>{hc===0?"⚡ Ver mi entreno de hoy":"🔜 Ver qué me toca"}</button>}
-                </>
-                :<div style={{fontSize:16,fontWeight:800,marginTop:6}}>Aún no tienes clases reservadas</div>}
-            </div>
-            {ups.length>0&&<div style={{padding:"10px 14px 4px"}}>
-              <div style={{fontSize:11,fontWeight:800,color:"#64748b",marginBottom:6}}>📅 TAMBIÉN TIENES AGENDADAS · {ups.length}</div>
-              {ups.slice(0,5).map(x=>{ const pl=x.date!==TODAY?planForDate(client,x.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null; return(
-                <button key={x.id} type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{width:"100%",display:"flex",alignItems:"center",gap:11,padding:"7px 0",border:"none",borderTop:"1px solid #f1f4f8",background:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
-                  {tile(x.date,false)}
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:14,fontWeight:800,color:"#0f172a",textTransform:"capitalize"}}>{new Date(x.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} · {tm(x)}</div>
-                    <div style={{fontSize:11,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.requested?"⏳ Pendiente de confirmar":x.open?`🔓 Open · por tu cuenta${pl?` · ${pl.label}`:""}`:pl?`🏋️ ${pl.label}`:"✓ Reservada"}</div>
-                  </div>
-                  <span style={{fontSize:15,color:"#cbd5e1"}}>›</span>
-                </button>); })}
-              {ups.length>5&&<div style={{fontSize:11,color:"#94a3b8",padding:"2px 0 6px"}}>y {ups.length-5} más…</div>}
-            </div>}
-            <div style={{padding:"8px 14px 12px"}}>
-              <button className="btn sky" style={{width:"100%",padding:10,justifyContent:"center",fontSize:13}} onClick={()=>go("reservar")}>{hero?"📅 Reservar más":"📅 Reservar clase"}</button>
-            </div>
-          </div>); })()}
-
-        {todayAsig&&nextCountdown!==0&&<button onClick={()=>{ setPpView("hoy"); go("entreno"); }} className="card" style={{width:"100%",display:"flex",alignItems:"center",gap:12,marginBottom:12,padding:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit",border:"1px solid #bcd3ee"}}>
-          <Ico k="clients" size={40}/>
-          <div style={{flex:1,minWidth:0}}>
-            <div style={{fontSize:11,fontWeight:800,color:"#94a3b8"}}>ENTRENO DE HOY</div>
-            <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>{DAY_LABEL[todayAsig.day_type]||"Tu sesión"}</div>
-            <div style={{fontSize:12,color:todayDone===todayExs.length&&todayExs.length?"#16a34a":"#64748b",fontWeight:700}}>{todayExs.length?(todayDone===todayExs.length?"✓ ¡Completado!":`${todayDone}/${todayExs.length} ejercicios hechos`):"Preparado por tu trainer"}</div>
-          </div>
-          <span style={{fontSize:20,color:"#94a3b8"}}>›</span>
-        </button>}
-
-        {/* 2 · Bono: cuántas quedan y cuántas lleva usadas, en un anillo */}
-        {(()=>{ const left=parseInt(client.sessions_left)||0, owed=Math.max(0,-left), resN=Math.min(nBooked,Math.max(0,tot-nDone));
-          const R=44, C=2*Math.PI*R, seg=[[nDone,"#cbd5e1"],[resN,"#7cc4f0"],[nFree,"#0284c7"]], sum=Math.max(1,tot);
-          let off=0; const gap=tot>1?3:0;
-          return(
-          <div className="card" style={{marginBottom:12,padding:14}}>
-            <div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginBottom:10}}>🎟️ Tu bono · {tot} sesiones</div>
-            <div style={{display:"flex",alignItems:"center",gap:16}}>
-              <div style={{position:"relative",width:112,height:112,flexShrink:0}} aria-label={`Te quedan ${Math.max(0,left)} de ${tot}: ${nDone} usadas, ${resN} reservadas, ${nFree} libres`} role="img">
-                <svg width="112" height="112" viewBox="0 0 112 112" aria-hidden="true"><circle cx="56" cy="56" r={R} fill="none" stroke="#eef1f6" strokeWidth="13"/>
-                  {seg.filter(([n])=>n>0).map(([n,c],i)=>{ const len=Math.max(0,n/sum*C-gap); const el=<circle key={i} cx="56" cy="56" r={R} fill="none" stroke={c} strokeWidth="13" strokeDasharray={`${len} ${C}`} strokeDashoffset={-off} transform="rotate(-90 56 56)" style={{transition:"stroke-dasharray .5s"}}/>; off+=n/sum*C; return el; })}
-                </svg>
-                <div style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-                  <span key={left} className="count-pop" style={{fontSize:32,fontWeight:800,color:owed?"#dc2626":"#0f172a",lineHeight:1}}>{owed?owed:Math.max(0,left)}</span>
-                  <span style={{fontSize:10,fontWeight:800,color:owed?"#dc2626":"#64748b"}}>{owed?"DEBES":left===1?"TE QUEDA":"TE QUEDAN"}</span>
+          const pf=(d)=>planForDate(client,d,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights});
+          const hp=hero&&hero.date!==TODAY?pf(hero.date):null;
+          const tm=(x)=>x.open?(x.time||"Libre"):x.time;
+          const wd=(d)=>new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"});
+          const left=parseInt(client.sessions_left)||0, owed=Math.max(0,-left), resN=Math.min(nBooked,Math.max(0,left));
+          // Constancia y marcas para la columna de datos
+          const sess=athleteSessions(client,allHistory,myAssignedSessions,myAssignedExercises), days=[...new Set(sess.map(x=>x.date))];
+          const month=days.filter(d=>d.startsWith(TODAY.slice(0,7))).length;
+          const mon=mondayOfDate(TODAY), weeks=Array.from({length:8},(_,i)=>addDays(mon,-7*(7-i)));
+          const perWeek=weeks.map(w=>days.filter(d=>d>=w&&d<addDays(w,7)).length), maxW=Math.max(1,...perWeek);
+          const avgW=Math.round(perWeek.slice(0,7).reduce((a,b)=>a+b,0)/7*10)/10;
+          const marks=strengthByExercise(strengthLog(client,myAssignedSessions,myAssignedExercises)).filter(x=>x.best).length;
+          const R1=50, C1=2*Math.PI*R1, R2=37, C2=2*Math.PI*R2;
+          const stat=(ic,l,v,onClick,col)=><button type="button" onClick={onClick} className="dk-stat">
+            <span style={{width:34,height:34,borderRadius:"50%",background:DK.card2,display:"grid",placeItems:"center",fontSize:16,flexShrink:0}}>{ic}</span>
+            <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:11,color:DK.mu,fontWeight:700}}>{l}</span><span style={{display:"block",fontSize:16,fontWeight:800,color:col||DK.ac2,lineHeight:1.2,whiteSpace:"nowrap"}}>{v}</span></span>
+            <span style={{color:DK.dim,fontSize:16}}>›</span></button>;
+          const tile=(x)=>{ const d=new Date(x.date+"T12:00:00"); return <span style={{width:48,height:48,borderRadius:14,flexShrink:0,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:9,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase",letterSpacing:.4}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
+            <span style={{fontSize:19,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>; };
+          return(<>
+          {/* 1 · Su próxima sesión, lo primero */}
+          <div className="dk-card" style={{marginBottom:14,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.34),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
+            <div style={{fontSize:11,fontWeight:800,color:DK.ac2,letterSpacing:.8}}>TU PRÓXIMA SESIÓN</div>
+            {hero?<>
+              <div style={{display:"flex",alignItems:"center",gap:14,marginTop:10}}>
+                <div style={{width:64,flexShrink:0,textAlign:"center",background:DK.card2,borderRadius:16,padding:"8px 0",border:`1px solid ${DK.line}`}}>
+                  <div style={{fontSize:11,fontWeight:800,color:hero.open?DK.teal:DK.ac2,textTransform:"uppercase"}}>{new Date(hero.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
+                  <div style={{fontSize:28,fontWeight:800,color:DK.tx,lineHeight:1.05}}>{new Date(hero.date+"T12:00:00").getDate()}</div>
+                  <div style={{fontSize:10,fontWeight:700,color:DK.mu,textTransform:"uppercase"}}>{new Date(hero.date+"T12:00:00").toLocaleDateString("es-ES",{month:"short"}).replace(".","")}</div>
+                </div>
+                <div style={{minWidth:0}}>
+                  <div style={{fontSize:24,fontWeight:800,color:DK.tx,lineHeight:1.1}}>{hc===0?"Hoy":hc===1?"Mañana":capFirst(wd(hero.date))} · <span style={{color:DK.ac2}}>{tm(hero)}</span></div>
+                  {hero.open&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,color:DK.teal,background:"rgba(45,212,191,.13)",borderRadius:20,padding:"2px 9px",marginTop:5}}>🔓 Open · vas por tu cuenta</div>}
+                  <div style={{fontSize:13,fontWeight:700,color:DK.mu,marginTop:3}}>{hc===0?"¡Es hoy! 💪":hc===1?"Mañana toca 💪":`Dentro de ${hc} días`}</div>
+                  {hp&&<div style={{fontSize:13,fontWeight:800,color:DK.sub,marginTop:3}}>🏋️ Te toca: {hp.label}</div>}
                 </div>
               </div>
-              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:7}}>
-                {[["#cbd5e1","Usadas",nDone,"✓"],["#7cc4f0","Reservadas",resN,"📅"],["#0284c7","Libres para reservar",nFree,""]].map(([c,l,n,ic])=>(
-                  <div key={l} style={{display:"flex",alignItems:"center",gap:8}}>
-                    <span style={{width:12,height:12,borderRadius:4,background:c,flexShrink:0}}/>
-                    <span style={{flex:1,fontSize:12,fontWeight:700,color:"#475569"}}>{ic?`${ic} `:""}{l}</span>
-                    <span style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{n}</span>
-                  </div>))}
+              {(hp||hc===0)&&<button type="button" className="dk-pill" style={{width:"100%",justifyContent:"center",marginTop:14,padding:"12px",border:"none",cursor:"pointer",fontSize:14}} onClick={()=>{ setPpView(hc===0?"hoy":"next"); go("entreno"); }}>{hc===0?"⚡ Ver mi entreno de hoy ›":"Ver qué me toca ›"}</button>}
+            </>:<>
+              <div style={{fontSize:18,fontWeight:800,color:DK.tx,marginTop:8}}>Aún no tienes clases reservadas</div>
+              <button type="button" className="dk-pill" style={{width:"100%",justifyContent:"center",marginTop:12,padding:"12px",border:"none",cursor:"pointer",fontSize:14}} onClick={()=>go("reservar")}>📅 Reservar clase ›</button>
+            </>}
+          </div>
+
+          {todayAsig&&nextCountdown!==0&&<button type="button" onClick={()=>{ setPpView("hoy"); go("entreno"); }} className="dk-card dk-press" style={{width:"100%",display:"flex",alignItems:"center",gap:12,marginBottom:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+            <span style={{width:46,height:46,borderRadius:14,background:"rgba(255,122,69,.13)",display:"grid",placeItems:"center",fontSize:22,flexShrink:0}}>⚡</span>
+            <span style={{flex:1,minWidth:0}}>
+              <span style={{display:"block",fontSize:11,fontWeight:800,color:DK.mu,letterSpacing:.5}}>ENTRENO DE HOY</span>
+              <span style={{display:"block",fontSize:15,fontWeight:800,color:DK.tx}}>{DAY_LABEL[todayAsig.day_type]||"Tu sesión"}</span>
+              <span style={{display:"block",fontSize:12,color:todayDone===todayExs.length&&todayExs.length?DK.grn:DK.mu,fontWeight:700}}>{todayExs.length?(todayDone===todayExs.length?"✓ ¡Completado!":`${todayDone}/${todayExs.length} ejercicios hechos`):"Preparado por tu trainer"}</span>
+            </span>
+            <span style={{fontSize:20,color:DK.dim}}>›</span>
+          </button>}
+
+          {/* 2 · Tu bono (anillo doble) + tus datos */}
+          <div className="dk-card" style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
+              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>Tu bono</span>
+              <span style={{fontSize:11,fontWeight:700,color:DK.mu}}>{tot} sesiones</span>
+            </div>
+            <div style={{display:"flex",alignItems:"center",gap:14}}>
+              <button type="button" onClick={()=>go("reservar")} style={{position:"relative",width:122,height:122,flexShrink:0,border:"none",background:"none",padding:0,cursor:"pointer"}} aria-label={`Te quedan ${Math.max(0,left)} de ${tot}: ${resN} reservadas y ${nFree} libres para reservar`}>
+                <svg width="122" height="122" viewBox="0 0 122 122" aria-hidden="true"><defs><linearGradient id="dkBonoG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff9a5a"/><stop offset="1" stopColor="#f2441d"/></linearGradient></defs>
+                  <circle cx="61" cy="61" r={R1} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="10"/>
+                  <circle cx="61" cy="61" r={R1} fill="none" stroke="url(#dkBonoG)" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${tot?Math.max(0,left)/tot*C1:0} ${C1}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s",filter:"drop-shadow(0 0 7px rgba(255,106,61,.6))"}}/>
+                  <circle cx="61" cy="61" r={R2} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="8"/>
+                  <circle cx="61" cy="61" r={R2} fill="none" stroke={DK.gold} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${tot?resN/tot*C2:0} ${C2}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s",filter:"drop-shadow(0 0 5px rgba(251,191,36,.5))"}}/>
+                </svg>
+                <span style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                  <span key={left} className="count-pop" style={{fontSize:32,fontWeight:800,color:owed?DK.red:DK.tx,lineHeight:1}}>{owed?owed:Math.max(0,left)}</span>
+                  <span style={{fontSize:10,fontWeight:800,color:owed?DK.red:DK.mu}}>{owed?"DEBES":`DE ${tot}`}</span>
+                </span>
+              </button>
+              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:2}}>
+                {stat("🔥","Racha",`${streak} ${streak===1?"semana":"semanas"}`,()=>go("progreso"))}
+                {stat("📅","Este mes",`${month} ${month===1?"entreno":"entrenos"}`,()=>{ setPpView("hist"); go("entreno"); })}
+                {hyb?stat("🔓",openTotal(client)?"Open por reservar":"Open esta semana",openTotal(client)?`${openLeft(client,myOpens)} de ${openTotal(client)}`:`${opensInWeek(client,TODAY,myOpens).length}${openLim?` de ${openLim}`:""}`,()=>go("reservar"),DK.teal)
+                  :stat("🏆","Mejores marcas",`${marks} ${marks===1?"ejercicio":"ejercicios"}`,()=>go("progreso"))}
               </div>
             </div>
-            {hyb&&(()=>{ const n=opensInWeek(client,TODAY,myOpens).length; return(
-              <button type="button" onClick={()=>go("reservar")} style={{width:"100%",marginTop:12,display:"flex",alignItems:"center",gap:10,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
-                <span style={{fontSize:20}}>🔓</span>
-                <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f766e"}}>{openTotal(client)?"Open (por tu cuenta) en tu bono":"Open por tu cuenta esta semana"}<br/><span style={{fontSize:11,fontWeight:600,color:"#64748b"}}>{openTotal(client)?`Te quedan por reservar${openLim?` · máx. ${openLim}/semana (esta: ${n})`:""}`:"Aparte de tus clases"}</span></span>
-                <span style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>{openTotal(client)?<>{openLeft(client,myOpens)}<span style={{fontSize:12,color:"#64748b"}}> / {openTotal(client)}</span></>:<>{n}{openLim?<span style={{fontSize:12,color:"#64748b"}}> / {openLim}</span>:""}</>}</span>
-              </button>); })()}
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginTop:12,gap:8}}>
-              <div style={{fontSize:12,color:pd<=3?"#dc2626":pd<=7?"#ca8a04":"#64748b"}}>💳 Próximo pago: <b>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
-              <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer"><button className="btn wa" style={{fontSize:12,padding:"7px 11px"}}>📱 Trainer</button></a>
+            <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",marginTop:12,fontSize:11,fontWeight:700,color:DK.mu}}>
+              <span><span className="dk-lg" style={{background:DK.ac}}/>Te quedan {Math.max(0,left)}</span>
+              <span><span className="dk-lg" style={{background:DK.gold}}/>Reservadas {resN}</span>
+              <span style={{color:nFree>0?DK.tx:DK.mu}}><span className="dk-lg" style={{background:"rgba(255,255,255,.25)"}}/>Libres para reservar <b key={nFree} className="count-pop">{nFree}</b></span>
             </div>
-          </div>); })()}
+            <div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${DK.line}`,fontSize:12,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu}}>💳 Próximo pago: <b style={{color:DK.tx}}>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
+          </div>
 
-        <ClientSummary noHello noPhase onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
+          {/* 3 · Tu constancia: entrenos por semana */}
+          <div className="dk-card" style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>Tu constancia</span>
+              <span style={{fontSize:11,fontWeight:700,color:DK.mu,background:DK.card2,borderRadius:20,padding:"4px 10px"}}>8 semanas</span>
+            </div>
+            <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:6}}>
+              <span style={{fontSize:30,fontWeight:800,color:DK.tx,lineHeight:1}}>{perWeek[7]}</span>
+              <span style={{fontSize:13,color:DK.mu,fontWeight:700}}>{perWeek[7]===1?"entreno":"entrenos"} esta semana · media {String(avgW).replace(".",",")}/sem</span>
+            </div>
+            <div style={{display:"flex",alignItems:"flex-end",gap:7,height:96,marginTop:14}} aria-label="Entrenos por semana, últimas 8 semanas">
+              {perWeek.map((n,i)=>{ const cur=i===7; return <div key={i} title={`Semana del ${fmtD(weeks[i])}: ${n}`} style={{flex:1,height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:4}}>
+                {cur?<span style={{fontSize:11,fontWeight:800,color:"#fff",background:DK.acG,borderRadius:8,padding:"1px 7px",boxShadow:"0 0 12px rgba(242,68,29,.6)"}}>{n}</span>:<span style={{fontSize:10,fontWeight:700,color:n?DK.sub:DK.dim}}>{n}</span>}
+                <div style={{width:"100%",maxWidth:26,height:Math.max(4,n/maxW*62),borderRadius:7,background:cur?DK.acG:n?"rgba(255,122,69,.28)":"rgba(255,255,255,.06)",boxShadow:cur?"0 0 16px rgba(242,68,29,.65)":"none"}}/>
+              </div>; })}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:DK.dim,marginTop:6,fontWeight:700}}><span>hace 8 semanas</span><span style={{color:DK.ac2}}>esta semana</span></div>
+          </div>
+
+          {/* 4 · Tus próximas sesiones */}
+          {ups.length>0&&<div className="dk-card" style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
+              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>Tus próximas sesiones</span>
+              <button type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{border:"none",background:"none",color:DK.ac2,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Ver todo ›</button>
+            </div>
+            {ups.slice(0,5).map(x=>{ const pl=x.date!==TODAY?pf(x.date):null; return(
+              <button key={x.id} type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} className="dk-row" style={{background:"none",padding:"9px 0",borderRadius:0,borderTop:`1px solid ${DK.line}`}}>
+                {tile(x)}
+                <span style={{flex:1,minWidth:0}}>
+                  <span style={{display:"block",fontSize:14,fontWeight:800,color:DK.tx}}>{x.requested?"Pendiente de confirmar":x.open?"Open · por tu cuenta":pl?pl.label:"Clase reservada"}</span>
+                  <span style={{display:"block",fontSize:12,color:DK.mu,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{capFirst(wd(x.date))}{x.open&&pl?` · ${pl.label}`:""}</span>
+                </span>
+                <span style={{fontSize:14,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,whiteSpace:"nowrap"}}>{tm(x)}</span>
+                <span style={{color:DK.dim,fontSize:16}}>›</span>
+              </button>); })}
+            {ups.length>5&&<div style={{fontSize:11,color:DK.dim,padding:"4px 0 0"}}>y {ups.length-5} más…</div>}
+          </div>}
+          </>); })()}
+
+        {/* 5 · Dieta */}
+        <DietCard client={client}/>
+
+        <ClientSummary dark noHello noPhase noConstancy onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
       </>}
 
-      {tab==="reservar"&&<MultiSessionRequest client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
+      {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
 
       {tab==="entreno"&&<div>
         <div className="seg" style={{marginBottom:14}}>
@@ -7391,19 +7690,23 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
           :ppView==="hist"&&<AthleteHistory client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
       </div>}
 
-      {tab==="progreso"&&<ProgressTab client={client} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
+      {tab==="progreso"&&<ProgressTab client={client} history={allHistory} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
 
       {tab==="comunidad"&&<ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>}
     </div>
     {/* Navegación inferior: 5 secciones, siempre a mano */}
-    <nav className="portal-nav">
+    <nav className="portal-nav dk">
       <div className="portal-nav-in">
-        {NAV.map(([id,ic,label])=>(
-          <button key={id} className={"bnav-btn"+(tab===id?" on":"")} onClick={()=>go(id)} aria-current={tab===id?"page":undefined}>
+        {NAV.map(([id,ic,label])=>id==="reservar"
+          ?<button key={id} className={"bnav-btn bnav-center"+(tab===id?" on":"")} onClick={()=>go(id)} aria-current={tab===id?"page":undefined} aria-label="Reservar">
+            <span className="bnav-fab" aria-hidden="true">＋</span>
+            <span>{label}</span>
+          </button>
+          :<button key={id} className={"bnav-btn"+(tab===id?" on":"")} onClick={()=>go(id)} aria-current={tab===id?"page":undefined}>
             <span className="bnav-icon"><Ico k={ic} size={28}/>{id==="inicio"&&freedWaits.length>0&&<span className="bnav-badge">{freedWaits.length}</span>}</span>
             <span>{label}</span>
           </button>
-        ))}
+        )}
       </div>
     </nav>
   </>);
@@ -7533,6 +7836,177 @@ function funLine(x,idx=0){
   const c=extra.length?extra[(hashStr(x.name)+idx)%extra.length]:"";
   return c?`${a} ${c}`:a;
 }
+// ── ESTADÍSTICAS DEL ATLETA (Progreso): periodo, entrenos, tiempo, kilos y nivel por músculo ──
+// Nivel de cada músculo según las series semanales que le dedica en el periodo
+// (músculo principal = 1 serie, secundarios = ½): Oro ≥10/sem · Plata ≥6 · Bronce ≥3 · Madera >0.
+const LVL = [
+  {k:"oro",l:"Oro",min:10,c:"#ffd23f",glow:"rgba(255,210,63,.7)"},
+  {k:"plata",l:"Plata",min:6,c:"#c9cdd8",glow:"rgba(201,205,216,.45)"},
+  {k:"bronce",l:"Bronce",min:3,c:"#c47f36",glow:"rgba(196,127,54,.45)"},
+  {k:"madera",l:"Madera",min:0.01,c:"#8a5a2e",glow:null},
+];
+const lvlOf = (perWeek) => LVL.find(x=>perWeek>=x.min)||null;
+const MAP_MUSCLES = ["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Core","Lumbar","Glúteo","Cuádriceps","Isquios","Aductores","Gemelo"];
+const MAIN_MUSCLES = ["Pecho","Espalda","Hombro","Bíceps","Tríceps","Core","Glúteo","Cuádriceps","Isquios"];
+// Duración aproximada de una sesión: series × (trabajo + descanso) + calentamiento; si no hay datos, 60 min.
+const sessionMinutes = (exs) => { const d=(exs||[]).filter(exDone); if(!d.length) return 60;
+  const s=d.reduce((t,e)=>t+(parseInt(e.sets)||1)*(45+(parseInt(e.rest_seconds)||90)),0); return Math.max(30,Math.min(120,Math.round(s/60+10))); };
+const fmtMin = (m) => m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}′`:""}`;
+
+// Silueta anatómica (vista frontal o trasera) con cada músculo coloreado por nivel.
+// Se dibuja la mitad izquierda y se refleja; cada músculo lleva un degradado de volumen encima.
+const BODY_SIL = "M100 50 L91 51 C90 56 90 61 89 64 C82 68 74 70 66 73 C58 75 52 82 50 92 C48 102 47 112 46 122 C45 132 43 142 42 150 C40 158 38 166 38 176 C37 188 37 198 38 208 C35 214 33 222 34 232 C35 239 39 243 44 242 C48 240 48 232 48 226 C48 220 48 214 48 208 C50 196 53 184 55 172 C56 164 57 156 58 150 C60 140 61 130 62 122 C63 116 65 111 68 108 C69 116 70 124 70 132 C72 144 74 154 76 165 C74 174 71 183 70 192 C67 204 65 218 66 232 C66 252 68 272 71 292 C72 300 74 306 74 312 C72 320 70 330 70 342 C71 356 75 368 79 378 C80 382 80 386 78 390 C76 394 80 398 88 398 C94 398 97 396 96 390 C95 386 96 382 96 376 C97 362 98 348 97 334 C96 326 96 318 96 312 C97 300 98 284 98 268 C98 252 99 236 100 220 Z";
+const BODY_FRONT = {
+  "Espalda":   ["M91 62 C85 67 77 70 68 73 C74 75 81 76 87 75 C89 71 90 67 91 62 Z"],
+  "Hombro":    ["M68 74 C58 75 51 82 49 92 C47 102 47 110 48 117 C52 119 56 117 58 111 C60 100 64 92 72 85 C73 80 71 76 68 74 Z"],
+  "Pecho":     ["M98 79 C90 76 80 77 74 82 C67 88 64 98 66 108 C69 116 78 121 88 120 C93 119 97 117 98 114 Z"],
+  "Bíceps":    ["M58 113 C52 118 49 128 48.5 140 C48.5 146 50 150 53 152 C57 152 60 149 61.5 144 C62.5 134 62 122 60 114 Z"],
+  "Antebrazo": ["M47 154 C42 162 39 174 39 188 C39 197 40 203 42 206 C45 200 47 190 49 180 C51 170 52 162 52 156 Z",
+                "M53 156 C54 166 53 178 50.5 190 C49.5 198 48.5 204 47.5 207 L48 207 C51 196 54 184 56 172 C57 166 57 160 56 155 Z"],
+  "Core":      ["M88 123 C92 122 95 121 98 121 L98 134 C95 134 91 135 88 136 C87 131 87 127 88 123 Z",
+                "M87.5 139 C91 138 95 138 98 138 L98 152 C95 152 91 152 87.5 153 C87 148 87 143 87.5 139 Z",
+                "M87 156 C91 156 95 156 98 156 L98 170 C95 170 91 170 87.5 171 C87 166 87 161 87 156 Z",
+                "M87.5 174 C91 174 95 174 98 174 L98 206 C94 201 90 193 88 185 C87.5 181 87.5 177 87.5 174 Z",
+                "M69.5 112 L76 114 C77 117 77 120 76 123 L70.5 122 Z","M70.5 125 L77 124 C78 127 78 130 77 133 L71.5 132 Z",
+                "M72 135 C77 134 82 135 86 137 C86 154 85 170 83 186 C80 189 76 190 72 191 C73.5 182 75.5 173 76 165 C74.5 155 73 145 72 135 Z"],
+  "Cuádriceps":["M70.5 196 C66.5 214 65.5 236 66.5 256 C67.5 276 70.5 292 74.5 304 C78 302 80 292 80 278 C80 252 77 224 72.5 200 Z",
+                "M78.5 203 C76.5 223 76.5 248 79 270 C80 282 82.5 292 85.5 298 C89.5 292 91 280 91 266 C91 244 88 222 83.5 205 Z",
+                "M91.5 262 C87.5 272 86.5 288 88.5 300 C91 307 95.5 308 97.5 303 C98 294 97 280 95 268 Z"],
+  "Aductores": ["M87.5 206 C91.5 213 95.5 216 99.5 220 C99 236 98 250 96 262 C93 256 90.5 246 88.5 236 C86.5 226 86.5 215 87.5 206 Z"],
+  "Gemelo":    ["M74.5 322 C70.5 332 69.5 346 71 358 C72.5 366 75.5 372 78.5 375 C79.5 360 79.5 342 78.5 328 Z",
+                "M80 323 C82 340 83 358 83 377 L86.5 377 C86.5 356 86 338 85 322 Z",
+                "M90 321 C95 331 97 345 96 359 C95 367 93 373 90 376 C88 364 87 350 88 336 C88 330 89 325 90 321 Z"],
+};
+const BODY_FRONT_N = ["M72.5 192 C77 190.5 82 190 85.5 191 C86.5 196 87.5 201 88 206 C83 203 77 200.5 71.5 197.5 Z","M91 52 C92 58 95 64 98.5 70 L96 71.5 C92.5 66 90.5 60 90 54 Z",
+  "M38 209 C35 216 34 226 35 234 C36 240 40 242 44 241 C47 238 48 230 48 222 C48 216 48 212 47 209 Z",
+  "M73.5 199 C80 222 88 252 94.5 292 L92.5 293 C86 254 78 224 72 201 Z",
+  "M76 306 C80 301 92 301 96.5 307 C97.5 314 94 320 86 320 C79 320 75 314 76 306 Z",
+  "M78.5 381 C76 388 77 395 84 397 C90 398 95 397 95.5 392 C95.5 387 95 382 94 379 C89 380 83 380 78.5 381 Z"];
+const BODY_BACK = {
+  "Espalda":   ["M100 51 L92 56 C90 63 86 68 76 71 C71 73 67 74 65 76 C74 79 82 86 88 96 C92 104 96 116 100 130 Z",
+                "M74 88 C69 95 68 104 71 111 C78 112 86 106 90 98 C86 92 81 89 74 88 Z",
+                "M69.5 113 C69.5 130 72 148 77 164 C80 170 85 170 89 165 C94 155 97 143 99 133 C96 125 93 118 90 110 C83 114 76 115 69.5 113 Z"],
+  "Hombro":    ["M66 76 C57 77 51 84 49 95 C47.5 103 47.5 111 48.5 117 C52 119 56 117 58 111 C61 100 66 92 73 86 C72 81 70 78 66 76 Z"],
+  "Tríceps":   ["M58 113 C52 118 48.5 128 47.5 140 C47 146 48.5 150 51.5 152 C56 153 59.5 150 61 144 C62.5 134 62 122 60 114 Z"],
+  "Antebrazo": ["M47 154 C42 162 39 174 39 188 C39 197 40 203 42 206 C45 200 47 190 49 180 C51 170 52 162 52 156 Z",
+                "M53 156 C54 166 53 178 50.5 190 C49.5 198 48.5 204 47.5 207 L48 207 C51 196 54 184 56 172 C57 166 57 160 56 155 Z"],
+  "Core":      ["M77 167 C81 172 86 173 90 171 C90 179 89.5 185 89 190 C83 189 77 190 71.5 192 C73.5 183 75.5 175 77 167 Z"],
+  "Lumbar":    ["M93 134 C89.5 146 88 160 88.5 174 C89 181 92 186 98 187.5 L98 131 C96.5 132 94.5 133 93 134 Z"],
+  "Glúteo":    ["M99 188 C90 186 79 189 73 196 C67 204 66 216 71 226 C76 233 85 235 93 232 C97 230 99 224 99.5 216 Z",
+],
+  "Isquios":   ["M68 235 C66 254 67 276 71 294 C73 302 76 306 80 306 C83 296 84 280 83 262 C82 250 80 240 78 235 Z",
+                "M81 236 C84 254 86 274 87 292 C88 300 91 306 95 306 C98 296 99 280 99 262 C99 252 99 244 98 236 C92 234 86 234 81 236 Z"],
+  "Gemelo":    ["M74 316 C69 326 68 340 70 352 C72 360 76 364 81 362 C84 352 85 338 85 326 C84 320 80 316 74 316 Z",
+                "M86 316 C85 328 86 342 89 354 C91 362 95 364 97.5 358 C99 346 98 330 96 320 C93 316 89 315 86 316 Z",
+                "M71.5 357 C73.5 366 76.5 374 79.5 379 L84 379 C84 371 83 365 82 363 C78 365 74 363 71.5 357 Z",
+                "M88 357 C88.5 366 90 373 91.5 379 L95.5 379 C96.5 371 97 365 97 359 C95 364 91 364 88 357 Z"],
+};
+const BODY_BACK_N = ["M90.5 54 C90.5 60 90 66 88 70 L92 68 C93 63 93 58 92.5 53 Z",
+  "M38 209 C35 216 34 226 35 234 C36 240 40 242 44 241 C47 238 48 230 48 222 C48 216 48 212 47 209 Z",
+  "M77 308 C84 312 92 312 96.5 308 L96.5 315 C90 318 82 318 75.5 315 Z",
+  "M84.5 379 L91 379 C91 385 92 389 93 393 L84 393 C84.5 388 84.5 384 84.5 379 Z",
+  "M78.5 382 C76 389 77 395 84 397 C90 398 95 397 95.5 392 C95.5 387 95 383 94 380 Z"];
+function BodyMap({side,lv,sel,onPick}){
+  // Estilo «lámina»: cuerpo negro con contornos finos grises; los músculos trabajados, en color plano.
+  const shapes=side==="front"?BODY_FRONT:BODY_BACK;
+  const mirror="translate(200 0) scale(-1 1)", INK="#0c0c0f", LINE="#8d8d98", SUB="#5c5c68";
+  const both=(el)=>[undefined,mirror].map((tf,k)=><g key={k} transform={tf}>{el}</g>);
+  const det=side==="front"
+    ?["M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233", "M80 389 L80 395","M84 390 L84 397","M88 390 L88 397.5","M92 390 L92 397",
+      "M98 71 C90 72 81 73 73 75","M54 140 C55 132 56 124 57 118","M44 168 C46 180 46 192 44 202"]
+    :["M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233","M72 120 C76 132 80 146 86 158","M80 245 C80 262 81 280 82 296","M89 386 L89 393"];
+  return <svg viewBox="28 0 144 402" style={{width:"100%",maxWidth:160,height:"auto",display:"block",margin:"0 auto",overflow:"visible"}}>
+    {/* Silueta */}
+    <g stroke={LINE} strokeWidth="1.1" strokeLinejoin="round" fill={INK}>
+      {both(<path d={BODY_SIL}/>)}
+      <path d="M100 8 C109 8 115 15 115 26 C115 36 111 45 104 49 C102 50 98 50 96 49 C89 45 85 36 85 26 C85 15 91 8 100 8 Z"/>
+      <path d="M85.5 24 C83 24 82.5 30 84 34 C85 36 86 35 86.5 33 Z"/><path d="M114.5 24 C117 24 117.5 30 116 34 C115 36 114 35 113.5 33 Z"/>
+    </g>
+    {/* Zonas sin nivel (cuello, manos, rodillas, pies) */}
+    <g pointerEvents="none" fill={INK} stroke={SUB} strokeWidth=".8" strokeLinejoin="round">{both((side==="front"?BODY_FRONT_N:BODY_BACK_N).map((d,i)=><path key={i} d={d}/>))}</g>
+    {/* Músculos */}
+    {Object.entries(shapes).map(([name,ds])=>{ const L=lv[name], on=sel===name;
+      return <g key={name} onClick={()=>onPick(name)} style={{cursor:"pointer",filter:L&&L.k==="oro"?"drop-shadow(0 0 2.5px rgba(255,210,63,.75))":"none"}} role="button" aria-label={`${name}: ${L?L.l:"sin trabajar"}`}>
+        {both(ds.map((d,i)=><path key={i} d={d} fill={L?L.c:INK} stroke={on?"#fff":L?"#1b1206":SUB} strokeWidth={on?1.6:.8} strokeLinejoin="round" style={{transition:"fill .4s"}}/>))}
+      </g>; })}
+    {/* Líneas de detalle (dedos, fibras, línea media) */}
+    <g fill="none" stroke={SUB} strokeWidth=".6" strokeLinecap="round" pointerEvents="none" opacity=".9">
+      {both(det.map((d,i)=><path key={i} d={d}/>))}
+      {side==="front"?<path d="M100 76 L100 120"/>:<path d="M100 52 L100 186"/>}
+    </g>
+  </svg>;
+}
+
+function AthleteStats({client,history,assignedSessions,assignedExercises}){
+  const [per,setPer]=React.useState("mes"); // semana | mes | año | todo
+  const [sel,setSel]=React.useState(null);
+  const [info,setInfo]=React.useState(false);
+  const sess=athleteSessions(client,history,assignedSessions,assignedExercises);
+  const log=strengthLog(client,assignedSessions,assignedExercises);
+  const first=[...sess.map(x=>x.date),...log.map(x=>x.date)].sort()[0]||TODAY;
+  const range=(p,back)=>{ // [desde, hasta) del periodo (back=1 → el anterior)
+    const d=new Date(TODAY+"T12:00:00");
+    if(p==="semana"){ const m=addDays(mondayOfDate(TODAY),-7*back); return [m,addDays(m,7)]; }
+    if(p==="mes"){ const a=new Date(d.getFullYear(),d.getMonth()-back,1,12), b=new Date(d.getFullYear(),d.getMonth()-back+1,1,12); return [a.toISOString().slice(0,10),b.toISOString().slice(0,10)]; }
+    if(p==="año"){ const y=d.getFullYear()-back; return [`${y}-01-01`,`${y+1}-01-01`]; }
+    return back?null:[first,addDays(TODAY,1)]; };
+  const calc=(r)=>{ if(!r) return null; const [a,b]=r, inR=(x)=>x>=a&&x<b;
+    const ss=sess.filter(x=>inR(x.date)), lg=log.filter(x=>inR(x.date));
+    const days=Math.max(1,(Math.min(new Date(b+"T12:00:00"),new Date(addDays(TODAY,1)+"T12:00:00"))-new Date((a<first?first:a)+"T12:00:00"))/86400000);
+    const sets={}; lg.forEach(x=>{ const ms=musclesOf(x.name).filter(m=>MAP_MUSCLES.includes(m)); ms.forEach((m,i)=>{ sets[m]=(sets[m]||0)+x.sets*(i===0?1:.5); }); });
+    const weeks=Math.max(1,days/7), lv={}; MAP_MUSCLES.forEach(m=>{ lv[m]=lvlOf((sets[m]||0)/weeks); });
+    return {n:ss.length,min:ss.reduce((t,x)=>t+sessionMinutes(x.exs),0),ton:Math.round(lg.reduce((t,x)=>t+(x.ton||0),0)),sets,weeks,lv}; };
+  const cur=calc(range(per,0)), prev=calc(range(per,1));
+  const score=(l)=>l?4-LVL.indexOf(l):0;
+  const avg=MAIN_MUSCLES.reduce((t,m)=>t+score(cur.lv[m]),0)/MAIN_MUSCLES.length;
+  const overall=avg>=0.5?LVL[4-Math.max(1,Math.min(4,Math.round(avg)))]:null;
+  const counts=LVL.map(L=>({L,n:MAP_MUSCLES.filter(m=>cur.lv[m]===L).length}));
+  const PER=[["semana","Semana"],["mes","Mes"],["año","Año"],["todo","Todo"]];
+  const prevTxt={semana:"la semana pasada",mes:"el mes pasado",año:"el año pasado"}[per];
+  const delta=(a,b,fmt)=>{ if(!prev||b==null) return null; const d=a-b; if(!d) return <span style={{color:DK.dim}}>= que {prevTxt}</span>; return <span style={{color:d>0?DK.grn:DK.red}}>{d>0?"▲ +":"▼ −"}{fmt(Math.abs(d))} vs {prevTxt}</span>; };
+  const Ic=({ic,big})=><span style={{width:big?56:36,height:big?56:36,borderRadius:"50%",background:"rgba(255,122,69,.12)",display:"grid",placeItems:"center",fontSize:big?24:17,flexShrink:0}}>{ic}</span>;
+  const Box=({ic,l,v,d,wide})=>wide
+    ?<div className="dk-card" style={{padding:14,display:"flex",alignItems:"center",gap:12,gridColumn:"1 / -1",borderRadius:20}}><Ic ic={ic} big/>
+      <span style={{minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:800,color:DK.tx}}>{l}</span>
+        <span key={per+v} className="count-pop" style={{display:"block",fontSize:28,fontWeight:800,color:DK.sub,lineHeight:1.15}}>{v}</span>
+        {d&&<span style={{display:"block",fontSize:10,fontWeight:700,marginTop:1}}>{d}</span>}</span></div>
+    :<div className="dk-card" style={{padding:"12px 13px",borderRadius:20,minWidth:0}}>
+      <div style={{display:"flex",alignItems:"center",gap:9}}><Ic ic={ic}/><span style={{fontSize:13,fontWeight:800,color:DK.tx}}>{l}</span></div>
+      <div key={per+v} className="count-pop" style={{fontSize:24,fontWeight:800,color:DK.sub,lineHeight:1.15,marginTop:8,whiteSpace:"nowrap"}}>{v}</div>
+      {d&&<div style={{fontSize:10,fontWeight:700,marginTop:2}}>{d}</div>}</div>;
+  const sl=sel&&cur.lv[sel], spw=sel?Math.round((cur.sets[sel]||0)/cur.weeks*10)/10:0, nxt=sel?[...LVL].reverse().find(L=>L.min>spw):null;
+  return(
+    <div className="dk-panel" style={{marginBottom:16}}>
+      <div style={{fontSize:20,fontWeight:800,color:DK.tx,textAlign:"center",marginBottom:12}}>Tus estadísticas</div>
+      <div className="dk-seg" role="tablist">{PER.map(([k,l])=><button key={k} role="tab" aria-selected={per===k} className={per===k?"on":""} onClick={()=>{ setPer(k); setSel(null); }}>{l}</button>)}</div>
+      <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10,marginTop:14}}>
+        <Box ic="🏋️" l="Entrenos" v={cur.n} d={delta(cur.n,prev&&prev.n,x=>x)}/>
+        <Box ic="⏱️" l="Tiempo" v={cur.n?fmtMin(cur.min):"0 min"} d={delta(cur.min,prev&&prev.min,fmtMin)}/>
+        <Box wide ic="🏆" l="Peso total levantado" v={`${cur.ton.toLocaleString("es-ES")} kg`} d={delta(cur.ton,prev&&prev.ton,x=>`${x.toLocaleString("es-ES")} kg`)}/>
+      </div>
+      <div className="dk-card" style={{marginTop:10,borderRadius:22}}>
+        <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:10}}>
+          <div><div style={{fontSize:13,color:DK.mu,fontWeight:700}}>Tu nivel</div>
+            <div style={{fontSize:28,fontWeight:800,color:overall?overall.c:DK.mu,lineHeight:1.15,textShadow:overall&&overall.glow?`0 0 18px ${overall.glow}`:"none"}}>{overall?overall.l:"Empezando"}</div></div>
+          <button type="button" onClick={()=>setInfo(v=>!v)} aria-label="Cómo se calcula" style={{width:30,height:30,borderRadius:"50%",border:`1.5px solid ${DK.ac2}`,background:"none",color:DK.ac2,fontWeight:800,fontSize:14,cursor:"pointer",fontFamily:"inherit"}}>i</button>
+        </div>
+        {info&&<div style={{fontSize:12,color:DK.sub,lineHeight:1.45,background:DK.card2,borderRadius:12,padding:"9px 11px",marginTop:8}}>Cada músculo sube de nivel según las <b>series por semana</b> que le dedicas en este periodo (el músculo principal del ejercicio cuenta 1 serie y los que ayudan, ½): <b style={{color:LVL[0].c}}>Oro</b> 10 o más · <b style={{color:LVL[1].c}}>Plata</b> 6 · <b style={{color:LVL[2].c}}>Bronce</b> 3 · <b style={{color:LVL[3].c}}>Madera</b> menos de 3. Toca un músculo para verlo.</div>}
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
+          <div><BodyMap side="front" lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DELANTE</div></div>
+          <div><BodyMap side="back" lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DETRÁS</div></div>
+        </div>
+        {sel&&<div className="ember-pop" style={{marginTop:10,background:DK.card2,borderRadius:12,padding:"9px 12px",display:"flex",alignItems:"center",gap:10}}>
+          <span style={{width:12,height:12,borderRadius:"50%",background:sl?sl.c:"#30303a",flexShrink:0}}/>
+          <span style={{flex:1,fontSize:13,color:DK.sub}}><b style={{color:DK.tx}}>{sel}</b> · {String(spw).replace(".",",")} series/sem · <b style={{color:sl?sl.c:DK.mu}}>{sl?sl.l:"sin trabajar"}</b>{nxt?<span style={{color:DK.mu}}> · {String(Math.round((nxt.min-spw)*10)/10).replace(".",",")} más para {nxt.l}</span>:""}</span>
+          <button type="button" onClick={()=>setSel(null)} style={{border:"none",background:"none",color:DK.dim,fontSize:16,cursor:"pointer"}} aria-label="Cerrar">✕</button>
+        </div>}
+        <div style={{display:"flex",flexWrap:"wrap",gap:7,marginTop:12}}>
+          {counts.map(({L,n})=><span key={L.k} style={{display:"inline-flex",alignItems:"center",gap:6,background:DK.card2,borderRadius:999,padding:"6px 12px",fontSize:12,fontWeight:800,color:DK.tx}}><span style={{width:9,height:9,borderRadius:"50%",background:L.c,boxShadow:L.glow?`0 0 6px ${L.glow}`:"none"}}/>{L.l}: {n}</span>)}
+        </div>
+      </div>
+    </div>);
+}
+
 function StrengthView({client,assignedSessions,assignedExercises}){
   const log=strengthLog(client,assignedSessions,assignedExercises);
   const exs=strengthByExercise(log);
@@ -7764,8 +8238,9 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
 // ── RESERVAR: semana fija a pantalla completa ─────────────────────────────
 // Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
 // En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
-function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, hybrid, loadAll, notify, saving, setSaving}) {
+function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, hybrid, loadAll, notify, saving, setSaving, streak}) {
   const [wk,setWk] = React.useState(()=>mondayOfDate(TODAY));
+  const [celebrate,setCelebrate] = React.useState(null); // pantalla «¡Reservado!» tras confirmar
   const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN"
   const days=Array.from({length:5},(_,i)=>addDays(wk,i));
   const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
@@ -7819,45 +8294,66 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
     if(po.length){ const {error}=await sb.from("open_sessions").insert(po.map(k=>({client_id:client.id,date:k.slice(0,10),status:"planned"})));
       if(error){ setSaving(false); await loadAll(); return notify("Las clases sí, pero las open no se pudieron guardar (avisa a tu trainer)","err"); } }
     await loadAll(); setSaving(false); setPicked([]);
-    notify(`✅ Reservado: ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")} 💪`);
+    setCelebrate({n:pc.length+po.length,nc:pc.length,no:po.length,days:[...new Set(picked.map(k=>k.slice(0,10)))].sort()});
   };
   const cur=mondayOfDate(TODAY), lbl=wk===cur?"Esta semana":wk===addDays(cur,7)?"Próxima semana":`${new Date(wk+"T12:00:00").getDate()} – ${shortD(addDays(wk,4))}`;
   const nRows=rows.length+(hybrid?1:0);
-  const cellBase={borderRadius:10,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:0,transition:"background .15s, transform .1s"};
-  const chip=(ic,txt,col,bg)=><span style={{display:"inline-flex",alignItems:"center",gap:5,fontSize:12,fontWeight:800,color:col,background:bg,borderRadius:20,padding:"5px 10px"}}>{ic} {txt}</span>;
+  const leftC=Math.max(0,nFree-pc.length), leftO=oLeft!==null?Math.max(0,oLeft-po.length):null;
+  const DL=["L","M","X","J","V"];
+  const hasMine=(d)=>allSessions.some(s=>s.client_id===client.id&&s.date===d)||!!myOpen(d)||picked.some(k=>k.startsWith(d));
+  const cellBase={borderRadius:12,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:0,transition:"background .15s, transform .1s, box-shadow .2s"};
+  const fire="linear-gradient(135deg,#ff7a45,#f2441d)";
   return(
-    <div style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 200px - env(safe-area-inset-bottom))",minHeight:440}}>
-      {/* Lo que te queda */}
-      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
-        {chip("👥",`${Math.max(0,nFree-pc.length)} clase${nFree-pc.length!==1?"s":""} por reservar`,nFree-pc.length>0?"#0369a1":"#a16207",nFree-pc.length>0?"#e6f2fb":"#fbf1d8")}
-        {hybrid&&chip("🔓",oLeft!==null?`${Math.max(0,oLeft-po.length)} open por reservar`:"open sin tope","#0f766e","#e6f6f3")}
-        {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:12,fontWeight:800,color:"#16a34a",textDecoration:"none",padding:"5px 4px"}}>Renovar ›</a>}
+    <div className="ember-panel" style={{position:"relative",overflow:"hidden",margin:"-4px -6px 0",borderRadius:26,background:"radial-gradient(120% 60% at 50% -5%,rgba(242,68,29,.38),rgba(10,10,12,0) 60%),#0b0b0e",color:"#fff",
+      display:"flex",flexDirection:"column",height:"calc(100dvh - 196px - env(safe-area-inset-bottom))",minHeight:460,padding:"12px 12px 12px",boxShadow:"0 20px 40px rgba(15,23,42,.25)"}}>
+      <Embers/>
+      {/* Llama + número grande */}
+      <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
+        <span className="ember-flame" style={{fontSize:34,lineHeight:1}}>🔥</span>
+        <div style={{display:"flex",alignItems:"center",gap:12,width:"100%",marginTop:2}}>
+          <span style={{flex:1,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.25))"}}/>
+          <span style={{fontSize:54,fontWeight:900,lineHeight:1,background:fire,WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent",letterSpacing:-1}}>{leftC}</span>
+          <span style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,.25),transparent)"}}/>
+        </div>
+        <div style={{fontSize:15,fontWeight:800,color:"#ff7a45",marginTop:2}}>{leftC===1?"Clase por reservar":"Clases por reservar"}</div>
+        <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",justifyContent:"center"}}>
+          {streak>0&&<span style={{fontSize:11,fontWeight:800,color:"#fdba74",background:"rgba(255,122,69,.12)",border:"1px solid rgba(255,122,69,.3)",borderRadius:20,padding:"3px 10px"}}>🔥 {streak} sem. seguidas</span>}
+          {hybrid&&<span style={{fontSize:11,fontWeight:800,color:"#fcd34d",background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.3)",borderRadius:20,padding:"3px 10px"}}>🔓 {leftO!==null?`${leftO} open`:"open sin tope"}</span>}
+          {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:800,color:"#86efac",textDecoration:"none",border:"1px solid rgba(134,239,172,.35)",borderRadius:20,padding:"3px 10px"}}>Renovar bono ›</a>}
+        </div>
       </div>
       {/* Semana */}
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
-        <button type="button" className="btn ghost" style={{padding:"7px 14px",fontSize:16}} disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))}>‹</button>
-        <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800,color:"#0f172a"}}>{lbl}</div>
-        <button type="button" className="btn ghost" style={{padding:"7px 14px",fontSize:16}} onClick={()=>setWk(addDays(wk,7))}>›</button>
+      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,margin:"10px 0 8px",flexShrink:0}}>
+        <button type="button" aria-label="Semana anterior" disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:wk<=cur?"rgba(255,255,255,.25)":"#fff",fontSize:18,cursor:wk<=cur?"default":"pointer",fontFamily:"inherit"}}>‹</button>
+        <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800}}>{lbl}</div>
+        <button type="button" aria-label="Semana siguiente" onClick={()=>setWk(addDays(wk,7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,cursor:"pointer",fontFamily:"inherit"}}>›</button>
       </div>
-      <div style={{flex:1,minHeight:0,display:"grid",gridTemplateColumns:"42px repeat(5,minmax(0,1fr))",gridTemplateRows:`auto repeat(${nRows},minmax(0,1fr))`,gap:4}}>
+      <div style={{position:"relative",flex:1,minHeight:0,background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:"40px repeat(5,minmax(0,1fr))",gridTemplateRows:`auto repeat(${nRows},minmax(0,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
         <div/>
-        {days.map(d=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY; return(
-          <div key={d} style={{textAlign:"center",padding:"4px 0",borderRadius:10,background:t?"#0284c7":"transparent",color:t?"#fff":dayClosed(d)?"#cbd5e1":"#0f172a"}}>
-            <div style={{fontSize:10,fontWeight:800,textTransform:"uppercase",opacity:.8}}>{x.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
-            <div style={{fontSize:17,fontWeight:800,lineHeight:1.1}}>{x.getDate()}</div>
+        {/* Cabecera de días con «pista» de los días con clase (como una racha) */}
+        {days.map((d,i)=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY, on=hasMine(d), prev=i>0&&hasMine(days[i-1]), next=i<4&&hasMine(days[i+1]); return(
+          <div key={d} style={{textAlign:"center",color:dayClosed(d)?"rgba(255,255,255,.25)":"#fff"}}>
+            <div style={{fontSize:11,fontWeight:800,opacity:.7}}>{DL[i]}</div>
+            <div style={{position:"relative",height:30,display:"flex",alignItems:"center",justifyContent:"center",marginTop:2}}>
+              {on&&<span style={{position:"absolute",top:3,bottom:3,left:prev?-3:"50%",right:next?-3:"50%",background:"rgba(242,68,29,.28)",borderRadius:prev&&next?0:prev?"0 14px 14px 0":next?"14px 0 0 14px":0}}/>}
+              <span style={{position:"relative",width:28,height:28,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:on?13:13,fontWeight:800,
+                background:on?fire:t?"rgba(255,255,255,.14)":"transparent",boxShadow:on?"0 0 14px rgba(242,68,29,.55)":"none",border:t&&!on?"1px solid rgba(255,255,255,.35)":"none"}}>{on?"✓":x.getDate()}</span>
+            </div>
           </div>); })}
         {rows.map(t=>(<React.Fragment key={t}>
-          <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"#64748b"}}>{t}</div>
+          <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"rgba(255,255,255,.55)"}}>{t}</div>
           {days.map(d=>{ const k=d+"|"+t, m=mine(d,t), sel=picked.includes(k), closed=slotClosed(d,t), past=isPast(d,t), free=freeAt(d,t), w=myWait(d,t);
             const st=m?"mine":sel?"sel":closed||past?"off":free<=0?"full":"free";
-            const sty={mine:{background:m&&m.status==="completed"?"#16a34a":"#0284c7",color:"#fff",border:"none"},sel:{background:"#16a34a",color:"#fff",border:"none",transform:"scale(.96)"},
-              off:{background:"transparent",color:"transparent",border:"1px dashed #e6ebf3"},full:{background:"#f1f4fa",color:"#94a3b8",border:"1px solid #e6ebf3"},
-              free:{background:"#fff",color:"#16a34a",border:"1.5px solid #bbf7d0",boxShadow:"0 1px 2px rgba(15,23,42,.05)"}}[st];
+            const sty={mine:{background:m&&m.status==="completed"?"linear-gradient(135deg,#22c55e,#15803d)":fire,color:"#fff",border:"none",boxShadow:"0 0 16px rgba(242,68,29,.45)"},
+              sel:{background:"#fff",color:"#f2441d",border:"none",transform:"scale(.95)",boxShadow:"0 0 0 3px rgba(255,122,69,.55)"},
+              off:{background:"transparent",color:"transparent",border:"1px dashed rgba(255,255,255,.06)"},
+              full:{background:"rgba(255,255,255,.04)",color:"rgba(255,255,255,.35)",border:"1px solid rgba(255,255,255,.06)"},
+              free:{background:"rgba(255,255,255,.07)",color:"#fff",border:"1px solid rgba(255,255,255,.1)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapClass(d,t)} aria-label={`${fmtDate(d)} ${t}: ${st==="mine"?"tu clase":st==="sel"?"elegida":st==="full"?"completa":st==="free"?`${free} libres`:"no disponible"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
-              {st==="mine"&&<><span style={{fontSize:16}}>✓</span><span style={{fontSize:9}}>{m.status==="completed"?"hecha":"tú"}</span></>}
-              {st==="sel"&&<span style={{fontSize:18}}>＋</span>}
-              {st==="free"&&<><span style={{fontSize:15}}>{free}</span><span style={{fontSize:8,fontWeight:700,color:"#86efac"}}>libre{free>1?"s":""}</span></>}
+              {st==="mine"&&<span style={{fontSize:17}}>✓</span>}
+              {st==="sel"&&<span style={{fontSize:20,fontWeight:900}}>＋</span>}
+              {st==="free"&&<><span style={{fontSize:15}}>{free}</span><span style={{fontSize:8,fontWeight:700,color:"rgba(255,255,255,.45)"}}>libre{free>1?"s":""}</span></>}
               {st==="full"&&<span style={{fontSize:9}}>{w?"⏳ espera":"lleno"}</span>}
             </button>; })}
         </React.Fragment>))}
@@ -7865,29 +8361,60 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}} title="Open · por tu cuenta">🔓</div>
           {days.map(d=>{ const k=d+"|OPEN", m=myOpen(d), sel=picked.includes(k), off=dayClosed(d)||d<TODAY;
             const st=m?"mine":sel?"sel":off?"off":"free";
-            const sty={mine:{background:m&&m.status==="done"?"#16a34a":"#0f766e",color:"#fff",border:"none"},sel:{background:"#14b8a6",color:"#fff",border:"none",transform:"scale(.96)"},
-              off:{background:"transparent",color:"transparent",border:"1px dashed #e6ebf3"},free:{background:"#f0faf7",color:"#0f766e",border:"1.5px dashed #5eead4"}}[st];
+            const sty={mine:{background:m&&m.status==="done"?"linear-gradient(135deg,#22c55e,#15803d)":"linear-gradient(135deg,#fbbf24,#f59e0b)",color:"#1c1917",border:"none",boxShadow:"0 0 14px rgba(251,191,36,.4)"},
+              sel:{background:"#fff",color:"#d97706",border:"none",transform:"scale(.95)",boxShadow:"0 0 0 3px rgba(251,191,36,.55)"},
+              off:{background:"transparent",color:"transparent",border:"1px dashed rgba(255,255,255,.06)"},
+              free:{background:"rgba(251,191,36,.06)",color:"#fcd34d",border:"1px dashed rgba(251,191,36,.45)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapOpen(d)} aria-label={`${fmtDate(d)} open: ${st==="mine"?"reservado":st==="sel"?"elegido":"libre"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
               {st==="mine"&&<><span style={{fontSize:14}}>✓</span><span style={{fontSize:9}}>{m.status==="done"?"hecho":"open"}</span></>}
-              {st==="sel"&&<span style={{fontSize:18}}>＋</span>}
+              {st==="sel"&&<span style={{fontSize:20,fontWeight:900}}>＋</span>}
               {st==="free"&&<span style={{fontSize:10}}>open</span>}
             </button>; })}
         </>}
       </div>
-      {/* Confirmar */}
-      <div style={{marginTop:10}}>
+      {/* Confirmar: botón tipo píldora */}
+      <div style={{position:"relative",marginTop:10,flexShrink:0}}>
         {picked.length
           ?<div style={{display:"flex",gap:8}}>
-            <button type="button" className="btn ghost" style={{padding:"12px 14px"}} onClick={()=>setPicked([])}>✕</button>
-            <button type="button" className="btn grn" disabled={saving} onClick={submit} style={{flex:1,padding:12,justifyContent:"center",fontSize:15,fontWeight:800}}>{saving?"Reservando…":`Reservar ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")}`}</button>
+            <button type="button" aria-label="Quitar selección" onClick={()=>setPicked([])} style={{width:50,borderRadius:26,border:"1px solid rgba(255,255,255,.18)",background:"transparent",color:"#fff",fontSize:16,cursor:"pointer"}}>✕</button>
+            <button type="button" disabled={saving} onClick={submit} style={{flex:1,height:50,borderRadius:26,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 0 24px rgba(242,68,29,.35)"}}>
+              {saving?"Reservando…":`Reservar ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")}  ›`}</button>
           </div>
-          :<div style={{display:"flex",justifyContent:"center",gap:12,flexWrap:"wrap",fontSize:11,color:"#64748b",fontWeight:700,padding:"6px 0"}}>
-            <span><span style={{color:"#16a34a"}}>■</span> libre</span><span><span style={{color:"#0284c7"}}>■</span> tu clase</span><span><span style={{color:"#cbd5e1"}}>■</span> lleno</span>{hybrid&&<span><span style={{color:"#0f766e"}}>■</span> open</span>}
+          :<div style={{display:"flex",justifyContent:"center",gap:14,flexWrap:"wrap",fontSize:11,color:"rgba(255,255,255,.55)",fontWeight:700,padding:"8px 0"}}>
+            <span>▢ libre</span><span style={{color:"#ff7a45"}}>● tu clase</span><span>▫ lleno</span>{hybrid&&<span style={{color:"#fcd34d"}}>● open</span>}
           </div>}
       </div>
+      {celebrate&&<BookedCelebration data={celebrate} onClose={()=>setCelebrate(null)}/>}
     </div>
   );
+}
+// Brasas que suben en el fondo de Reservar (decorativo).
+function Embers(){
+  const dots=React.useMemo(()=>Array.from({length:14},(_,i)=>({l:(i*37)%100,d:(i*0.7)%6,s:2+(i%3),t:7+(i%5)})),[]);
+  return <div aria-hidden="true" style={{position:"absolute",inset:0,pointerEvents:"none",overflow:"hidden"}}>
+    {dots.map((x,i)=><span key={i} className="ember" style={{left:`${x.l}%`,width:x.s,height:x.s,animationDelay:`-${x.d}s`,animationDuration:`${x.t}s`}}/>)}
+  </div>;
+}
+// Pantalla de celebración tras reservar (estilo «New streak»).
+function BookedCelebration({data,onClose}){
+  const days=data.days, DL=["D","L","M","X","J","V","S"];
+  return <div role="dialog" aria-label="Reserva confirmada" onClick={onClose} style={{position:"fixed",inset:0,zIndex:1200,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",color:"#fff",
+    background:"radial-gradient(80% 55% at 50% 40%,rgba(242,68,29,.75),rgba(120,20,8,.35) 45%,rgba(11,11,14,0) 75%),#0b0b0e",padding:"max(20px,env(safe-area-inset-top)) 20px max(20px,env(safe-area-inset-bottom))"}}>
+    <div aria-hidden="true" style={{position:"absolute",inset:0,background:"conic-gradient(from 230deg at 50% 42%,transparent 0 12%,rgba(255,255,255,.07) 14% 20%,transparent 22% 78%,rgba(255,255,255,.07) 80% 86%,transparent 88%)",pointerEvents:"none"}}/>
+    <Embers/>
+    <span className="ember-flame" style={{fontSize:56,lineHeight:1,position:"relative"}}>🔥</span>
+    <div className="ember-pop" style={{fontSize:150,fontWeight:900,lineHeight:.95,position:"relative",textShadow:"0 10px 40px rgba(0,0,0,.35)"}}>{data.n}</div>
+    <div style={{fontSize:22,fontWeight:800,position:"relative",marginTop:6}}>¡Reservado!</div>
+    <div style={{fontSize:13,fontWeight:700,opacity:.8,position:"relative",marginTop:4}}>{[data.nc?`${data.nc} clase${data.nc>1?"s":""}`:"",data.no?`${data.no} open`:""].filter(Boolean).join(" + ")} · ¡a por ello! 💪</div>
+    <div style={{position:"relative",marginTop:26,background:"rgba(0,0,0,.35)",border:"1px solid rgba(255,255,255,.12)",borderRadius:22,padding:"12px 16px",display:"flex",gap:12,backdropFilter:"blur(8px)"}}>
+      {days.slice(0,7).map(d=>{ const x=new Date(d+"T12:00:00"); return <div key={d} style={{textAlign:"center"}}>
+        <div style={{fontSize:11,fontWeight:800,opacity:.75}}>{DL[x.getDay()]} {x.getDate()}</div>
+        <div style={{marginTop:6,width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg,#ff7a45,#f2441d)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,boxShadow:"0 0 16px rgba(242,68,29,.6)"}}>✓</div>
+      </div>; })}
+    </div>
+    <button type="button" onClick={onClose} style={{position:"relative",marginTop:28,width:"min(340px,100%)",height:54,borderRadius:28,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:17,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Continuar  ›</button>
+  </div>;
 }
 
 // ── CLIENT CALENDAR ───────────────────────────────────────────────────────
@@ -8450,7 +8977,7 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
 }
 
 // ── PROGRESS TAB ──────────────────────────────────────────────────────────
-function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises}) {
+function ProgressTab({client, history, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises}) {
   const [view, setView] = React.useState("fuerza");
   const [showLog, setShowLog] = React.useState(false);
   const [showPR, setShowPR] = React.useState(false);
@@ -8515,6 +9042,7 @@ function ProgressTab({client, myProgress, myRecords, myAchievements, exercises, 
 
   return(
     <div>
+      <AthleteStats client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
       <div className="seg" style={{marginBottom:14}}>
         {[["fuerza","💪","Fuerza"],["volumen","📊","Volumen"],["stats","📏","Medidas"],["photos","📸","Fotos"],["badges","🏆","Logros"]].map(([id,ic,label])=>(
           <button key={id} className={"sb"+(view===id?" on":"")} onClick={()=>setView(id)} style={{fontSize:11,padding:"6px 2px",lineHeight:1.15,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}><span style={{fontSize:15}}>{ic}</span>{label}</button>
@@ -9640,7 +10168,7 @@ const exerciseCatalog = () => {
   return [...out.values()];
 };
 // Sustitutos de un ejercicio: mismo patrón y músculo principal, con material disponible primero.
-const LOADED_EQ=["barra","multipower","rackpines","mancuernas","legpress","legmachine","machine","poleas","kettlebell","trineo"];
+const LOADED_EQ=["barra","barraz","safetybar","multipower","rackpines","mancuernas","legpress","legmachine","machine","poleas","kettlebell","trineo"];
 const substitutesFor = (name, limit=10) => {
   const cat=exerciseCatalog(), cur=cat.find(x=>x.name===name)||{};
   const pat=patternOf(name), mus=musclesOf(name), prim=mus[0], eq=equipmentOf(name), loaded=LOADED_EQ.includes(eq);
@@ -10132,6 +10660,8 @@ const HYROX_REPS = {"SkiErg":"500 m","Sled push (empuje trineo)":"25-50 m","Sled
 // Clasifica un ejercicio por material/equipo (primer patrón que coincide gana).
 // Devuelve una CLAVE de equipo; la etiqueta visible está en EQUIP_LABEL.
 const EQUIP = [
+  [/barra z|barra ez|\bez bar/i,"barraz"],
+  [/safety bar|\bssb\b/i,"safetybar"],
   [/wall sit|en pared|contra pared|squeeze|zancada isom|split squat hold|puente de (glúteo|gluteo|isquios) isom|bird-dog isom|dead bug isom|copenhagen isom|colgado pasivo|dead hang|gemelos? isom/i,"pesocorporal"],
   [/spanish squat/i,"otros"],
   [/medio muslo|imtp/i,"rackpines"],
@@ -10163,27 +10693,37 @@ const EQUIP = [
 const EQUIP_LABEL = {
   multipower:"🔩 Multipower / Smith", rackpines:"🏗️ Rack / pines", kettlebell:"🔔 Kettlebell",
   legpress:"🦵 Prensa / Hack", legmachine:"🦿 Máquina piernas (ext/curl)", machine:"🏭 Máquinas",
-  poleas:"🪢 Poleas / cable", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barra / rack",
+  poleas:"🪢 Poleas / cable", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barra recta / rack",
   pesocorporal:"🤸 Peso corporal", comba:"🪀 Comba", cuerdas:"🪢 Cuerdas de batalla",
   trineo:"🛷 Trineo", balon:"⚽ Balón medicinal", cajon:"📦 Cajón / pliometría",
-  banda:"🎗️ Banda elástica", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (bici, SkiErg, cinta)", remo:"🚣 Remo ergómetro",
+  banda:"🎗️ Banda elástica", barraz:"〰️ Barra Z", safetybar:"🛡️ Safety bar (SSB)", bancoplano:"🛏️ Banco plano", bancoinclinable:"📐 Banco reclinable", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (bici, SkiErg, cinta)", remo:"🚣 Remo ergómetro",
   antebrazo:"🤏 Antebrazo / agarre", movilidad:"🧘 Movilidad / suelo", otros:"🎯 Otros / analítico",
 };
 // Orden y etiquetas para el editor de material.
-const EQUIP_KEYS = ["barra","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
+const EQUIP_KEYS = ["barra","barraz","safetybar","bancoplano","bancoinclinable","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
 // Ejercicios creados por el entrenador (tabla "exercises"): nombre en minúsculas → {name, equip, muscles, cat, sets, reps, rest}.
 let CUSTOM_EX = {};
 const equipmentOf = (name) => { const c=CUSTOM_EX[String(name||"").toLowerCase()]; if(c&&c.equip) return c.equip; for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
-const equipmentLabel = (name) => EQUIP_LABEL[equipmentOf(name)] || EQUIP_LABEL.otros;
+const equipmentLabel = (name) => equipTxt(name) || EQUIP_LABEL.otros;
 // Prioridad de material: barra/rack/multipower PRIMERO (es el cuello de botella),
 // luego máquinas de pierna, mancuernas, poleas y por último peso corporal/cardio.
-const EQUIP_ORDER = ["barra","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","remo","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
+const EQUIP_ORDER = ["barra","safetybar","barraz","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","remo","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
 const equipRank = (name) => { const i=EQUIP_ORDER.indexOf(equipmentOf(name)); return i<0?99:i; };
 
 // Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
 let GYM_EQUIP = null;
 const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; };
-const equipOk = (name) => { if(!GYM_EQUIP) return true; const v=GYM_EQUIP[equipmentOf(name)]; return v===undefined?true:!!v; };
+// Banco que necesita (además de su material principal): reclinable para inclinados,
+// sentados con respaldo o apoyo de pecho; plano para press banca, hip thrust, press francés…
+const benchOf = (name) => { const n=String(name||"");
+  if(/m[áa]quina|polea(?!.*inclinad)|peck deck|predicador|banco romano|hiperextensi/i.test(n)) return null;
+  if(/inclinad|declinad|reclinab|press militar sentado|apoyo pecho|face-down|y-t-w/i.test(n)) return "bancoinclinable";
+  if(/press banca|press mancuernas (plano|neutro)|press desde pines|aperturas con mancuernas|hip thrust|press franc[ée]s|pullover con mancuerna|remo mancuerna unilateral \(banco\)|fondos de tr[íi]ceps \(banco\)|elevaci[óo]n de piernas en banco|talones en banco|curl concentrado|\(banco\)|en banco/i.test(n)) return "bancoplano";
+  return null; };
+// Todo el material que necesita un ejercicio (principal + banco).
+const equipNeeds = (name) => { const a=[equipmentOf(name)], b=benchOf(name); if(b&&!a.includes(b)) a.push(b); return a; };
+const equipTxt = (name) => equipNeeds(name).map(k=>EQUIP_LABEL[k]||"").filter(Boolean).join(" + ");
+const equipOk = (name) => { if(!GYM_EQUIP) return true; return equipNeeds(name).every(k=>{ const v=GYM_EQUIP[k]; return v===undefined?true:!!v; }); };
 
 const DAY_TYPES = [
   ["fuerzaA","💪 Fuerza · Tren inferior"],["fuerzaB","💪 Fuerza · Tren superior"],
@@ -10686,6 +11226,12 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
   const [picks,setPicks] = React.useState([]); // ejercicios en cola para añadir
 
   const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
+  // Ordenar arrastrando (cada ejercicio, o un WOD entero con todas sus filas)
+  const tSorted=exercises.slice().sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+  const tBlocks=wodBlocks(tSorted), tUnits=[];
+  for(let i=0;i<tSorted.length;){ const b=tBlocks.find(x=>x.rows[0]===tSorted[i]); if(b){ tUnits.push({key:"w"+b.rows[0].id,b,rows:b.rows}); i+=b.rows.length; } else { tUnits.push({key:"e"+tSorted[i].id,ex:tSorted[i],rows:[tSorted[i]]}); i++; } }
+  const tBy=Object.fromEntries(tUnits.map(u=>[u.key,u]));
+  const tds=useDragSort(tUnits.map(u=>u.key),(keys)=>w(async()=>{ const flat=keys.flatMap(k=>(tBy[k]||{rows:[]}).rows); for(let i=0;i<flat.length;i++) if(flat[i].order_index!==i) await sb.from("template_exercises").update({order_index:i}).eq("id",flat[i].id); notify("Orden guardado ✓"); }));
 
   const addExercise = ()=>w(async()=>{
     if(!newEx.exercise_name) return notify("Escribe el nombre","err");
@@ -10740,8 +11286,18 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
           </div>
         )}
 
-        {exercises.sort((a,b)=>a.order_index-b.order_index).map((ex,i)=>(
-          <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,marginBottom:6}}>
+        {tUnits.length>1&&<div style={{fontSize:11,color:"#64748b",marginBottom:6}}><span style={{color:"#94a3b8",fontSize:14}}>⠿</span> Mantén el asa y arrastra para ordenar.</div>}
+        {tds.order.map((k,ui)=>{ const u=tBy[k]; if(!u) return null; return <div key={k} ref={tds.bind(k)} style={{...tds.styleOf(ui),marginBottom:6}}>
+          {tds.compact?(u.b?<DragRow wod title={u.b.title} sub={u.b.list.map(m=>m.name).join(" · ")}/>:<DragRow title={u.ex.exercise_name} sub={`${u.ex.sets||"—"} × ${u.ex.reps||"—"}`}/>)
+          :u.b
+            ?<div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"9px 11px",display:"flex",alignItems:"center",gap:8}}>
+              <button type="button" {...tds.handle(ui,u.b.title)} disabled={saving} style={{borderColor:"#fdba74",color:"#9a3412"}}>⠿</button>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{u.b.title} <span style={{fontSize:10,fontWeight:700,color:"#c2410c"}}>· {u.b.rows.length} filas, se mueve entero</span></div>
+                <div style={{fontSize:11,color:"#7c2d12"}}>{u.b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")}</div></div>
+            </div>
+            :(()=>{ const ex=u.ex; return <div style={{background:"#f1f4fa",borderRadius:10,padding:10,display:"flex",gap:8}}>
+              <button type="button" {...tds.handle(ui,ex.exercise_name)} disabled={saving}>⠿</button>
+              <div style={{flex:1,minWidth:0}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <div style={{flex:1}}>
                 <input className="inp" style={{fontSize:13,padding:"5px 8px"}} value={ex.exercise_name}
@@ -10758,8 +11314,9 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
               <div><span className="lbl" style={{fontSize:9}}>DESCANSO(s)</span><input type="number" className="inp" style={{padding:"5px 7px",fontSize:12}} value={ex.rest_seconds} onChange={e=>updateEx(ex.id,"rest_seconds",parseInt(e.target.value))}/></div>
             </div>
             {ex.is_main&&<div style={{fontSize:10,color:"#ca8a04",marginTop:5}}>★ Ejercicio principal — se usará el peso base del cliente</div>}
-          </div>
-        ))}
+          
+              </div></div>; })()}
+        </div>; })}
 
         {/* ── Relleno rápido: biblioteca de ejercicios ── */}
         <button className="btn sky" style={{width:"100%",padding:10,marginTop:10,fontSize:13,fontWeight:700}}
