@@ -281,6 +281,9 @@ html{background:#eef1f7;}body{background:#eef1f7;color:var(--text);font-family:'
 /* Drag & drop de sesiones */
 .drag-ghost{animation:dragpop .14s ease both;transform-origin:left center;}
 @keyframes dragpop{from{opacity:0;transform:scale(.8) rotate(-4deg)}to{opacity:1;transform:scale(1.05) rotate(-3deg)}}
+.drag-grip{touch-action:none;cursor:grab;border:1px solid #cfd8e6;background:#fff;color:#64748b;border-radius:8px;width:26px;align-self:stretch;min-height:40px;display:flex;align-items:center;justify-content:center;font-size:17px;line-height:1;padding:0;flex-shrink:0;-webkit-user-select:none;user-select:none;font-family:inherit;}
+.drag-grip:active,body.dragging .drag-grip{cursor:grabbing;background:#eef4fc;color:#0284c7;}
+body.dragging{cursor:grabbing;}
 .drag-src{opacity:.35 !important;outline:2px dashed #0284c7;outline-offset:1px;transform:scale(.95);transition:transform .15s,opacity .15s;}
 .drag-target{animation:dragtarget .9s ease-in-out infinite;}
 .drag-landed{animation:draglanded .9s cubic-bezier(.2,.8,.2,1);}
@@ -4507,6 +4510,65 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
 // Permite cambiar, quitar, añadir y ajustar los ejercicios del entreno de una
 // persona en un día concreto (p. ej. si tiene una molestia se sustituye el
 // ejercicio que le duele). Respeta el material disponible del gimnasio.
+// ── ORDENAR ARRASTRANDO (ratón y dedo) ──────────────────────────────────────
+// useDragSort(keys, onDrop): cada elemento registra su nodo con bind(key) y su asa con
+// handle(i). Al pulsar el asa la lista pasa a filas compactas (compact=true) para que
+// quepa entera, la fila sigue al dedo y al soltar llama onDrop(nuevoOrdenDeClaves).
+// El nuevo orden se mantiene en pantalla hasta que llegan los datos guardados.
+function useDragSort(keys, onDrop){
+  const nodes=React.useRef({}), st=React.useRef(null);
+  const [drag,setDrag]=React.useState(null); // {from,to,dy,H}
+  const [compact,setCompact]=React.useState(false);
+  const [opt,setOpt]=React.useState(null);   // orden provisional tras soltar
+  const sig=keys.join("|");
+  React.useEffect(()=>{ setOpt(null); },[sig]);
+  const order=opt&&opt.base===sig?opt.keys:keys;
+  const calc=()=>{ const s=st.current; if(!s||!s.rects) return; const off=s.sc.scrollTop-s.s0, y=s.y+off; let to=0;
+    s.rects.forEach((r,k)=>{ if(k!==s.from&&r&&r.top+r.height/2<y) to++; }); s.to=to; setDrag({from:s.from,to,dy:y-s.c0,H:s.H}); };
+  const finish=(commit)=>{ const s=st.current; if(!s) return; st.current=null; cancelAnimationFrame(s.raf);
+    window.removeEventListener("pointermove",s.mv); window.removeEventListener("pointerup",s.upH); window.removeEventListener("pointercancel",s.cc);
+    try{ document.body.classList.remove("dragging"); }catch(e){}
+    setDrag(null); setCompact(false);
+    if(commit&&s.rects&&s.to!==s.from){ const k=s.order.slice(); const [x]=k.splice(s.from,1); k.splice(s.to,0,x); setOpt({base:s.sig,keys:k}); onDrop(k); } };
+  const start=(e,i)=>{ if(e.button>0||st.current) return; e.preventDefault(); e.stopPropagation();
+    const el=nodes.current[order[i]]; if(!el) return;
+    const s={from:i,to:i,y:e.clientY,order:order.slice(),sig,sc:el.closest(".mdl")||document.scrollingElement,raf:0,rects:null};
+    s.mv=(ev)=>{ ev.preventDefault(); s.y=ev.clientY; calc(); };
+    s.upH=()=>finish(true); s.cc=()=>finish(false);
+    st.current=s;
+    window.addEventListener("pointermove",s.mv,{passive:false}); window.addEventListener("pointerup",s.upH); window.addEventListener("pointercancel",s.cc);
+    try{ document.body.classList.add("dragging"); }catch(err){}
+    setCompact(true); };
+  // Ya en filas compactas: coloca la fila bajo el dedo, mide y arranca el arrastre.
+  React.useLayoutEffect(()=>{ const s=st.current; if(!compact||!s||s.rects) return;
+    const el=nodes.current[s.order[s.from]]; if(!el){ finish(false); return; }
+    const r0=el.getBoundingClientRect(); s.sc.scrollTop+=(r0.top+r0.height/2)-s.y;
+    const rects=s.order.map(k=>nodes.current[k]?nodes.current[k].getBoundingClientRect():null), r=rects[s.from];
+    const nx=rects[s.from+1]||rects[s.from-1], gap=nx?Math.max(0,Math.abs((nx.top>r.top?nx.top-r.bottom:r.top-nx.bottom))):6;
+    Object.assign(s,{rects,s0:s.sc.scrollTop,c0:r.top+r.height/2,H:r.height+gap});
+    const tick=()=>{ const b=s.sc===document.scrollingElement?{top:0,bottom:window.innerHeight}:s.sc.getBoundingClientRect();
+      const v=s.y<b.top+56?-(b.top+56-s.y)/4:s.y>b.bottom-56?(s.y-(b.bottom-56))/4:0;
+      if(v){ s.sc.scrollTop+=Math.max(-16,Math.min(16,v)); calc(); } s.raf=requestAnimationFrame(tick); };
+    s.raf=requestAnimationFrame(tick); calc(); },[compact]);
+  React.useEffect(()=>()=>finish(false),[]);
+  const styleOf=(i)=>{ if(!drag) return {transition:"transform .2s"}; const {from,to,dy,H}=drag;
+    if(i===from) return {transform:`translateY(${dy}px) scale(1.03)`,zIndex:20,position:"relative",boxShadow:"0 14px 30px rgba(15,23,42,.28)",borderRadius:10,opacity:.97};
+    const sh=i>from&&i<=to?-H:i<from&&i>=to?H:0; return {transform:sh?`translateY(${sh}px)`:"none",transition:"transform .18s"}; };
+  const bind=(k)=>(el)=>{ if(el) nodes.current[k]=el; else delete nodes.current[k]; };
+  const handle=(i,label)=>({onPointerDown:(e)=>start(e,i),
+    onKeyDown:(e)=>{ const d=e.key==="ArrowUp"?-1:e.key==="ArrowDown"?1:0; if(!d) return; e.preventDefault(); const to=i+d; if(to<0||to>=order.length) return;
+      const k=order.slice(); const [x]=k.splice(i,1); k.splice(to,0,x); setOpt({base:sig,keys:k}); onDrop(k); },
+    "aria-label":`Arrastrar para ordenar${label?`: ${label}`:""} (o flechas ↑ ↓)`,title:"Mantén y arrastra para ordenar",className:"drag-grip"});
+  return {order,styleOf,bind,handle,compact,dragging:!!drag};
+}
+// Fila compacta que se ve mientras se arrastra.
+function DragRow({grip,title,sub,wod}){
+  return <div style={{display:"flex",alignItems:"center",gap:8,background:wod?"#fff7ed":"#fff",border:`1px solid ${wod?"#fdba74":"#cfd8e6"}`,borderRadius:10,padding:"6px 10px 6px 6px",minHeight:44}}>
+    <span className="drag-grip" style={{minHeight:32,...(wod?{borderColor:"#fdba74",color:"#9a3412"}:{})}} aria-hidden="true">⠿</span>
+    <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:800,color:wod?"#9a3412":"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{wod?"🔥 ":""}{title}</span>
+      {sub&&<span style={{display:"block",fontSize:11,color:wod?"#7c2d12":"#64748b",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{sub}</span>}</span>
+  </div>;
+}
 function SessionEditModal({client,date,assignedSessions,assignedExercises,clientWeights,sessions,annualBlocks,exercises,onGenerate,onAdjust,onSetLevel,loadAll,notify,onClose}) {
   const [lv,setLv]=React.useState(()=>levelOf(client));
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
@@ -4550,6 +4612,10 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   });
   const delWod = (b)=>{ if(!window.confirm("¿Quitar este WOD de la sesión?")) return; w(async()=>{ await sb.from("assigned_exercises").delete().in("id",b.rows.map(r=>r.id)); setEditWod(null); notify("WOD quitado"); }); };
   const moveWod = (b,dir)=>w(async()=>{ const rest=exs.filter(e=>!b.rows.includes(e)); await renumber(dir<0?[...b.rows,...rest]:[...rest,...b.rows]); setEditWod(null); notify(dir<0?"WOD al principio ✓":"WOD al final ✓"); });
+  // Unidades que se arrastran: cada ejercicio suelto o un WOD/protocolo entero (todas sus filas juntas).
+  const units=[]; for(let i=0;i<exs.length;){ const b=blocks.find(x=>x.rows[0]===exs[i]); if(b){ units.push({key:"w"+b.rows[0].id,b,rows:b.rows}); i+=b.rows.length; } else { units.push({key:"e"+exs[i].id,ex:exs[i],rows:[exs[i]]}); i++; } }
+  const unitBy=Object.fromEntries(units.map(u=>[u.key,u]));
+  const ds=useDragSort(units.map(u=>u.key),(keys)=>w(async()=>{ await renumber(keys.flatMap(k=>(unitBy[k]||{rows:[]}).rows)); notify("Orden guardado ✓"); }));
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
   const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name,it.reps||"10-12"),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
   const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName,lib?lib[2]:"10-12"),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
@@ -4587,13 +4653,13 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
           </div>
           :<div style={{display:"flex",flexDirection:"column",gap:8}}>
             {exs.length===0&&<div style={{fontSize:12,color:"#94a3b8"}}>Sesión sin ejercicios.</div>}
-            {exs.filter(ex=>!inBlock.has(ex.id)).map((ex,ni,arrN)=>(
+            {units.length>1&&<div style={{fontSize:11,color:"#64748b",display:"flex",alignItems:"center",gap:6}}><span style={{fontSize:14,color:"#94a3b8"}}>⠿</span> Mantén el asa y arrastra para ordenar ejercicios o un WOD entero.</div>}
+            {ds.order.map((k,ui)=>{ const u=unitBy[k]; if(!u) return null; return <div key={k} ref={ds.bind(k)} style={ds.styleOf(ui)}>
+              {ds.compact?(u.ex?<DragRow title={u.ex.exercise_name} sub={`${u.ex.sets||"—"} × ${u.ex.reps||"—"}${u.ex.prescribed_weight?` · ${fmtKgN(u.ex.prescribed_weight)} kg`:""}`}/>:<DragRow wod title={u.b.title} sub={u.b.list.map(m=>m.name).join(" · ")}/>)
+              :u.ex?(()=>{ const ex=u.ex; return (
               <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,border:"1px solid #dbe2ec"}}>
                 <div style={{display:"flex",gap:6,alignItems:"center",marginBottom:6}}>
-                  <div style={{display:"flex",flexDirection:"column",gap:2}}>
-                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===0} onClick={()=>moveEx(ex,-1)} title="Subir">▲</button>
-                    <button className="btn ghost" style={{padding:"1px 6px",fontSize:10,lineHeight:1.2}} disabled={saving||ni===arrN.length-1} onClick={()=>moveEx(ex,1)} title="Bajar">▼</button>
-                  </div>
+                  <button type="button" {...ds.handle(ui,ex.exercise_name)} disabled={saving}>⠿</button>
                   <button onClick={()=>setPicker({mode:"swap",ex})} disabled={saving} title="Cambiar ejercicio (sustitutos, músculo, material o crear uno)" style={{flex:1,minWidth:0,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #cfd8e6",borderRadius:9,padding:"7px 9px"}}>
                     <span style={{display:"flex",alignItems:"center",gap:6}}><span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a"}}>{ex.exercise_name}</span><span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>🔄 Cambiar</span></span>
                     <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={ex.exercise_name}/><CxTag name={ex.exercise_name}/><span style={{fontSize:10,color:"#64748b"}}>{EQUIP_LABEL[equipmentOf(ex.exercise_name)]||""}</span>{isIsoRow(ex)&&<span style={{fontSize:9,fontWeight:800,color:"#0369a1"}}>⏸️ ISO{isoHint(ex.exercise_name)?` · 🩹 ${isoHint(ex.exercise_name)}`:""}</span>}</span>
@@ -4621,24 +4687,26 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota solo de esta sesión (p. ej. hoy rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
                 <GestureNotes clientId={client.id} exercise={ex.exercise_name} notify={notify}/>
               </div>
-            ))}
-            {/* WOD / bloques metabólicos */}
-            <div style={{marginTop:4}}>
-              <div style={{fontSize:11,fontWeight:800,color:"#9a3412",marginBottom:6}}>🔥 WOD / METABÓLICO {blocks.length?`(${blocks.length})`:""}</div>
-              <div style={{display:"flex",flexDirection:"column",gap:8}}>
-                {blocks.map((b,bi)=> editWod===bi
+            );})()
+              :(()=>{ const b=u.b, bi=blocks.indexOf(b); return editWod===bi
                   ?<WodEditor key={"e"+bi} initial={{format:b.format,minutes:b.minutes,rounds:b.rounds,moves:b.list.length?b.list:[{name:"",reps:""}]}} saving={saving}
                       onSave={(cfg)=>saveWod(b,cfg)} onCancel={()=>setEditWod(null)} onDelete={()=>delWod(b)} onMoveBlock={(d)=>moveWod(b,d)}/>
                   :<div key={"b"+bi} style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"9px 11px"}}>
                     <div style={{display:"flex",alignItems:"center",gap:8}}>
+                      <button type="button" {...ds.handle(ui,b.title)} disabled={saving} style={{borderColor:"#fdba74",color:"#9a3412"}}>⠿</button>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{b.title}</div>
+                        <div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{b.title} <span style={{fontSize:10,fontWeight:700,color:"#c2410c"}}>· {b.rows.length} fila{b.rows.length!==1?"s":""}, se mueve entero</span></div>
                         <div style={{fontSize:11,color:"#7c2d12"}}>{b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")||"Sin movimientos"}</div>
                       </div>
                       <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Temporizador" onClick={()=>setTimerWod(b)}>⏱</button>
                       <button className="btn ghost" style={{padding:"6px 9px",fontSize:12}} title="Editar WOD" onClick={()=>setEditWod(bi)}>✏️</button>
                     </div>
-                  </div>)}
+                  </div>; })()}
+            </div>; })}
+            {/* WOD / bloques metabólicos */}
+            <div style={{marginTop:4}}>
+              <div style={{fontSize:11,fontWeight:800,color:"#9a3412",marginBottom:6}}>🔥 WOD / METABÓLICO {blocks.length?`(${blocks.length})`:""}</div>
+              <div style={{display:"flex",flexDirection:"column",gap:8}}>
                 {editWod==="new"
                   ?<WodEditor saving={saving} onSave={(cfg)=>saveWod(null,cfg)} onCancel={()=>setEditWod(null)}/>
                   :<button className="btn ghost" style={{fontSize:12,padding:"9px",border:"1px dashed #fdba74",color:"#9a3412",fontWeight:700}} disabled={saving} onClick={()=>setEditWod("new")}>＋ Añadir WOD (AMRAP, EMOM, For Time, Hyrox…)</button>}
@@ -11120,6 +11188,12 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
   const [picks,setPicks] = React.useState([]); // ejercicios en cola para añadir
 
   const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
+  // Ordenar arrastrando (cada ejercicio, o un WOD entero con todas sus filas)
+  const tSorted=exercises.slice().sort((a,b)=>(a.order_index||0)-(b.order_index||0));
+  const tBlocks=wodBlocks(tSorted), tUnits=[];
+  for(let i=0;i<tSorted.length;){ const b=tBlocks.find(x=>x.rows[0]===tSorted[i]); if(b){ tUnits.push({key:"w"+b.rows[0].id,b,rows:b.rows}); i+=b.rows.length; } else { tUnits.push({key:"e"+tSorted[i].id,ex:tSorted[i],rows:[tSorted[i]]}); i++; } }
+  const tBy=Object.fromEntries(tUnits.map(u=>[u.key,u]));
+  const tds=useDragSort(tUnits.map(u=>u.key),(keys)=>w(async()=>{ const flat=keys.flatMap(k=>(tBy[k]||{rows:[]}).rows); for(let i=0;i<flat.length;i++) if(flat[i].order_index!==i) await sb.from("template_exercises").update({order_index:i}).eq("id",flat[i].id); notify("Orden guardado ✓"); }));
 
   const addExercise = ()=>w(async()=>{
     if(!newEx.exercise_name) return notify("Escribe el nombre","err");
@@ -11174,8 +11248,18 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
           </div>
         )}
 
-        {exercises.sort((a,b)=>a.order_index-b.order_index).map((ex,i)=>(
-          <div key={ex.id} style={{background:"#f1f4fa",borderRadius:10,padding:10,marginBottom:6}}>
+        {tUnits.length>1&&<div style={{fontSize:11,color:"#64748b",marginBottom:6}}><span style={{color:"#94a3b8",fontSize:14}}>⠿</span> Mantén el asa y arrastra para ordenar.</div>}
+        {tds.order.map((k,ui)=>{ const u=tBy[k]; if(!u) return null; return <div key={k} ref={tds.bind(k)} style={{...tds.styleOf(ui),marginBottom:6}}>
+          {tds.compact?(u.b?<DragRow wod title={u.b.title} sub={u.b.list.map(m=>m.name).join(" · ")}/>:<DragRow title={u.ex.exercise_name} sub={`${u.ex.sets||"—"} × ${u.ex.reps||"—"}`}/>)
+          :u.b
+            ?<div style={{background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:10,padding:"9px 11px",display:"flex",alignItems:"center",gap:8}}>
+              <button type="button" {...tds.handle(ui,u.b.title)} disabled={saving} style={{borderColor:"#fdba74",color:"#9a3412"}}>⠿</button>
+              <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:800,color:"#9a3412"}}>{u.b.title} <span style={{fontSize:10,fontWeight:700,color:"#c2410c"}}>· {u.b.rows.length} filas, se mueve entero</span></div>
+                <div style={{fontSize:11,color:"#7c2d12"}}>{u.b.list.map(m=>`${m.name}${m.reps?` ${m.reps}`:""}`).join(" · ")}</div></div>
+            </div>
+            :(()=>{ const ex=u.ex; return <div style={{background:"#f1f4fa",borderRadius:10,padding:10,display:"flex",gap:8}}>
+              <button type="button" {...tds.handle(ui,ex.exercise_name)} disabled={saving}>⠿</button>
+              <div style={{flex:1,minWidth:0}}>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:6}}>
               <div style={{flex:1}}>
                 <input className="inp" style={{fontSize:13,padding:"5px 8px"}} value={ex.exercise_name}
@@ -11192,8 +11276,9 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
               <div><span className="lbl" style={{fontSize:9}}>DESCANSO(s)</span><input type="number" className="inp" style={{padding:"5px 7px",fontSize:12}} value={ex.rest_seconds} onChange={e=>updateEx(ex.id,"rest_seconds",parseInt(e.target.value))}/></div>
             </div>
             {ex.is_main&&<div style={{fontSize:10,color:"#ca8a04",marginTop:5}}>★ Ejercicio principal — se usará el peso base del cliente</div>}
-          </div>
-        ))}
+          
+              </div></div>; })()}
+        </div>; })}
 
         {/* ── Relleno rápido: biblioteca de ejercicios ── */}
         <button className="btn sky" style={{width:"100%",padding:10,marginTop:10,fontSize:13,fontWeight:700}}
