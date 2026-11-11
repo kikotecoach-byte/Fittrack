@@ -70,7 +70,7 @@ html{background:#1c1c23;}body{background:#1c1c23;color:var(--text);font-family:'
 .tilt{transform-style:preserve-3d;transition:transform .2s ease,box-shadow .2s ease;}
 .tilt:active{transform:perspective(900px) rotateX(3deg) scale(.975);box-shadow:0 1px 2px rgba(16,24,40,.05);}
 @media(hover:hover){.tilt:hover{transform:perspective(900px) translateY(-2px);box-shadow:0 10px 24px rgba(16,24,40,.08);}}
-@media(prefers-reduced-motion:reduce){.ember,.ember-flame,.ember-pop,.dk-dot,.count-pop,.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
+@media(prefers-reduced-motion:reduce){.ember,.ember-flame,.ember-pop,.dk-dot,.tut-ring,.count-pop,.swipe,.fade,.view3d,.ovl>.mdl.fade,.ovl,.float3d,.bnav-btn.on .ico3d,.ipad-side .nav.on .ico3d{animation:none !important;}.btn,.sb,.tab,.bnav-btn,.tilt{transition:none;}.tilt:active,.tilt:hover{transform:none;}}
 
 /* ─ NAV sidebar → bottom on mobile ─ */
 .nav{display:flex;align-items:center;gap:9px;padding:10px 14px;border-radius:11px;cursor:pointer;
@@ -146,6 +146,8 @@ html{background:#1c1c23;}body{background:#1c1c23;color:var(--text);font-family:'
 .dk-seg{display:flex;background:#1a1a20;border-radius:999px;padding:4px;gap:2px;}
 .dk-seg button{flex:1;border:none;background:none;color:#c6c6d0;font-family:inherit;font-weight:800;font-size:14px;padding:9px 0;border-radius:999px;cursor:pointer;transition:background .2s,color .2s;}
 .dk-seg button.on{background:#3a3a44;color:#fff;}
+.tut-ring{animation:tutRing 1.6s ease-out infinite;box-shadow:0 0 0 0 rgba(255,122,69,.6);}
+@keyframes tutRing{0%{box-shadow:0 0 0 0 rgba(255,122,69,.6)}70%{box-shadow:0 0 0 16px rgba(255,122,69,0)}100%{box-shadow:0 0 0 0 rgba(255,122,69,0)}}
 .dk-lg{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 .mobile-topbar{
   display:flex !important;align-items:center;justify-content:space-between;
@@ -1256,6 +1258,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     saveConfig({...config,dismissedAlerts:next},true); setUndoAlert({key:k,label:r.c?r.c.name.split(" ")[0]:"Alerta"}); clearTimeout(window.__undoAlertT); window.__undoAlertT=setTimeout(()=>setUndoAlert(null),5000); };
   const restoreAlerts = (keys) => { const next={...dismissed}; keys.forEach(k=>delete next[k]); saveConfig({...config,dismissedAlerts:next},true); setUndoAlert(null); };
   const alertCount = reminders.filter(r=>r.urgent).length+freedWaitlist.length;
+  // Reservas de clientes pendientes de aprobar + aviso al momento cuando llega una nueva.
+  const pendingReq = sessions.filter(s=>s.requested&&s.date>=TODAY);
+  useBookingWatch(true, async(nw)=>{ const r=await loadAll(); const cl=(r&&r.clients&&r.clients.length)?r.clients:clients;
+    const names=[...new Set(nw.map(x=>{ const c=cl.find(cc=>cc.id===x.client_id); return c?c.name.split(" ")[0]:"Un cliente"; }))].join(", ");
+    const when=nw.map(x=>`${fmtDate(x.date)} ${x.time}`).slice(0,3).join(" · ");
+    notify(`📥 ${names} ha reservado · ${when} · apruébala en Inicio`);
+    sysNotify(`📥 Nueva reserva · ${names}`,`${when} · toca para aprobarla`,"kk-reserva"); });
 
   // Income stats
   const thisMonth = new Date().toISOString().slice(0,7);
@@ -1672,7 +1681,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           <Ico k="logo" size={30}/>
           <span className="brand-title" style={{fontSize:15,fontWeight:700,color:"#f4f4f6",letterSpacing:1.2,textTransform:"uppercase"}}>{GYM_NAME}</span>
         </div>
-        {[["dashboard","home","Inicio"],["schedule","agenda","Agenda"],["clients","clients","Clientes"],["programming","program","Programa"],["income","money","Finanzas"],["reminders","bell","Alertas",reminders.length],["forum","forum","Foro"]].map(([id,ic,l,n])=>(
+        {[["dashboard","home","Inicio",pendingReq.length],["schedule","agenda","Agenda"],["clients","clients","Clientes"],["programming","program","Programa"],["income","money","Finanzas"],["reminders","bell","Alertas",reminders.length],["forum","forum","Foro"]].map(([id,ic,l,n])=>(
           <button key={id} className={"nav"+(view===id?" on":"")} onClick={()=>setView(id)} style={{marginBottom:3}}>
             <Ico k={ic} size={26}/><span>{l}</span>{n>0&&<span className="cnt">{n}</span>}
           </button>
@@ -1717,7 +1726,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Bottom navigation - mobile only */}
       <nav className="bottom-nav">
         {[
-          {id:"dashboard",icon:"home",label:"Inicio"},
+          {id:"dashboard",icon:"home",label:"Inicio",count:pendingReq.length},
           {id:"clients",icon:"clients",label:"Clientes"},
           {id:"schedule",icon:"agenda",label:"Agenda"},
           {id:"programming",icon:"program",label:"Programa"},
@@ -1912,6 +1921,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="home" size={32}/>{GYM_NAME} — Dashboard</h1>
               <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
             </div>
+            <BookingRequests compact sessions={sessions} clients={clients} loadAll={loadAll} notify={notify}/>
             {/* ── Aviso de seguridad pendiente ── */}
             {(!secure||dbOpenNow)&&(()=>{ const act=clients.filter(c=>c.auth_user_id).length; const hasCol=clients.some(c=>"auth_user_id" in c); return(
               <div className="card" style={{marginBottom:14,padding:"12px 14px",border:"1px solid #fde68a",background:"#fffbeb"}}>
@@ -2503,6 +2513,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                       <div style={{minWidth:0}}>
                                         <span style={{color:done?"#16a34a":s.client.color,fontWeight:700,fontSize:14,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>
                                           {s.client.name.split(" ")[0]}<span style={{fontSize:9,color:"#64748b"}}> ⓘ</span>
+                                          {s.requested&&<span style={{fontSize:9,fontWeight:800,color:"#c2410c",background:"#fff7ed",border:"1px solid #fdba74",borderRadius:20,padding:"1px 6px",marginLeft:6}}>⏳ por aprobar</span>}
                                           {esPrimera&&<span style={{fontSize:9,fontWeight:700,color:"#7c3aed",background:"#f3ecfb",border:"1px solid #e0d2f5",borderRadius:20,padding:"1px 6px",marginLeft:6}}>🎉 1ª</span>}
                                           {esUltima&&<span style={{fontSize:9,fontWeight:700,color:sinBono?"#dc2626":"#ea580c",background:sinBono?"#fbe6e6":"#fbf1d8",border:`1px solid ${sinBono?"#f2cccc":"#e4cd8c"}`,borderRadius:20,padding:"1px 6px",marginLeft:6}}>{sinBono?`🧾 fuera de bono`:"⏳ última"}</span>}
                                         </span>
@@ -2798,6 +2809,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {/* REMINDERS */}
         {view==="reminders"&&(
           <div>
+            <BookingRequests compact sessions={sessions} clients={clients} loadAll={loadAll} notify={notify}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="bell" size={32}/>Alertas</h1>
               <button className="btn wa" onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
@@ -6775,6 +6787,13 @@ function ScheduleModal({config,onSave,onClose}) {
           </div>
         </div>
 
+        <button type="button" onClick={()=>setCfg(c=>({...c,approveBookings:c.approveBookings===false?true:false}))} aria-pressed={cfg.approveBookings!==false}
+          style={{width:"100%",display:"flex",alignItems:"center",gap:10,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:cfg.approveBookings!==false?"#fff7ed":"#f1f4fa",border:`1px solid ${cfg.approveBookings!==false?"#fdba74":"#dbe2ec"}`,borderRadius:12,padding:"10px 12px",marginBottom:14}}>
+          <span style={{fontSize:20}}>📥</span>
+          <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:800,color:"#0f172a"}}>Aprobar yo las reservas de los clientes</span>
+            <span style={{display:"block",fontSize:11,color:"#64748b",lineHeight:1.35}}>{cfg.approveBookings!==false?"Activado: cada reserva te llega como solicitud y la confirmas tú (la plaza queda guardada mientras).":"Desactivado: las reservas se confirman solas."}</span></span>
+          <span style={{width:42,height:24,borderRadius:12,background:cfg.approveBookings!==false?"#16a34a":"#cbd5e1",position:"relative",flexShrink:0,transition:"background .2s"}}><span style={{position:"absolute",top:3,left:cfg.approveBookings!==false?21:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/></span>
+        </button>
         <div style={{marginBottom:8}}>
           <span className="lbl">👥 ATLETAS POR HORA (1–5)</span>
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,flexWrap:"wrap"}}>
@@ -7492,6 +7511,123 @@ function DietCoachBox({client,onEdit}){
   </div>;
 }
 
+// ── RESERVAS CON APROBACIÓN DEL COACH ─────────────────────────────────────
+// Si config.approveBookings no es false, lo que reserva el atleta queda como solicitud
+// (requested:true, status "pending"): ocupa su plaza y su sesión del bono mientras tanto,
+// y el coach la aprueba o la rechaza. El coach recibe el aviso al momento (tiempo real).
+const needsApproval = (cfg) => !(cfg&&cfg.approveBookings===false);
+const bookingRow = (clientId,d,t,cfg) => ({client_id:clientId,date:d,time:t,type:"Sesión",status:needsApproval(cfg)?"pending":"confirmed",requested:needsApproval(cfg)});
+// Aviso del sistema (móvil/ordenador) si el coach dio permiso.
+const sysNotify = async (title, body, tag) => {
+  try{ if(!("Notification" in window)||Notification.permission!=="granted") return;
+    const reg=navigator.serviceWorker&&await navigator.serviceWorker.getRegistration();
+    if(reg&&reg.showNotification) reg.showNotification(title,{body,tag,icon:"/icon-192.png",badge:"/favicon-32.png",vibrate:[120,60,120]});
+    else new Notification(title,{body,tag,icon:"/icon-192.png"});
+  }catch(e){} };
+// Escucha nuevas reservas (Supabase Realtime) y, por si no está activado, revisa cada 45 s.
+function useBookingWatch(active, onNew){
+  const known=React.useRef(null), cb=React.useRef(onNew); cb.current=onNew;
+  React.useEffect(()=>{ if(!active) return; let ch=null, off=false;
+    const check=async()=>{ try{ const r=await sb.from("sessions").select("id,client_id,date,time,requested").eq("requested",true); if(off||!r||r.error) return;
+      const ids=(r.data||[]).map(x=>x.id); if(known.current){ const nw=(r.data||[]).filter(x=>!known.current.has(x.id)); if(nw.length) cb.current(nw); } known.current=new Set(ids); }catch(e){} };
+    check();
+    try{ if(sb.channel){ ch=sb.channel("reservas-coach").on("postgres_changes",{event:"INSERT",schema:"public",table:"sessions"},(p)=>{ const n=p&&p.new; if(n&&n.requested){ if(known.current) known.current.add(n.id); cb.current([n]); } }).subscribe(); } }catch(e){}
+    const iv=setInterval(()=>{ if(document.visibilityState==="visible") check(); },45000);
+    const vis=()=>{ if(document.visibilityState==="visible") check(); }; document.addEventListener("visibilitychange",vis);
+    return ()=>{ off=true; clearInterval(iv); document.removeEventListener("visibilitychange",vis); try{ ch&&sb.removeChannel&&sb.removeChannel(ch); }catch(e){} }; },[active]);
+}
+// Tarjeta del coach: solicitudes pendientes con Aprobar / Rechazar.
+function BookingRequests({sessions,clients,loadAll,notify,compact}){
+  const [busy,setBusy]=React.useState(null);
+  const [perm,setPerm]=React.useState(()=>{ try{ return "Notification" in window?Notification.permission:"unsupported"; }catch(e){ return "unsupported"; } });
+  const reqs=(sessions||[]).filter(s=>s.requested&&s.date>=TODAY).map(s=>({s,c:(clients||[]).find(c=>c.id===s.client_id)})).filter(x=>x.c)
+    .sort((a,b)=>(a.s.date+a.s.time).localeCompare(b.s.date+b.s.time));
+  const ask=async()=>{ try{ const r=await Notification.requestPermission(); setPerm(r); if(r==="granted"){ notify("🔔 Avisos activados en este dispositivo"); sysNotify("Avisos activados","Te avisaremos cada vez que un cliente reserve","kk-test"); } }catch(e){} };
+  const approve=async(list)=>{ setBusy(list.length>1?"all":list[0].s.id);
+    for(const {s} of list) await sb.from("sessions").update({requested:false,status:"confirmed"}).eq("id",s.id);
+    await loadAll(); setBusy(null); notify(list.length>1?`✅ ${list.length} reservas aprobadas`:`✅ Reserva de ${list[0].c.name.split(" ")[0]} aprobada`); };
+  const reject=async({s,c})=>{ if(!window.confirm(`¿Rechazar la reserva de ${c.name} del ${fmtDate(s.date)} a las ${s.time}? Se libera la plaza y su sesión del bono.`)) return;
+    setBusy(s.id); await sb.from("sessions").delete().eq("id",s.id); await loadAll(); setBusy(null); notify("Reserva rechazada");
+    if(c.phone&&window.confirm(`¿Avisar a ${c.name.split(" ")[0]} por WhatsApp?`)) window.open(waLink(c.phone,`Hola ${c.name.split(" ")[0]}! No puedo confirmarte la clase del ${fmtDate(s.date)} a las ${s.time}. ¿Te viene bien otra hora? 💪`),"_blank"); };
+  if(!reqs.length&&compact) return perm==="default"?<button className="btn ghost" style={{width:"100%",marginBottom:12,fontSize:12,padding:"9px"}} onClick={ask}>🔔 Activar avisos de nuevas reservas en este dispositivo</button>:null;
+  const byClient={}; reqs.forEach(x=>{ (byClient[x.c.id]=byClient[x.c.id]||{c:x.c,list:[]}).list.push(x); });
+  return <div className="card" style={{marginBottom:14,padding:14,border:"1px solid #fdba74",background:"#fff7ed"}}>
+    <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:reqs.length?10:4}}>
+      <span style={{fontSize:20}}>📥</span>
+      <div style={{flex:1,minWidth:0}}><div style={{fontSize:15,fontWeight:800,color:"#9a3412"}}>{reqs.length?`${reqs.length} reserva${reqs.length>1?"s":""} por aprobar`:"Reservas por aprobar"}</div>
+        <div style={{fontSize:11,color:"#7c2d12"}}>{reqs.length?"Ya tienen su plaza guardada hasta que respondas.":"No hay solicitudes pendientes."}</div></div>
+      {reqs.length>1&&<button className="btn grn" style={{fontSize:12,padding:"7px 11px",whiteSpace:"nowrap"}} disabled={!!busy} onClick={()=>approve(reqs)}>✓ Aprobar todas</button>}
+    </div>
+    {Object.values(byClient).map(({c,list})=><div key={c.id} style={{background:"#fff",border:"1px solid #fed7aa",borderRadius:12,padding:"9px 10px",marginBottom:8}}>
+      <div style={{display:"flex",alignItems:"center",gap:9,marginBottom:6}}>
+        <div className="ring" style={{width:30,height:30,background:c.color+"25",color:c.color,fontSize:11,border:`2px solid ${c.color}55`,flexShrink:0}}>{ini(c.name)}</div>
+        <div style={{flex:1,minWidth:0,fontSize:13,fontWeight:800,color:"#0f172a"}}>{c.name}<span style={{fontSize:11,fontWeight:600,color:"#64748b"}}> · bono {bonoTxt(c)}</span></div>
+        {list.length>1&&<button className="btn ghost" style={{fontSize:11,padding:"5px 9px"}} disabled={!!busy} onClick={()=>approve(list)}>✓ Todas</button>}
+      </div>
+      {list.map(x=><div key={x.s.id} style={{display:"flex",alignItems:"center",gap:8,padding:"5px 0",borderTop:"1px solid #ffedd5"}}>
+        <span style={{flex:1,minWidth:0,fontSize:13,color:"#0f172a",textTransform:"capitalize"}}>{new Date(x.s.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"})} · <b>{x.s.time}</b></span>
+        <button className="btn grn" style={{fontSize:12,padding:"6px 11px"}} disabled={!!busy} onClick={()=>approve([x])} aria-label={`Aprobar ${c.name} ${x.s.date} ${x.s.time}`}>{busy===x.s.id?"…":"✓ Aprobar"}</button>
+        <button className="btn danger" style={{fontSize:12,padding:"6px 9px"}} disabled={!!busy} onClick={()=>reject(x)} aria-label={`Rechazar ${c.name} ${x.s.date} ${x.s.time}`}>✕</button>
+      </div>)}
+    </div>)}
+    {perm==="default"&&<button className="btn ghost" style={{width:"100%",fontSize:12,padding:"8px",marginTop:2}} onClick={ask}>🔔 Avisarme en este dispositivo cada vez que reserven</button>}
+    {perm==="denied"&&<div style={{fontSize:10,color:"#7c2d12",marginTop:4}}>Los avisos del sistema están bloqueados en este navegador: actívalos en sus ajustes para recibirlos.</div>}
+  </div>;
+}
+
+// ── TUTORIAL DE BIENVENIDA DEL ATLETA ─────────────────────────────────────
+// Se muestra la primera vez que entra (se recuerda en este dispositivo) y se puede
+// volver a ver desde el botón «?» del Inicio. Señala en la barra de abajo dónde está cada cosa.
+function AthleteTutorial({client,config,hybrid,approve,onClose,onGo}){
+  const cap=(config&&config.defaultCapacity)||3, tot=parseInt(client.total_sessions)||0, first=client.name.split(" ")[0];
+  const steps=[
+    {ic:"👋",t:`¡Hola, ${first}!`,d:`Bienvenido/a a ${GYM_NAME}. En 1 minuto te enseñamos cómo funciona el gimnasio y tu app.`,pts:["Desliza o pulsa «Siguiente»","Puedes volver a verlo con el botón ? del Inicio"]},
+    {ic:"🏋️",t:"Así son las clases",d:`Clases de 1 hora en grupos pequeños: como máximo ${cap} personas por hora.`,pts:["Cada persona hace su propio entreno, preparado por tu coach para ti","Tu coach te corrige y ajusta las cargas en la sala"]},
+    {ic:"🎟️",t:"Tu bono",d:tot?`Tu bono tiene ${tot} sesiones. Cada clase que reservas se descuenta del bono.`:"Cada clase que reservas se descuenta de tu bono.",pts:["En Inicio ves cuántas te quedan, cuántas tienes reservadas y las libres",hybrid?"Modalidad híbrida: además reservas días «open» para entrenar por tu cuenta":"Cuando te quede poco, renuévalo con tu coach"],nav:"inicio"},
+    {ic:"＋",t:"Reservar una clase",d:"Pulsa el botón naranja ＋ de abajo, toca las horas que quieras de la semana y confirma.",pts:[approve?"Tu coach recibe la solicitud y te la aprueba: mientras, aparece como «pendiente» y tu plaza queda guardada":"La clase queda reservada al momento","Si una hora está llena, apúntate a la lista de espera y te avisamos si se libera"],nav:"reservar"},
+    {ic:"⚡",t:"Tu entreno del día",d:"En Entreno ves lo que te toca hoy: ejercicios, series, repeticiones, peso y descanso.",pts:["Marca cada serie al terminarla y salta el crono de descanso","RIR = repeticiones que te quedan «en reserva» al acabar la serie","En «Próximas» ves lo que harás en tus siguientes clases"],nav:"entreno"},
+    {ic:"📈",t:"Tu progreso",d:"En Progreso ves cómo mejoras: fuerza, récords, kilos levantados y tu nivel por músculo.",pts:["También tus medidas y fotos de antes y después","Toca un ejercicio para ver toda su evolución"],nav:"progreso"},
+    {ic:"🥗",t:"Dieta y comunidad",d:"Si tu coach te pone un plan, en Inicio marcas tus comidas y los vasos de agua.",pts:["En Comunidad compartes tus logros con el resto del equipo","¿Dudas? Pulsa «Tu coach» en el Inicio y le escribes por WhatsApp"],nav:"comunidad"},
+    {ic:"🔥",t:"¡Todo listo!",d:"Ya sabes lo básico. Empieza reservando tu primera clase.",pts:[],last:true},
+  ];
+  const [i,setI]=React.useState(0), st=steps[i];
+  const [hole,setHole]=React.useState(null);
+  React.useLayoutEffect(()=>{ if(!st.nav){ setHole(null); return; }
+    const idx={inicio:0,entreno:1,reservar:2,progreso:3,comunidad:4}[st.nav]; const b=document.querySelectorAll(".portal-nav .bnav-btn")[idx];
+    if(b){ const r=b.getBoundingClientRect(); setHole({x:r.left+r.width/2,y:r.top+r.height/2-(st.nav==="reservar"?14:4),r:st.nav==="reservar"?38:32}); } else setHole(null); },[i]);
+  const tx=React.useRef(null);
+  const go=(d)=>{ const n=i+d; if(n<0) return; if(n>=steps.length) return onClose(); setI(n); };
+  return <div role="dialog" aria-modal="true" aria-label="Tutorial de la app" className="fade"
+    onTouchStart={e=>{ tx.current=e.touches[0].clientX; }} onTouchEnd={e=>{ if(tx.current==null) return; const dx=e.changedTouches[0].clientX-tx.current; tx.current=null; if(Math.abs(dx)>50) go(dx<0?1:-1); }}
+    style={{position:"fixed",inset:0,zIndex:1300,color:DK.tx,display:"flex",flexDirection:"column",
+      background:hole?`radial-gradient(circle at ${hole.x}px ${hole.y}px, transparent ${hole.r}px, rgba(8,8,10,.92) ${hole.r+2}px)`:"radial-gradient(90% 50% at 50% 0%,rgba(242,68,29,.28),transparent 70%),rgba(8,8,10,.97)",
+      padding:"max(18px,env(safe-area-inset-top)) 20px max(18px,env(safe-area-inset-bottom))"}}>
+    {hole&&<span aria-hidden="true" className="tut-ring" style={{position:"fixed",left:hole.x-hole.r,top:hole.y-hole.r,width:hole.r*2,height:hole.r*2,borderRadius:"50%",border:"2px solid #ff7a45",pointerEvents:"none"}}/>}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+      <span style={{fontSize:12,fontWeight:800,color:DK.mu}}>{i+1} / {steps.length}</span>
+      {!st.last&&<button className="dk-ghost" onClick={onClose}>Saltar</button>}
+    </div>
+    <div key={i} className="ember-pop" style={{flex:1,display:"flex",flexDirection:"column",justifyContent:hole?"flex-start":"center",paddingTop:hole?"6vh":0,maxWidth:440,width:"100%",margin:"0 auto"}}>
+      <div style={{width:92,height:92,borderRadius:28,background:st.ic==="＋"?DK.acG:"rgba(255,122,69,.13)",border:"1px solid rgba(255,122,69,.3)",display:"grid",placeItems:"center",fontSize:st.ic==="＋"?50:46,color:"#fff",boxShadow:"0 0 40px rgba(242,68,29,.35)",marginBottom:20}}>{st.ic}</div>
+      <div style={{fontSize:30,fontWeight:800,lineHeight:1.1,letterSpacing:-.5}}>{st.t}</div>
+      <div style={{fontSize:16,color:DK.sub,marginTop:10,lineHeight:1.45}}>{st.d}</div>
+      {st.pts.length>0&&<div style={{display:"flex",flexDirection:"column",gap:9,marginTop:18}}>
+        {st.pts.map((p,k)=><div key={k} style={{display:"flex",gap:10,alignItems:"flex-start",background:DK.card,border:`1px solid ${DK.line}`,borderRadius:14,padding:"10px 12px",fontSize:14,color:DK.sub,lineHeight:1.4}}>
+          <span style={{color:DK.ac2,fontWeight:900}}>✓</span><span>{p}</span></div>)}
+      </div>}
+      {st.nav&&<div style={{fontSize:12,fontWeight:800,color:DK.ac2,marginTop:16}}>↓ Lo tienes aquí abajo</div>}
+    </div>
+    <div style={{display:"flex",justifyContent:"center",gap:6,margin:"12px 0"}}>{steps.map((_,k)=><span key={k} style={{width:k===i?22:7,height:7,borderRadius:4,background:k===i?DK.ac2:"rgba(255,255,255,.2)",transition:"width .25s"}}/>)}</div>
+    <div style={{display:"flex",gap:10,maxWidth:440,width:"100%",margin:"0 auto",marginBottom:hole?84:0}}>
+      {i>0&&<button className="dk-ghost" style={{padding:"13px 18px",fontSize:14}} onClick={()=>go(-1)}>‹ Atrás</button>}
+      {st.last
+        ?<><button className="dk-ghost" style={{flex:1,padding:"13px",fontSize:14}} onClick={onClose}>Ir a mi Inicio</button>
+           <button className="dk-pill" style={{flex:1.4,justifyContent:"center",padding:"13px",fontSize:15,border:"none",cursor:"pointer"}} onClick={()=>{ onClose(); onGo("reservar"); }}>Reservar mi clase ›</button></>
+        :<button className="dk-pill" style={{flex:1,justifyContent:"center",padding:"13px",fontSize:15,border:"none",cursor:"pointer"}} onClick={()=>go(1)}>Siguiente ›</button>}
+    </div>
+  </div>;
+}
+
 function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
@@ -7535,10 +7671,10 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
     const taken=allSessions.filter(s=>s.date===wtry.date&&s.time===wtry.time).length;
     if(taken>=capOfC(wtry.time)) return notify("El hueco se acaba de ocupar","err");
     setSaving(true);
-    await sb.from("sessions").insert({client_id:client.id,date:wtry.date,time:wtry.time,type:"Fuerza",status:"confirmed",requested:false});
+    await sb.from("sessions").insert({...bookingRow(client.id,wtry.date,wtry.time,config),type:"Fuerza"});
     await sb.from("waitlist").delete().eq("id",wtry.id);
     await loadAll(); setSaving(false);
-    notify("✅ ¡Hueco reservado! Nos vemos 💪");
+    notify(needsApproval(config)?"📥 ¡Solicitud enviada! Tu coach te la confirma en breve":"✅ ¡Hueco reservado! Nos vemos 💪");
   };
   const leaveWait=async(id)=>{ await sb.from("waitlist").delete().eq("id",id); await loadAll(); notify("Fuera de la lista de espera"); };
 
@@ -7548,6 +7684,21 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
   const nTrained=athleteSessions(client,allHistory,myAssignedSessions,myAssignedExercises).length;
   const nextPlan=nextSess&&nextSess.date!==TODAY?planForDate(client,nextSess.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null;
   const go=(t)=>{ setTab(t); try{ window.scrollTo({top:0}); }catch(e){} };
+  // Tutorial la primera vez que entra (recordado en este dispositivo).
+  const tutKey=`kk_tutorial_${client.id}`;
+  const [showTut,setShowTut]=React.useState(()=>{ if(preview) return false; try{ return !localStorage.getItem(tutKey); }catch(e){ return false; } });
+  const closeTut=()=>{ setShowTut(false); if(!preview){ try{ localStorage.setItem(tutKey,TODAY); }catch(e){} } };
+  // Aviso cuando el coach confirma (o no) una reserva que estaba pendiente.
+  React.useEffect(()=>{ if(preview) return; const k=`kk_pend_${client.id}`; let prev=[]; try{ prev=JSON.parse(localStorage.getItem(k)||"[]"); }catch(e){}
+    const mine=allSessions.filter(s=>s.client_id===client.id), pendNow=mine.filter(s=>s.requested).map(s=>s.id);
+    const ok=prev.map(id=>mine.find(s=>s.id===id)).filter(s=>s&&!s.requested), gone=prev.filter(id=>!mine.some(s=>s.id===id));
+    if(ok.length) notify(`✅ Tu coach ha confirmado ${ok.length>1?`${ok.length} clases`:`tu clase del ${fmtDate(ok[0].date)} a las ${ok[0].time}`} 💪`);
+    else if(gone.length) notify("Tu coach no ha podido confirmar una reserva: revisa Reservar o escríbele","err");
+    try{ localStorage.setItem(k,JSON.stringify(pendNow)); }catch(e){} },[allSessions]);
+  // Al volver a la app (desde otra app o la pantalla bloqueada) se refrescan los datos.
+  React.useEffect(()=>{ if(preview) return; let last=Date.now();
+    const vis=()=>{ if(document.visibilityState==="visible"&&Date.now()-last>15000){ last=Date.now(); loadAll(); } };
+    document.addEventListener("visibilitychange",vis); return ()=>document.removeEventListener("visibilitychange",vis); },[]);
   const NAV=[["inicio","home","Inicio"],["entreno","clients","Entreno"],["reservar","calendar","Reservar"],["progreso","chart","Progreso"],["comunidad","forum","Comunidad"]];
   // En Inicio el fondo de la página es oscuro (también al estirar la pantalla en el móvil)
   React.useEffect(()=>{ if(preview||tab!=="inicio") return; const h=document.documentElement, b=document.body, ph=h.style.background, pb=b.style.background;
@@ -7583,6 +7734,7 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
             <span style={{fontWeight:800,letterSpacing:1.6,fontSize:13,color:DK.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{GYM_NAME.toUpperCase()}</span>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
+            <button className="dk-ghost" onClick={()=>setShowTut(true)} aria-label="Cómo funciona la app (tutorial)" title="Cómo funciona" style={{padding:"7px 11px",fontWeight:900}}>?</button>
             <button className="dk-ghost" onClick={onLogout}>{preview?"← Panel":"Salir"}</button>
             {client.avatar_url
               ? <img src={client.avatar_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",border:`2px solid ${DK.ac2}`,boxShadow:"0 0 12px rgba(255,122,69,.45)"}}/>
@@ -7786,6 +7938,7 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
 
       {tab==="comunidad"&&<ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>}
     </div>
+    {showTut&&<AthleteTutorial client={client} config={config} hybrid={hyb} approve={needsApproval(config)} onClose={closeTut} onGo={go}/>}
     {/* Navegación inferior: 5 secciones, siempre a mano */}
     <nav className="portal-nav dk">
       <div className="portal-nav-in">
@@ -8381,12 +8534,14 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
     const bad=pc.map(k=>k.split("|")).find(([d,t])=>freeAt(d,t)<=0||slotClosed(d,t)||isPast(d,t));
     if(bad) return notify(`La clase de las ${bad[1]} del ${fmtDate(bad[0])} ya no está libre`,"err");
     setSaving(true);
-    if(pc.length){ const {error}=await sb.from("sessions").insert(pc.map(k=>{const[d,t]=k.split("|");return{client_id:client.id,date:d,time:t,type:"Sesión",status:"confirmed",requested:false};}));
+    if(pc.length){ const {error}=await sb.from("sessions").insert(pc.map(k=>{const[d,t]=k.split("|");return bookingRow(client.id,d,t,config);}));
       if(error){ setSaving(false); return notify("No se pudo reservar","err"); } }
     if(po.length){ const {error}=await sb.from("open_sessions").insert(po.map(k=>({client_id:client.id,date:k.slice(0,10),status:"planned"})));
       if(error){ setSaving(false); await loadAll(); return notify("Las clases sí, pero las open no se pudieron guardar (avisa a tu trainer)","err"); } }
     await loadAll(); setSaving(false); setPicked([]);
-    setCelebrate({n:pc.length+po.length,nc:pc.length,no:po.length,days:[...new Set(picked.map(k=>k.slice(0,10)))].sort()});
+    const pend=pc.length>0&&needsApproval(config);
+    const waTxt=pend?`Hola! Soy ${client.name}. Acabo de reservar desde la app: ${pc.map(k=>{const[d,t]=k.split("|");return `${fmtDate(d)} a las ${t}`;}).join(", ")}. ¿Me lo confirmas? 💪`:null;
+    setCelebrate({n:pc.length+po.length,nc:pc.length,no:po.length,days:[...new Set(picked.map(k=>k.slice(0,10)))].sort(),pending:pend,wa:waTxt});
   };
   const cur=mondayOfDate(TODAY), lbl=wk===cur?"Esta semana":wk===addDays(cur,7)?"Próxima semana":`${new Date(wk+"T12:00:00").getDate()} – ${shortD(addDays(wk,4))}`;
   const nRows=rows.length+(hybrid?1:0);
@@ -8497,15 +8652,16 @@ function BookedCelebration({data,onClose}){
     <Embers/>
     <span className="ember-flame" style={{fontSize:56,lineHeight:1,position:"relative"}}>🔥</span>
     <div className="ember-pop" style={{fontSize:150,fontWeight:900,lineHeight:.95,position:"relative",textShadow:"0 10px 40px rgba(0,0,0,.35)"}}>{data.n}</div>
-    <div style={{fontSize:22,fontWeight:800,position:"relative",marginTop:6}}>¡Reservado!</div>
-    <div style={{fontSize:13,fontWeight:700,opacity:.8,position:"relative",marginTop:4}}>{[data.nc?`${data.nc} clase${data.nc>1?"s":""}`:"",data.no?`${data.no} open`:""].filter(Boolean).join(" + ")} · ¡a por ello! 💪</div>
+    <div style={{fontSize:22,fontWeight:800,position:"relative",marginTop:6}}>{data.pending?"¡Solicitud enviada!":"¡Reservado!"}</div>
+    <div style={{fontSize:13,fontWeight:700,opacity:.8,position:"relative",marginTop:4,textAlign:"center"}}>{[data.nc?`${data.nc} clase${data.nc>1?"s":""}`:"",data.no?`${data.no} open`:""].filter(Boolean).join(" + ")} · {data.pending?"tu coach te la confirma en breve · tu plaza ya está guardada":"¡a por ello! 💪"}</div>
     <div style={{position:"relative",marginTop:26,background:"rgba(0,0,0,.35)",border:"1px solid rgba(255,255,255,.12)",borderRadius:22,padding:"12px 16px",display:"flex",gap:12,backdropFilter:"blur(8px)"}}>
       {days.slice(0,7).map(d=>{ const x=new Date(d+"T12:00:00"); return <div key={d} style={{textAlign:"center"}}>
         <div style={{fontSize:11,fontWeight:800,opacity:.75}}>{DL[x.getDay()]} {x.getDate()}</div>
         <div style={{marginTop:6,width:34,height:34,borderRadius:"50%",background:"linear-gradient(135deg,#ff7a45,#f2441d)",display:"flex",alignItems:"center",justifyContent:"center",fontWeight:900,boxShadow:"0 0 16px rgba(242,68,29,.6)"}}>✓</div>
       </div>; })}
     </div>
-    <button type="button" onClick={onClose} style={{position:"relative",marginTop:28,width:"min(340px,100%)",height:54,borderRadius:28,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:17,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Continuar  ›</button>
+    {data.wa&&<a href={waLink(TRAINER_PHONE,data.wa)} target="_blank" rel="noreferrer" onClick={e=>e.stopPropagation()} style={{position:"relative",marginTop:22,textDecoration:"none",fontSize:14,fontWeight:800,color:"#fff",background:"rgba(22,163,74,.9)",borderRadius:999,padding:"11px 20px"}}>📱 Avisar a mi coach por WhatsApp</a>}
+    <button type="button" onClick={onClose} style={{position:"relative",marginTop:data.wa?14:28,width:"min(340px,100%)",height:54,borderRadius:28,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:17,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Continuar  ›</button>
   </div>;
 }
 
@@ -11695,7 +11851,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
 ClientPortal=noTheme(ClientPortal); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
-ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark);
+ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
 <script>
