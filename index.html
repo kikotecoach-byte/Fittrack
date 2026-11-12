@@ -653,6 +653,13 @@ const opensInWeek = (c, d, list) => { const m=mondayOfDate(d), e=addDays(m,7); r
 const openTotal = (c) => { const n=parseInt(profileOf(c).open_total,10); return n>0?n:null; };
 const openUsed = (c, list) => { const p=profileOf(c), since=p.open_since||"0000-00-00"; return Math.max(0,opensOf(c,list).filter(o=>o.date>=since).length+(parseInt(p.open_adj,10)||0)); };
 const openLeft = (c, list) => { const t=openTotal(c); return t==null?null:Math.max(0,t-openUsed(c,list)); }; // null = sin tope en el bono
+// Hora concreta de los open: de la primera hora de la mañana a la última de la tarde
+// (incluye el mediodía) o el horario open de ⚙️ Horario, más las horas extra del día.
+let SCHED = null; // horario actual (lo fija setGymEquip)
+const openHours = (cfg, d) => { const c=cfg||SCHED||DEFAULT_SCHEDULE, from=c.openFrom||c.morningFrom, to=c.openTo||c.afternoonTo;
+  return [...new Set([...genSlots(from,to),...((c.extraSlots&&d&&c.extraSlots[d])||[])])].sort(); };
+const openCapOf = (cfg) => { const n=parseInt(((cfg||SCHED||{}).openCap),10); return n>0?n:null; }; // null = sin límite
+const opensAt = (d, t, list) => ((list||OPEN.list)||[]).filter(o=>o.date===d&&String(o.time||"").slice(0,5)===t);
 // ¿Puede reservar un open ese día? Devuelve el motivo si no ("bono" | "semana").
 const openBlockReason = (c, d, list, extra=0) => { const l=openLeft(c,list); if(l!==null&&l-extra<=0) return "bono"; const w=openPerWeek(c); if(w&&opensInWeek(c,d,list).length+extra>=w) return "semana"; return null; };
 function autoRoutineFor(client, date, sessions, annualBlocks){
@@ -699,6 +706,7 @@ function calcStreak(history) {
 function App() {
   const [mode, setMode] = React.useState("login");
   const authKind = React.useRef(null); // "admin" | "client" con sesión segura
+  const [openRoster, setOpenRoster] = React.useState(null); // aforo open por hora (atleta)
   const [roster, setRoster] = React.useState(null);   // aforo (atleta): quién hay en cada clase
   const [members, setMembers] = React.useState(null); // comunidad (atleta): nombre e inicial
   const [clients, setClients] = React.useState([]);
@@ -785,9 +793,11 @@ function App() {
       const r=await sb.rpc("slot_roster",{p_from:addDays(TODAY,-7),p_to:addDays(TODAY,120)});
       if(!r.error) setRoster((r.data||[]).map(x=>({...x,time:String(x.time||"").slice(0,5),date:String(x.date||"").slice(0,10)})));
       const m=await sb.rpc("community_members"); if(!m.error) setMembers(m.data||[]);
+      const o=await sb.rpc("open_roster",{p_from:addDays(TODAY,-1),p_to:addDays(TODAY,120)});
+      setOpenRoster(o.error?null:(o.data||[]).map(x=>({...x,time:x.time?String(x.time).slice(0,5):null,date:String(x.date||"").slice(0,10)})));
     }catch(e){}
   };
-  const clearData = () => { [setClients,setSessions,setHistory,setPayments,setForum,setProgress,setRecords,setAchievements,setClientWeights,setAssignedSessions,setAssignedExercises,setWeightHistory,setWaitlist,setLeads,setClientPlans].forEach(f=>f([])); setRoster(null); setMembers(null); };
+  const clearData = () => { [setClients,setSessions,setHistory,setPayments,setForum,setProgress,setRecords,setAchievements,setClientWeights,setAssignedSessions,setAssignedExercises,setWeightHistory,setWaitlist,setLeads,setClientPlans].forEach(f=>f([])); setRoster(null); setMembers(null); setOpenRoster(null); };
   // Entra con la sesión segura: decide si es coach o atleta (lo dice el servidor).
   const enterWithAuth = async () => {
     const a=await sb.rpc("is_admin");
@@ -915,7 +925,7 @@ function App() {
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
       {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
-      {mode==="client"&&loggedClient&&<ClientPortal openSessions={openSessions} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
@@ -1213,7 +1223,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const closeExtraHour = (date,time) => { const ex={...(config.extraSlots||{})}; ex[date]=(ex[date]||[]).filter(t=>t!==time); if(!ex[date].length) delete ex[date]; saveConfig({...config,extraSlots:ex}); };
   // Franjas visibles del día: horario fijo (salvo finde/bloqueado) + horas extra + cualquier hora con sesión.
   const dayIsOff = isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
-  const daySlots = Array.from(new Set([...(dayIsOff?[]:workSlots),...extraOf(activeDay),...sessions.filter(s=>s.date===activeDay).map(s=>s.time)])).sort();
+  const daySlots = Array.from(new Set([...(dayIsOff?[]:workSlots),...extraOf(activeDay),...sessions.filter(s=>s.date===activeDay).map(s=>s.time),
+    ...(openSessions||[]).filter(o=>o.date===activeDay&&o.time).map(o=>String(o.time).slice(0,5))])).sort();
+  // Open con hora en una franja (personas por su cuenta que también usan la sala).
+  const opensHere = (d,t) => opensAt(d,t,openSessions).map(o=>({o,client:clients.find(c=>c.id===o.client_id)})).filter(x=>x.client);
 
   // Alertas quitadas (deslizando). La clave incluye el estado: si la situación
   // cambia o empeora (vence, quedan menos sesiones…), la alerta vuelve a salir.
@@ -2424,7 +2437,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             {schedView==="day"&&(()=>{ const ops=(openSessions||[]).filter(o=>o.date===activeDay).map(o=>({o,c:clients.find(c=>c.id===o.client_id)})).filter(x=>x.c).sort((a,b)=>String(a.o.time||"99").localeCompare(String(b.o.time||"99")));
               if(!ops.length) return null;
               return(<div style={{marginBottom:12,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px"}}>
-                <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN · POR SU CUENTA · {ops.length}</div>
+                <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN · POR SU CUENTA · {ops.length}{ops.some(x=>!x.o.time)?` · ${ops.filter(x=>!x.o.time).length} sin hora`:""}</div>
                 <div style={{display:"flex",flexWrap:"wrap",gap:6}}>
                   {ops.map(({o,c})=>{ const asig=assignedSessions.some(a=>a.client_id===c.id&&a.date===activeDay); return(
                     <button key={o.id} type="button" onClick={()=>setQuickView(c)} title={asig?"Tiene su entreno preparado":"Sin entreno asignado: ábrelo para prepararlo"}
@@ -2434,7 +2447,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       <span style={{fontSize:11}}>{o.status==="done"?"✅":asig?"🏋️":"⚠️"}</span>
                     </button>); })}
                 </div>
-                <div style={{fontSize:10,color:"#64748b",marginTop:6}}>🏋️ entreno preparado · ⚠️ sin entreno (toca para asignarlo) · ✅ ya entrenó</div>
+                <div style={{fontSize:10,color:"#64748b",marginTop:6}}>🏋️ entreno preparado · ⚠️ sin entreno (toca para asignarlo) · ✅ ya entrenó · los que tienen hora salen también en su franja</div>
               </div>); })()}
             {/* Valoraciones del día sin hora concreta (las que tienen hora salen en su fila) */}
             {schedView==="day"&&(leads||[]).filter(l=>l.date===activeDay&&!l.time).length>0&&(
@@ -2471,10 +2484,11 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
+                      const ops=opensHere(activeDay,time);
                       const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",transition:"background .4s, box-shadow .4s",boxShadow:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"inset 0 0 0 2px #0284c7":"none",background:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"#e3f0fd":dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"transparent":"#f1f4fa"}}>
-                          <div className="mono" onClick={()=>{ if(slotBlocked)return; if(slots.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
+                          <div className="mono" onClick={()=>{ if(slotBlocked)return; if(slots.length>0||ops.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
                             style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#16a34a",fontSize:11,fontWeight:700,cursor:slotBlocked?"default":"pointer"}}>
                             {time}{!slotBlocked&&<span style={{fontSize:13}}>{slots.length>0?"👁":"➕"}</span>}
                           </div>
@@ -2545,12 +2559,22 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                     <span style={{fontSize:16,color:done?"#9ed3b0":vc.bd}}>›</span>
                                   </div>
                                 );})}
+                                {ops.length>0&&<div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"5px 8px"}}>
+                                  <span style={{fontSize:11,fontWeight:800,color:"#0f766e"}}>🔓 Open</span>
+                                  {ops.map(({o,client:c})=>{ const asig=assignedSessions.some(a=>a.client_id===c.id&&a.date===activeDay); return(
+                                    <button key={o.id} type="button" onClick={()=>setQuickView(c)} title={asig?"Tiene su entreno preparado":"Sin entreno asignado: ábrelo para prepararlo"}
+                                      style={{display:"inline-flex",alignItems:"center",gap:5,border:`1px solid ${c.color}55`,background:"#fff",borderRadius:20,padding:"2px 9px 2px 2px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,color:"#0f172a"}}>
+                                      <span style={{width:20,height:20,borderRadius:"50%",background:c.color,color:"#fff",fontSize:8,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>
+                                      {c.name.split(" ")[0]}<span style={{fontSize:10}}>{o.status==="done"?"✅":asig?"🏋️":"⚠️"}</span>
+                                    </button>); })}
+                                  {openCapOf(config)!==null&&<span style={{marginLeft:"auto",fontSize:10,fontWeight:800,color:ops.length>=openCapOf(config)?"#b45309":"#0f766e"}}>{ops.length}/{openCapOf(config)}</span>}
+                                </div>}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
-                                  {slots.length>=2&&<RoomStrip people={slots.map(s=>({client:s.client,exs:exNamesFor(s.client,activeDay)}))} units={config.equipUnits} onOpen={()=>setClassView({date:activeDay,time})}/>}
+                                  {slots.length+ops.length>=2&&<RoomStrip people={[...slots.map(s=>({client:s.client,exs:exNamesFor(s.client,activeDay)})),...ops.map(x=>({client:x.client,exs:exNamesFor(x.client,activeDay)}))]} units={config.equipUnits} onOpen={()=>setClassView({date:activeDay,time})}/>}
                                   {isExtra&&<span style={{fontSize:9,fontWeight:700,color:"#65a30d",background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:20,padding:"1px 7px"}}>⏱ extra</span>}
                                   {isExtra&&slots.length===0&&<button title="Cerrar esta hora extra" onClick={()=>closeExtraHour(activeDay,time)} style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"none",border:"1px solid #f2cccc",borderRadius:20,padding:"1px 8px",cursor:"pointer"}}>✕ cerrar</button>}
                                   {isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
-                                  {!isWork&&slots.length===0&&slotVals.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>setSlotMenu({date:activeDay,time})}>Fuera de horario · 🔒</span>}
+                                  {!isWork&&slots.length===0&&slotVals.length===0&&ops.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>setSlotMenu({date:activeDay,time})}>Fuera de horario · 🔒</span>}
                                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
                                     {!slotBlocked&&<button title="Añadir un cliente a esta hora" onClick={()=>setQuickAdd({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #bcd3ee",background:"#eef4fc",color:"#0284c7",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>➕ Entreno</button>}
                                     {!slotBlocked&&<button title="Agendar una valoración a esta hora" onClick={()=>setShowValoracion({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #e0d2f5",background:"#f3ecfb",color:"#7c3aed",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>📋 Valoración</button>}
@@ -2931,7 +2955,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&(()=>{ const pc=clients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal openSessions={openSessions} loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -4437,7 +4461,7 @@ function ClassExList({raw,loadAll,notify}){
       </div>); })}
   </div>;
 }
-function ClassViewModal({units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,loadAll,notify,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+function ClassViewModal({openSessions,units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,loadAll,notify,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
   const [classTimer,setClassTimer]=React.useState(null);
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
@@ -4453,14 +4477,27 @@ function ClassViewModal({units,date,time,sessions,history,clients,assignedSessio
     return au?{label:au.label, exs:au.routine.map(e=>({name:e[0],sets:e[1],reps:e[2],proto:e[4],w:null})), assigned:false}:{label:"—",exs:[],assigned:false};
   };
   const rutinas=slot.map(s=>({s, r:rutinaDe(s.client)}));
+  // Open a esta hora: no son de la clase, pero comparten la sala y el material.
+  const opn=opensAt(date,time,openSessions).map(o=>({o,client:clients.find(c=>c.id===o.client_id)})).filter(x=>x.client).map(x=>({...x,r:rutinaDe(x.client)}));
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{blk?` · ${blk.name}`:""}</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{opn.length?` + ${opn.length} open`:""}{blk?` · ${blk.name}`:""}</p>
 
         {/* Mapa de la sala: material y cuellos de botella */}
-        <RoomMap people={rutinas.map(({s,r})=>({client:s.client,exs:r.exs.map(e=>e.name)}))} units={units}/>
+        <RoomMap people={[...rutinas.map(({s,r})=>({client:s.client,exs:r.exs.map(e=>e.name)})),...opn.map(x=>({client:x.client,exs:x.r.exs.map(e=>e.name)}))]} units={units}/>
+        {opn.length>0&&<div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
+          <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN A ESTA HORA · {opn.length} · van por su cuenta (cuentan en el mapa)</div>
+          {opn.map(({o,client:c,r})=><div key={o.id} style={{display:"flex",alignItems:"center",gap:8,padding:"4px 0",borderTop:"1px solid #d7efe9"}}>
+            <span style={{width:24,height:24,borderRadius:"50%",background:c.color,color:"#fff",fontSize:9,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",flexShrink:0}}>{ini(c.name)}</span>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{c.name}{o.status==="done"?" ✅":""}</div>
+              <div style={{fontSize:11,color:"#475569",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{r.exs.length?`${r.label}${r.assigned?"":" · previsto"}: ${r.exs.map(e=>e.name).join(" · ")}`:"Sin entreno preparado"}</div>
+            </div>
+            {onEditSession&&<button className="btn ghost" style={{fontSize:12,padding:"5px 8px"}} onClick={()=>onEditSession(c)} title="Preparar o cambiar su entreno">✏️</button>}
+          </div>)}
+        </div>}
 
         {onExecClass&&slot.length>0&&(
           <button className="btn sky" style={{width:"100%",padding:11,marginBottom:8,fontSize:13,fontWeight:700}} onClick={onExecClass}>
@@ -4903,14 +4940,17 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
 // Objetivos/lesiones (campo notas) + lo que le toca entrenar ese día.
 // Ficha rápida · híbrido: días open de la semana (marcar hecho, quitar o añadir uno).
 function HybridBox({client,date,loadAll,notify,athlete}){
-  const [busy,setBusy]=React.useState(false), [nd,setNd]=React.useState("");
+  const [busy,setBusy]=React.useState(false), [nd,setNd]=React.useState(""), [nt,setNt]=React.useState("");
   const wk=opensInWeek(client,date||TODAY).sort((a,b)=>a.date.localeCompare(b.date)), lim=openPerWeek(client);
   const run=async(fn,msg)=>{ setBusy(true); const r=await fn(); setBusy(false); if(r&&r.error) return notify&&notify(OPEN.missing?"Ejecuta docs/hibrido.sql en Supabase":"No se pudo guardar","err"); await loadAll(); msg&&notify&&notify(msg); };
   const toggle=(o)=>run(()=>sb.from("open_sessions").update({status:o.status==="done"?"planned":"done"}).eq("id",o.id),o.status==="done"?"Marcada como pendiente":"Open hecha ✓");
   const del=(o)=>{ if(window.confirm(`¿Quitar la sesión open del ${fmtDate(o.date)}?`)) run(()=>sb.from("open_sessions").delete().eq("id",o.id),"Quitada"); };
   const add=()=>{ if(!nd) return; const why=openBlockReason(client,nd);
     if(why&&!window.confirm(why==="bono"?"Ya no le quedan open en el bono. ¿Añadirla igualmente?":"Ya tiene el máximo de open esa semana. ¿Añadirla igualmente?")) return;
-    run(()=>sb.from("open_sessions").insert({client_id:client.id,date:nd,status:"planned"}),"Open añadida ✓").then(()=>setNd("")); };
+    run(()=>sb.from("open_sessions").insert({client_id:client.id,date:nd,time:nt||null,status:"planned"}),"Open añadida ✓").then(()=>{ setNd(""); setNt(""); }); };
+  const setTime=(o,t)=>run(()=>sb.from("open_sessions").update({time:t||null}).eq("id",o.id),t?`Open a las ${t} ✓`:"Open sin hora");
+  const hourSel=(val,onCh,d)=><select className="inp" aria-label="Hora del open" value={val||""} onChange={e=>onCh(e.target.value)} style={{width:84,padding:"4px 6px",fontSize:12,appearance:"none"}}>
+    <option value="">Sin hora</option>{openHours(null,d).concat(val&&!openHours(null,d).includes(val)?[val]:[]).map(t=><option key={t} value={t}>{t}</option>)}</select>;
   const oT=openTotal(client), oL=openLeft(client);
   return(
     <div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
@@ -4923,12 +4963,14 @@ function HybridBox({client,date,loadAll,notify,athlete}){
       {wk.length===0?<div style={{fontSize:12,color:"#64748b",marginTop:4}}>Esta semana no ha reservado días por su cuenta.</div>
         :<div style={{display:"flex",flexDirection:"column",gap:5,marginTop:6}}>{wk.map(o=>(
           <div key={o.id} style={{display:"flex",alignItems:"center",gap:8,background:"#fff",borderRadius:9,padding:"6px 8px"}}>
-            <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f172a",textTransform:"capitalize"}}>{fmtDate(o.date)}{o.time?` · ${o.time}`:""}</span>
+            <span style={{flex:1,fontSize:12,fontWeight:700,color:"#0f172a",textTransform:"capitalize"}}>{fmtDate(o.date)}</span>
+            {athlete?(o.time&&<span className="mono" style={{fontSize:12,fontWeight:800,color:"#0f766e"}}>{String(o.time).slice(0,5)}</span>):hourSel(o.time?String(o.time).slice(0,5):"",t=>setTime(o,t),o.date)}
             <button type="button" disabled={busy} onClick={()=>toggle(o)} style={{border:`1px solid ${o.status==="done"?"#16a34a":"#cbd5e1"}`,background:o.status==="done"?"#e2f4e8":"#fff",color:o.status==="done"?"#16a34a":"#64748b",borderRadius:8,padding:"3px 8px",fontSize:11,fontWeight:800,cursor:"pointer"}}>{o.status==="done"?"✓ hecha":"○ hecha"}</button>
             <button type="button" disabled={busy} onClick={()=>del(o)} aria-label="Quitar" style={{border:"none",background:"none",color:"#94a3b8",cursor:"pointer",fontSize:13}}>✕</button>
           </div>))}</div>}
       {!athlete&&<div style={{display:"flex",gap:6,marginTop:7}}>
         <input type="date" className="inp" value={nd} min={TODAY} onChange={e=>setNd(e.target.value)} style={{flex:1,padding:"6px 8px",fontSize:12}}/>
+        {hourSel(nt,setNt,nd)}
         <button type="button" className="btn ghost" disabled={busy||!nd} onClick={add} style={{fontSize:11,padding:"6px 10px",fontWeight:800,color:"#0f766e",border:"1px solid #b5e3da"}}>＋ Open</button>
       </div>}
       <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Sus días open aparecen en la planificación semanal para que le prepares el entreno.</div>
@@ -6829,6 +6871,22 @@ function ScheduleModal({config,onSave,onClose}) {
             <span style={{display:"block",fontSize:11,color:"#64748b",lineHeight:1.35}}>{cfg.approveBookings!==false?"Activado: cada reserva te llega como solicitud y la confirmas tú (la plaza queda guardada mientras).":"Desactivado: las reservas se confirman solas."}</span></span>
           <span style={{width:42,height:24,borderRadius:12,background:cfg.approveBookings!==false?"#16a34a":"#cbd5e1",position:"relative",flexShrink:0,transition:"background .2s"}}><span style={{position:"absolute",top:3,left:cfg.approveBookings!==false?21:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/></span>
         </button>
+        <div style={{marginBottom:16}}>
+          <span className="lbl">🔓 OPEN (HÍBRIDO) · HORAS EN LAS QUE PUEDEN VENIR</span>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            {hourSel(cfg.openFrom||cfg.morningFrom,v=>setCfg(c=>({...c,openFrom:v})))}
+            <span style={{color:"#64748b",fontSize:13}}>a</span>
+            {hourSel(cfg.openTo||cfg.afternoonTo,v=>setCfg(c=>({...c,openTo:v})))}
+          </div>
+          <div style={{display:"flex",alignItems:"center",gap:6,marginTop:8,flexWrap:"wrap"}}>
+            <span style={{fontSize:11,color:"#64748b",fontWeight:700}}>Máx. open por hora:</span>
+            {[0,1,2,3,4,5,6].map(n=>{ const on=(parseInt(cfg.openCap,10)||0)===n; return(
+              <button key={n} type="button" onClick={()=>setCfg(c=>({...c,openCap:n||null}))}
+                style={{minWidth:34,padding:"5px 9px",borderRadius:20,cursor:"pointer",fontWeight:800,fontSize:12,fontFamily:"inherit",
+                  border:on?"1px solid #0f766e":"1px solid #cfd8e6",background:on?"#0f766e":"#fff",color:on?"#fff":"#475569"}}>{n||"Sin límite"}</button>); })}
+          </div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Al apuntarse a un open eligen la hora concreta; la ves en su franja de la agenda y cuenta en el mapa de la sala.</div>
+        </div>
         <div style={{marginBottom:8}}>
           <span className="lbl">👥 ATLETAS POR HORA (1–5)</span>
           <div style={{display:"flex",alignItems:"center",gap:6,marginBottom:8,flexWrap:"wrap"}}>
@@ -7679,7 +7737,7 @@ function AthleteTutorial({client,config,hybrid,approve,onClose,onGo}){
   </div>;
 }
 
-function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
+function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
   const [saving,setSaving]=React.useState(false);
@@ -7967,7 +8025,7 @@ function ClientPortal({openSessions,client,allSessions,allHistory,allClients,blo
         <ClientSummary dark noHello noPhase noConstancy onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
       </>}
 
-      {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
+      {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
 
       {tab==="entreno"&&<div>
         <div className="seg" style={{marginBottom:14}}>
@@ -8534,10 +8592,11 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
 // ── RESERVAR: semana fija a pantalla completa ─────────────────────────────
 // Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
 // En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
-function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, hybrid, loadAll, notify, saving, setSaving, streak}) {
+function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, allOpens, hybrid, loadAll, notify, saving, setSaving, streak}) {
   const [wk,setWk] = React.useState(()=>mondayOfDate(TODAY));
   const [celebrate,setCelebrate] = React.useState(null); // pantalla «¡Reservado!» tras confirmar
-  const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN"
+  const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN|hora"
+  const [openPick,setOpenPick] = React.useState(null); // día open al que se le está eligiendo la hora
   const days=Array.from({length:5},(_,i)=>addDays(wk,i));
   const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
   const extraOf=(d)=>(config.extraSlots&&config.extraSlots[d])||[];
@@ -8553,7 +8612,8 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
   const myWait=(d,t)=>(waitlist||[]).find(w=>w.client_id===client.id&&w.date===d&&w.time===t);
   const myOpen=(d)=>(opens||[]).find(o=>o.date===d);
   const nFree=freeToBook(client,allSessions);
-  const pc=picked.filter(k=>!k.endsWith("|OPEN")), po=picked.filter(k=>k.endsWith("|OPEN"));
+  const pc=picked.filter(k=>!k.includes("|OPEN")), po=picked.filter(k=>k.includes("|OPEN"));
+  const pickedOpen=(d)=>picked.find(k=>k.startsWith(d+"|OPEN"));
   const oLeft=hybrid?openLeft(client,opens):null;
 
   const tapClass=async(d,t)=>{
@@ -8570,16 +8630,28 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
     setPicked(p=>[...p,k]);
   };
   const tapOpen=async(d)=>{
-    const k=d+"|OPEN", m=myOpen(d);
-    if(m){ if(m.status==="done") return notify("Open hecha ✓"); if(!window.confirm(`¿Quitar tu open del ${fmtDate(d)}?`)) return;
-      await sb.from("open_sessions").delete().eq("id",m.id); await loadAll(); return notify("Open quitado"); }
-    if(picked.includes(k)) return setPicked(p=>p.filter(x=>x!==k));
+    const m=myOpen(d), pk=pickedOpen(d);
+    if(m){ if(m.status==="done") return notify("Open hecha ✓"); return setOpenPick(d); } // cambiar la hora o quitarlo
+    if(pk) return setPicked(p=>p.filter(x=>x!==pk));
     if(dayClosed(d)||d<TODAY) return;
     const why=openBlockReason(client,d,opens,po.filter(x=>x.slice(0,10)>=mondayOfDate(d)&&x.slice(0,10)<addDays(mondayOfDate(d),7)).length);
     if(why==="bono"||(oLeft!==null&&po.length>=oLeft)) return notify("No te quedan open en el bono","err");
     if(why==="semana") return notify(`Esa semana ya tienes tus ${openPerWeek(client)} open`,"err");
-    setPicked(p=>[...p,k]);
+    setOpenPick(d); // elige la hora concreta
   };
+  // Hoja de horas del open: cuánta gente hay a cada hora (clase + open) para repartirse.
+  const oCap=openCapOf(config);
+  const openFull=(d,t)=>oCap!==null&&opensAt(d,t,allOpens||opens).filter(o=>o.client_id!==client.id).length>=oCap;
+  const chooseOpenHour=async(d,t)=>{
+    const m=myOpen(d);
+    if(m){ if(String(m.time||"").slice(0,5)===t) return setOpenPick(null);
+      const {error}=await sb.from("open_sessions").update({time:t}).eq("id",m.id); setOpenPick(null);
+      if(error) return notify("No se pudo cambiar la hora","err"); await loadAll(); return notify(`Open cambiado a las ${t} ✓`); }
+    setPicked(p=>[...p.filter(x=>!x.startsWith(d+"|OPEN")),d+"|OPEN|"+t]); setOpenPick(null);
+  };
+  const removeOpen=async(d)=>{ const m=myOpen(d); setOpenPick(null); if(!m) return;
+    if(!window.confirm(`¿Quitar tu open del ${fmtDate(d)}?`)) return;
+    await sb.from("open_sessions").delete().eq("id",m.id); await loadAll(); notify("Open quitado"); };
   const submit=async()=>{
     if(!picked.length) return;
     const bad=pc.map(k=>k.split("|")).find(([d,t])=>freeAt(d,t)<=0||slotClosed(d,t)||isPast(d,t));
@@ -8587,7 +8659,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
     setSaving(true);
     if(pc.length){ const {error}=await sb.from("sessions").insert(pc.map(k=>{const[d,t]=k.split("|");return bookingRow(client.id,d,t,config);}));
       if(error){ setSaving(false); return notify("No se pudo reservar","err"); } }
-    if(po.length){ const {error}=await sb.from("open_sessions").insert(po.map(k=>({client_id:client.id,date:k.slice(0,10),status:"planned"})));
+    if(po.length){ const {error}=await sb.from("open_sessions").insert(po.map(k=>({client_id:client.id,date:k.slice(0,10),time:k.split("|")[2]||null,status:"planned"})));
       if(error){ setSaving(false); await loadAll(); return notify("Las clases sí, pero las open no se pudieron guardar (avisa a tu trainer)","err"); } }
     await loadAll(); setSaving(false); setPicked([]);
     const pend=pc.length>0&&needsApproval(config);
@@ -8657,7 +8729,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
         </React.Fragment>))}
         {hybrid&&<>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}} title="Open · por tu cuenta">🔓</div>
-          {days.map(d=>{ const k=d+"|OPEN", m=myOpen(d), sel=picked.includes(k), off=dayClosed(d)||d<TODAY;
+          {days.map(d=>{ const k=d+"|OPEN", m=myOpen(d), pk=pickedOpen(d), sel=!!pk, off=dayClosed(d)||d<TODAY;
             const st=m?"mine":sel?"sel":off?"off":"free";
             const sty={mine:{background:m&&m.status==="done"?"linear-gradient(135deg,#22c55e,#15803d)":"linear-gradient(135deg,#fbbf24,#f59e0b)",color:"#1c1917",border:"none",boxShadow:"0 0 14px rgba(251,191,36,.4)"},
               sel:{background:"#fff",color:"#d97706",border:"none",transform:"scale(.95)",boxShadow:"0 0 0 3px rgba(251,191,36,.55)"},
@@ -8665,8 +8737,8 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
               free:{background:"rgba(251,191,36,.06)",color:"#fcd34d",border:"1px dashed rgba(251,191,36,.45)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapOpen(d)} aria-label={`${fmtDate(d)} open: ${st==="mine"?"reservado":st==="sel"?"elegido":"libre"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
-              {st==="mine"&&<><span style={{fontSize:14}}>✓</span><span style={{fontSize:9}}>{m.status==="done"?"hecho":"open"}</span></>}
-              {st==="sel"&&<span style={{fontSize:20,fontWeight:900}}>＋</span>}
+              {st==="mine"&&<><span style={{fontSize:m.time?11:14}}>{m.status==="done"?"✓":m.time?String(m.time).slice(0,5):"✓"}</span><span style={{fontSize:9}}>{m.status==="done"?"hecho":m.time?"open":"elige hora"}</span></>}
+              {st==="sel"&&<><span style={{fontSize:11,fontWeight:900}}>{pk.split("|")[2]}</span><span style={{fontSize:8}}>open</span></>}
               {st==="free"&&<span style={{fontSize:10}}>open</span>}
             </button>; })}
         </>}
@@ -8683,9 +8755,37 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
             <span>▢ libre</span><span style={{color:"#ff7a45"}}>● tu clase</span><span>▫ lleno</span>{hybrid&&<span style={{color:"#fcd34d"}}>● open</span>}
           </div>}
       </div>
+      {openPick&&<OpenHourSheet d={openPick} hours={openHours(config,openPick)} cur={(myOpen(openPick)||{}).time||((pickedOpen(openPick)||"").split("|")[2])||null} hasMine={!!myOpen(openPick)}
+        classAt={(t)=>allSessions.filter(s=>s.date===openPick&&s.time===t).length} openAt={(t)=>opensAt(openPick,t,allOpens||opens).filter(o=>o.client_id!==client.id).length} cap={oCap}
+        off={(t)=>isPast(openPick,t)||blocked.some(b=>b.date===openPick&&(b.time===t||b.time==="ALL"))||openFull(openPick,t)}
+        onPick={(t)=>chooseOpenHour(openPick,t)} onRemove={()=>removeOpen(openPick)} onClose={()=>setOpenPick(null)}/>}
       {celebrate&&<BookedCelebration data={celebrate} onClose={()=>setCelebrate(null)}/>}
     </div>
   );
+}
+// Elegir la hora concreta de un open (para que el coach organice la sala).
+function OpenHourSheet({d,hours,cur,hasMine,classAt,openAt,cap,off,onPick,onRemove,onClose}){
+  return <div role="dialog" aria-label="Elige la hora de tu open" onClick={onClose} style={{position:"fixed",inset:0,zIndex:1100,background:"rgba(0,0,0,.6)",display:"flex",alignItems:"flex-end",justifyContent:"center"}}>
+    <div onClick={e=>e.stopPropagation()} className="fade" style={{width:"100%",maxWidth:480,maxHeight:"78vh",overflowY:"auto",background:DK.card,borderRadius:"24px 24px 0 0",border:`1px solid ${DK.line}`,padding:"14px 14px calc(16px + env(safe-area-inset-bottom))",color:DK.tx}}>
+      <div style={{width:40,height:4,borderRadius:2,background:"rgba(255,255,255,.18)",margin:"0 auto 12px"}}/>
+      <div style={{fontSize:17,fontWeight:800}}>🔓 ¿A qué hora vienes?</div>
+      <div style={{fontSize:12,color:DK.mu,marginTop:2,marginBottom:12}}>{capFirst(fmtLong(d))} · así tu trainer organiza la sala</div>
+      <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(96px,1fr))",gap:8}}>
+        {hours.map(t=>{ const c=classAt(t), o=openAt(t), dis=off(t), on=cur===t, full=cap!==null&&o>=cap; return(
+          <button key={t} type="button" disabled={dis} onClick={()=>onPick(t)} aria-pressed={on} aria-label={`${t}: ${c} en clase, ${o} open${dis?", no disponible":""}`}
+            style={{fontFamily:"inherit",cursor:dis?"default":"pointer",borderRadius:14,padding:"9px 6px",textAlign:"center",
+              background:on?"linear-gradient(135deg,#fbbf24,#f59e0b)":dis?"transparent":"rgba(251,191,36,.07)",color:on?"#1c1917":dis?DK.dim:DK.tx,
+              border:on?"none":dis?`1px dashed ${DK.line}`:"1px solid rgba(251,191,36,.3)"}}>
+            <div className="mono" style={{fontSize:16,fontWeight:800}}>{t}</div>
+            <div style={{fontSize:10,fontWeight:700,marginTop:2,color:on?"#1c1917":DK.mu}}>{full?"open completo":dis?"no disponible":`👥 ${c} en clase · 🔓 ${o}${cap!==null?`/${cap}`:""}`}</div>
+          </button>); })}
+      </div>
+      <div style={{display:"flex",gap:8,marginTop:14}}>
+        {hasMine&&<button type="button" onClick={onRemove} style={{flex:1,height:46,borderRadius:23,border:"1px solid rgba(248,113,113,.45)",background:"transparent",color:DK.red,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Quitar open</button>}
+        <button type="button" onClick={onClose} style={{flex:1,height:46,borderRadius:23,border:`1px solid ${DK.line}`,background:"rgba(255,255,255,.06)",color:DK.tx,fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Cerrar</button>
+      </div>
+    </div>
+  </div>;
 }
 // Brasas que suben en el fondo de Reservar (decorativo).
 function Embers(){
@@ -11015,7 +11115,7 @@ const equipRank = (name) => { const i=EQUIP_ORDER.indexOf(equipmentOf(name)); re
 
 // Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
 let GYM_EQUIP = null;
-const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; ROOM_SHARE = !(cfg && cfg.smithShare===false); };
+const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; ROOM_SHARE = !(cfg && cfg.smithShare===false); SCHED = cfg || null; };
 // Banco que necesita (además de su material principal): reclinable para inclinados,
 // sentados con respaldo o apoyo de pecho; plano para press banca, hip thrust, press francés…
 const benchOf = (name) => { const n=String(name||"");
@@ -11905,7 +12005,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
 ClientPortal=noTheme(ClientPortal); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
-MultiSessionRequest=noTheme(MultiSessionRequest); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
+MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
 </script>
