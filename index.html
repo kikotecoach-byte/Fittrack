@@ -473,6 +473,7 @@ const BLOCK_KINDS = [
   {k:"Bloqueado",     ico:"🚫", fg:"#b56b6b", bg:"#fbecec", bd:"#f2cccc", sub:"No disponible (otro motivo)"},
   {k:"Cerrada",       ico:"⛔", fg:"#475569", bg:"#eef1f6", bd:"#cbd5e1", sub:"Hora cerrada: ese día no hay clase"},
 ];
+const PRIV_TYPE = "Clase privada"; // sessions.type de la sesión creada para una clase privada
 const blockInfo = (b) => { const r=String((b&&b.reason)||""); const kind=BLOCK_KINDS.find(x=>r===x.k||r.startsWith(x.k+" · "))||BLOCK_KINDS.find(x=>x.k==="Bloqueado");
   const note=r.startsWith(kind.k+" · ")?r.slice(kind.k.length+3):""; return {...kind,note,label:kind.k+(note?" · "+note:"")}; };
 // Clases de hasta 3: un horario guardado antes con 1 atleta por hora pasa a 3
@@ -1670,12 +1671,25 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
 
   // kind: "Clase privada" | "Valoración" | "Bloqueado"; note opcional (p. ej. el nombre).
-  const toggleBlock = (date, time, kind="Bloqueado", note="") => w(async()=>{
+  // Clase privada con cliente elegido: además de cerrar la hora le crea su
+  // sesión (tipo "Clase privada") para que la vea, cuente en su bono y tenga su entreno.
+  // dropPriv: al liberar, quita también esa sesión (cancelar la clase privada).
+  const privSessAt = (date,time) => sessions.filter(s=>s.date===date&&s.time===time&&s.type===PRIV_TYPE);
+  const toggleBlock = (date, time, kind="Bloqueado", note="", clientId=null, dropPriv=false) => w(async()=>{
     const ex=blocked.find(b=>b.date===date&&b.time===time);
-    if(ex) await sb.from("blocked_slots").delete().eq("id",ex.id);
-    else await sb.from("blocked_slots").insert({date,time,reason:kind+(String(note).trim()?" · "+String(note).trim():"")});
+    const who=clientId&&clients.find(c=>c.id===clientId);
+    if(ex){ await sb.from("blocked_slots").delete().eq("id",ex.id);
+      if(dropPriv){ const ids=privSessAt(date,time).filter(s=>s.status!=="completed").map(s=>s.id); if(ids.length) await sb.from("sessions").delete().in("id",ids); }
+      return notify(dropPriv?"Clase privada cancelada ✓":"Hora liberada ✓"); }
+    const txt=who?who.name:String(note).trim();
+    const {error}=await sb.from("blocked_slots").insert({date,time,reason:kind+(txt?" · "+txt:"")});
+    if(error) return notify("Error: "+error.message,"err");
+    if(who){ const mine=sessions.find(s=>s.client_id===who.id&&s.date===date&&s.time===time);
+      const r=mine?await sb.from("sessions").update({type:PRIV_TYPE,status:"confirmed",requested:false}).eq("id",mine.id)
+        :await sb.from("sessions").insert({client_id:who.id,date,time,type:PRIV_TYPE,status:"confirmed",requested:false});
+      if(r.error) return notify("Hora cerrada, pero no se pudo crear la sesión: "+r.error.message,"err"); }
     const bi=blockInfo({reason:kind});
-    notify(ex?"Hora liberada ✓":`${bi.ico} Hora reservada: ${kind}`);
+    notify(who?`${bi.ico} Clase privada con ${who.name.split(" ")[0]} ✓`:`${bi.ico} Hora reservada: ${kind}`);
   });
 
   const isBlocked = (date,time) => blocked.some(b=>b.date===date&&b.time===time);
@@ -1877,7 +1891,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         background:isDrop?"#dcebfb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"#fff":"#f1f4fa",
                         border:isDrop?"1px solid #0284c7":slotBlocked?`1px solid ${(blockAt(activeDay,time)||{}).bd||"#f2cccc"}`:activeDay===TODAY&&time===curHour?"1.5px solid #7cc4f0":"1px solid #e6ebf3",
                         boxShadow:all.length?"0 1px 3px rgba(15,23,42,.06)":"none"}}>
-                      {slotBlocked&&(()=>{ const bi=blockAt(activeDay,time)||blockInfo(null); return <div style={{fontSize:Math.min(15,Math.max(11,fs)),fontWeight:800,color:bi.fg,gridColumn:"1/-1"}}>{bi.ico} {bi.label}</div>; })()}
+                      {slotBlocked&&(()=>{ const bi=blockAt(activeDay,time)||blockInfo(null); return <div style={{fontSize:Math.min(15,Math.max(11,fs)),fontWeight:800,color:bi.fg,gridColumn:"1/-1"}}>{bi.ico} {bi.k==="Clase privada"&&ss.length?bi.k:bi.label}</div>; })()}
                       {shown.map(it=>{ if(it.t==="v") return <ValChip key={it.l.id} l={it.l} fs={fs}/>;
                         const s=it.s, nm=s.client.name.split(" ");
                         const asig=assignedSessions.find(a=>a.client_id===s.client_id&&a.date===activeDay);
@@ -2481,19 +2495,20 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <div>
                     {daySlots.map((time,i)=>{
                       const slotBlocked=isBlocked(activeDay,time);
-                      const slots=!slotBlocked?sessions.filter(s=>s.date===activeDay&&s.time===time)
+                      const bk0=slotBlocked?blockAt(activeDay,time):null, priv=!!bk0&&bk0.k==="Clase privada";
+                      const slots=(!slotBlocked||priv)?sessions.filter(s=>s.date===activeDay&&s.time===time)
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
                       const ops=opensHere(activeDay,time);
                       const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!workSlots.includes(time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",transition:"background .4s, box-shadow .4s",boxShadow:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"inset 0 0 0 2px #0284c7":"none",background:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"#e3f0fd":dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"transparent":"#f1f4fa"}}>
-                          <div className="mono" onClick={()=>{ if(slotBlocked)return; if(slots.length>0||ops.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
-                            style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#16a34a",fontSize:11,fontWeight:700,cursor:slotBlocked?"default":"pointer"}}>
-                            {time}{!slotBlocked&&<span style={{fontSize:13}}>{slots.length>0?"👁":"➕"}</span>}
+                          <div className="mono" onClick={()=>{ if(priv){ if(slots.length) setClassView({date:activeDay,time}); return; } if(slotBlocked)return; if(slots.length>0||ops.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
+                            style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:priv?"#7c3aed":slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#16a34a",fontSize:11,fontWeight:700,cursor:slotBlocked&&!(priv&&slots.length)?"default":"pointer"}}>
+                            {time}{(!slotBlocked||(priv&&slots.length>0))&&<span style={{fontSize:13}}>{slots.length>0?"👁":"➕"}</span>}
                           </div>
                           <div style={{flex:1,minWidth:0,padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"center"}}>
-                            {slotBlocked
+                            {slotBlocked&&!priv
                               ?(()=>{ const bi=blockAt(activeDay,time)||blockInfo(null); return(
                                 <div onClick={()=>setSlotMenu({date:activeDay,time})} style={{display:"flex",alignItems:"center",gap:9,background:bi.bg,border:`1px solid ${bi.bd}`,borderRadius:12,padding:"8px 10px",cursor:"pointer"}}>
                                   <span style={{fontSize:18}}>{bi.ico}</span>
@@ -2504,6 +2519,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   <span style={{fontSize:16,color:bi.bd}}>›</span>
                                 </div>); })()
                               :<>
+                                {priv&&<div onClick={()=>setSlotMenu({date:activeDay,time})} role="button" title="Clase privada · toca para liberar o cancelar"
+                                  style={{display:"flex",alignItems:"center",gap:7,background:bk0.bg,border:`1px solid ${bk0.bd}`,borderRadius:10,padding:"4px 9px",cursor:"pointer"}}>
+                                  <span style={{fontSize:13}}>{bk0.ico}</span>
+                                  <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:800,color:bk0.fg,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>Clase privada{!slots.length&&bk0.note?` · ${bk0.note}`:""}<span style={{fontWeight:600,color:"#94a3b8"}}> · nadie más puede reservar</span></span>
+                                  <span style={{fontSize:14,color:bk0.bd}}>›</span>
+                                </div>}
                                 {slots.map(s=>{
                                   const done=s.status==="completed";
                                   // 1ª sesión de su vida en el centro (para el aviso de bienvenida).
@@ -2573,13 +2594,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                   {slots.length+ops.length>=2&&<RoomStrip people={[...slots.map(s=>({client:s.client,exs:exNamesFor(s.client,activeDay)})),...ops.map(x=>({client:x.client,exs:exNamesFor(x.client,activeDay)}))]} units={config.equipUnits} onOpen={()=>setClassView({date:activeDay,time})}/>}
                                   {isExtra&&<span style={{fontSize:9,fontWeight:700,color:"#65a30d",background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:20,padding:"1px 7px"}}>⏱ extra</span>}
                                   {isExtra&&slots.length===0&&<button title="Cerrar esta hora extra" onClick={()=>closeExtraHour(activeDay,time)} style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"none",border:"1px solid #f2cccc",borderRadius:20,padding:"1px 8px",cursor:"pointer"}}>✕ cerrar</button>}
-                                  {isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
-                                  {!isWork&&slots.length===0&&slotVals.length===0&&ops.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>setSlotMenu({date:activeDay,time})}>Fuera de horario · 🔒</span>}
+                                  {!slotBlocked&&isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
+                                  {!slotBlocked&&!isWork&&slots.length===0&&slotVals.length===0&&ops.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>setSlotMenu({date:activeDay,time})}>Fuera de horario · 🔒</span>}
                                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6}}>
                                     {!slotBlocked&&<button title="Añadir un cliente a esta hora" onClick={()=>setQuickAdd({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #bcd3ee",background:"#eef4fc",color:"#0284c7",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>➕ Entreno</button>}
                                     {!slotBlocked&&<button title="Agendar una valoración a esta hora" onClick={()=>setShowValoracion({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #e0d2f5",background:"#f3ecfb",color:"#7c3aed",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>📋 Valoración</button>}
                                     {!slotBlocked&&<button title="Reservar la hora: clase privada, valoración o bloqueo" onClick={()=>setSlotMenu({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #e6ebf3",background:"#fff",color:"#475569",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 10px",whiteSpace:"nowrap"}}>🔐</button>}
-                                    {isWork&&<span style={{fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
+                                    {!slotBlocked&&isWork&&<span style={{fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
                                   </div>
                                 </div>
                               </>
@@ -2965,9 +2986,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal date={slotMenu.date} time={slotMenu.time} block={blockAt(slotMenu.date,slotMenu.time)} booked={sessions.filter(s=>s.date===slotMenu.date&&s.time===slotMenu.time).length}
+        clients={clients} sessions={sessions} privSess={privSessAt(slotMenu.date,slotMenu.time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client)}
         onTraining={()=>{const s=slotMenu;setSlotMenu(null);setQuickAdd(s);}}
         onValoracion={()=>{const s=slotMenu;setSlotMenu(null);setShowValoracion({date:s.date,time:s.time});}}
-        onBlock={(kind,note)=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time,kind,note);}}
+        onBlock={(kind,note,cid,drop)=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time,kind,note,cid,drop);}}
         onClose={()=>setSlotMenu(null)}/>}
       {openHour&&<HoursModal date={openHour.date} initialScope={openHour.scope} workSlots={workSlots} extraOf={extraOf} blocked={blocked} sessions={sessions} onApply={applyHours} onClose={()=>setOpenHour(null)}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
@@ -3716,13 +3738,26 @@ function HoursModal({date,initialScope,workSlots,extraOf,blocked,sessions,onAppl
     </div>);
 }
 
+// Foto o iniciales del cliente (círculo).
+const CliAvatar = ({c,size=30}) => c.avatar_url
+  ?<img src={c.avatar_url} alt="" style={{width:size,height:size,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+  :<div className="ring" style={{width:size,height:size,background:(c.color||"#64748b")+"20",color:c.color||"#64748b",fontSize:Math.round(size*0.34),flexShrink:0}}>{ini(c.name)}</div>;
 // ── AÑADIDO RÁPIDO DE CLIENTES A UN HUECO ──────────────────────────────────
-function SlotActionModal({date,time,block,booked,onTraining,onValoracion,onBlock,onClose}) {
+function SlotActionModal({date,time,block,booked,clients,sessions,privSess,onTraining,onValoracion,onBlock,onClose}) {
   const d=new Date(date+"T12:00:00");
   const dstr=d.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
   const [kind,setKind]=React.useState(null);
   const [note,setNote]=React.useState("");
+  const [cid,setCid]=React.useState(null); // clase privada: cliente elegido
+  const [q,setQ]=React.useState("");
   const sel=kind&&BLOCK_KINDS.find(x=>x.k===kind);
+  const isPriv=kind==="Clase privada";
+  const here=(sessions||[]).filter(s=>s.date===date&&s.time===time);
+  const who=cid&&(clients||[]).find(c=>c.id===cid);
+  const others=here.filter(s=>s.client_id!==cid).length;
+  const list=(clients||[]).filter(c=>c.name.toLowerCase().includes(q.trim().toLowerCase()))
+    .sort((a,b)=>(here.some(s=>s.client_id===b.id)?1:0)-(here.some(s=>s.client_id===a.id)?1:0)||a.name.localeCompare(b.name));
+  const priv=privSess||[];
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:380}}>
@@ -3732,10 +3767,17 @@ function SlotActionModal({date,time,block,booked,onTraining,onValoracion,onBlock
           ?<div style={{display:"flex",flexDirection:"column",gap:9}}>
             <div style={{background:block.bg,border:`1px solid ${block.bd}`,borderRadius:12,padding:"12px 13px"}}>
               <div style={{fontSize:15,fontWeight:800,color:block.fg}}>{block.ico} {block.k}</div>
-              {block.note&&<div style={{fontSize:13,fontWeight:700,color:"#334155",marginTop:3}}>{block.note}</div>}
-              <div style={{fontSize:11,color:"#94a3b8",marginTop:4}}>Los atletas ven esta hora como no disponible.</div>
+              {priv.length>0
+                ?priv.map(s=><div key={s.id} style={{display:"flex",alignItems:"center",gap:8,marginTop:6}}>
+                    <CliAvatar c={s.client} size={30}/>
+                    <div style={{minWidth:0}}><div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>{s.client.name}</div>
+                      <div style={{fontSize:11,color:"#64748b",fontWeight:600}}>{s.status==="completed"?"✓ ya vino":"Sesión 1 a 1 en su agenda"}</div></div>
+                  </div>)
+                :block.note&&<div style={{fontSize:13,fontWeight:700,color:"#334155",marginTop:3}}>{block.note}</div>}
+              <div style={{fontSize:11,color:"#94a3b8",marginTop:6}}>Los demás atletas ven esta hora como no disponible.</div>
             </div>
-            <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#e2f4e8",color:"#16a34a",border:"1px solid #c9e6d1",textAlign:"left"}} onClick={()=>onBlock()}>✓ Liberar hora<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Volver a dejarla abierta para reservar</div></button>
+            {priv.some(s=>s.status!=="completed")&&<button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#fbecec",color:"#b91c1c",border:"1px solid #f2cccc",textAlign:"left"}} onClick={()=>onBlock(null,"",null,true)}>✕ Cancelar la clase privada<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Libera la hora y quita la sesión de {priv.map(s=>s.client.name.split(" ")[0]).join(", ")}</div></button>}
+            <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#e2f4e8",color:"#16a34a",border:"1px solid #c9e6d1",textAlign:"left"}} onClick={()=>onBlock()}>✓ Liberar hora<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>{priv.length?`Volver a abrirla para todos (${priv.map(s=>s.client.name.split(" ")[0]).join(", ")} sigue apuntado)`:"Volver a dejarla abierta para reservar"}</div></button>
           </div>
           :<div style={{display:"flex",flexDirection:"column",gap:9}}>
             <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#eef4fc",color:"#0284c7",border:"1px solid #bcd3ee",textAlign:"left"}} onClick={onTraining}>➕ Añadir entreno<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Reservar la clase de un cliente a esta hora</div></button>
@@ -3749,10 +3791,34 @@ function SlotActionModal({date,time,block,booked,onTraining,onValoracion,onBlock
                       background:on?x.fg:x.bg,color:on?"#fff":x.fg,border:`1px solid ${on?x.fg:x.bd}`}}>
                     <div style={{fontSize:18,marginBottom:2}}>{x.ico}</div>{x.k}</button>); })}
               </div>
-              {sel&&<>
+              {sel&&!isPriv&&<>
                 <div style={{fontSize:11,color:"#94a3b8",margin:"8px 0 6px"}}>{sel.sub}{booked?` · ya hay ${booked} reservado${booked>1?"s":""} a esta hora`:""}</div>
                 <input className="inp" placeholder={kind==="Bloqueado"?"Motivo (opcional)":"Nombre o nota (opcional)"} value={note} onChange={e=>setNote(e.target.value)} maxLength={40} style={{marginBottom:8}}/>
                 <button className="btn" style={{width:"100%",padding:11,fontWeight:800,background:sel.fg,color:"#fff",border:"none"}} onClick={()=>onBlock(kind,note)}>{sel.ico} Reservar {time} · {kind}</button>
+              </>}
+              {isPriv&&<>
+                <div style={{fontSize:12,fontWeight:800,color:sel.fg,margin:"10px 0 6px"}}>¿Con quién es la clase?</div>
+                <input className="inp" placeholder="🔎 Buscar cliente…" aria-label="Buscar cliente para la clase privada" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:6,fontSize:13,padding:"8px 10px"}}/>
+                <div role="listbox" aria-label="Cliente de la clase privada" style={{maxHeight:200,overflowY:"auto",display:"flex",flexDirection:"column",gap:5,marginBottom:6}}>
+                  {list.length===0&&<div style={{fontSize:12,color:"#94a3b8",textAlign:"center",padding:10}}>Ningún cliente con ese nombre.</div>}
+                  {list.map(c=>{ const on=cid===c.id, bk=here.some(s=>s.client_id===c.id); return(
+                    <button key={c.id} type="button" role="option" aria-selected={on} onClick={()=>{setCid(on?null:c.id);setNote("");}}
+                      style={{display:"flex",alignItems:"center",gap:9,padding:"7px 9px",borderRadius:10,cursor:"pointer",textAlign:"left",fontFamily:"inherit",
+                        background:on?sel.bg:"#fff",border:`1.5px solid ${on?sel.fg:"#e6ebf3"}`}}>
+                      <CliAvatar c={c} size={28}/>
+                      <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{c.name}</span>
+                      {bk?<span style={{fontSize:10,fontWeight:700,color:"#0284c7"}}>ya apuntado</span>
+                        :(()=>{ const o=(sessions||[]).find(s=>s.client_id===c.id&&s.date===date&&s.time!==time); return o?<span style={{fontSize:10,fontWeight:700,color:"#b45309"}}>ya entrena a las {o.time}</span>:null; })()}
+                      <span style={{fontSize:14,color:on?sel.fg:"#cbd5e1"}}>{on?"●":"○"}</span>
+                    </button>); })}
+                </div>
+                {!who&&<input className="inp" placeholder="…o escribe un nombre si no tiene ficha" value={note} onChange={e=>setNote(e.target.value)} maxLength={40} style={{marginBottom:6,fontSize:12,padding:"7px 10px"}}/>}
+                <div style={{fontSize:11,color:others?"#b45309":"#94a3b8",margin:"2px 0 8px",fontWeight:others?700:400}}>
+                  {who?`Se le apunta a ${who.name.split(" ")[0]} (cuenta en su bono) y nadie más puede reservar.`:sel.sub}
+                  {others?` · ⚠️ ya hay ${others} reservado${others>1?"s":""} a esta hora: muévelos o avísales.`:""}
+                </div>
+                <button className="btn" disabled={!who&&!note.trim()} style={{width:"100%",padding:11,fontWeight:800,background:sel.fg,color:"#fff",border:"none",opacity:!who&&!note.trim()?0.5:1}} onClick={()=>onBlock(kind,note,cid)}>
+                  {sel.ico} {who?`Clase privada con ${who.name.split(" ")[0]} · ${time}`:note.trim()?`Reservar ${time} · ${note.trim()}`:"Elige con quién"}</button>
               </>}
             </div>
           </div>}
@@ -7925,6 +7991,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
                 <div style={{minWidth:0}}>
                   <div style={{fontSize:24,fontWeight:800,color:DK.tx,lineHeight:1.1}}>{hc===0?"Hoy":hc===1?"Mañana":capFirst(wd(hero.date))} · <span style={{color:DK.ac2}}>{tm(hero)}</span></div>
                   {hero.open&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,color:DK.teal,background:"rgba(45,212,191,.13)",borderRadius:20,padding:"2px 9px",marginTop:5}}>🔓 Open · vas por tu cuenta</div>}
+                  {hero.type===PRIV_TYPE&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,color:"#c4b5fd",background:"rgba(167,139,250,.15)",borderRadius:20,padding:"2px 9px",marginTop:5}}>🔒 Clase privada · solo tú y tu coach</div>}
                   <div style={{fontSize:13,fontWeight:700,color:DK.mu,marginTop:3}}>{hc===0?"¡Es hoy! 💪":hc===1?"Mañana toca 💪":`Dentro de ${hc} días`}</div>
                   {hp&&<div style={{fontSize:13,fontWeight:800,color:DK.sub,marginTop:3}}>🏋️ Te toca: {hp.label}</div>}
                 </div>
@@ -8009,7 +8076,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
               <button key={x.id} type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} className="dk-row" style={{background:"none",padding:"9px 0",borderRadius:0,borderTop:`1px solid ${DK.line}`}}>
                 {tile(x)}
                 <span style={{flex:1,minWidth:0}}>
-                  <span style={{display:"block",fontSize:14,fontWeight:800,color:DK.tx}}>{x.requested?"Pendiente de confirmar":x.open?"Open · por tu cuenta":pl?pl.label:"Clase reservada"}</span>
+                  <span style={{display:"block",fontSize:14,fontWeight:800,color:DK.tx}}>{x.requested?"Pendiente de confirmar":x.open?"Open · por tu cuenta":x.type===PRIV_TYPE?"🔒 Clase privada"+(pl?" · "+pl.label:""):pl?pl.label:"Clase reservada"}</span>
                   <span style={{display:"block",fontSize:12,color:DK.mu,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{capFirst(wd(x.date))}{x.open&&pl?` · ${pl.label}`:""}</span>
                 </span>
                 <span style={{fontSize:14,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,whiteSpace:"nowrap"}}>{tm(x)}</span>
