@@ -455,9 +455,10 @@ const DEFAULT_SCHEDULE = {
   afternoonFrom:"17:00", afternoonTo:"20:00",
   defaultCapacity:3, capacity:{}, cap3:true,
   // Material disponible del gimnasio (para que el generador solo use lo que hay).
-  // Ajustado al material real: racks + multipower (R7 Saber) + pines, discos,
-  // barras (power/SSB/Z), mancuernas 2.5-35kg, leg extension/curl femoral dual,
-  // doble polea + jalón de placas, dominadas y fondera y remo ergómetro (aeróbico).
+  // Ajustado al material real: rack de power + ATLETICA (jaula + multipower, que
+  // comparten espacio, con jalón, fondera y dominadas integrados), discos, barras
+  // (rectas/SSB/Z), mancuernas 2.5-35kg, leg extension/curl femoral dual, dobles
+  // poleas (aparte del jalón), dominadas de pared y remo ergómetro (aeróbico).
   // Sin prensa/hack, kettlebell, otro cardio, cajón, bandas, comba, trineo,
   // cuerdas, balón ni rueda.
   equip:{ barra:true, multipower:true, rackpines:true, mancuernas:true, legmachine:true, remo:true,
@@ -4290,25 +4291,56 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
 // ── VISTA DE CLASE (todas las personas de una hora, desglosado) ────────────
 // ── MAPA DE LA SALA: material y cuellos de botella de una clase ──────────
 // Unidades de cada material (editables en ⚙️ Horario). 99 = sin límite práctico.
-const EQUIP_UNITS_DEF = {barra:2,barraz:1,safetybar:1,bancoplano:1,bancoinclinable:1,rackpines:1,multipower:1,legpress:1,legmachine:1,machine:1,poleas:2,remo:1,cardio:1,trineo:1,cuerdas:1,
+const EQUIP_UNITS_DEF = {barra:2,barraz:1,safetybar:1,bancoplano:1,bancoinclinable:1,rackpines:2,multipower:1,legpress:1,legmachine:1,machine:1,poleas:2,jalon:1,dominadas:2,fondos:1,remo:1,cardio:1,trineo:1,cuerdas:1,
   mancuernas:4,kettlebell:4,cajon:2,balon:3,banda:6,comba:4,rueda:2,antebrazo:2,pesocorporal:99,movilidad:99,otros:99};
 // En estos puestos (racks, máquinas…) cada persona ocupa un montaje, pero si hacen el MISMO
 // ejercicio lo comparten rotando: a la vez se necesitan min(personas, ejercicios distintos).
 // En el resto (mancuernas, gomas…) cuenta cuántas personas lo usan a la vez.
-const SETUP_EQ = ["barra","barraz","safetybar","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","machine","poleas","remo","cardio","trineo","cuerdas"];
+const SETUP_EQ = ["barra","barraz","safetybar","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","machine","poleas","jalon","dominadas","fondos","remo","cardio","trineo","cuerdas"];
 const eqIcon = (k) => String(EQUIP_LABEL[k]||"🎯").split(" ")[0];
 const eqName = (k) => String(EQUIP_LABEL[k]||k).split(" ").slice(1).join(" ")||k;
+// ── Distribución real de la sala ──
+// · Rack de power: básicos con barra y peso muerto.
+// · ATLETICA: jaula (rack) + multipower en el MISMO espacio, con jalón, fondera y barra
+//   de dominadas integrados. Si se usa la multipower, la jaula ATLETICA no se puede usar
+//   (y al revés) → racks + multipower comparten puestos.
+// · Dobles poleas (independientes del jalón): un ejercicio usa una polea o las dos.
+// · Barra de dominadas de pared (+ la de la ATLETICA = 2 puestos de dominadas).
+// Ejercicios con barra que se hacen DENTRO de un rack (sacan la barra de los soportes).
+const rackOf = (name) => { const n=String(name||""), eq=equipmentOf(n);
+  if(!["barra","safetybar"].includes(eq)) return null;
+  if(/mancuern|goblet|kettlebell|trap bar|b[úu]lgara|al aire|multipower|smith/i.test(n)) return null;
+  return /sentadilla|squat|press banca|press militar de pie|peso muerto|buenos d[ií]as|good morning|push press|push jerk|zancada con barra|encogimientos \(trapecio\)|encogimientos con barra/i.test(n)?"rackpines":null; };
+// Poleas que ocupa (las dobles poleas son 2): cruces y aperturas usan las dos.
+const pulleySlots = (name) => /unilateral|una mano|a una/i.test(String(name||""))?1
+  :/cruce|crossover|aperturas (en|con) polea|p[áa]jaros en polea|doble polea|dos poleas|polea doble/i.test(String(name||""))?2:1;
+// Material que ocupa en la sala (principal + banco + rack si lo necesita).
+const roomNeeds = (name) => { const a=equipNeeds(name), r=rackOf(name); if(r&&!a.includes(r)) a.push(r); return a; };
+// ¿La multipower comparte espacio con una de las jaulas? (⚙️ Horario · por defecto sí)
+let ROOM_SHARE = true;
 // people = [{client, exs:[nombres]}] → puestos ordenados por gravedad
 function roomStations(people, units){
   const g={};
-  (people||[]).forEach(({client,exs})=>(exs||[]).forEach(n=>equipNeeds(n).forEach(k=>{ const st=g[k]=g[k]||{k,ex:{},cl:new Map()};
+  (people||[]).forEach(({client,exs})=>(exs||[]).forEach(n=>roomNeeds(n).forEach(k=>{ const st=g[k]=g[k]||{k,ex:{},cl:new Map()};
     (st.ex[n]=st.ex[n]||[]); if(!st.ex[n].some(c=>c.id===client.id)) st.ex[n].push(client); st.cl.set(client.id,client); })));
-  return Object.values(g).map(st=>{
-    const cap=Math.max(1,parseInt((units||{})[st.k],10)||EQUIP_UNITS_DEF[st.k]||99), setups=Object.keys(st.ex).length, ppl=[...st.cl.values()];
-    const setupBased=SETUP_EQ.includes(st.k), used=setupBased?Math.min(ppl.length,setups):ppl.length, unl=cap>=99;
-    // Ámbar: al límite con varias personas, o muchos cambios de montaje (discos) en el mismo puesto.
-    const status=unl?"ok":used>cap?"red":(ppl.length>1&&(used===cap||(setupBased&&setups>cap)))?"amber":"ok";
-    return {...st,cap,setups,people:ppl,used,setupBased,unl,status};
+  const capOf=(k)=>Math.max(1,parseInt((units||{})[k],10)||EQUIP_UNITS_DEF[k]||99);
+  const res=Object.values(g).map(st=>{
+    const cap=capOf(st.k), setups=Object.keys(st.ex).length, ppl=[...st.cl.values()];
+    const setupBased=SETUP_EQ.includes(st.k), unl=cap>=99;
+    let used=setupBased?Math.min(ppl.length,setups):ppl.length;
+    // Poleas: cuenta poleas, no ejercicios (un cruce ocupa las dos).
+    if(st.k==="poleas"){ const w=Object.keys(st.ex).map(pulleySlots).sort((a,b)=>b-a); used=w.slice(0,Math.min(ppl.length,setups)).reduce((a,b)=>a+b,0); }
+    return {...st,cap,setups,people:ppl,used,setupBased,unl};
+  });
+  // Multipower ↔ jaula ATLETICA: comparten espacio, así que racks + multipower suman
+  // contra los racks (power + ATLETICA). Una persona solo está en un sitio a la vez.
+  const rk=res.find(x=>x.k==="rackpines"), mp=res.find(x=>x.k==="multipower");
+  if(ROOM_SHARE&&rk&&mp){ const union=new Set([...rk.people,...mp.people].map(c=>c.id)).size, tot=Math.min(union,rk.used+mp.used);
+    [rk,mp].forEach(x=>{ x.share=true; x.shareTot=tot; x.shareCap=rk.cap; });
+    if(tot>rk.cap){ rk.clash=true; mp.clash=true; } else if(tot===rk.cap&&union>1){ rk.tight=true; mp.tight=true; } }
+  return res.map(x=>{
+    const status=x.unl?"ok":(x.used>x.cap||x.clash)?"red":(x.tight||(x.people.length>1&&(x.used===x.cap||(x.setupBased&&x.setups>x.cap))))?"amber":"ok";
+    return {...x,status};
   }).sort((a,b)=>({red:0,amber:1,ok:2}[a.status]-{red:0,amber:1,ok:2}[b.status])||(EQUIP_ORDER.indexOf(a.k)-EQUIP_ORDER.indexOf(b.k)));
 }
 const ROOM_COL = {red:{fg:"#dc2626",bg:"#fef2f2",bd:"#fecaca",lbl:"Cuello de botella"},amber:{fg:"#b45309",bg:"#fffbeb",bd:"#fde68a",lbl:"Justo"},ok:{fg:"#16a34a",bg:"#f0fdf4",bd:"#bbf7d0",lbl:"Fluye"}};
@@ -4353,7 +4385,7 @@ function RoomMap({people,units}){
               {Array.from({length:boxes},(_,i)=><span key={i} style={{flex:1,height:8,borderRadius:3,background:i<Math.min(x.used,x.cap)?C.fg:i<x.cap?"#e2e8f0":"#dc2626",opacity:i>=x.cap?.55:1}}/>)}
             </div>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} a la vez${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}`}</span>
+              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} ${x.k==="poleas"?"poleas":"a la vez"}${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}${x.share?` · 🔩 rack+multi ${x.shareTot}/${x.shareCap}`:""}`}</span>
               <span style={{display:"inline-flex",paddingLeft:5}}>{x.people.slice(0,4).map(av)}{x.people.length>4&&<span style={{fontSize:9,fontWeight:800,color:"#64748b",marginLeft:3}}>+{x.people.length-4}</span>}</span>
             </div>
           </button>); })}
@@ -4367,8 +4399,11 @@ function RoomMap({people,units}){
           <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#334155"}}>{n}</span>
           <span style={{display:"inline-flex",paddingLeft:5}}>{cs.map(av)}</span>
         </div>)}
+        {sel.share&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🔩 La multipower y la jaula ATLETICA comparten espacio: {sel.clash?"ahora mismo se pisan (no caben a la vez). Escalona el orden o cambia la multipower por otra variante (mancuernas, máquina…).":"mientras se use una, la otra queda bloqueada."}</div>}
+        {sel.k==="poleas"&&Object.keys(sel.ex).some(n=>pulleySlots(n)===2)&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🪢 Cruces y aperturas ocupan las dos poleas; el resto, una.</div>}
         <div style={{fontSize:11,color:ROOM_COL[sel.status].fg,fontWeight:700,marginTop:6,lineHeight:1.4}}>
-          {sel.status==="red"?`Lo necesitan ${sel.used} a la vez y hay ${sel.cap} ${sel.cap>1?"puestos":"puesto"}: escalona el orden (que alguien empiece por otro bloque), junta a dos en el mismo ejercicio o cambia el tipo de sesión de alguien.`
+          {sel.status==="red"&&sel.clash&&sel.used<=sel.cap?`Entre racks y multipower hacen falta ${sel.shareTot} puestos a la vez y hay ${sel.shareCap} (la multipower ocupa la jaula ATLETICA): escalona el orden para que no coincidan.`
+            :sel.status==="red"?`Lo necesitan ${sel.used} a la vez y hay ${sel.cap} ${sel.cap>1?"puestos":"puesto"}: escalona el orden (que alguien empiece por otro bloque), junta a dos en el mismo ejercicio o cambia el tipo de sesión de alguien.`
             :sel.status==="amber"?(sel.used===sel.cap?"Al límite: si alguien se retrasa, habrá espera. Escalonar un poco ayuda.":`Cabe, pero hay ${sel.setups} ejercicios distintos: muchos cambios de discos en el mismo puesto.`)
             :sel.setupBased&&sel.setups<sel.people.length?"Comparten el mismo ejercicio: rotan en el mismo montaje sin problema.":"Sin esperas previstas."}
         </div>
@@ -6846,7 +6881,23 @@ function ScheduleModal({config,onSave,onClose}) {
                 <button type="button" className="btn ghost" style={{padding:"2px 7px",fontSize:14,lineHeight:1}} onClick={()=>setU(u+1)}>+</button>
               </div>; })}
           </div>
-          <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Cuántos puestos hay de cada cosa (p. ej. 2 racks, 1 multipower, doble polea = 2). Mancuernas/gomas: cuántas personas pueden usarlas a la vez.</div>
+          <div style={{fontSize:10,color:"#94a3b8",marginTop:6}}>Cuántos puestos hay de cada cosa (p. ej. rack/jaula = 2: power + ATLETICA; dobles poleas = 2 poleas; dominadas = 2: ATLETICA + pared). Mancuernas/gomas: cuántas personas pueden usarlas a la vez.</div>
+        </div>
+        <div style={{marginTop:14,marginBottom:4}}>
+          <span className="lbl">🏗️ CÓMO ES TU SALA</span>
+          <div style={{background:"#f1f4fa",borderRadius:12,padding:"9px 11px",fontSize:11,color:"#475569",lineHeight:1.5}}>
+            <div>🏗️ <b>Rack de power</b>: básicos con barra y peso muerto.</div>
+            <div>🔩 <b>ATLETICA</b>: jaula + multipower, con 🎚️ jalón, 🔻 fondera y 🧗 dominadas integrados.</div>
+            <div>🪢 <b>Dobles poleas</b> aparte del jalón: cada ejercicio usa una polea o las dos (cruces y aperturas).</div>
+            <div>🧗 <b>Barra de dominadas de pared</b> aparte.</div>
+          </div>
+          <button type="button" onClick={()=>setCfg(c=>({...c,smithShare:c.smithShare===false}))} aria-pressed={cfg.smithShare!==false}
+            style={{width:"100%",display:"flex",alignItems:"center",gap:10,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:cfg.smithShare!==false?"#fff7ed":"#f1f4fa",border:`1px solid ${cfg.smithShare!==false?"#fdba74":"#dbe2ec"}`,borderRadius:12,padding:"10px 12px",marginTop:8}}>
+            <span style={{fontSize:20}}>🔩</span>
+            <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:13,fontWeight:800,color:"#0f172a"}}>La multipower comparte espacio con una jaula</span>
+              <span style={{display:"block",fontSize:11,color:"#64748b",lineHeight:1.35}}>{cfg.smithShare!==false?"Activado: si alguien usa la multipower, la jaula ATLETICA queda bloqueada (y al revés). El mapa de la sala lo avisa.":"Desactivado: multipower y racks cuentan por separado."}</span></span>
+            <span style={{width:42,height:24,borderRadius:12,background:cfg.smithShare!==false?"#16a34a":"#cbd5e1",position:"relative",flexShrink:0,transition:"background .2s"}}><span style={{position:"absolute",top:3,left:cfg.smithShare!==false?21:3,width:18,height:18,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/></span>
+          </button>
         </div>
 
         <div style={{display:"flex",gap:8,marginTop:18}}>
@@ -10416,7 +10467,7 @@ const exerciseCatalog = () => {
   return [...out.values()];
 };
 // Sustitutos de un ejercicio: mismo patrón y músculo principal, con material disponible primero.
-const LOADED_EQ=["barra","barraz","safetybar","multipower","rackpines","mancuernas","legpress","legmachine","machine","poleas","kettlebell","trineo"];
+const LOADED_EQ=["barra","barraz","safetybar","multipower","rackpines","mancuernas","legpress","legmachine","machine","poleas","jalon","kettlebell","trineo"];
 const substitutesFor = (name, limit=10) => {
   const cat=exerciseCatalog(), cur=cat.find(x=>x.name===name)||{};
   const pat=patternOf(name), mus=musclesOf(name), prim=mus[0], eq=equipmentOf(name), loaded=LOADED_EQ.includes(eq);
@@ -10424,7 +10475,7 @@ const substitutesFor = (name, limit=10) => {
       if(patternOf(x.name)===pat) sc+=3; if(m[0]===prim) sc+=3; sc+=m.filter(v=>mus.includes(v)).length;
       if(equipOk(x.name)) sc+=4;                       // primero lo que hay en el gimnasio
       if(!!x.main===!!cur.main) sc+=1.5;               // básico por básico, accesorio por accesorio
-      if(loaded&&xe==="pesocorporal") sc-=1.5;          // cargado antes que peso corporal
+      if(loaded&&["pesocorporal","dominadas","fondos"].includes(xe)) sc-=1.5;          // cargado antes que peso corporal
       if(xe!==eq) sc+=0.3;                              // ofrece alternativas de material
       return {...x,sc}; })
     .filter(x=>x.sc>=6).sort((a,b)=>b.sc-a.sc||a.name.localeCompare(b.name)).slice(0,limit);
@@ -10910,6 +10961,10 @@ const HYROX_REPS = {"SkiErg":"500 m","Sled push (empuje trineo)":"25-50 m","Sled
 const EQUIP = [
   [/barra z|barra ez|\bez bar/i,"barraz"],
   [/safety bar|\bssb\b/i,"safetybar"],
+  // Estación de jalón (integrada en la ATLETICA), independiente de las dobles poleas.
+  [/jal[óo]n(?!.*polea)|pulldown/i,"jalon"],
+  [/dominada|chin-?up|pull-?up|toes to bar|elevaci[óo]n de piernas colgad|colgado pasivo|dead hang|muscle ?up/i,"dominadas"],
+  [/fondos(?!.*banco)|\bdips\b/i,"fondos"],
   [/wall sit|en pared|contra pared|squeeze|zancada isom|split squat hold|puente de (glúteo|gluteo|isquios) isom|bird-dog isom|dead bug isom|copenhagen isom|colgado pasivo|dead hang|gemelos? isom/i,"pesocorporal"],
   [/spanish squat/i,"otros"],
   [/medio muslo|imtp/i,"rackpines"],
@@ -10939,28 +10994,28 @@ const EQUIP = [
   [/movilidad|gato-camello|90\/90|world's greatest|estiramiento|sentadilla profunda \(holds\)|círculos de hombro|circulos de hombro/i,"movilidad"],
 ];
 const EQUIP_LABEL = {
-  multipower:"🔩 Multipower / Smith", rackpines:"🏗️ Rack / pines", kettlebell:"🔔 Kettlebell",
+  multipower:"🔩 Multipower / Smith", rackpines:"🏗️ Rack / jaula", kettlebell:"🔔 Kettlebell",
   legpress:"🦵 Prensa / Hack", legmachine:"🦿 Máquina piernas (ext/curl)", machine:"🏭 Máquinas",
-  poleas:"🪢 Poleas / cable", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barra recta / rack",
+  poleas:"🪢 Dobles poleas", jalon:"🎚️ Jalón", dominadas:"🧗 Barra de dominadas", fondos:"🔻 Fondos (paralelas)", mancuernas:"🏋️ Mancuernas", barra:"🟦 Barras rectas",
   pesocorporal:"🤸 Peso corporal", comba:"🪀 Comba", cuerdas:"🪢 Cuerdas de batalla",
   trineo:"🛷 Trineo", balon:"⚽ Balón medicinal", cajon:"📦 Cajón / pliometría",
   banda:"🎗️ Banda elástica", barraz:"〰️ Barra Z", safetybar:"🛡️ Safety bar (SSB)", bancoplano:"🛏️ Banco plano", bancoinclinable:"📐 Banco reclinable", rueda:"☸️ Rueda abdominal", cardio:"🚴 Cardio (bici, SkiErg, cinta)", remo:"🚣 Remo ergómetro",
   antebrazo:"🤏 Antebrazo / agarre", movilidad:"🧘 Movilidad / suelo", otros:"🎯 Otros / analítico",
 };
 // Orden y etiquetas para el editor de material.
-const EQUIP_KEYS = ["barra","barraz","safetybar","bancoplano","bancoinclinable","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
+const EQUIP_KEYS = ["barra","barraz","safetybar","bancoplano","bancoinclinable","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","jalon","dominadas","fondos","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
 // Ejercicios creados por el entrenador (tabla "exercises"): nombre en minúsculas → {name, equip, muscles, cat, sets, reps, rest}.
 let CUSTOM_EX = {};
 const equipmentOf = (name) => { const c=CUSTOM_EX[String(name||"").toLowerCase()]; if(c&&c.equip) return c.equip; for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
 const equipmentLabel = (name) => equipTxt(name) || EQUIP_LABEL.otros;
 // Prioridad de material: barra/rack/multipower PRIMERO (es el cuello de botella),
 // luego máquinas de pierna, mancuernas, poleas y por último peso corporal/cardio.
-const EQUIP_ORDER = ["barra","safetybar","barraz","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","mancuernas","poleas","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","remo","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
+const EQUIP_ORDER = ["barra","safetybar","barraz","bancoplano","bancoinclinable","rackpines","multipower","legpress","legmachine","mancuernas","poleas","jalon","dominadas","fondos","machine","kettlebell","cajon","balon","cuerdas","trineo","comba","remo","cardio","banda","rueda","antebrazo","otros","pesocorporal","movilidad"];
 const equipRank = (name) => { const i=EQUIP_ORDER.indexOf(equipmentOf(name)); return i<0?99:i; };
 
 // Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
 let GYM_EQUIP = null;
-const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; };
+const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; ROOM_SHARE = !(cfg && cfg.smithShare===false); };
 // Banco que necesita (además de su material principal): reclinable para inclinados,
 // sentados con respaldo o apoyo de pecho; plano para press banca, hip thrust, press francés…
 const benchOf = (name) => { const n=String(name||"");
@@ -11187,7 +11242,7 @@ const complexityOf = (name) => {
   if(/cargada|power clean|\bclean\b|snatch|arrancada|push jerk|muscle ?up|pistol|toes to bar|nordic|lastrad|d[eé]ficit|sumo|buenos d[ií]as|ssb|safety|thrusters con barra|push press|sentadilla frontal|con pausa|pendlay|elevación de piernas colgado|copenhagen|rueda abdominal|tirón alto|tiron alto|turkish|^dominadas|fondos en paralelas|comba \(dobles\)/i.test(n)) return 3;
   const eq=equipmentOf(n);
   if(eq==="barra"&&/sentadilla|peso muerto|press militar de pie/i.test(n)&&!/rumano|piernas r[ií]gidas|trap bar|cajón|cajon|tempo/i.test(n)) return 3;
-  if(["machine","legmachine","legpress","poleas","cardio","remo","movilidad","antebrazo","banda"].includes(eq)) return 1;
+  if(["machine","legmachine","legpress","poleas","jalon","cardio","remo","movilidad","antebrazo","banda"].includes(eq)) return 1;
   if(/^curl|extensión|extension|elevaciones|elevación de gemelos|gemelo|aperturas|pájaros|pajaros|face pull|patada|crunch|plancha|encogimientos|peck deck|cruce|puente de glúteo|puente de gluteo|sentadilla al aire|air squat|hollow|dead bug|bird|pallof|farmer|granjero|zancada caminando|step-?up|sentadilla goblet/i.test(n)) return 1;
   return 2;
 };
