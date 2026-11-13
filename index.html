@@ -491,7 +491,7 @@ const COLORS = ["#0891b2","#f472b6","#a78bfa","#16a34a","#ea580c","#f59e0b","#02
 const uid = () => crypto.randomUUID();
 const ini = n => n.split(" ").map(w=>w[0]).join("").toUpperCase().slice(0,2);
 const daysUntil = d => Math.ceil((new Date(d+"T12:00:00") - new Date(TODAY+"T12:00:00")) / 86400000);
-// Fin de semana = sábado o domingo: sin horario fijo (solo las horas extra que abra el coach).
+// Fin de semana = sábado o domingo (por defecto sin horario fijo: se abre en ⚙️ Horario o por día).
 const isWeekend = d => { const g=new Date(d+"T12:00:00").getDay(); return g===0||g===6; };
 const fmtDate = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"});
 const fmtLong = d => new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
@@ -663,8 +663,28 @@ let SCHED = null; // horario actual (lo fija setGymEquip)
 const extraAllOf = (cfg, d) => (cfg&&cfg.extraSlots&&d&&cfg.extraSlots[d])||[];
 const extraPrivOf = (cfg, d) => (cfg&&cfg.extraPriv&&d&&cfg.extraPriv[d])||[];
 const extraPubOf = (cfg, d) => { const p=extraPrivOf(cfg,d); return extraAllOf(cfg,d).filter(t=>!p.includes(t)); };
+// ── HORARIO SEMANAL (⚙️ Horario) ──
+// config.weekHours[0..6] (0=Dom … 6=Sáb) = horas fijas de cada día; config.weekPriv[dow] = cuáles de ellas
+// son privadas. Sin guardar: L-V mañana y tarde, sábado y domingo cerrados.
+// Por fecha: extraSlots (horas extra), extraPriv (privada ese día) y extraPub (general ese día aunque en el semanal sea privada).
+const DOW_ORDER = [1,2,3,4,5,6,0];
+const DOW_SHORT = {1:"L",2:"M",3:"X",4:"J",5:"V",6:"S",0:"D"};
+const DOW_LONG = {1:"lunes",2:"martes",3:"miércoles",4:"jueves",5:"viernes",6:"sábado",0:"domingo"};
+const dowOf = (d) => new Date(d+"T12:00:00").getDay();
+const defaultSlotsOf = (c) => [...genSlots(c.morningFrom,c.morningTo),...genSlots(c.afternoonFrom,c.afternoonTo)];
+const weekHoursOf = (cfg, dow) => { const c=cfg||SCHED||DEFAULT_SCHEDULE, w=c.weekHours;
+  if(w&&Array.isArray(w[dow])) return w[dow]; return dow===0||dow===6?[]:defaultSlotsOf(c); };
+const weekPrivOf = (cfg, dow) => { const c=cfg||SCHED||DEFAULT_SCHEDULE; return ((c.weekPriv&&c.weekPriv[dow])||[]).filter(t=>weekHoursOf(c,dow).includes(t)); };
+const baseSlotsOf = (cfg, d) => weekHoursOf(cfg, dowOf(d));
+// ¿Hora privada ese día? Solo la ve el coach (los atletas no la ven en Reservar).
+const isPrivHour = (cfg, d, t) => { const c=cfg||SCHED||DEFAULT_SCHEDULE; if(extraPrivOf(c,d).includes(t)) return true;
+  return weekPrivOf(c,dowOf(d)).includes(t)&&!((c.extraPub&&c.extraPub[d])||[]).includes(t); };
+// Horas de un día que ven y pueden reservar los atletas (fijas + extra, sin las privadas).
+const pubHoursOf = (cfg, d) => [...new Set([...baseSlotsOf(cfg,d),...extraAllOf(cfg||SCHED||DEFAULT_SCHEDULE,d)])].filter(t=>!isPrivHour(cfg,d,t)).sort();
 const openHours = (cfg, d) => { const c=cfg||SCHED||DEFAULT_SCHEDULE, from=c.openFrom||c.morningFrom, to=c.openTo||c.afternoonTo;
-  return [...new Set([...(d&&isWeekend(d)?[]:genSlots(from,to)),...extraPubOf(c,d)])].sort(); };
+  // Entre semana, en los días con clase, la franja open; en el finde (o días sin clase), solo las horas generales abiertas.
+  const win=d&&!isWeekend(d)&&baseSlotsOf(c,d).length?genSlots(from,to):[];
+  return [...new Set([...win,...(d?pubHoursOf(c,d):[])])].sort(); };
 const openCapOf = (cfg) => { const n=parseInt(((cfg||SCHED||{}).openCap),10); return n>0?n:null; }; // null = sin límite
 const opensAt = (d, t, list) => ((list||OPEN.list)||[]).filter(o=>o.date===d&&String(o.time||"").slice(0,5)===t);
 // ¿Puede reservar un open ese día? Devuelve el motivo si no ("bono" | "semana").
@@ -1210,18 +1230,21 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
 
   // Franjas de trabajo derivadas de la config y capacidad (atletas) por hora.
-  const workSlots = [...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  const workSlots = weekHoursOf(config,1); // horario de referencia (lunes) para atajos
   const capOf = (t) => (config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
   // Horas extra abiertas para un día concreto (además del horario fijo).
   const extraOf = (date) => (config.extraSlots&&config.extraSlots[date])||[];
-  const isPrivExtra = (date,t) => extraPrivOf(config,date).includes(t);
-  // Hora del horario fijo ese día (los sábados y domingos no hay horario fijo: solo horas extra).
-  const isBaseSlot = (date,t) => !isWeekend(date) && workSlots.includes(t);
+  const isPrivExtra = (date,t) => isPrivHour(config,date,t);
+  // Horas fijas de ese día según el horario semanal (⚙️ Horario).
+  const baseOf = (date) => baseSlotsOf(config,date);
+  const isBaseSlot = (date,t) => baseOf(date).includes(t);
   const isWorkSlot = (date,t) => isBaseSlot(date,t) || extraOf(date).includes(t);
-  // Hora extra general ↔ privada (solo la ves tú; los atletas no la ven en Reservar).
-  const toggleExtraPriv = (date,time) => { const xp={...(config.extraPriv||{})}, on=(xp[date]||[]).includes(time);
-    xp[date]=on?(xp[date]||[]).filter(t=>t!==time):[...(xp[date]||[]),time].sort(); if(!xp[date].length) delete xp[date];
-    saveConfig({...config,extraPriv:xp},true); notify(on?`${time} · general: los atletas ya pueden reservarla`:`${time} · privada: solo tú la ves y apuntas a quien quieras`); };
+  // Hora general ↔ privada ese día (privada: solo la ves tú; los atletas no la ven en Reservar).
+  const toggleExtraPriv = (date,time) => { const on=isPrivHour(config,date,time); const xp={...(config.extraPriv||{})}, xb={...(config.extraPub||{})};
+    const put=(m,v,add)=>{ const a=(m[date]||[]).filter(x=>x!==v); if(add) a.push(v); if(a.length) m[date]=a.sort(); else delete m[date]; };
+    if(on){ put(xp,time,false); if(isPrivHour({...config,extraPriv:xp,extraPub:xb},date,time)) put(xb,time,true); }
+    else { put(xb,time,false); if(!isPrivHour({...config,extraPriv:xp,extraPub:xb},date,time)) put(xp,time,true); }
+    saveConfig({...config,extraPriv:xp,extraPub:xb},true); notify(on?`${time} · general: los atletas ya pueden reservarla`:`${time} · privada: solo tú la ves y apuntas a quien quieras`); };
   // Abrir/cerrar una hora extra en un día (se guarda en la config; sin BBDD).
   const openExtraHour = (date,time) => { const ex={...(config.extraSlots||{})}; const set=new Set(ex[date]||[]); set.add(time); ex[date]=[...set].sort(); saveConfig({...config,extraSlots:ex}); };
   // vis: "pub" (general) | "priv" (solo el coach) para las horas extra que se abren.
@@ -1245,9 +1268,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
   const closeExtraHour = (date,time) => { const ex={...(config.extraSlots||{})}, xp={...(config.extraPriv||{})}; ex[date]=(ex[date]||[]).filter(t=>t!==time); if(!ex[date].length) delete ex[date];
     if(xp[date]){ xp[date]=xp[date].filter(t=>t!==time); if(!xp[date].length) delete xp[date]; } saveConfig({...config,extraSlots:ex,extraPriv:xp}); };
-  // Franjas visibles del día: horario fijo (salvo finde/bloqueado) + horas extra + cualquier hora con sesión.
-  const dayIsOff = isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL");
-  const daySlots = Array.from(new Set([...(dayIsOff?[]:workSlots),...extraOf(activeDay),...sessions.filter(s=>s.date===activeDay).map(s=>s.time),
+  // Franjas visibles del día: horario semanal de ese día (salvo bloqueado) + horas extra + cualquier hora con sesión u open.
+  const dayIsOff = blocked.some(b=>b.date===activeDay&&b.time==="ALL");
+  const daySlots = Array.from(new Set([...(dayIsOff?[]:baseOf(activeDay)),...extraOf(activeDay),...sessions.filter(s=>s.date===activeDay).map(s=>s.time),
     ...(openSessions||[]).filter(o=>o.date===activeDay&&o.time).map(o=>String(o.time).slice(0,5))])).sort();
   // Open con hora en una franja (personas por su cuenta que también usan la sala).
   const opensHere = (d,t) => opensAt(d,t,openSessions).map(o=>({o,client:clients.find(c=>c.id===o.client_id)})).filter(x=>x.client);
@@ -1844,6 +1867,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           </div>); };
         const ValChip=({l,fs})=>{ const vc=VAL_STY(l.status); const conv=l.status==="cliente", done=!conv&&valDone(l); return(
           <div onClick={e=>{e.stopPropagation();setShowValoracion(l);}} style={{minWidth:0,background:done?"#cdeed8":vc.chip,borderRadius:6,padding:`${padOf(fs)}px 4px`,fontSize:fs,lineHeight:1.18,fontWeight:800,color:done?"#16a34a":vc.fg,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>{conv?"🎉":done?"✅":"📋"} {(l.name||"valorac.").split(" ")[0]}</div>); };
+        // Open (híbrido): la persona entrena por su cuenta a esa hora. Toca para ver su ficha.
+        const OpenChip=({o,c,fs})=>(
+          <div onClick={e=>{e.stopPropagation();setQuickView(c);}} title={`Open · ${c.name}${o.status==="done"?" · hecho":""}`}
+            style={{minWidth:0,background:"#f0faf7",border:"1px dashed #5fb8a6",borderRadius:6,padding:`${fs>=12?2:1}px 3px`,fontSize:Math.max(9,Math.round(fs*0.8)),lineHeight:1.18,fontWeight:800,color:"#0f766e",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
+            <span style={{fontSize:Math.max(8,Math.round(fs*0.62)),marginRight:1}}>{o.status==="done"?"✅":"🔓"}</span>{c.name.split(" ")[0]}
+          </div>);
         // Elige el mayor tamaño de letra con el que caben todos los nombres en la celda más llena.
         const padOf=(fs)=>fs>=12?2:1;
         const fitFont=(rowH,cellW,maxItems,minW,maxFs=16)=>{ const calc=(fs)=>{ const chipH=fs*1.18+2*padOf(fs)+2; const lines=Math.max(1,Math.floor((rowH-4+2)/(chipH+2))); const cols=Math.max(1,Math.min(4,Math.floor((cellW-4+2)/((minW?minW(fs):fs*3.1+14)+2)))); return {fs,cols,cap:lines*cols}; };
@@ -1851,15 +1880,16 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         let body=null;
         if(week){
           const all7=getWeekDays(mondayOfDate(activeDay));
-          const usedDay=(d)=>sessions.some(s=>s.date===d)||extraOf(d).length>0||(leads||[]).some(l=>l.date===d&&l.time);
+          const usedDay=(d)=>baseOf(d).length>0||sessions.some(s=>s.date===d)||extraOf(d).length>0||(leads||[]).some(l=>l.date===d&&l.time)||(openSessions||[]).some(o=>o.date===d);
           const days=all7.filter((d,i)=>i<5||usedDay(d));
-          const slots=Array.from(new Set([...workSlots,...days.flatMap(d=>extraOf(d)),...sessions.filter(s=>days.includes(s.date)).map(s=>s.time)])).sort();
+          const slots=Array.from(new Set([...days.flatMap(d=>blocked.some(b=>b.date===d&&b.time==="ALL")?[]:baseOf(d)),...days.flatMap(d=>extraOf(d)),...sessions.filter(s=>days.includes(s.date)).map(s=>s.time),
+            ...(openSessions||[]).filter(o=>days.includes(o.date)&&o.time).map(o=>String(o.time).slice(0,5))])).sort();
           const timeW=38, dayHeadH=low?26:36, gap=low?3:4;
-          const busy=(t)=>days.some(d=>sessions.some(s=>s.date===d&&s.time===t)||(leads||[]).some(l=>l.date===d&&l.time===t));
+          const busy=(t)=>days.some(d=>sessions.some(s=>s.date===d&&s.time===t)||(leads||[]).some(l=>l.date===d&&l.time===t)||opensHere(d,t).length>0);
           const nBusy=slots.filter(busy).length, nEmpty=slots.length-nBusy, emptyH=nBusy?Math.min(30,Math.max(16,(availH-dayHeadH)/slots.length*0.45)):0;
           const rowH=(availH-dayHeadH-gap*slots.length-emptyH*nEmpty)/Math.max(1,nBusy||slots.length);
           const colW=(W-timeW-gap*days.length)/days.length;
-          const items=(d,t)=>sessions.filter(s=>s.date===d&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===d&&l.time===t).length;
+          const items=(d,t)=>sessions.filter(s=>s.date===d&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===d&&l.time===t).length+opensHere(d,t).length;
           let maxItems=1; days.forEach(d=>slots.forEach(t=>{ maxItems=Math.max(maxItems,items(d,t)+(dragId?1:0)); }));
           const {fs,cols,cap}=fitFont(rowH,colW,maxItems);
           const initial=(colW/cols)>=fs*6.6+18;
@@ -1878,7 +1908,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   const ss=sessions.filter(s=>s.date===day&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                   const vals=(leads||[]).filter(l=>l.date===day&&l.time===time);
                   const k=day+"|"+time, isDrop=dropKey===k;
-                  const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l}))];
+                  const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l})),...opensHere(day,time).map(x=>({t:"o",...x}))];
                   const room=cap-(isDrop&&dragCli?1:0), shown=all.length>room?all.slice(0,Math.max(0,room-1)):all, extra=all.length-shown.length;
                   return(
                     <div key={day} data-slot="1" data-day={day} data-time={time} data-blocked={slotBlocked?"1":"0"} className={isDrop?"drag-target":""} onClick={()=>{ if(!isBlkDay) setSlotMenu({date:day,time}); }}
@@ -1889,6 +1919,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       {slotBlocked&&!all.length&&(()=>{ const bi=blockAt(day,time); return <div style={{fontSize:10,fontWeight:800,color:bi?bi.fg:"#b56b6b",textAlign:"center",gridColumn:"1/-1",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{bi?`${bi.ico} ${colW>90?bi.label:""}`:"🚫"}</div>; })()}
                       {shown.map(it=>it.t==="s"
                         ?(()=>{ const nm=it.s.client.name.split(" "); return <Chip key={it.s.id} s={it.s} fs={fs} narrow={(colW/cols)<fs*6+26} label={initial&&nm[1]?`${nm[0]} ${nm[1][0]}.`:nm[0]}/>; })()
+                        :it.t==="o"?<OpenChip key={it.o.id} o={it.o} c={it.client} fs={fs}/>
                         :<ValChip key={it.l.id} l={it.l} fs={fs}/>)}
                       {extra>0&&<div style={{fontSize:Math.max(8,fs-2),fontWeight:800,color:"#475569",paddingLeft:2}}>+{extra}</div>}
                       {isDrop&&dragCli&&<div className="drag-preview" style={{border:`2px dashed ${dragCli.color}`,borderRadius:6,padding:"1px 4px",fontSize:fs,fontWeight:800,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",background:"#fff"}}>＋ {dragCli.name.split(" ")[0]}</div>}
@@ -1899,13 +1930,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           </div>);
         } else {
           const slots=daySlots, timeW=54, gap=low?3:5;
-          const dayOff=(isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL"))&&extraOf(activeDay).length===0;
-          if(dayOff||!slots.length) body=<div style={{height:availH,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#64748b"}}>{isWeekend(activeDay)?"🌴 Fin de semana — libre":"🚫 Día no disponible"}</div>;
+          const blkAll=blocked.some(b=>b.date===activeDay&&b.time==="ALL"), dayOff=blkAll&&extraOf(activeDay).length===0;
+          if(dayOff||!slots.length) body=<div style={{height:availH,display:"flex",alignItems:"center",justifyContent:"center",fontSize:18,fontWeight:800,color:"#64748b"}}>{blkAll?"🚫 Día no disponible":isWeekend(activeDay)?"🌴 Fin de semana — libre":`💤 Sin clases los ${DOW_LONG[dowOf(activeDay)]}`}</div>;
           else {
-            const busyD=(t)=>sessions.some(s=>s.date===activeDay&&s.time===t)||(leads||[]).some(l=>l.date===activeDay&&l.time===t);
+            const busyD=(t)=>sessions.some(s=>s.date===activeDay&&s.time===t)||(leads||[]).some(l=>l.date===activeDay&&l.time===t)||opensHere(activeDay,t).length>0;
             const nB=slots.filter(busyD).length, nE=slots.length-nB, eH=nB?Math.min(34,Math.max(20,availH/slots.length*0.5)):0;
             const rowH=(availH-gap*(slots.length-1)-eH*nE)/Math.max(1,nB||slots.length), areaW=W-timeW-gap-6;
-            const items=(t)=>sessions.filter(s=>s.date===activeDay&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===activeDay&&l.time===t).length;
+            const items=(t)=>sessions.filter(s=>s.date===activeDay&&s.time===t&&clients.some(c=>c.id===s.client_id)).length+(leads||[]).filter(l=>l.date===activeDay&&l.time===t).length+opensHere(activeDay,t).length;
             let maxItems=1; slots.forEach(t=>{ maxItems=Math.max(maxItems,items(t)+(dragId?1:0)); });
             // Con espacio: letra grande y segunda línea con lo que le toca.
             const two=fitFont(rowH,areaW,maxItems,(f)=>f*7+30,20);
@@ -1920,7 +1951,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 const ss=sessions.filter(s=>s.date===activeDay&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                 const vals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
                 const k=activeDay+"|"+time, isDrop=dropKey===k, cp=capOf(time), isWork=isWorkSlot(activeDay,time);
-                const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l}))];
+                const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l})),...opensHere(activeDay,time).map(x=>({t:"o",...x}))];
                 const room=cap-(isDrop&&dragCli?1:0), shown=all.length>room?all.slice(0,Math.max(0,room-1)):all, extra=all.length-shown.length;
                 return(
                   <div key={time} style={{display:"flex",gap,height:(nB&&!busyD(time))?eH:rowH,flexShrink:0}}>
@@ -1935,7 +1966,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         border:isDrop?"1px solid #0284c7":slotBlocked?`1px solid ${(blockAt(activeDay,time)||{}).bd||"#f2cccc"}`:activeDay===TODAY&&time===curHour?"1.5px solid #7cc4f0":"1px solid #e6ebf3",
                         boxShadow:all.length?"0 1px 3px rgba(15,23,42,.06)":"none"}}>
                       {slotBlocked&&(()=>{ const bi=blockAt(activeDay,time)||blockInfo(null); return <div style={{fontSize:Math.min(15,Math.max(11,fs)),fontWeight:800,color:bi.fg,gridColumn:"1/-1"}}>{bi.ico} {bi.k==="Clase privada"&&ss.length?bi.k:bi.label}</div>; })()}
-                      {shown.map(it=>{ if(it.t==="v") return <ValChip key={it.l.id} l={it.l} fs={fs}/>;
+                      {shown.map(it=>{ if(it.t==="v") return <ValChip key={it.l.id} l={it.l} fs={fs}/>; if(it.t==="o") return <OpenChip key={it.o.id} o={it.o} c={it.client} fs={fs}/>;
                         const s=it.s, nm=s.client.name.split(" ");
                         const asig=assignedSessions.find(a=>a.client_id===s.client_id&&a.date===activeDay);
                         const au=!asig&&blockForDate(annualBlocks,activeDay,s.client)?autoRoutineFor(s.client,activeDay,sessions,annualBlocks):null;
@@ -2524,18 +2555,19 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
             {/* DAY VIEW */}
             {schedView==="day"&&(()=>{
-              const dayOff=(isWeekend(activeDay)||blocked.some(b=>b.date===activeDay&&b.time==="ALL"))&&extraOf(activeDay).length===0;
+              const dayOff=(blocked.some(b=>b.date===activeDay&&b.time==="ALL")&&extraOf(activeDay).length===0)||daySlots.length===0;
               if(dayOff){
-                const wknd=isWeekend(activeDay);
+                const wknd=isWeekend(activeDay), noHours=!blocked.some(b=>b.date===activeDay&&b.time==="ALL");
                 return(
                   <div className="card swipe" style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:10,textAlign:"center",height:"calc(100dvh - 300px)",minHeight:300,maxHeight:660}}>
-                    <div>{wknd?<Ico k="palm" size={84} className="float3d"/>:<span style={{fontSize:42}}>🚫</span>}</div>
-                    <div style={{fontSize:16,fontWeight:700,color:wknd?"#16a34a":"#dc2626"}}>{wknd?"Fin de semana — libre":"Día no disponible"}</div>
-                    <div style={{fontSize:12,color:"#64748b",maxWidth:260}}>{wknd?"Por defecto no hay clases. Si quieres, ábrelo con las horas que quieras, generales o privadas.":"Este día está bloqueado (vacaciones)."}</div>
-                    {!wknd&&<button className="btn ghost" style={{padding:"8px 14px",fontSize:12}} onClick={()=>toggleBlockDay(activeDay)}>Desbloquear día</button>}
-                    {wknd&&!blocked.some(b=>b.date===activeDay&&b.time==="ALL")&&<div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
-                      <button className="btn sky" style={{padding:"9px 14px",fontSize:13,fontWeight:800}} onClick={()=>setOpenHour({date:activeDay,scope:"day"})}>🔓 Abrir el {new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})}</button>
-                      <button className="btn ghost" style={{padding:"9px 14px",fontSize:13}} onClick={()=>setOpenHour({date:activeDay,scope:"wknd"})}>Abrir sábado y domingo</button>
+                    <div>{noHours?(wknd?<Ico k="palm" size={84} className="float3d"/>:<span style={{fontSize:42}}>💤</span>):<span style={{fontSize:42}}>🚫</span>}</div>
+                    <div style={{fontSize:16,fontWeight:700,color:noHours?"#16a34a":"#dc2626"}}>{noHours?(wknd?"Fin de semana — libre":`Sin clases los ${DOW_LONG[dowOf(activeDay)]}`):"Día no disponible"}</div>
+                    <div style={{fontSize:12,color:"#64748b",maxWidth:270}}>{noHours?"Tu horario semanal no tiene horas este día. Ábrelo solo este día o cámbialo para todas las semanas en ⚙️ Horario.":"Este día está bloqueado (vacaciones)."}</div>
+                    {!noHours&&<button className="btn ghost" style={{padding:"8px 14px",fontSize:12}} onClick={()=>toggleBlockDay(activeDay)}>Desbloquear día</button>}
+                    {noHours&&<div style={{display:"flex",gap:8,flexWrap:"wrap",justifyContent:"center"}}>
+                      <button className="btn sky" style={{padding:"9px 14px",fontSize:13,fontWeight:800}} onClick={()=>setOpenHour({date:activeDay,scope:"day"})}>🔓 Abrir este {DOW_LONG[dowOf(activeDay)]}</button>
+                      {wknd&&<button className="btn ghost" style={{padding:"9px 14px",fontSize:13}} onClick={()=>setOpenHour({date:activeDay,scope:"wknd"})}>Abrir sábado y domingo</button>}
+                      <button className="btn ghost" style={{padding:"9px 14px",fontSize:13}} onClick={()=>setShowSched(true)}>⚙️ Horario semanal</button>
                     </div>}
                   </div>
                 );
@@ -2550,7 +2582,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                         .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
                       const ops=opensHere(activeDay,time);
-                      const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!isBaseSlot(activeDay,time), xPriv=isExtra&&isPrivExtra(activeDay,time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
+                      const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!isBaseSlot(activeDay,time), xPriv=isWork&&isPrivExtra(activeDay,time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",transition:"background .4s, box-shadow .4s",boxShadow:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"inset 0 0 0 2px #0284c7":"none",background:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"#e3f0fd":dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"transparent":"#f1f4fa"}}>
                           <div className="mono" onClick={()=>{ if(priv){ if(slots.length) setClassView({date:activeDay,time}); return; } if(slotBlocked)return; if(slots.length>0||ops.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
@@ -2642,7 +2674,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                 </div>}
                                 <div style={{display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>
                                   {slots.length+ops.length>=2&&<RoomStrip people={[...slots.map(s=>({client:s.client,exs:exNamesFor(s.client,activeDay)})),...ops.map(x=>({client:x.client,exs:exNamesFor(x.client,activeDay)}))]} units={config.equipUnits} onOpen={()=>setClassView({date:activeDay,time})}/>}
-                                  {isExtra&&<button type="button" onClick={()=>toggleExtraPriv(activeDay,time)} aria-pressed={xPriv} title={xPriv?"Privada: solo tú la ves. Toca para abrirla a todos":"General: los atletas pueden reservarla. Toca para hacerla privada"}
+                                  {(isExtra||xPriv)&&<button type="button" onClick={()=>toggleExtraPriv(activeDay,time)} aria-pressed={xPriv} title={xPriv?"Privada: solo tú la ves. Toca para abrirla a todos":"General: los atletas pueden reservarla. Toca para hacerla privada"}
                                     style={{fontSize:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",borderRadius:20,padding:"2px 8px",color:xPriv?"#7c3aed":"#4d7c0f",background:xPriv?"#f3ecfb":"#eef8dd",border:`1px solid ${xPriv?"#e0d2f5":"#cbe8a4"}`}}>{xPriv?"🔒 privada · solo tú":"🌍 general"} ⇄</button>}
                                   {isExtra&&slots.length===0&&<button title="Cerrar esta hora extra" onClick={()=>closeExtraHour(activeDay,time)} style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"none",border:"1px solid #f2cccc",borderRadius:20,padding:"1px 8px",cursor:"pointer"}}>✕ cerrar</button>}
                                   {!slotBlocked&&isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
@@ -2671,16 +2703,17 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
             {/* WEEK VIEW - horizontal grid */}
             {schedView==="week"&&(()=>{
-              // Semana de lunes a viernes; sábado/domingo solo si tienen sesiones u horas abiertas.
+              // Semana de lunes a viernes; sábado/domingo solo si tienen horas abiertas, sesiones u open.
               const all7=getWeekDays(mondayOfDate(activeDay));
-              const usedDay=(d)=>sessions.some(s=>s.date===d)||extraOf(d).length>0||(leads||[]).some(l=>l.date===d&&l.time);
+              const usedDay=(d)=>baseOf(d).length>0||sessions.some(s=>s.date===d)||extraOf(d).length>0||(leads||[]).some(l=>l.date===d&&l.time)||(openSessions||[]).some(o=>o.date===d);
               const weekDays=all7.filter((d,i)=>i<5||usedDay(d));
               const cols=`${weekBig?44:38}px repeat(${weekDays.length},minmax(0,1fr))`;
               // Tamaño del nombre según el ancho real de cada columna (vertical/horizontal).
               const colW=(Math.min(vw,1200)-60-(weekBig?44:38))/weekDays.length;
               const chipFs=colW>=110?15:colW>=80?13:11, withInitial=colW>=95;
               const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&clients.find(c=>c.id===dragSess.client_id);
-              const weekSlots=Array.from(new Set([...workSlots,...weekDays.flatMap(d=>extraOf(d)),...sessions.filter(s=>weekDays.includes(s.date)).map(s=>s.time)])).sort();
+              const weekSlots=Array.from(new Set([...weekDays.flatMap(d=>blocked.some(b=>b.date===d&&b.time==="ALL")?[]:baseOf(d)),...weekDays.flatMap(d=>extraOf(d)),...sessions.filter(s=>weekDays.includes(s.date)).map(s=>s.time),
+                ...(openSessions||[]).filter(o=>weekDays.includes(o.date)&&o.time).map(o=>String(o.time).slice(0,5))])).sort();
               return(
                 <div className="swipe" style={weekBig?{display:"flex",flexDirection:"column"}:{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
                   <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
@@ -2704,6 +2737,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           <div className="mono" style={{fontSize:15,fontWeight:700,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#0f172a"}}>
                             {new Date(day+"T12:00:00").getDate()}
                           </div>
+                          {(()=>{ const n=(openSessions||[]).filter(o=>o.date===day&&clients.some(c=>c.id===o.client_id)).length, sinH=(openSessions||[]).filter(o=>o.date===day&&!o.time&&clients.some(c=>c.id===o.client_id)).length;
+                            return n>0&&<button type="button" onClick={()=>{ setActiveDay(day); setSchedView("day"); }} title={`${n} open este día${sinH?` (${sinH} sin hora)`:""} · toca para verlos`} aria-label={`${n} open el ${fmtDate(day)}`}
+                              style={{marginTop:2,fontSize:9,fontWeight:800,color:"#0f766e",background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:20,padding:"0 6px",cursor:"pointer",fontFamily:"inherit"}}>🔓{n}</button>; })()}
                         </div>
                       );
                     })}
@@ -2719,7 +2755,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
                             .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                           const dayVals=(leads||[]).filter(l=>l.date===day&&l.time===time);
-                          const hasStuff=daySessions.length>0||dayVals.length>0;
+                          const dayOps=opensHere(day,time);
+                          const hasStuff=daySessions.length>0||dayVals.length>0||dayOps.length>0;
                           const shownS=daySessions.slice(0,weekBig?8:6);
                           const k=day+"|"+time, isDrop=dropKey===k;
                           const shut=!slotBlocked&&!hasStuff&&!isWorkSlot(day,time), xp=!slotBlocked&&isPrivExtra(day,time); // hora no abierta · hora extra privada
@@ -2747,6 +2784,12 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                                 </div>
                               );})}
                               {(daySessions.length-shownS.length)>0&&<div style={{fontSize:weekBig?11:10,color:"#475569",fontWeight:700,paddingLeft:2}}>+{daySessions.length-shownS.length} más</div>}
+                              {dayOps.slice(0,weekBig?6:3).map(({o,client:c})=>(
+                                <div key={o.id} onClick={e=>{e.stopPropagation();setQuickView(c);}} title={`Open · ${c.name} · ${String(o.time).slice(0,5)}${o.status==="done"?" · hecho":""}`}
+                                  style={{display:"flex",alignItems:"center",gap:3,background:"#f0faf7",border:"1px dashed #5fb8a6",borderRadius:weekBig?8:5,padding:weekBig?"5px 6px":"2px 4px",fontSize:Math.max(10,chipFs-2),lineHeight:1.15,fontWeight:800,color:"#0f766e",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",cursor:"pointer"}}>
+                                  <span style={{flexShrink:0}}>{o.status==="done"?"✅":"🔓"}</span><span style={{minWidth:0,overflow:"hidden",textOverflow:"ellipsis"}}>{c.name.split(" ")[0]}</span>
+                                </div>))}
+                              {dayOps.length>(weekBig?6:3)&&<div style={{fontSize:10,color:"#0f766e",fontWeight:700,paddingLeft:2}}>+{dayOps.length-(weekBig?6:3)} open</div>}
                             </div>
                           );
                         })}
@@ -2777,8 +2820,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const dateStr=cell.cur?getDayStr(cell.day):"";
                       const cnt=dateStr?sessions.filter(s=>s.date===dateStr&&!s.requested).length:0;
                       const isToday=dateStr===TODAY;
-                      const wkOpen=dateStr&&isWeekend(dateStr)&&extraOf(dateStr).length>0; // finde abierto
+                      const wkOpen=dateStr&&isWeekend(dateStr)&&(extraOf(dateStr).length>0||baseOf(dateStr).length>0); // finde abierto
                       const wknd=dateStr&&isWeekend(dateStr)&&!wkOpen;
+                      const nOpen=dateStr?(openSessions||[]).filter(o=>o.date===dateStr&&clients.some(c=>c.id===o.client_id)).length:0;
                       const blkEntry=dateStr&&blocked.find(b=>b.date===dateStr&&b.time==="ALL");
                       const isBlk=!!blkEntry&&blkEntry.reason==="Día bloqueado";
                       const isVac=!!blkEntry&&blkEntry.reason==="Vacaciones";
@@ -2804,14 +2848,15 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           {isVac&&<span style={{fontSize:11}}>🏖</span>}
                           {isFest&&<span style={{fontSize:11}}>🎉</span>}
                           {wknd&&!isBlk&&!isVac&&!isFest&&<span style={{fontSize:10,opacity:.75}}>🌴</span>}
-                          {wkOpen&&!isBlk&&!isVac&&!isFest&&cnt===0&&<span title={`Abierto: ${extraOf(dateStr).join(", ")}`} style={{fontSize:9,fontWeight:800,color:"#4d7c0f"}}>🔓{extraOf(dateStr).length}h</span>}
+                          {wkOpen&&!isBlk&&!isVac&&!isFest&&cnt===0&&nOpen===0&&<span title="Abierto" style={{fontSize:9,fontWeight:800,color:"#4d7c0f"}}>abierto</span>}
+                          {nOpen>0&&!isBlk&&!isVac&&!isFest&&<span title={`${nOpen} open`} style={{fontSize:9,fontWeight:800,color:"#0f766e",background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:20,padding:"0 4px",lineHeight:"13px"}}>🔓{nOpen}</span>}
                         </div>
                       );
                     })}
                   </div>
                 </div>
                 <div style={{marginTop:8,display:"flex",gap:12,fontSize:11,color:"#94a3b8",flexWrap:"wrap",justifyContent:"center"}}>
-                  <span><b style={{color:"#0284c7"}}>3</b> nº de clases</span>
+                  <span><b style={{color:"#0284c7"}}>3</b> nº de clases</span><span style={{color:"#0f766e",fontWeight:700}}>🔓2 open</span>
                   <span>🌴 finde</span>
                   <span>🚫 bloqueado</span>
                   <span>🏖 vacaciones</span>
@@ -3057,13 +3102,13 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {openAdd&&<OpenAddModal date={openAdd.date} time={openAdd.time} clients={hybClients} openSessions={openSessions||[]} sessions={sessions}
         onAdd={(cid)=>addOpenFor(cid,openAdd.date,openAdd.time)} onRemove={removeOpen} onClose={()=>setOpenAdd(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
-      {slotMenu&&<SlotActionModal onOpen={hybClients.length?()=>{const s=slotMenu;setSlotMenu(null);setOpenAdd(s);}:null} date={slotMenu.date} time={slotMenu.time} block={blockAt(slotMenu.date,slotMenu.time)} booked={sessions.filter(s=>s.date===slotMenu.date&&s.time===slotMenu.time).length}
+      {slotMenu&&<SlotActionModal vis={isWorkSlot(slotMenu.date,slotMenu.time)?(isPrivHour(config,slotMenu.date,slotMenu.time)?"priv":"pub"):null} onVis={()=>{ toggleExtraPriv(slotMenu.date,slotMenu.time); setSlotMenu(null); }} onOpen={hybClients.length?()=>{const s=slotMenu;setSlotMenu(null);setOpenAdd(s);}:null} date={slotMenu.date} time={slotMenu.time} block={blockAt(slotMenu.date,slotMenu.time)} booked={sessions.filter(s=>s.date===slotMenu.date&&s.time===slotMenu.time).length}
         clients={clients} sessions={sessions} privSess={privSessAt(slotMenu.date,slotMenu.time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client)}
         onTraining={()=>{const s=slotMenu;setSlotMenu(null);setQuickAdd(s);}}
         onValoracion={()=>{const s=slotMenu;setSlotMenu(null);setShowValoracion({date:s.date,time:s.time});}}
         onBlock={(kind,note,cid,drop)=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time,kind,note,cid,drop);}}
         onClose={()=>setSlotMenu(null)}/>}
-      {openHour&&<HoursModal date={openHour.date} initialScope={openHour.scope} initialVis={openHour.vis} workSlots={workSlots} extraOf={extraOf} privOf={(d)=>extraPrivOf(config,d)} blocked={blocked} sessions={sessions} onApply={applyHours} onClose={()=>setOpenHour(null)}/>}
+      {openHour&&<HoursModal date={openHour.date} initialScope={openHour.scope} initialVis={openHour.vis} workSlots={weekHoursOf(config,1)} baseOf={baseOf} extraOf={extraOf} privOf={(d)=>extraPrivOf(config,d)} blocked={blocked} sessions={sessions} onApply={applyHours} onClose={()=>setOpenHour(null)}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
@@ -3123,12 +3168,12 @@ function MoveSessionModal({mode,sess,sessions,clients,config,hasTraining,onMove,
   const [date,setDate] = React.useState(copy?addDays(sess.date,7):sess.date);
   const [withT,setWithT] = React.useState(true);
   const cliente = clients.find(c=>c.id===sess.client_id);
-  const workSlots = [...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
+  // (las horas se calculan por día con el horario semanal: baseSlotsOf)
   const capOf = (t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
   // Ocupación del destino sin contar la propia sesión que estamos moviendo.
   const takenAt = (t)=>sessions.filter(s=>s.date===date&&s.time===t&&(copy||s.id!==sess.id)).length;
   const mineAt = (t)=>copy&&sessions.some(s=>s.client_id===sess.client_id&&s.date===date&&s.time===t);
-  const slots = Array.from(new Set([...(isWeekend(date)?[]:workSlots), ...extraAllOf(config,date), sess.date===date?sess.time:null].filter(Boolean))).sort();
+  const slots = Array.from(new Set([...baseSlotsOf(config,date), ...extraAllOf(config,date), sess.date===date?sess.time:null].filter(Boolean))).sort();
 
   const pick = (t)=>{
     if(date===sess.date && t===sess.time) return copy?null:onClose(); // sin cambios
@@ -3154,7 +3199,7 @@ function MoveSessionModal({mode,sess,sessions,clients,config,hasTraining,onMove,
         <div style={{display:"flex",flexDirection:"column",gap:6,marginTop:6,maxHeight:280,overflowY:"auto"}}>
           {slots.map(t=>{
             const actual = date===sess.date && t===sess.time;
-            const cap=capOf(t), taken=takenAt(t), free=cap-taken, full=free<=0, isWork=workSlots.includes(t);
+            const cap=capOf(t), taken=takenAt(t), free=cap-taken, full=free<=0, isWork=baseSlotsOf(config,date).includes(t);
             return(
               <button key={t} onClick={()=>pick(t)}
                 style={{display:"flex",alignItems:"center",gap:10,padding:"9px 12px",borderRadius:11,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
@@ -3777,7 +3822,7 @@ function PhotosModal({client,loadAll,notify,onClose}) {
 // Bloquear / abrir horas de un día, de toda la semana (L-V) o del fin de semana (S-D), y repetirlo varias semanas.
 // Horas de tu horario: abierta ↔ bloqueada (con el motivo elegido). Fuera de horario: — ↔ abierta (extra).
 // Las horas extra que se abren pueden ser generales (los atletas las reservan) o privadas (solo el coach).
-function HoursModal({date,initialScope,initialVis,workSlots,extraOf,privOf,blocked,sessions,onApply,onClose}){
+function HoursModal({date,initialScope,initialVis,workSlots,baseOf,extraOf,privOf,blocked,sessions,onApply,onClose}){
   const [scope,setScope]=React.useState(initialScope||"day"); // day | week | wknd
   const [weeks,setWeeks]=React.useState(1);
   const [kind,setKind]=React.useState("Cerrada");
@@ -3788,18 +3833,19 @@ function HoursModal({date,initialScope,initialVis,workSlots,extraOf,privOf,block
   const base=scope==="day"?[date]:scope==="wknd"?all7.slice(5):all7.slice(0,5);
   const dates=Array.from({length:weeks},(_,i)=>base.map(d=>addDays(d,7*i))).flat().filter(d=>d>=TODAY||d===date);
   const blockOf=(d,t)=>blocked.find(b=>b.date===d&&b.time===t);
-  // Sábado y domingo no tienen horario fijo: todas sus horas se abren como extra.
-  const wk=scope==="wknd"||(scope==="day"&&isWeekend(date));
-  const isWork=(t)=>!wk&&workSlots.includes(t);
+  // Hora fija (horario semanal) en todos los días elegidos; los días sin horario abren sus horas como extra.
+  const baseD=(d)=>baseOf?baseOf(d):(isWeekend(d)?[]:workSlots);
+  const wk=dates.length>0&&dates.some(d=>!baseD(d).length);
+  const isWork=(t)=>dates.length>0&&dates.every(d=>baseD(d).includes(t));
   const privAll=(t)=>dates.length>0&&dates.every(d=>(privOf?privOf(d):[]).includes(t));
   const pickScope=(sc)=>{ setScope(sc); setWant({}); };
   const nClosed=(t)=>dates.filter(d=>blockOf(d,t)).length;
-  const now=(t)=>{ const n=nClosed(t); if(n&&n===dates.length) return "closed"; if(isWork(t)||dates.every(d=>extraOf(d).includes(t))) return "open"; return "off"; };
+  const now=(t)=>{ const n=nClosed(t); if(n&&n===dates.length) return "closed"; if(dates.length&&dates.every(d=>baseD(d).includes(t)||extraOf(d).includes(t))) return "open"; return "off"; };
   const cur=(t)=>want[t]||now(t);
   const tap=(t)=>{ const c=cur(t), nx=c==="closed"?"open":c==="open"?(isWork(t)||!dates.every(d=>extraOf(d).includes(t))?"closed":"off"):"open";
     const visCh=nx==="open"&&!isWork(t)&&privAll(t)!==(vis==="priv"); // reabrir con otra visibilidad
     setWant(w=>{ const n={...w}; if(nx===now(t)&&!(nx!=="closed"&&nClosed(t))&&!visCh) delete n[t]; else n[t]=nx; return n; }); };
-  const hours=[...new Set([...HOURS.filter(t=>t>="06:00"&&t<="22:00"),...workSlots])].sort();
+  const hours=[...new Set([...HOURS.filter(t=>t>="06:00"&&t<="22:00"),...workSlots,...dates.flatMap(baseD)])].sort();
   const changes=Object.keys(want).length;
   const booked=(t)=>dates.reduce((n,d)=>n+(sessions||[]).filter(x=>x.date===d&&x.time===t).length,0);
   const K=BLOCK_KINDS.find(x=>x.k===kind)||BLOCK_KINDS[0];
@@ -3824,7 +3870,7 @@ function HoursModal({date,initialScope,initialVis,workSlots,extraOf,privOf,block
           <button className={"sb"+(scope==="wknd"?" on":"")} onClick={()=>pickScope("wknd")} style={{fontSize:12}}>Finde (S-D)</button>
         </div>
         {wk&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:12,padding:"7px 10px",marginBottom:8}}>
-          <span style={{flex:1,minWidth:150,fontSize:11,fontWeight:700,color:"#4d7c0f"}}>🌴 Sin horario fijo: toca las horas que quieras abrir, tantas como quieras.</span>
+          <span style={{flex:1,minWidth:150,fontSize:11,fontWeight:700,color:"#4d7c0f"}}>🌴 Sin horario fijo{scope==="day"?"":" algún día"}: toca las horas que quieras abrir, tantas como quieras.</span>
           <button type="button" className="btn ghost" style={{fontSize:11,padding:"5px 10px"}} onClick={sameAsWeek}>＋ Mismo horario que entre semana</button>
         </div>}
         <div role="radiogroup" aria-label="Quién ve las horas que abras" style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:6,marginBottom:8}}>
@@ -3875,7 +3921,7 @@ const CliAvatar = ({c,size=30}) => c.avatar_url
   ?<img src={c.avatar_url} alt="" style={{width:size,height:size,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
   :<div className="ring" style={{width:size,height:size,background:(c.color||"#64748b")+"20",color:c.color||"#64748b",fontSize:Math.round(size*0.34),flexShrink:0}}>{ini(c.name)}</div>;
 // ── AÑADIDO RÁPIDO DE CLIENTES A UN HUECO ──────────────────────────────────
-function SlotActionModal({date,time,block,booked,clients,sessions,privSess,onTraining,onOpen,onValoracion,onBlock,onClose}) {
+function SlotActionModal({date,time,block,booked,clients,sessions,privSess,vis,onVis,onTraining,onOpen,onValoracion,onBlock,onClose}) {
   const d=new Date(date+"T12:00:00");
   const dstr=d.toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"});
   const [kind,setKind]=React.useState(null);
@@ -3915,6 +3961,9 @@ function SlotActionModal({date,time,block,booked,clients,sessions,privSess,onTra
             <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#eef4fc",color:"#0284c7",border:"1px solid #bcd3ee",textAlign:"left"}} onClick={onTraining}>➕ Añadir entreno<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Reservar la clase de un cliente a esta hora</div></button>
             {onOpen&&<button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#f0faf7",color:"#0f766e",border:"1px solid #b5e3da",textAlign:"left"}} onClick={onOpen}>🔓 Añadir open<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Apuntar a esta hora a quien tiene open (por su cuenta)</div></button>}
             <button className="btn" style={{padding:13,fontSize:14,fontWeight:700,background:"#f3ecfb",color:"#7c3aed",border:"1px solid #e0d2f5",textAlign:"left"}} onClick={onValoracion}>📋 Agendar valoración (lead)<div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>Cita de valoración inicial con ficha de la persona</div></button>
+            {vis&&onVis&&<button className="btn" style={{padding:13,fontSize:14,fontWeight:700,textAlign:"left",background:vis==="priv"?"#eef8dd":"#f3ecfb",color:vis==="priv"?"#4d7c0f":"#7c3aed",border:`1px solid ${vis==="priv"?"#cbe8a4":"#e0d2f5"}`}} onClick={onVis}>
+              {vis==="priv"?"🌍 Hacerla general":"🔒 Hacerla privada (solo tú)"}
+              <div style={{fontSize:11,fontWeight:500,color:"#94a3b8",marginTop:2}}>{vis==="priv"?"Ahora es privada: solo la ves tú. Así tus atletas también podrán reservarla.":"Ahora es general: tus atletas la ven. Privada, solo tú apuntas a quien quieras."}</div></button>}
             <div style={{border:"1px solid #e6ebf3",borderRadius:12,padding:"11px 12px",background:"#fafbfd"}}>
               <div style={{fontSize:12,fontWeight:800,color:"#334155",marginBottom:8}}>🔐 Reservar la hora para…</div>
               <div style={{display:"grid",gridTemplateColumns:"repeat(2,1fr)",gap:6}}>
@@ -7065,11 +7114,25 @@ function ProgressionModal({client,clientWeights,weightHistory,records,history,as
 // ── SCHEDULE / HORARIO MODAL ───────────────────────────────────────────────
 // Configura las franjas de mañana y tarde (sesiones de 1h) y los atletas por hora.
 function ScheduleModal({config,onSave,onClose}) {
-  const [cfg,setCfg] = React.useState({...DEFAULT_SCHEDULE,...config,capacity:{...(config.capacity||{})},equip:{...DEFAULT_SCHEDULE.equip,...(config.equip||{})}});
+  const [cfg,setCfg] = React.useState(()=>{ const c={...DEFAULT_SCHEDULE,...config};
+    return {...c,capacity:{...(config.capacity||{})},equip:{...DEFAULT_SCHEDULE.equip,...(config.equip||{})},
+      weekHours:Object.fromEntries(DOW_ORDER.map(d=>[d,[...weekHoursOf(c,d)]])),weekPriv:Object.fromEntries(DOW_ORDER.map(d=>[d,[...weekPrivOf(c,d)]]))}; });
+  // Horario semanal: cada hora de cada día cerrada / 🌍 general / 🔒 privada.
+  const cellSt=(dow,t)=>!(cfg.weekHours[dow]||[]).includes(t)?"off":(cfg.weekPriv[dow]||[]).includes(t)?"priv":"pub";
+  const setDay=(c,dow,hours,priv)=>({...c,weekHours:{...c.weekHours,[dow]:[...new Set(hours)].sort()},weekPriv:{...c.weekPriv,[dow]:[...new Set(priv)].sort()}});
+  const tapCell=(dow,t)=>setCfg(c=>{ const st=cellSt(dow,t), h=(c.weekHours[dow]||[]).filter(x=>x!==t), p=(c.weekPriv[dow]||[]).filter(x=>x!==t);
+    return st==="off"?setDay(c,dow,[...h,t],p):st==="pub"?setDay(c,dow,[...h,t],[...p,t]):setDay(c,dow,h,p); });
+  // Tocar el día: si tiene horas, lo cierra; si está cerrado, lo abre con las franjas de mañana y tarde.
+  const tapDay=(dow)=>setCfg(c=>(c.weekHours[dow]||[]).length?setDay(c,dow,[],[]):setDay(c,dow,defaultSlotsOf(c),[]));
+  const copyMon=()=>setCfg(c=>[2,3,4,5].reduce((a,d)=>setDay(a,d,c.weekHours[1]||[],c.weekPriv[1]||[]),c));
+  // Cambiar una franja rellena los días que seguían con las franjas de antes (no toca los personalizados).
+  const setFranja=(k,v)=>setCfg(c=>{ const old=JSON.stringify(defaultSlotsOf(c)), nc={...c,[k]:v}, neu=defaultSlotsOf(nc);
+    return DOW_ORDER.reduce((a,d)=>JSON.stringify(c.weekHours[d]||[])===old&&(c.weekHours[d]||[]).length?setDay(a,d,neu,(c.weekPriv[d]||[]).filter(t=>neu.includes(t))):a,nc); });
+  const gridHours=[...new Set([...HOURS.filter(t=>t>="06:00"&&t<="22:00"),...DOW_ORDER.flatMap(d=>cfg.weekHours[d]||[])])].sort();
   // Igual que el generador: un material sin valor guardado cuenta como disponible.
   const equipOn = (c,k) => { const v=c.equip&&c.equip[k]; return v===undefined?true:!!v; };
   const toggleEquip = (k) => setCfg(c=>({...c,equip:{...c.equip,[k]:!equipOn(c,k)}}));
-  const slots = [...genSlots(cfg.morningFrom,cfg.morningTo),...genSlots(cfg.afternoonFrom,cfg.afternoonTo)];
+  const slots = [...new Set(DOW_ORDER.flatMap(d=>cfg.weekHours[d]||[]))].sort();
   // Capacidad entre 1 y 5 atletas por hora.
   const capOf = (t) => cfg.capacity[t]!=null?cfg.capacity[t]:cfg.defaultCapacity;
   const setCap = (t,v) => setCfg(c=>({...c,capacity:{...c.capacity,[t]:Math.min(5,Math.max(1,parseInt(v||1,10)))}}));
@@ -7087,17 +7150,40 @@ function ScheduleModal({config,onSave,onClose}) {
         <div style={{marginBottom:16}}>
           <span className="lbl">☀️ MAÑANA</span>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            {hourSel(cfg.morningFrom,v=>setCfg(c=>({...c,morningFrom:v})))}
+            {hourSel(cfg.morningFrom,v=>setFranja("morningFrom",v))}
             <span style={{color:"#64748b",fontSize:13}}>a</span>
-            {hourSel(cfg.morningTo,v=>setCfg(c=>({...c,morningTo:v})))}
+            {hourSel(cfg.morningTo,v=>setFranja("morningTo",v))}
           </div>
         </div>
         <div style={{marginBottom:16}}>
           <span className="lbl">🌙 TARDE</span>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
-            {hourSel(cfg.afternoonFrom,v=>setCfg(c=>({...c,afternoonFrom:v})))}
+            {hourSel(cfg.afternoonFrom,v=>setFranja("afternoonFrom",v))}
             <span style={{color:"#64748b",fontSize:13}}>a</span>
-            {hourSel(cfg.afternoonTo,v=>setCfg(c=>({...c,afternoonTo:v})))}
+            {hourSel(cfg.afternoonTo,v=>setFranja("afternoonTo",v))}
+          </div>
+        </div>
+
+        <div style={{marginBottom:16}}>
+          <span className="lbl">📅 HORARIO SEMANAL · CADA DÍA A TU MANERA</span>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:8,lineHeight:1.4}}>Toca una hora: <b style={{color:"#0284c7"}}>🌍 general</b> (la reservan tus atletas) → <b style={{color:"#7c3aed"}}>🔒 privada</b> (solo tú) → cerrada. Toca el día para abrirlo o cerrarlo entero. Se repite todas las semanas; un día suelto lo cambias en la agenda.</div>
+          <div role="grid" aria-label="Horario semanal" style={{display:"grid",gridTemplateColumns:"40px repeat(7,minmax(0,1fr))",gap:3}}>
+            <div/>
+            {DOW_ORDER.map(d=>{ const n=(cfg.weekHours[d]||[]).length; return(
+              <button key={d} type="button" onClick={()=>tapDay(d)} aria-label={`${DOW_LONG[d]}: ${n?`${n} horas, toca para cerrarlo`:"cerrado, toca para abrirlo"}`}
+                style={{padding:"4px 0",borderRadius:8,cursor:"pointer",fontFamily:"inherit",fontWeight:800,fontSize:12,lineHeight:1.1,border:`1px solid ${n?"#bcd3ee":"#e6ebf3"}`,background:n?"#eef4fc":"#f8fafc",color:n?"#0284c7":"#94a3b8"}}>
+                {DOW_SHORT[d]}<div style={{fontSize:9,fontWeight:700}}>{n?`${n}h`:"—"}</div></button>); })}
+            {gridHours.map(t=><React.Fragment key={t}>
+              <div className="mono" style={{fontSize:10,fontWeight:700,color:"#94a3b8",display:"flex",alignItems:"center",justifyContent:"flex-end",paddingRight:4}}>{t}</div>
+              {DOW_ORDER.map(d=>{ const st=cellSt(d,t); return(
+                <button key={d} type="button" role="gridcell" aria-label={`${DOW_LONG[d]} ${t}: ${st==="off"?"cerrada":st==="pub"?"general":"privada"}`} onClick={()=>tapCell(d,t)}
+                  style={{height:24,borderRadius:6,cursor:"pointer",fontFamily:"inherit",fontSize:11,padding:0,
+                    background:st==="pub"?"#0284c7":st==="priv"?"#7c3aed":"transparent",color:"#fff",border:st==="off"?"1px dashed #dbe2ec":"none"}}>{st==="priv"?"🔒":""}</button>); })}
+            </React.Fragment>)}
+          </div>
+          <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:8}}>
+            <button type="button" className="btn ghost" style={{fontSize:11,padding:"5px 10px"}} onClick={copyMon}>Copiar el lunes a M-V</button>
+            <button type="button" className="btn ghost" style={{fontSize:11,padding:"5px 10px"}} onClick={()=>setCfg(c=>DOW_ORDER.reduce((a,d)=>setDay(a,d,d===0||d===6?[]:defaultSlotsOf(c),[]),c))}>↺ L-V mañana y tarde, finde cerrado</button>
           </div>
         </div>
 
@@ -8835,15 +8921,16 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
   const [celebrate,setCelebrate] = React.useState(null); // pantalla «¡Reservado!» tras confirmar
   const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN|hora"
   const [openPick,setOpenPick] = React.useState(null); // día open al que se le está eligiendo la hora
-  // Solo las horas extra generales: las privadas las gestiona el coach y no se ven aquí.
-  const extraOf=(d)=>extraPubOf(config,d);
+  // Horas que ve el atleta cada día: horario semanal + horas extra, sin las privadas del coach.
+  const pubOf=(d)=>pubHoursOf(config,d);
   // L-V y, si el coach abre el sábado o el domingo con horas generales, también esos días.
-  const days=Array.from({length:7},(_,i)=>addDays(wk,i)).filter((d,i)=>i<5||extraOf(d).length>0);
-  const workSlots=[...genSlots(config.morningFrom,config.morningTo),...genSlots(config.afternoonFrom,config.afternoonTo)];
-  const rows=[...new Set([...workSlots,...days.flatMap(extraOf)])].sort();
-  const isOpenHour=(d,t)=>(!isWeekend(d)&&workSlots.includes(t))||extraOf(d).includes(t);
+  const days=Array.from({length:7},(_,i)=>addDays(wk,i)).filter((d,i)=>i<5||pubOf(d).length>0);
+  const rows=[...new Set(days.flatMap(pubOf))].sort();
+  const isOpenHour=(d,t)=>pubOf(d).includes(t);
   const capOf=(t)=>(config.capacity&&config.capacity[t]!=null)?config.capacity[t]:config.defaultCapacity;
-  const dayClosed=(d)=>(isWeekend(d)&&!extraOf(d).length)||blocked.some(b=>b.date===d&&b.time==="ALL");
+  const allDayBlk=(d)=>blocked.some(b=>b.date===d&&b.time==="ALL");
+  const dayClosed=(d)=>!pubOf(d).length||allDayBlk(d);
+  const openClosed=(d)=>allDayBlk(d)||!openHours(config,d).length; // sin horas para un open ese día
   const slotClosed=(d,t)=>dayClosed(d)||!isOpenHour(d,t)||blocked.some(b=>b.date===d&&b.time===t);
   const nowHM=new Date().toTimeString().slice(0,5);
   const isPast=(d,t)=>d<TODAY||(d===TODAY&&t<=nowHM);
@@ -8873,7 +8960,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
     const m=myOpen(d), pk=pickedOpen(d);
     if(m){ if(m.status==="done") return notify("Open hecha ✓"); return setOpenPick(d); } // cambiar la hora o quitarlo
     if(pk) return setPicked(p=>p.filter(x=>x!==pk));
-    if(dayClosed(d)||d<TODAY) return;
+    if(openClosed(d)||d<TODAY) return;
     const why=openBlockReason(client,d,opens,po.filter(x=>x.slice(0,10)>=mondayOfDate(d)&&x.slice(0,10)<addDays(mondayOfDate(d),7)).length);
     if(why==="bono"||(oLeft!==null&&po.length>=oLeft)) return notify("No te quedan open en el bono","err");
     if(why==="semana") return notify(`Esa semana ya tienes tus ${openPerWeek(client)} open`,"err");
@@ -8969,7 +9056,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
         </React.Fragment>))}
         {hybrid&&<>
           <div style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:16}} title="Open · por tu cuenta">🔓</div>
-          {days.map(d=>{ const k=d+"|OPEN", m=myOpen(d), pk=pickedOpen(d), sel=!!pk, off=dayClosed(d)||d<TODAY;
+          {days.map(d=>{ const k=d+"|OPEN", m=myOpen(d), pk=pickedOpen(d), sel=!!pk, off=openClosed(d)||d<TODAY;
             const st=m?"mine":sel?"sel":off?"off":"free";
             const sty={mine:{background:m&&m.status==="done"?"linear-gradient(135deg,#22c55e,#15803d)":"linear-gradient(135deg,#fbbf24,#f59e0b)",color:"#1c1917",border:"none",boxShadow:"0 0 14px rgba(251,191,36,.4)"},
               sel:{background:"#fff",color:"#d97706",border:"none",transform:"scale(.95)",boxShadow:"0 0 0 3px rgba(251,191,36,.55)"},
