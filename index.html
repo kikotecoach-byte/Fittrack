@@ -246,6 +246,7 @@ html{background:#1c1c23;}body{background:#1c1c23;color:var(--text);font-family:'
 .pbar{height:6px;background:#1c1c23;border-radius:10px;overflow:hidden;}
 .pfill{height:100%;border-radius:10px;transition:width .6s;}
 .rest-on .notif{top:calc(96px + env(safe-area-inset-top)) !important;}
+.rest-on .exec-fs-head{padding-top:calc(86px + env(safe-area-inset-top)) !important;}
 .notif{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:400;
   padding:12px 20px;border-radius:24px;font-size:13px;font-weight:600;
   animation:slideIn .3s ease;white-space:nowrap;}
@@ -1302,7 +1303,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
   // iPad en horizontal: la ficha / el entreno se acoplan a la derecha (sin tapar la agenda).
   const canDock = vw>=1100;
-  const docked = canDock && !!(quickView||execData);
+  const docked = canDock && !!quickView; // la ejecución va a pantalla completa
   // Lista de espera con hueco libre (para avisar al cliente).
   const allFreedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
     const taken=sessions.filter(s=>s.date===x.date&&s.time===x.time).length;
@@ -3128,7 +3129,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showSummary&&<ClientSummaryModal client={showSummary} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} progress={progress} annualBlocks={annualBlocks} sessions={sessions} onClose={()=>setShowSummary(null)}/>}
       {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clients={clients} sessions={sessions} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onCopyTo={(targets,loads)=>copySessionTo(histView.client,histView.date,targets,loads)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
       {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} clientName={(()=>{ const c=clients.find(x=>x.id===showValoracion.converted_client_id); return c&&c.name; })()} onGoClient={(id)=>{ const c=clients.find(x=>x.id===id); if(c){ setShowValoracion(null); goToProfile(c); } }} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
-      {execData&&<SessionExecModal docked={canDock&&!quickView} client={execData.client} date={execData.date} sessions={sessions} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
+      {execData&&<SessionExecModal client={execData.client} date={execData.date} sessions={sessions} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
       {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} notify={notify} onClose={()=>setProgData(null)}/>}
@@ -6059,7 +6060,7 @@ function IsoLogger({ex,clientId,client,clientWeights,notify,onDone,onSwap}){
 }
 
 // ── EJECUTAR SESIÓN (registro de cargas durante el entreno) ────────────────
-function SessionExecModal({client,date,sessions,assignedSessions,assignedExercises,clientWeights,docked,loadAll,notify,onClose}) {
+function SessionExecModal({client,date,sessions,assignedSessions,assignedExercises,clientWeights,loadAll,notify,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const baseExs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
   const wods=wodBlocks(baseExs);
@@ -6080,18 +6081,30 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   const [mvMenu,setMvMenu]=React.useState(null); // {id,x,y}
   const [dayFor,setDayFor]=React.useState(null); // fila que se pasa a otro día
   const openMv=(e,id)=>{ const r=e.currentTarget.getBoundingClientRect(); setMvMenu({id,x:e.clientX||r.right,y:e.clientY||r.bottom}); };
-  const reorderRows=async(id,to)=>{ const arr=rows.slice(), i=arr.findIndex(r=>r.id===id); if(i<0||to===i) return; const [x]=arr.splice(i,1); arr.splice(to,0,x); setRows(arr);
+  // Se guarda el orden un momento después del último toque (varios ▲▼ seguidos = un solo guardado).
+  const saveT=React.useRef(null), rowsRef=React.useRef(rows); rowsRef.current=rows;
+  const saveOrder=async()=>{ saveT.current=null; const arr=rowsRef.current;
     // Las filas ocupan los mismos huecos de la sesión (los WOD no se mueven).
     const ids=new Set(arr.map(r=>r.id)), full=baseExs.slice(), slots=baseExs.map((e,k)=>ids.has(e.id)?k:-1).filter(k=>k>=0);
-    slots.forEach((k,n)=>{ full[k]=baseExs.find(e=>e.id===arr[n].id)||full[k]; });
-    for(let k=0;k<full.length;k++) if((full[k].order_index||0)!==k) await sb.from("assigned_exercises").update({order_index:k}).eq("id",full[k].id);
+    slots.forEach((k,n)=>{ if(arr[n]) full[k]=baseExs.find(e=>e.id===arr[n].id)||full[k]; });
+    for(let k=0;k<full.length;k++) await sb.from("assigned_exercises").update({order_index:k}).eq("id",full[k].id);
     if(loadAll) await loadAll(); notify("Orden guardado ✓"); };
+  React.useEffect(()=>()=>{ if(saveT.current){ clearTimeout(saveT.current); saveOrder(); } },[]);
+  const reorderRows=(id,to)=>{ const arr=rowsRef.current.slice(), i=arr.findIndex(r=>r.id===id); if(i<0) return; to=Math.max(0,Math.min(arr.length-1,to)); if(to===i) return;
+    const [x]=arr.splice(i,1); arr.splice(to,0,x); rowsRef.current=arr; setRows(arr);
+    if(saveT.current) clearTimeout(saveT.current); saveT.current=setTimeout(saveOrder,700); };
   const toDay=async(d)=>{ const row=dayFor; setDayFor(null); if(!row) return; const ex=baseExs.find(e=>e.id===row.id); if(!ex) return;
     const err=await moveExToDay(client.id,[ex],d,assignedSessions,assignedExercises);
     if(err) return notify("No se pudo pasar al otro día","err");
     setRows(rs=>rs.filter(r=>r.id!==row.id)); if(loadAll) await loadAll(); notify(`${row.name} → ${fmtDate(d)} ✓`); };
-  const grip=(row)=><button type="button" className="drag-grip" aria-haspopup="menu" aria-label={`Mover: ${row.name}. Atajos: subir, bajar, al principio, al final u otro día`} title="Atajos: subir, bajar, al principio, al final, otro día"
-    onClick={(e)=>openMv(e,row.id)} style={{minHeight:30,width:24,alignSelf:"flex-start",fontSize:15}}>⠿</button>;
+  const arrow={width:34,height:30,border:"1px solid #dbe2ec",background:"#fff",color:"#0284c7",borderRadius:9,fontSize:13,fontWeight:800,cursor:"pointer",padding:0,lineHeight:1,fontFamily:"inherit"};
+  const grip=(row)=>{ const i=rows.findIndex(r=>r.id===row.id), n=rows.length; return <div style={{display:"flex",flexDirection:"column",alignItems:"center",gap:3,flexShrink:0,alignSelf:"flex-start"}}>
+    <button type="button" aria-label={`Subir ${row.name}`} title="Subir" disabled={i<=0} onClick={()=>reorderRows(row.id,i-1)} style={{...arrow,opacity:i<=0?.3:1,cursor:i<=0?"default":"pointer"}}>▲</button>
+    <button type="button" className="drag-grip" aria-haspopup="menu" aria-label={`Mover: ${row.name}. Atajos: subir, bajar, al principio, al final u otro día`} title="Atajos: al principio, al final, otro día (con teclado: ↑ ↓ Inicio Fin)"
+      onClick={(e)=>openMv(e,row.id)} onKeyDown={(e)=>{ const t={ArrowUp:i-1,ArrowDown:i+1,Home:0,End:n-1}[e.key]; if(t==null) return; e.preventDefault(); reorderRows(row.id,t); }}
+      style={{...arrow,color:"#64748b",fontSize:17}}>⠿</button>
+    <button type="button" aria-label={`Bajar ${row.name}`} title="Bajar" disabled={i>=n-1} onClick={()=>reorderRows(row.id,i+1)} style={{...arrow,opacity:i>=n-1?.3:1,cursor:i>=n-1?"default":"pointer"}}>▼</button>
+  </div>; };
   const setField=(id,k,v)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x));
   const setBand=(row,band)=>{ const v=toggleBandKey(row.band,band); setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id); };
   const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id); } };
@@ -6136,20 +6149,46 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   const applyRm=async()=>{ setRows(rs=>rs.map(x=>{ const d=rmDiff.find(y=>y.row.id===x.id); return d?{...x,w:d.kg,prescribed:d.kg}:x; }));
     for(const d of rmDiff) await sb.from("assigned_exercises").update({prescribed_weight:d.kg}).eq("id",d.row.id);
     notify(`${rmDiff.length} carga${rmDiff.length>1?"s":""} ajustada${rmDiff.length>1?"s":""} a su eRM ✓`); };
+  // Pantalla completa: tamaño de letra (A− / A+) recordado en este dispositivo.
+  const ZOOMS=[1,1.15,1.3,1.5];
+  const [zoom,setZoom]=React.useState(()=>{ try{ const z=parseFloat(localStorage.getItem("kg_exec_zoom")); if(ZOOMS.includes(z)) return z; }catch(e){} return typeof window!=="undefined"&&window.innerWidth>=700?1.15:1; });
+  const bump=(d)=>{ const i=Math.max(0,Math.min(ZOOMS.length-1,ZOOMS.indexOf(zoom)+d)); setZoom(ZOOMS[i]); try{ localStorage.setItem("kg_exec_zoom",String(ZOOMS[i])); }catch(e){} };
+  // Pantalla completa del navegador (si se puede) y sin scroll detrás.
+  const ownFs=React.useRef(false);
+  React.useEffect(()=>{ const prev=document.body.style.overflow; document.body.style.overflow="hidden";
+    try{ const el=document.documentElement; if(!document.fullscreenElement&&!document.webkitFullscreenElement){ ownFs.current=true; if(el.requestFullscreen) el.requestFullscreen().catch(()=>{ ownFs.current=false; }); else if(el.webkitRequestFullscreen) el.webkitRequestFullscreen(); else ownFs.current=false; } }catch(e){ ownFs.current=false; }
+    return ()=>{ document.body.style.overflow=prev; if(ownFs.current) try{ if(document.fullscreenElement&&document.exitFullscreen) document.exitFullscreen().catch(()=>{}); else if(document.webkitFullscreenElement&&document.webkitExitFullscreen) document.webkitExitFullscreen(); }catch(e){} }; },[]);
+  const salir=onClose, fsRef=React.useRef(null);
+  // Esc sale (si no hay un menú o selector abierto encima).
+  const subOpen=!!(mvMenu||dayFor||picker||timerWod);
+  React.useEffect(()=>{ if(subOpen) return; const k=(e)=>{ if(e.key==="Escape"&&!document.querySelector('[role="menu"]')&&!(fsRef.current&&fsRef.current.querySelector('.ovl'))) salir(); }; window.addEventListener("keydown",k); return ()=>window.removeEventListener("keydown",k); },[subOpen]);
+  const pct=rows.length?Math.round(hechos/rows.length*100):0;
+  const zbtn={border:"1px solid #dbe2ec",background:"#fff",color:"#334155",borderRadius:10,padding:"8px 10px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",lineHeight:1};
   return(
-    <div className={"ovl"+(docked?" dock":"")} onClick={docked?undefined:onClose}>
-      <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480}}>
-        {docked&&<button className="btn ghost" onClick={onClose} title="Cerrar" style={{float:"right",padding:"6px 11px",fontSize:14,marginLeft:8}}>✕</button>}
-        <div style={{display:"flex",alignItems:"center",gap:12,marginBottom:14}}>
+    <div ref={fsRef} role="dialog" aria-modal="true" aria-label={`Ejecutar entreno de ${client.name}`} className="exec-fs" style={{position:"fixed",inset:0,zIndex:380,background:"#eef1f7",display:"flex",flexDirection:"column"}}>
+      <div className="exec-fs-head" style={{flexShrink:0,background:"#fff",borderBottom:"1px solid #e6ebf3",boxShadow:"0 2px 10px rgba(15,23,42,.06)",
+        padding:"calc(8px + env(safe-area-inset-top)) max(12px, env(safe-area-inset-right)) 8px max(12px, env(safe-area-inset-left))"}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",alignItems:"center",gap:10}}>
           {client.avatar_url
-            ?<img src={client.avatar_url} style={{width:44,height:44,borderRadius:"50%",objectFit:"cover"}}/>
-            :<div className="ring" style={{width:44,height:44,background:client.color+"20",color:client.color,fontSize:14}}>{ini(client.name)}</div>}
+            ?<img src={client.avatar_url} style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",flexShrink:0}}/>
+            :<div className="ring" style={{width:40,height:40,flexShrink:0,background:client.color+"20",color:client.color,fontSize:14}}>{ini(client.name)}</div>}
           <div style={{flex:1,minWidth:0}}>
-            <h2 className="mono" style={{fontSize:16,fontWeight:700}}>Ejecutar · {client.name}</h2>
-            <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{fmtDate(date)} · {hechos}/{rows.length} hechos</div>
+            <h2 className="mono" style={{fontSize:17,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{client.name}</h2>
+            <div style={{fontSize:12,color:"#64748b",marginTop:1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>▶ {fmtDate(date)} · <b style={{color:hechos===rows.length&&rows.length?"#16a34a":"#334155"}}>{hechos}/{rows.length} hechos</b></div>
           </div>
+          <div role="group" aria-label="Tamaño de letra" style={{display:"flex",gap:4}}>
+            <button type="button" aria-label="Letra más pequeña" title="Letra más pequeña" disabled={zoom<=ZOOMS[0]} onClick={()=>bump(-1)} style={{...zbtn,opacity:zoom<=ZOOMS[0]?.4:1}}>A−</button>
+            <button type="button" aria-label="Letra más grande" title="Letra más grande" disabled={zoom>=ZOOMS[ZOOMS.length-1]} onClick={()=>bump(1)} style={{...zbtn,fontSize:17,opacity:zoom>=ZOOMS[ZOOMS.length-1]?.4:1}}>A+</button>
+          </div>
+          <button type="button" onClick={salir} aria-label="Salir de la ejecución" title="Salir (Esc)" style={{border:"1.5px solid #fca5a5",background:"#fbe6e6",color:"#dc2626",borderRadius:12,padding:"10px 14px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✕ Salir</button>
         </div>
-
+        <div style={{maxWidth:900,margin:"8px auto 0",height:5,background:"#e6ebf3",borderRadius:9,overflow:"hidden"}} aria-hidden="true"><div style={{width:pct+"%",height:"100%",background:"linear-gradient(90deg,#0284c7,#16a34a)",transition:"width .4s"}}/></div>
+      </div>
+      {mvMenu&&(()=>{ const i=rows.findIndex(r=>r.id===mvMenu.id); if(i<0) return null; const row=rows[i]; return <ExMoveMenu x={mvMenu.x} y={mvMenu.y} label={row.name} idx={i} n={rows.length}
+        extra={[{ico:"📅",label:"Pasar a otro día…",sub:"Hoy no da tiempo: va a otro entreno",run:()=>setDayFor(row)}]} onMove={(to)=>{ setMvMenu(null); reorderRows(row.id,to); }} onClose={()=>setMvMenu(null)}/>; })()}
+      {dayFor&&<ExDayPicker title={dayFor.name} fromDate={date} days={nextDaysOf(client.id,date,sessions)} onPick={toDay} onClose={()=>setDayFor(null)}/>}
+      <div className="exec-fs-body" style={{flex:1,minHeight:0,overflowY:"auto",WebkitOverflowScrolling:"touch",overscrollBehavior:"contain",padding:"12px max(12px, env(safe-area-inset-right)) 12px max(12px, env(safe-area-inset-left))"}}>
+      <div style={{maxWidth:900/zoom,margin:"0 auto",zoom}}>
         {wods.map((b,i)=>(
             <button key={"w"+i} onClick={()=>setTimerWod(b)} style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff7ed",border:"1px solid #fdba74",borderRadius:12,padding:"11px 12px",marginBottom:8}}>
               <span style={{fontSize:24}}>⏱</span>
@@ -6164,10 +6203,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
         {rmDiff.length>0&&<button type="button" onClick={applyRm} className="btn ghost" style={{width:"100%",marginBottom:8,padding:"9px 10px",fontSize:12,fontWeight:800,justifyContent:"center",color:"#0284c7",border:"1px solid #bcd3ee",background:"#eef4fc"}}>🎯 Ajustar {rmDiff.length} carga{rmDiff.length>1?"s":""} a su eRM ({rmDiff.slice(0,2).map(d=>`${d.row.name.split(" ")[0]} ${fmtKgN(d.kg)} kg`).join(", ")}{rmDiff.length>2?"…":""})</button>}
         {!sess||rows.length===0
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:14,fontSize:13,color:"#64748b",textAlign:"center"}}>Sin entrenamiento asignado para hoy. Asígnalo desde Programa.</div>
-          :<div style={{display:"flex",flexDirection:"column",gap:8,maxHeight:"56vh",overflowY:"auto"}}>
-            {mvMenu&&(()=>{ const i=rows.findIndex(r=>r.id===mvMenu.id); if(i<0) return null; const row=rows[i]; return <ExMoveMenu x={mvMenu.x} y={mvMenu.y} label={row.name} idx={i} n={rows.length}
-              extra={[{ico:"📅",label:"Pasar a otro día…",sub:"Hoy no da tiempo: va a otro entreno",run:()=>setDayFor(row)}]} onMove={(to)=>{ setMvMenu(null); reorderRows(row.id,to); }} onClose={()=>setMvMenu(null)}/>; })()}
-            {dayFor&&<ExDayPicker title={dayFor.name} fromDate={date} days={nextDaysOf(client.id,date,sessions)} onPick={toDay} onClose={()=>setDayFor(null)}/>}
+          :<div style={{display:"flex",flexDirection:"column",gap:10}}>
             {rows.map(row=>isIsoRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})
               ?<div key={row.id+"|"+row.name} style={{display:"flex",gap:6}}>{grip(row)}<div style={{flex:1,minWidth:0}}><IsoLogger ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} client={client} clientWeights={clientWeights} notify={notify}
                   onDone={(d)=>setField(row.id,"done",d)} onSwap={()=>setPicker({mode:"swap",row})}/></div></div>
@@ -6211,10 +6247,13 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
           </div>
         }
 
-        <div style={{display:"flex",gap:8,marginTop:16}}>
-          {sess&&<button className="btn ghost" style={{padding:"12px 12px"}} title="Añadir ejercicio" onClick={()=>setPicker({mode:"add"})}>＋</button>}
-          {sess&&rows.length>0&&<button className="btn sky" style={{flex:1,padding:12,justifyContent:"center"}} disabled={saving} onClick={finalizar}>Finalizar entreno</button>}
-          <button className="btn ghost" style={{flex:sess&&rows.length>0?"0 0 auto":1,padding:"12px 16px"}} onClick={onClose}>Cerrar</button>
+        {sess&&<button type="button" className="btn ghost" style={{width:"100%",marginTop:10,padding:"11px",justifyContent:"center",fontSize:13,fontWeight:800,borderStyle:"dashed"}} onClick={()=>setPicker({mode:"add"})}>＋ Añadir ejercicio</button>}
+      </div>
+      </div>
+      <div style={{flexShrink:0,background:"#fff",borderTop:"1px solid #e6ebf3",padding:"10px max(12px, env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px, env(safe-area-inset-left))"}}>
+        <div style={{maxWidth:900,margin:"0 auto",display:"flex",gap:8}}>
+          {sess&&rows.length>0&&<button className="btn sky" style={{flex:1,padding:14,justifyContent:"center",fontSize:15}} disabled={saving} onClick={finalizar}>✓ Finalizar entreno</button>}
+          <button className="btn ghost" style={{flex:sess&&rows.length>0?"0 0 auto":1,padding:"14px 18px",fontSize:15,justifyContent:"center"}} onClick={salir}>Salir</button>
         </div>
       </div>
       {timerWod&&<WodTimer wod={timerWod} onClose={()=>setTimerWod(null)} onSave={async(res)=>{ const r=timerWod.header||timerWod.rows[0]; const {error}=await sb.from("assigned_exercises").update({actual_reps:res,done:true,done_at:new Date().toISOString()}).eq("id",r.id); notify(error?"No se pudo guardar el resultado":"Resultado del WOD guardado ✓",error?"err":undefined); await loadAll(); }}/>}
