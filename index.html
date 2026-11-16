@@ -2096,7 +2096,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                 ["clients","Clientes",go("clients")],
                 ["clipboard","Valoraciones",()=>{ setLeadsClient(null); setShowLeads(true); },(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length],
                 ["program","Programa",()=>{ setProgTab({t:null,k:Date.now()}); setView("programming"); }],
-                ["🎬","Vídeos",()=>{ setProgTab({t:"media",k:Date.now()}); setView("programming"); }],
+                ["📷","Fotos",()=>{ setProgTab({t:"media",k:Date.now()}); setView("programming"); }],
                 ["money","Finanzas",go("income")],
                 ["bell","Alertas",go("reminders"),reminders.length],
                 ["check","Pasar lista",go("feed")],
@@ -3113,6 +3113,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
+      <ExPhotoHost coach notify={notify}/>
       {editData&&<EditClientModal client={clients.find(c=>c.id===editData.id)||editData} clients={clients} saving={saving} lead={leadOf(editData)} onValoracion={()=>{ const c=editData; setEditData(null); openValoracion(c); }} onSave={(f,o)=>saveClientData(editData,f,o)} onClose={()=>setEditData(null)}/>}
       {showMeasures&&<MeasuresModal client={showMeasures} progress={progress} loadAll={loadAll} notify={notify} onClose={()=>setShowMeasures(null)}/>}
       {viewAs&&(()=>{ const c=clients.find(x=>x.id===viewAs.id)||viewAs; return(
@@ -4914,6 +4915,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     .sort((a,b)=>(b.custom-a.custom)||a.name.localeCompare(b.name)).slice(0,80);
   const Row=({x,hint})=>(
     <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
+      {exPhotoOf(x.name)?<ExPhoto name={x.name} size={60}/>:<span aria-hidden="true" style={{width:60,height:45,flexShrink:0,borderRadius:10,background:"#f1f4fa",border:"1px dashed #dbe2ec",display:"flex",alignItems:"center",justifyContent:"center",fontSize:16,color:"#cbd5e1"}}>📷</span>}
       <span style={{flex:1,minWidth:0}}>
         <span style={{display:"block",fontSize:13,fontWeight:700,color:"#0f172a"}}>{x.name}{x.custom&&<span style={{fontSize:9,fontWeight:800,color:"#7c3aed",marginLeft:6}}>PROPIO</span>}</span>
         <span style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",marginTop:3}}><MuscleTags name={x.name}/><CxTag name={x.name}/><span style={{fontSize:10,color:equipOk(x.name)?"#64748b":"#dc2626"}}>{(equipTxt(x.name)||"")}{equipOk(x.name)?"":" · no disponible"}</span></span>
@@ -6013,7 +6015,8 @@ function IsoLogger({ex,clientId,client,clientWeights,notify,onDone,onSwap}){
   return(
     <div data-iso={ex.exercise_name} style={{background:v.done?"#eef8dd":"#f8fafc",border:`1px solid ${v.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
       <div style={{display:"flex",alignItems:"flex-start",justifyContent:"space-between",gap:8,marginBottom:8}}>
-        <div style={{minWidth:0}}>
+        <ExPhoto name={ex.exercise_name} size={96} onClick={()=>openExPhoto(ex.exercise_name,ex)}/>
+        <div style={{minWidth:0,flex:1}}>
           <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}>{client?<ExName client={client} name={ex.exercise_name}/>:ex.exercise_name} {onSwap&&<button onClick={onSwap} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button>}</div>
           <div style={{display:"flex",gap:5,alignItems:"center",flexWrap:"wrap",marginTop:3}}>
             <span style={{fontSize:9,fontWeight:800,color:"#0369a1",background:"#e0ecfb",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px"}}>⏸️ ISOMÉTRICO</span>
@@ -6211,6 +6214,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
               <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                   {grip(row)}
+                  <ExPhoto name={row.name} size={96} onClick={()=>openExPhoto(row.name,{...(baseExs.find(e=>e.id===row.id)||{}),sets:row.sets,reps:row.reps,protocol:row.protocol,prescribed_weight:row.mode==="goma"?null:row.prescribed,load_band:row.mode==="goma"?row.band:null,rest_seconds:row.rest})}/>
                   <div style={{minWidth:0,flex:1}}>
                     <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}><ExName client={client} name={row.name}/> <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
                     <MuscleTags name={row.name}/>
@@ -6846,6 +6850,183 @@ function RestTimerHost(){
 const EXH = {cur:null, hosts:[]};
 const exhPing = () => EXH.hosts.forEach(h=>h.f());
 const openExHistory = (client, name) => { if(!client||!name) return; EXH.cur={client,name}; exhPing(); };
+// ── BANCO DE FOTOS DE EJERCICIOS ──────────────────────────────────────────
+// Dos fotos por ejercicio (posición inicial y final) de Free Exercise DB,
+// de dominio público (github.com/yuhonas/free-exercise-db). Cada ejercicio de
+// la biblioteca apunta a su foto; «~» = variante parecida (mismo gesto con
+// otro material o barra), se avisa al verla. Sin foto: los que no tienen una
+// imagen fiel (el coach puede subir la suya en «Fotos y vídeos»).
+const EX_PHOTO_SRC = ["https://cdn.jsdelivr.net/gh/yuhonas/free-exercise-db@main/exercises/","https://raw.githubusercontent.com/yuhonas/free-exercise-db/main/exercises/"];
+const EX_PHOTO = {
+  "sentadilla trasera":"Barbell_Squat","sentadilla frontal":"Front_Barbell_Squat","sentadilla con pausa":"Barbell_Squat","sentadilla con safety bar (ssb)":"~Barbell_Squat",
+  "sentadilla al cajón (box squat)":"Box_Squat","prensa de piernas":"Leg_Press","hack squat":"Hack_Squat","sentadilla búlgara":"Split_Squat_with_Dumbbells",
+  "sentadilla goblet":"Goblet_Squat","zancadas":"Dumbbell_Lunges","zancada caminando":"Bodyweight_Walking_Lunge","step-up al cajón":"Dumbbell_Step_Ups",
+  "pistol squat (asistida)":"~Kettlebell_Pistol_Squat","sissy squat":"Weighted_Sissy_Squat","extensión de cuádriceps":"Leg_Extensions",
+  "sentadilla frontal en multipower":"~Smith_Machine_Squat","sentadilla trasera en multipower":"Smith_Machine_Squat","sentadilla ssb con pausa":"~Barbell_Squat",
+  "sentadilla tempo 3-0-3":"Barbell_Squat","zancada inversa":"Dumbbell_Rear_Lunge","zancada con mancuernas":"Dumbbell_Lunges",
+  "zancada búlgara en multipower":"Smith_Single-Leg_Split_Squat","extensión de cuádriceps unilateral":"Single-Leg_Leg_Extension","sentadilla goblet con pausa":"Goblet_Squat",
+  "peso muerto":"Barbell_Deadlift","peso muerto sumo":"Sumo_Deadlift","peso muerto rumano":"Romanian_Deadlift","peso muerto trap bar":"Trap_Bar_Deadlift",
+  "peso muerto piernas rígidas":"Stiff-Legged_Barbell_Deadlift","peso muerto déficit":"Deficit_Deadlift","peso muerto rumano con mancuernas":"Stiff-Legged_Dumbbell_Deadlift",
+  "peso muerto rumano en multipower":"Smith_Machine_Stiff-Legged_Deadlift","rdl a una pierna (unilateral)":"Kettlebell_One-Legged_Deadlift",
+  "hip thrust":"Barbell_Hip_Thrust","hip thrust con pausa":"Barbell_Hip_Thrust","hip thrust a una pierna":"~Single_Leg_Glute_Bridge","puente de glúteo":"Butt_Lift_Bridge",
+  "buenos días":"Good_Morning","buenos días con ssb":"~Good_Morning","hiperextensión (banco)":"Hyperextensions_Back_Extensions","nordic ham curl":"Natural_Glute_Ham_Raise",
+  "curl femoral tumbado":"Lying_Leg_Curls","curl femoral sentado":"Seated_Leg_Curl","curl femoral de pie":"Standing_Leg_Curl","extensión de cadera en polea":"One-Legged_Cable_Kickback",
+  "press banca":"Barbell_Bench_Press_-_Medium_Grip","press banca inclinado":"Barbell_Incline_Bench_Press_-_Medium_Grip","press banca declinado":"Decline_Barbell_Bench_Press",
+  "press banca cerrado (tríceps)":"Close-Grip_Barbell_Bench_Press","press mancuernas plano":"Dumbbell_Bench_Press","press mancuernas inclinado":"Incline_Dumbbell_Press",
+  "press en máquina":"Machine_Bench_Press","aperturas con mancuernas":"Dumbbell_Flyes","aperturas en máquina (peck deck)":"Butterfly","cruce de poleas":"Cable_Crossover",
+  "fondos en paralelas":"Dips_-_Chest_Version","fondos lastrados (pecho)":"Dips_-_Chest_Version","flexiones":"Pushups","flexiones lastradas":"Pushups",
+  "press banca en multipower":"Smith_Machine_Bench_Press","press inclinado en multipower":"Smith_Machine_Incline_Bench_Press","press banca con pausa":"Barbell_Bench_Press_-_Medium_Grip",
+  "press banca tempo 3-0-1":"Barbell_Bench_Press_-_Medium_Grip","press banca agarre ancho":"Wide-Grip_Barbell_Bench_Press","press mancuernas neutro":"Dumbbell_Bench_Press_with_Neutral_Grip",
+  "aperturas en polea inclinado":"Incline_Cable_Flye",
+  "press militar de pie":"Standing_Military_Press","press militar mancuernas":"Standing_Dumbbell_Press","press militar en multipower":"Smith_Machine_Overhead_Shoulder_Press",
+  "press militar sentado (mancuernas)":"Seated_Dumbbell_Press","press en máquina hombro":"Machine_Shoulder_Military_Press","press arnold":"Arnold_Dumbbell_Press",
+  "elevaciones laterales":"Side_Lateral_Raise","elevaciones laterales en polea":"Standing_Low-Pulley_Deltoid_Raise","elevaciones laterales unilateral en polea":"Standing_Low-Pulley_Deltoid_Raise",
+  "elevaciones laterales inclinado (mancuerna)":"One-Arm_Incline_Lateral_Raise","elevaciones frontales":"Front_Dumbbell_Raise","remo al mentón (upright row)":"Upright_Barbell_Row",
+  "remo al mentón en polea":"Upright_Cable_Row","pájaros / deltoides posterior":"Seated_Bent-Over_Rear_Delt_Raise","pájaros en polea":"Cable_Rear_Delt_Fly","face pull":"Face_Pull",
+  "dominadas":"Pullups","dominadas lastradas":"Weighted_Pull_Ups","dominadas supinas":"Chin-Up","jalón al pecho":"Wide-Grip_Lat_Pulldown","jalón agarre cerrado":"Close-Grip_Front_Lat_Pulldown",
+  "jalón agarre medio":"~Wide-Grip_Lat_Pulldown","jalón agarre abierto":"Wide-Grip_Lat_Pulldown","jalón agarre neutro":"V-Bar_Pulldown","jalón unilateral en polea":"One_Arm_Lat_Pulldown",
+  "pullover en polea":"Straight-Arm_Pulldown","pullover con mancuerna":"Straight-Arm_Dumbbell_Pullover","dominadas neutras":"V-Bar_Pullup","dominadas negativas":"~Pullups",
+  "jalón supino agarre estrecho":"Underhand_Cable_Pulldowns",
+  "remo con barra":"Bent_Over_Barbell_Row","remo con barra supino (yates)":"Reverse_Grip_Bent-Over_Rows","remo pendlay":"~Bent_Over_Barbell_Row","remo yates (supino)":"Reverse_Grip_Bent-Over_Rows",
+  "remo en multipower":"Smith_Machine_Bent_Over_Row","remo con mancuerna":"Bent_Over_Two-Dumbbell_Row","remo mancuerna unilateral (banco)":"One-Arm_Dumbbell_Row",
+  "remo mancuerna apoyo pecho":"Dumbbell_Incline_Row","remo en t":"T-Bar_Row_with_Handle","remo landmine (barra en punta)":"Bent_Over_Two-Arm_Long_Bar_Row",
+  "remo en polea (barra ancha)":"~Seated_Cable_Rows","remo en polea agarre cerrado":"Seated_Cable_Rows","remo en polea unilateral":"Seated_One-arm_Cable_Pulley_Rows",
+  "remo en polea baja":"Seated_Cable_Rows","remo invertido (peso corporal)":"Inverted_Row","encogimientos (trapecio)":"Barbell_Shrug","encogimientos con mancuernas":"Dumbbell_Shrug",
+  "encogimientos en multipower":"~Smith_Machine_Behind_the_Back_Shrug",
+  "curl con barra":"Barbell_Curl","curl con barra z":"EZ-Bar_Curl","curl con barra z en predicador":"Preacher_Curl","curl con mancuernas":"Dumbbell_Bicep_Curl",
+  "curl inclinado (mancuernas)":"Incline_Dumbbell_Curl","curl martillo":"Hammer_Curls","curl martillo en polea (cuerda)":"Cable_Hammer_Curls_-_Rope_Attachment",
+  "curl en predicador":"Preacher_Curl","curl concentrado":"Concentration_Curls","curl en polea":"Standing_Biceps_Cable_Curl","curl 21s":"Barbell_Curl","curl inverso":"Reverse_Barbell_Curl",
+  "press francés":"Lying_Triceps_Press","press francés con barra z":"EZ-Bar_Skullcrusher","extensión de tríceps en polea":"Triceps_Pushdown",
+  "extensión tríceps en polea (cuerda)":"Triceps_Pushdown_-_Rope_Attachment","extensión tríceps unilateral en polea":"Cable_One_Arm_Tricep_Extension",
+  "extensión sobre cabeza (mancuerna)":"Standing_Dumbbell_Triceps_Extension","extensión tríceps sobre cabeza en polea":"Cable_Rope_Overhead_Triceps_Extension",
+  "fondos de tríceps (banco)":"Bench_Dips","fondos en paralelas (tríceps)":"Dips_-_Triceps_Version","patada de tríceps":"Tricep_Dumbbell_Kickback",
+  "plancha frontal":"Plank","plancha lateral":"Side_Bridge","rueda abdominal":"Ab_Roller","crunch en polea":"Cable_Crunch","elevación de piernas colgado":"Hanging_Leg_Raise",
+  "russian twist":"Russian_Twist","pallof press (anti-rotación)":"Pallof_Press","woodchop en polea":"Standing_Cable_Wood_Chop","dead bug":"Dead_Bug",
+  "paseo del granjero":"Farmers_Walk","suitcase carry (una mano)":"~Farmers_Walk","cable crunch de rodillas":"Cable_Crunch","landmine twist":"Landmine_180s",
+  "plancha con peso":"Plank","elevación de piernas en banco":"Flat_Bench_Lying_Leg_Raise",
+  "cargada de potencia (power clean)":"Power_Clean","arrancada (power snatch)":"Power_Snatch","cargada colgante (hang clean)":"Hang_Clean","push press":"Push_Press",
+  "push jerk":"Power_Jerk","clean & jerk":"Clean_and_Jerk","tirón alto (high pull)":"~Clean_Pull","salto al cajón (box jump)":"Front_Box_Jump",
+  "elevación de gemelos de pie":"Standing_Calf_Raises","elevación de gemelos de pie en multipower":"Smith_Machine_Calf_Raise","elevación de gemelos sentado":"Seated_Calf_Raise",
+  "gemelo a una pierna":"~Standing_Dumbbell_Calf_Raise","gemelo en prensa":"Calf_Press_On_The_Leg_Press_Machine","curl de muñeca":"Seated_Palm-Up_Barbell_Wrist_Curl",
+  "curl de muñeca con barra z":"~Seated_Palm-Up_Barbell_Wrist_Curl","curl de muñeca inverso":"Seated_Palms-Down_Barbell_Wrist_Curl","farmer hold (agarre)":"~Farmers_Walk",
+  "extensión de cuádriceps isométrica (máquina)":"Leg_Extensions","elevación de gemelos isométrica (de pie)":"Standing_Calf_Raises",
+  "elevación de gemelo isométrica a una pierna":"~Standing_Dumbbell_Calf_Raise","puente de glúteo isométrico":"Butt_Lift_Bridge","curl femoral isométrico (máquina)":"Lying_Leg_Curls",
+  "zancada isométrica (split squat hold)":"Split_Squat_with_Dumbbells","rotación externa de hombro isométrica (polea)":"External_Rotation_with_Cable",
+  "rotación interna de hombro isométrica (polea)":"Cable_Internal_Rotation","elevación lateral isométrica (contra pared)":"~Side_Lateral_Raise",
+  "colgado pasivo en barra (dead hang)":"~One_Handed_Hang","press pallof isométrico":"Pallof_Press","dead bug isométrico":"Dead_Bug",
+  "extensión lumbar isométrica (banco romano)":"Hyperextensions_Back_Extensions","extensión de muñeca isométrica":"~Seated_Palms-Down_Barbell_Wrist_Curl",
+  "flexión de muñeca isométrica":"~Seated_Palm-Up_Barbell_Wrist_Curl",
+  "movilidad de cadera":"~Standing_Hip_Circles","gato-camello":"Cat_Stretch","activación de glúteo (banda)":"~Monster_Walk","sentadilla profunda (holds)":"~Bodyweight_Squat",
+  "thrusters":"~Kettlebell_Thruster","battle ropes":"Battling_Ropes","sled push (empuje trineo)":"Sled_Push","mountain climbers":"Mountain_Climbers","remo (máquina)":"Rowing_Stationary",
+  "bicicleta / assault bike":"Bicycling_Stationary","cinta / carrera":"Running_Treadmill","comba":"Rope_Jumping",
+  "swing con kettlebell":"~One-Arm_Kettlebell_Swings",
+  "sentadilla en multipower":"Smith_Machine_Squat","sentadilla desde pines":"~Barbell_Squat","peso muerto desde pines (rack pull)":"Rack_Pulls",
+  "press desde pines (multipower)":"~Pin_Presses","remo pendlay desde pines":"~Bent_Over_Barbell_Row","zancada en multipower":"~Smith_Single-Leg_Split_Squat",
+  "hip thrust en multipower":"~Barbell_Hip_Thrust","elevación de gemelos en multipower":"Smith_Machine_Calf_Raise",
+  "remo ergómetro":"Rowing_Stationary","assault bike (calorías)":"~Bicycling_Stationary","carrera":"~Running_Treadmill","comba (dobles)":"Rope_Jumping",
+  "thrusters con mancuernas":"~Kettlebell_Thruster","thrusters con barra":"~Kettlebell_Thruster","sentadilla goblet con mancuerna":"Goblet_Squat",
+  "snatch con mancuerna":"~One-Arm_Kettlebell_Snatch","cargada con mancuernas":"Dumbbell_Clean","peso muerto con barra":"Barbell_Deadlift",
+  "press de hombro con mancuernas":"Dumbbell_Shoulder_Press","push press con barra":"Push_Press","sentadilla al aire (air squat)":"Bodyweight_Squat",
+  "zancadas con mancuernas":"Dumbbell_Lunges","sentadilla búlgara con mancuernas":"Split_Squat_with_Dumbbells","paseo del granjero con mancuernas":"Farmers_Walk",
+  "toes to bar":"~Hanging_Leg_Raise","v-ups":"Jackknife_Sit-Up",
+};
+// Foto de un ejercicio: exacta por nombre; si es un ejercicio propio, la del
+// ejercicio de la biblioteca más largo que aparezca en su nombre (como variante).
+const EX_PHOTO_KEYS = Object.keys(EX_PHOTO).sort((a,b)=>b.length-a.length);
+const exPhotoCache = {};
+function exPhotoOf(name){
+  const k=notesKey(name); if(!k) return null;
+  if(k in exPhotoCache) return exPhotoCache[k];
+  let v=EX_PHOTO[k], approx=false;
+  // Solo variantes claras: «<ejercicio> con …/en …/a …/(…)/tempo/pausa/lastrado/unilateral».
+  if(!v){ const base=EX_PHOTO_KEYS.find(b=>k.startsWith(b+" ")&&/^((con|en|a|al|sin|tempo|pausa|lastrad[oa]s?|unilateral|ligero|pesado)(?=\s|$)|\(|-|\d)/.test(k.slice(b.length+1))); if(base){ v=EX_PHOTO[base]; approx=true; } }
+  const r=v?{id:v.replace(/^~/,""),approx:approx||v[0]==="~"}:null;
+  return exPhotoCache[k]=r;
+}
+const exPhotoUrl = (id,frame,src) => `${EX_PHOTO_SRC[src||0]}${id}/${frame||0}.jpg`;
+// Imagen de un ejercicio. «anim»: alterna inicio/final; «frame»: fija una.
+function ExPhoto({name,size,height,anim,frame,radius,onClick,style,whole}){
+  const p=exPhotoOf(name);
+  const [src,setSrc]=React.useState(0), [f,setF]=React.useState(0), [bad,setBad]=React.useState(false);
+  React.useEffect(()=>{ if(!anim||frame!=null) return; const t=setInterval(()=>setF(x=>1-x),1300); return ()=>clearInterval(t); },[anim,frame]);
+  if(!p||bad) return null;
+  const fr=frame!=null?frame:f, w=size||64, h=height||Math.round(w*0.75);
+  const img=<img src={exPhotoUrl(p.id,fr,src)} alt={`${name}: ${fr?"posición final":"posición inicial"}`} loading="lazy" decoding="async" draggable={false}
+    onError={()=>{ if(src<EX_PHOTO_SRC.length-1) setSrc(src+1); else setBad(true); }}
+    style={{width:"100%",height:"100%",objectFit:whole?"contain":"cover",display:"block",background:"#fff"}}/>;
+  // «whole»: foto entera (proporción original 3:2), sin recortar.
+  const box={width:w==="100%"?"100%":w,...(whole?{aspectRatio:"850 / 567",maxHeight:height||"62vh"}:{height:h}),flexShrink:0,borderRadius:radius!=null?radius:10,overflow:"hidden",background:"#fff",border:"1px solid #e6ebf3",position:"relative",...(style||{})};
+  return onClick
+    ?<button type="button" onClick={e=>{ e.stopPropagation(); onClick(); }} aria-label={`Ver fotos de ${name}`} title="Ver fotos y protocolo" style={{...box,padding:0,cursor:"zoom-in",fontFamily:"inherit"}}>{img}<span aria-hidden="true" style={{position:"absolute",right:3,bottom:3,fontSize:10,lineHeight:1,background:"rgba(15,23,42,.65)",color:"#fff",borderRadius:6,padding:"2px 4px"}}>🔍</span></button>
+    :<div style={box}>{img}</div>;
+}
+// Protocolo legible de una fila de ejercicio (lo que hay que hacer hoy).
+function exProtocolItems(ex){
+  if(!ex) return [];
+  const iso=isIsoRow(ex), out=[];
+  if(ex.sets||ex.reps) out.push(["🔁","Series",`${ex.sets?ex.sets+" × ":""}${ex.reps||"—"}${iso||/s$|seg|min|'/.test(String(ex.reps||""))?"":" reps"}`]);
+  const kg=ex.load_band?bandLabel(ex.load_band):(ex.prescribed_weight!=null&&ex.prescribed_weight!==""?`${fmtKgN(parseFloat(ex.prescribed_weight))} kg`:null);
+  if(kg) out.push(["🏋️","Carga",kg]);
+  if(ex.rir!=null&&ex.rir!=="") out.push(["🎯","RIR",`${ex.rir} · deja ${ex.rir} rep${Number(ex.rir)===1?"":"s"} en reserva`]);
+  if(ex.rest_seconds) out.push(["⏱","Descanso",ex.rest_seconds>=60?`${(Math.round(ex.rest_seconds/6)/10).toLocaleString("es-ES")} min`:`${ex.rest_seconds} s`]);
+  if(ex.protocol&&PROTO_SHORT[ex.protocol]) out.push(["📋","Método",PROTO_SHORT[ex.protocol]]);
+  const tempo=String(ex.exercise_name||"").match(/tempo\s*(\d-\d-\d(?:-\d)?)/i); if(tempo) out.push(["🐢","Tempo",`${tempo[1]} (bajar-pausa-subir)`]);
+  if(/pausa/i.test(ex.exercise_name||"")) out.push(["⏸","Pausa","1-2 s abajo, sin rebote"]);
+  return out;
+}
+// Visor a pantalla completa: fotos grandes, nombre y protocolo.
+const EXV = {cur:null, hosts:[]};
+const openExPhoto = (name, ex) => { EXV.cur={name,ex}; EXV.hosts.forEach(h=>h.f()); };
+function ExPhotoHost({coach,notify}){
+  const [,f]=React.useReducer(x=>x+1,0);
+  const me=React.useRef({f});
+  React.useEffect(()=>{ EXV.hosts.push(me.current); return ()=>{ EXV.hosts=EXV.hosts.filter(h=>h!==me.current); }; },[]);
+  if(!EXV.cur||EXV.hosts[EXV.hosts.length-1]!==me.current) return null;
+  return <ExPhotoViewer key={EXV.cur.name} name={EXV.cur.name} ex={EXV.cur.ex} coach={coach} notify={notify} onClose={()=>{ EXV.cur=null; f(); }}/>;
+}
+function ExPhotoViewer({name,ex,coach,notify,onClose}){
+  const p=exPhotoOf(name);
+  const [fr,setFr]=React.useState(null); // null = alterna
+  React.useEffect(()=>{ const k=(e)=>{ if(e.key==="Escape"){ e.stopPropagation(); onClose(); } else if(e.key==="ArrowLeft") setFr(0); else if(e.key==="ArrowRight") setFr(1); }; window.addEventListener("keydown",k,true); return ()=>window.removeEventListener("keydown",k,true); },[]);
+  const items=exProtocolItems(ex?{...ex,exercise_name:name}:null);
+  const notes=ex&&ex.notes;
+  const seg=(v,l)=><button type="button" aria-pressed={fr===v} onClick={()=>setFr(v)} style={{flex:1,border:"none",borderRadius:9,padding:"8px 6px",fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",background:fr===v?"#0f172a":"transparent",color:fr===v?"#fff":"#475569"}}>{l}</button>;
+  return ReactDOM.createPortal(
+    <div role="dialog" aria-modal="true" aria-label={`Fotos de ${name}`} onClick={onClose} style={{position:"fixed",inset:0,zIndex:1750,background:"rgba(15,23,42,.72)",display:"flex",alignItems:"stretch",justifyContent:"center"}}>
+      <div onClick={e=>e.stopPropagation()} className="exv" style={{width:"100%",maxWidth:720,background:"#fff",display:"flex",flexDirection:"column",minHeight:0,
+        boxShadow:"0 20px 60px rgba(0,0,0,.35)"}}>
+        <div style={{flexShrink:0,display:"flex",alignItems:"flex-start",gap:10,padding:"calc(12px + env(safe-area-inset-top)) 14px 10px",borderBottom:"1px solid #e6ebf3"}}>
+          <div style={{flex:1,minWidth:0}}>
+            <h2 style={{fontSize:21,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{name}</h2>
+            <div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:5}}><MuscleTags name={name}/>{isIsoRow({exercise_name:name,reps:ex&&ex.reps,protocol:ex&&ex.protocol})&&<span style={{fontSize:10,fontWeight:800,color:"#0369a1",background:"#e0ecfb",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 8px"}}>⏸️ ISOMÉTRICO</span>}</div>
+          </div>
+          <button type="button" onClick={onClose} aria-label="Cerrar fotos" style={{border:"1.5px solid #fca5a5",background:"#fbe6e6",color:"#dc2626",borderRadius:12,padding:"9px 13px",fontSize:14,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>✕ Cerrar</button>
+        </div>
+        <div style={{flex:1,minHeight:0,overflowY:"auto",padding:"12px 14px calc(16px + env(safe-area-inset-bottom))"}}>
+          {p?<>
+            <div style={{display:"grid",gridTemplateColumns:"1fr",gap:8}} className="exv-pics">
+              <ExPhoto name={name} size="100%" whole height="62vh" anim frame={fr} radius={14} style={{border:"1px solid #e6ebf3",margin:"0 auto"}}/>
+            </div>
+            <div style={{display:"flex",gap:4,background:"#f1f4fa",borderRadius:11,padding:3,marginTop:8}} role="group" aria-label="Posición">
+              {seg(0,"① Inicio")}{seg(null,"▶ Movimiento")}{seg(1,"② Final")}
+            </div>
+            {p.approx&&<div style={{fontSize:11,color:"#92400e",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:9,padding:"6px 9px",marginTop:8}}>ℹ️ Foto de una variante muy parecida (mismo gesto; puede cambiar el material o la barra).</div>}
+          </>:<div style={{background:"#f8fafc",border:"1px dashed #dbe2ec",borderRadius:12,padding:"18px 12px",textAlign:"center",fontSize:13,color:"#64748b"}}>📷 Este ejercicio aún no tiene foto en el banco.{coach?" Sube la tuya abajo.":""}</div>}
+          {items.length>0&&<div style={{marginTop:12}}>
+            <div style={{fontSize:12,fontWeight:800,color:"#64748b",letterSpacing:.4,marginBottom:6}}>PROTOCOLO</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(150px,1fr))",gap:6}}>
+              {items.map(([ico,l,v])=><div key={l} style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:11,padding:"8px 10px"}}>
+                <div style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{ico} {l}</div>
+                <div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.25,marginTop:1}}>{v}</div></div>)}
+            </div>
+            {notes&&<div style={{marginTop:6,fontSize:14,color:"#334155",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:11,padding:"8px 10px",lineHeight:1.45}}>📝 {notes}</div>}
+          </div>}
+          <div style={{marginTop:14}}><ExerciseMedia name={name} coach={coach} notify={notify}/></div>
+          {p&&<div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Fotos: Free Exercise DB (dominio público).</div>}
+        </div>
+      </div>
+    </div>,document.body);
+}
 // ── FOTOS Y VÍDEOS DE CADA EJERCICIO ──────────────────────────────────────
 // Se guardan por ejercicio (no por cliente): lo que subas lo ven todos los que
 // lo hagan. Fotos y vídeos van al almacén «exercise-media»; también se pueden
@@ -6938,33 +7119,61 @@ function ExerciseMediaModal({name,coach,notify,onClose}){
     </div>
   </div>;
 }
-// Coach: buscador de ejercicios para gestionar sus fotos y vídeos.
+// Coach: banco de fotos de todos los ejercicios (y sus fotos/vídeos propios).
 function ExerciseMediaLibrary({notify}){
   const M=useExMedia();
-  const [q,setQ]=React.useState(""), [open,setOpen]=React.useState(null);
+  const [q,setQ]=React.useState(""), [cat,setCat]=React.useState(""), [only,setOnly]=React.useState("");
   const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const count=(n)=>exMediaOf(n).length;
-  const names=[...new Set([...exerciseCatalog().map(x=>x.name),...(M.list||[]).map(m=>(exerciseCatalog().find(x=>notesKey(x.name)===m.exercise_key)||{name:m.exercise_key}).name)])];
-  const list=names.filter(n=>!q||norm(n).includes(norm(q))).sort((a,b)=>count(b)-count(a)||a.localeCompare(b)).slice(0,80);
-  const withMedia=names.filter(n=>count(n)>0).length;
+  const catOf={}; Object.entries(EXERCISE_LIBRARY).forEach(([c,l])=>l.forEach(x=>{ if(!catOf[x[0]]) catOf[x[0]]=c; }));
+  const cats=Object.keys(EXERCISE_LIBRARY);
+  const all=exerciseCatalog().filter(x=>!/^(AMRAP|EMOM|Tabata|Circuito)/i.test(x.name));
+  const withPhoto=all.filter(x=>exPhotoOf(x.name)).length;
+  const list=all.filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!cat||(cat==="_custom"?x.custom:catOf[x.name]===cat))
+    &&(!only||(only==="photo"?exPhotoOf(x.name):only==="none"?!exPhotoOf(x.name)&&!count(x.name):count(x.name)>0)))
+    .sort((a,b)=>{ const ci=(n)=>{ const i=cats.indexOf(catOf[n]||""); return i<0?99:i; }; return (cat?0:ci(a.name)-ci(b.name))||a.name.localeCompare(b.name); });
+  const chip=(on,txt,onClick,key)=><button key={key||txt} type="button" aria-pressed={on} onClick={onClick} style={{flexShrink:0,fontSize:12,fontWeight:700,padding:"6px 11px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569",whiteSpace:"nowrap"}}>{txt}</button>;
   return(<div>
     <div className="card" style={{padding:"12px 14px",marginBottom:12,background:"#f8fbff",border:"1px solid #bcd3ee"}}>
-      <div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>🎬 Fotos y vídeos de los ejercicios</div>
-      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Sube cómo se hace cada ejercicio. Tus clientes lo verán en su entreno («▶ Cómo se hace») y al tocar el nombre del ejercicio.</div>
-      <div style={{fontSize:12,fontWeight:800,color:"#0284c7",marginTop:6}}>{withMedia} ejercicio{withMedia!==1?"s":""} con material</div>
-      {M.missing&&<div style={{fontSize:12,color:"#b45309",marginTop:6,fontWeight:700}}>⚠️ Falta ejecutar docs/ejercicios-media.sql en Supabase para poder guardarlos.</div>}
+      <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>📷 Banco de fotos de ejercicios</div>
+      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Cada ejercicio con su foto de inicio y de final. Toca uno para verlo en grande con su protocolo o para añadir tus propias fotos y vídeos. Tus clientes las ven en su entreno.</div>
+      <div style={{display:"flex",gap:12,flexWrap:"wrap",marginTop:6,fontSize:12,fontWeight:800}}>
+        <span style={{color:"#0284c7"}}>{withPhoto} de {all.length} con foto</span>
+        <span style={{color:"#7c3aed"}}>{all.filter(x=>count(x.name)>0).length} con material tuyo</span>
+      </div>
+      {M.missing&&<div style={{fontSize:12,color:"#b45309",marginTop:6,fontWeight:700}}>⚠️ Para subir tus fotos y vídeos falta ejecutar docs/ejercicios-media.sql en Supabase (las del banco se ven igual).</div>}
     </div>
-    <input className="inp" placeholder="🔎 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:10}}/>
-    <div className="card" style={{padding:0,overflow:"hidden"}}>
-      {list.map((n,i)=>{ const c=count(n); return(
-        <button key={n} type="button" onClick={()=>setOpen(n)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"10px 13px",border:"none",borderTop:i?"1px solid #eef1f6":"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
-          <span style={{fontSize:18}}>{c?"🎬":"➕"}</span>
-          <span style={{flex:1,minWidth:0,fontSize:13,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{n}</span>
-          <span style={{fontSize:11,fontWeight:800,color:c?"#0284c7":"#cbd5e1"}}>{c?`${c} archivo${c>1?"s":""}`:"añadir"}</span>
+    <input className="inp" placeholder="🔎 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:8}} aria-label="Buscar ejercicio"/>
+    <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:6}} role="group" aria-label="Categoría">
+      {chip(!cat,"Todos",()=>setCat(""),"_all")}
+      {cats.map(c=>chip(cat===c,c,()=>setCat(cat===c?"":c),c))}
+      {all.some(x=>x.custom)&&chip(cat==="_custom","Propios",()=>setCat(cat==="_custom"?"":"_custom"),"_custom")}
+    </div>
+    <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:8}} role="group" aria-label="Filtrar">
+      {chip(only==="photo","📷 Con foto",()=>setOnly(only==="photo"?"":"photo"),"_p")}
+      {chip(only==="mine","🎬 Con material mío",()=>setOnly(only==="mine"?"":"mine"),"_m")}
+      {chip(only==="none","Sin nada",()=>setOnly(only==="none"?"":"none"),"_n")}
+    </div>
+    <div style={{fontSize:11,fontWeight:700,color:"#94a3b8",marginBottom:6}}>{list.length} ejercicio{list.length!==1?"s":""}</div>
+    <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(150px,1fr))",gap:10}}>
+      {list.map(x=>{ const c=count(x.name), ph=exPhotoOf(x.name); return(
+        <button key={x.name} type="button" onClick={()=>openExPhoto(x.name,{sets:x.sets,reps:x.reps,rest_seconds:x.rest})} aria-label={`${x.name}${ph?"":" (sin foto)"}`}
+          style={{display:"flex",flexDirection:"column",textAlign:"left",padding:0,border:"1px solid #e6ebf3",borderRadius:14,overflow:"hidden",background:"#fff",cursor:"pointer",fontFamily:"inherit"}}>
+          {ph?<ExPhoto name={x.name} size="100%" height={118} radius={0} style={{border:"none",borderBottom:"1px solid #eef1f6"}}/>
+            :<span aria-hidden="true" style={{height:118,display:"flex",alignItems:"center",justifyContent:"center",background:"#f1f4fa",fontSize:28,color:"#cbd5e1",borderBottom:"1px solid #eef1f6"}}>📷</span>}
+          <span style={{padding:"8px 10px 9px",display:"block"}}>
+            <span style={{display:"block",fontSize:13,fontWeight:800,color:"#0f172a",lineHeight:1.25}}>{x.name}</span>
+            <span style={{display:"block",fontSize:11,color:"#64748b",marginTop:3}}>{x.sets}×{x.reps}{x.rest?` · ${x.rest>=60?(Math.round(x.rest/6)/10).toLocaleString("es-ES")+" min":x.rest+" s"}`:""}</span>
+            <span style={{display:"flex",gap:4,flexWrap:"wrap",marginTop:4}}>
+              {c>0&&<span style={{fontSize:10,fontWeight:800,color:"#7c3aed",background:"#f3ecfb",borderRadius:20,padding:"1px 7px"}}>🎬 {c}</span>}
+              {ph&&ph.approx&&<span style={{fontSize:10,fontWeight:700,color:"#92400e",background:"#fffbeb",borderRadius:20,padding:"1px 7px"}}>variante</span>}
+              {!ph&&!c&&<span style={{fontSize:10,fontWeight:700,color:"#94a3b8"}}>sin foto · añade la tuya</span>}
+            </span>
+          </span>
         </button>); })}
-      {!list.length&&<div style={{padding:16,fontSize:12,color:"#94a3b8",textAlign:"center"}}>Sin resultados</div>}
     </div>
-    {open&&<ExerciseMediaModal name={open} coach notify={notify} onClose={()=>setOpen(null)}/>}
+    {!list.length&&<div style={{padding:16,fontSize:12,color:"#94a3b8",textAlign:"center"}}>Sin resultados</div>}
+    <div style={{fontSize:10,color:"#94a3b8",marginTop:10}}>Fotos del banco: Free Exercise DB (dominio público).</div>
   </div>);
 }
 function ExName({client,name,children,style}){
@@ -7024,6 +7233,7 @@ function ExerciseHistoryModal({client,name,assignedSessions,assignedExercises,co
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:520}}>
         <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a",lineHeight:1.2}}>{name}</h2>
         <div style={{display:"flex",gap:6,alignItems:"center",flexWrap:"wrap",margin:"4px 0 12px"}}><span style={{fontSize:12,color:"#64748b"}}>{client.name}</span><MuscleTags name={name}/><CxTag name={name}/></div>
+        {exPhotoOf(name)&&<div style={{marginBottom:12}}><ExPhoto name={name} size="100%" height={220} anim radius={14} onClick={()=>openExPhoto(name)}/></div>}
         <ExerciseMedia name={name} coach={coach} notify={notify}/>
         {!pts.length&&!tests.length
           ?<div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:16,fontSize:13,color:"#64748b",textAlign:"center"}}>Aún no hay registros de este ejercicio. Aparecerán al marcarlo como hecho con su carga.</div>
@@ -8282,6 +8492,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
   return(<>
     <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"18px 16px calc(100px + env(safe-area-inset-bottom))"}} className="fade portal-root">
       <ExerciseHistoryHost assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} notify={notify}/>
+      <ExPhotoHost notify={notify}/>
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#ff7a45,#f2441d)",zIndex:500}}/>}
       {/* Cabecera del resto de pestañas: título grande, marca y bono, en el mismo estilo que Inicio */}
       {tab!=="inicio"&&<div style={{display:"flex",alignItems:"center",gap:11,marginBottom:18}}>
@@ -8947,6 +9158,7 @@ function PlanExRows({client,exs}){
     {exs.map((e,i)=>{ const kg=e.load_band?bandLabel(e.load_band):(e.prescribed_weight!=null&&e.prescribed_weight!==""?`${fmtKgN(parseFloat(e.prescribed_weight))} kg`:""); return(
       <div key={e.id||i} style={{display:"flex",alignItems:"center",gap:10,padding:"9px 11px",borderTop:i?"1px solid #eef1f7":"none",background:"#fff"}}>
         <span style={{width:22,height:22,borderRadius:7,flexShrink:0,display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,background:"#eef4fc",color:"#0284c7"}}>{i+1}</span>
+        <ExPhoto name={e.exercise_name} size={64} onClick={()=>openExPhoto(e.exercise_name,e)}/>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/>{exMediaOf(e.exercise_name).length>0&&<span title="Tiene vídeo o foto: toca el nombre" style={{marginLeft:5,fontSize:11}}>🎬</span>}</div>
           <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&e.reps?`${e.sets} × ${e.reps}${isIsoRow(e)?"":" reps"}`:""}{PROTO_SHORT[e.protocol]?` · ${PROTO_SHORT[e.protocol]}`:""}{e.rest_seconds?` · descanso ${e.rest_seconds>=60?(Math.round(e.rest_seconds/6)/10).toLocaleString("es-ES")+" min":e.rest_seconds+" s"}`:""}</div>
@@ -10456,7 +10668,7 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:12,paddingBottom:4}}>
-        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"],["media","🎬 Vídeos"]].map(([id,label])=>(
+        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"],["media","📷 Fotos"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
@@ -12405,8 +12617,8 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 function ExerciseCard({ae, index, onComplete, saving, client}) {
   const [expanded,setExpanded] = React.useState(false);
   const [howTo,setHowTo] = React.useState(false);
-  useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length;
-  const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); setHowTo(true); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
+  useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length+(exPhotoOf(ae.exercise_name)?1:0);
+  const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); openExPhoto(ae.exercise_name,ae); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
   const howModal=howTo&&<ExerciseMediaModal name={ae.exercise_name} notify={()=>{}} onClose={()=>setHowTo(false)}/>;
   const [actualWeight,setActualWeight] = React.useState(ae.prescribed_weight||"");
   const [actualReps,setActualReps] = React.useState(ae.reps||"");
@@ -12416,6 +12628,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3",opacity:0.6}}>
       <div style={{display:"flex",gap:10,alignItems:"center"}}>
         <div style={{width:22,height:22,borderRadius:6,background:"#e2f4e8",border:"1px solid #14532d",display:"flex",alignItems:"center",justifyContent:"center",fontSize:12}}>✓</div>
+        <ExPhoto name={ae.exercise_name} size={56} onClick={()=>openExPhoto(ae.exercise_name,ae)}/>
         <div>
           <div style={{fontSize:13,fontWeight:600,color:"#16a34a",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{ae.exercise_name}{howBtn}</div>
           <div style={{fontSize:11,color:"#94a3b8"}}>{ae.actual_weight||ae.prescribed_weight}kg · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
@@ -12432,6 +12645,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",cursor:"pointer"}} onClick={()=>setExpanded(!expanded)}>
         <div style={{display:"flex",gap:10,alignItems:"center"}}>
           <div style={{width:22,height:22,borderRadius:6,background:"#e6f0fb",border:"1px solid #bcd3ee",display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:700,color:"#0284c7",flexShrink:0}}>{index+1}</div>
+          <ExPhoto name={ae.exercise_name} size={84} onClick={()=>openExPhoto(ae.exercise_name,ae)}/>
           <div>
             <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
             <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
