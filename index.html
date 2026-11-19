@@ -646,6 +646,8 @@ const readSafeInsets = () => { try{ const d=document.createElement("div");
 // La modalidad va en la ficha (profile.plan_type = "hibrido", profile.open_per_week);
 // los días open, en la tabla open_sessions (docs/hibrido.sql).
 const OPEN = {list:[], missing:false};
+// Entrenos asignados (para que la rotación de días tenga en cuenta lo ya hecho, también en los open).
+const ASG = {list:[], ex:[]};
 const isHybrid = (c) => profileOf(c).plan_type==="hibrido";
 const openPerWeek = (c) => { const n=parseInt(profileOf(c).open_per_week,10); return n>0?n:null; }; // null = sin límite
 const opensOf = (c, list) => ((list||OPEN.list)||[]).filter(o=>c&&o.client_id===c.id);
@@ -702,8 +704,14 @@ function autoRoutineFor(client, date, sessions, annualBlocks){
   const nDays = Math.max(days.length, td.length || client.days_week || 0) || 4;
   const plan = (typeof weekPlanFor==="function") ? weekPlanFor(blk, nDays, macroWeek(date), client.goal) : WEEK_PLAN;
   const idx = days.indexOf(date);
-  const dayType = plan[idx % plan.length];
-  const variant = days.slice(0,idx).filter((d,i)=>plan[i%plan.length]===dayType).length; // 2º día igual → variantes
+  // Lo que ya entrenó esa semana (en clase o en su open) cuenta: si un día anterior
+  // hizo otro tipo de día del previsto, hoy le toca el que aún le falta.
+  const doneType=(d)=>{ const a=(ASG.list||[]).find(x=>x.client_id===client.id&&x.date===d); if(!a||!a.day_type||!plan.includes(a.day_type)) return null;
+    return (a.status==="done"||a.status==="completed"||(ASG.ex||[]).some(e=>e.session_id===a.id&&(e.done||e.completed)))?a.day_type:null; };
+  const rem = Array.from({length:Math.max(nDays,idx+1)},(_,i)=>plan[i%plan.length]), prevT=[];
+  days.slice(0,idx).forEach(d=>{ const t=d<=TODAY?doneType(d):null, k=t!=null?rem.indexOf(t):-1; prevT.push(t!=null?t:rem[0]); rem.splice(k>=0?k:0,1); });
+  const dayType = rem.length?rem[0]:plan[idx % plan.length];
+  const variant = prevT.filter(t=>t===dayType).length; // 2º día igual → variantes
   return { dayType, label:dayTypeLabel(dayType), blk, variant, routine:buildDayRoutine(dayType, blk, client.goal, macroWeek(date), levelOf(client), variant) };
 }
 
@@ -803,6 +811,7 @@ function App() {
       setProgress(pr.data||[]); setRecords(rec.data||[]); setAchievements(ach.data||[]);
       setAnnualBlocks(ab.data||[]); setSessionTemplates(st.data||[]); setTemplateExercises(te.data||[]);
       setClientWeights(cw.data||[]); setAssignedSessions(as_.data||[]); setAssignedExercises(ae.data||[]);
+      ASG.list=as_.data||[]; ASG.ex=ae.data||[];
       setWeightHistory(wh.data||[]);
       setWaitlist(wl.data||[]);
       // Leads/valoraciones: fetch aparte para no romper si aún no existe la tabla.
@@ -927,6 +936,7 @@ function App() {
     }
   };
 
+  const clientWeightsEff = React.useMemo(()=>effectiveWeights(clientWeights,assignedSessions,assignedExercises),[clientWeights,assignedSessions,assignedExercises]);
   // Atleta con sesión segura: sus reservas + el aforo de los demás (sin datos privados).
   const portalSessions = React.useMemo(()=>{
     if(mode!=="client"||!loggedClient||!roster) return sessions;
@@ -951,10 +961,10 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights:clientWeightsEff,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
       {mode==="client"&&loggedClient&&isBaja(loggedClient)&&<BajaScreen client={loggedClient} onLogout={doLogout}/>}
-      {mode==="client"&&loggedClient&&!isBaja(loggedClient)&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&!isBaja(loggedClient)&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeightsEff.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
@@ -2445,7 +2455,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                         <ClientGestureNotes client={c}/>
                         {/* Historial: sesiones por día/fecha y pagos (toca una sesión para ver cargas y replicar) */}
                         <div style={{marginBottom:14}}>
-                          <ClientHistoryPanel client={c} history={history} payments={payments} assignedSessions={assignedSessions} sessionTemplates={sessionTemplates} onOpenSession={(h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}/>
+                          <ClientHistoryPanel client={c} history={history} payments={payments} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} onOpenSession={(h)=>setHistView({client:c,date:h.date,type:h.type,time:h.time})}/>
                         </div>
                         {/* Avatar upload */}
                         <div style={{marginBottom:14}}>
@@ -4344,31 +4354,38 @@ function SwipeDismiss({onDismiss,children,style,radius=0,label="🗑 Quitar"}) {
 }
 
 // ── HISTORIAL DEL CLIENTE (sesiones por día/fecha y pagos registrados) ─────
-function ClientHistoryPanel({client,history,payments,assignedSessions,sessionTemplates,onOpenSession,compact}) {
+function ClientHistoryPanel({client,history,payments,assignedSessions,assignedExercises,sessionTemplates,onOpenSession,compact}) {
   const [tab,setTab]=React.useState("todo");
   const [limit,setLimit]=React.useState(compact?6:12);
   const DOW=["Dom","Lun","Mar","Mié","Jue","Vie","Sáb"];
   const ses=(history||[]).filter(h=>h.client_id===client.id&&h.date).map(h=>({kind:"s",date:h.date,time:h.time||"",h:{...h,type:sessionName(h,assignedSessions,sessionTemplates)}}));
+  // Open (días por su cuenta) y entrenos registrados sin asistencia: también cuentan en el historial.
+  const hDates=new Set(ses.map(x=>x.date));
+  const isOpenDay=(d)=>(OPEN.list||[]).some(o=>o.client_id===client.id&&o.date===d);
+  const extra=athleteSessions(client,history,assignedSessions,assignedExercises||[]).filter(x=>!hDates.has(x.date)).map(x=>{ const op=x.open||isOpenDay(x.date);
+    const lbl=(x.asig&&DAY_LABEL[x.asig.day_type])||"";
+    return {kind:op?"o":"e",date:x.date,time:x.time||"",x,h:{date:x.date,time:x.time||"",type:op?`🔓 Open${lbl?` · ${lbl}`:""}`:(lbl||"Entreno registrado")}}; });
+  const opens=extra.filter(x=>x.kind==="o"), ses2=[...ses,...extra.filter(x=>x.kind==="e")];
   const pays=(payments||[]).filter(p=>p.client_id===client.id&&p.paid_at).map(p=>({kind:"p",date:String(p.paid_at).slice(0,10),time:"",p}));
-  const all=(tab==="ses"?ses:tab==="pay"?pays:[...ses,...pays]).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||(a.kind==="p"?-1:1));
+  const all=(tab==="ses"?ses2:tab==="open"?opens:tab==="pay"?pays:[...ses2,...opens,...pays]).sort((a,b)=>(b.date+b.time).localeCompare(a.date+a.time)||(a.kind==="p"?-1:1));
   const shown=all.slice(0,limit);
   const lastPay=pays.slice().sort((a,b)=>b.date.localeCompare(a.date))[0];
   const totalPaid=pays.reduce((a,x)=>a+(parseFloat(x.p.amount)||0),0);
   const monthLbl=(d)=>{const t=new Date(d+"T12:00:00").toLocaleDateString("es-ES",{month:"long",year:"numeric"}); return t.charAt(0).toUpperCase()+t.slice(1);};
   const eur=(n)=>`${Math.round((parseFloat(n)||0)*100)/100}€`;
   let lastM="";
-  const TABS=[["todo","Todo"],["ses",`Sesiones (${ses.length})`],["pay",`Pagos (${pays.length})`]];
+  const TABS=[["todo","Todo"],["ses",`Clases (${ses2.length})`],...(opens.length||isHybrid(client)?[["open",`🔓 Open (${opens.length})`]]:[]),["pay",`Pagos (${pays.length})`]];
   return(
     <div>
       <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8,marginBottom:6}}>
         <span className="lbl" style={{marginBottom:0}}>📜 HISTORIAL</span>
-        <span style={{fontSize:10,color:"#94a3b8",fontWeight:700,textAlign:"right"}}>{ses.length} sesiones · {pays.length} pagos ({eur(totalPaid)}){lastPay?` · último pago ${fmtDate(lastPay.date)}`:""}</span>
+        <span style={{fontSize:10,color:"#94a3b8",fontWeight:700,textAlign:"right"}}>{ses2.length+opens.length} sesiones{opens.length?` (${opens.length} open)`:""} · {pays.length} pagos ({eur(totalPaid)}){lastPay?` · último pago ${fmtDate(lastPay.date)}`:""}</span>
       </div>
       <div style={{display:"flex",gap:4,marginBottom:6}}>
         {TABS.map(([k,l])=><button key={k} onClick={()=>{setTab(k);setLimit(compact?6:12);}} style={{flex:1,fontSize:11,fontWeight:700,padding:"5px 4px",borderRadius:8,cursor:"pointer",border:`1px solid ${tab===k?"#0284c7":"#dbe2ec"}`,background:tab===k?"#eef4fc":"#fff",color:tab===k?"#0284c7":"#64748b"}}>{l}</button>)}
       </div>
       {all.length===0
-        ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>{tab==="pay"?"Sin pagos registrados.":tab==="ses"?"Sin sesiones hechas todavía.":"Sin sesiones ni pagos todavía."}</div>
+        ?<div style={{fontSize:12,color:"#94a3b8",padding:"6px 2px"}}>{tab==="pay"?"Sin pagos registrados.":tab==="ses"?"Sin sesiones hechas todavía.":tab==="open"?"Aún no ha hecho ningún open.":"Sin sesiones ni pagos todavía."}</div>
         :<div style={{border:"1px solid #dbe2ec",borderRadius:10,overflow:"hidden"}}>
           {shown.map((x,i)=>{
             const m=x.date.slice(0,7); const head=m!==lastM; lastM=m;
@@ -4376,16 +4393,16 @@ function ClientHistoryPanel({client,history,payments,assignedSessions,sessionTem
             return(
               <React.Fragment key={x.kind+x.date+x.time+i}>
                 {head&&<div style={{fontSize:10,fontWeight:800,color:"#64748b",background:"#f1f4fa",padding:"4px 11px",borderTop:i>0?"1px solid #e6ebf3":"none",letterSpacing:.3}}>{monthLbl(x.date).toUpperCase()}</div>}
-                <div onClick={()=>{ if(x.kind==="s"&&onOpenSession) onOpenSession(x.h); }} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 11px",borderTop:head?"none":"1px solid #eef1f7",cursor:x.kind==="s"&&onOpenSession?"pointer":"default",background:x.kind==="p"?"#f5f1fd":"#fff"}}>
+                <div data-hist={x.kind} onClick={()=>{ if(x.kind!=="p"&&onOpenSession) onOpenSession(x.h); }} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 11px",borderTop:head?"none":"1px solid #eef1f7",cursor:x.kind!=="p"&&onOpenSession?"pointer":"default",background:x.kind==="p"?"#f5f1fd":"#fff"}}>
                   <div style={{width:34,flexShrink:0,textAlign:"center"}}>
                     <div style={{fontSize:9,color:"#94a3b8",fontWeight:700,textTransform:"uppercase"}}>{DOW[nd.getDay()]}</div>
                     <div className="mono" style={{fontSize:13,fontWeight:700,color:"#0f172a"}}>{nd.getDate()}</div>
                   </div>
-                  {x.kind==="s"
+                  {x.kind!=="p"
                     ?<>
                       <div style={{flex:1,minWidth:0}}>
-                        <div style={{fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>✅ {x.h.type||"Sesión"}</div>
-                        <div style={{fontSize:10,color:"#94a3b8"}}>{fmtDate(x.date)}{x.time?` · ${x.time}`:""}</div>
+                        <div style={{fontSize:12,fontWeight:700,color:x.kind==="o"?"#0f766e":"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.kind==="o"?"":x.kind==="e"?"🏋️ ":"✅ "}{x.h.type||"Sesión"}</div>
+                        <div style={{fontSize:10,color:"#94a3b8"}}>{fmtDate(x.date)}{x.time?` · ${String(x.time).slice(0,5)}`:""}{x.x&&x.x.exs&&x.x.exs.length?` · ${x.x.nDone}/${x.x.exs.length} ejercicios`:x.kind==="o"?" · por su cuenta":""}{x.x&&x.x.vol?` · ${x.x.vol.toLocaleString("es-ES")} kg`:""}</div>
                       </div>
                       {onOpenSession&&<span style={{fontSize:11,color:"#0284c7",fontWeight:700,flexShrink:0}}>ver ›</span>}
                     </>
@@ -5470,7 +5487,7 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,payments,c
         <ClientGestureNotes client={client}/>
         {/* Historial: sesiones por día/fecha y pagos */}
         <div style={{marginBottom:14}}>
-          <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
+          <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
         </div>
 
         <div>
@@ -8839,6 +8856,20 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
 // Lista de sus sesiones hechas (asistencias + entrenos registrados), por meses.
 // Al tocar una se ve qué hizo: ejercicios, series, cargas y si subió respecto a la vez anterior.
 const exDone = (e) => !!(e&&(e.completed||e.done));
+// Cargas de referencia teniendo en cuenta lo que ha hecho de verdad (clases y open,
+// lo marque el coach o el propio cliente): si su último entreno con ese ejercicio es
+// posterior a la carga guardada, manda lo que hizo ese día.
+function effectiveWeights(cw, assignedSessions, assignedExercises){
+  const dateOf={}, cidOf={}; (assignedSessions||[]).forEach(a=>{ if(a.date&&a.date<=TODAY){ dateOf[a.id]=a.date; cidOf[a.id]=a.client_id; } });
+  const last={};
+  (assignedExercises||[]).forEach(e=>{ const d=dateOf[e.session_id]; if(!d||!exDone(e)||e.load_band||isIsoRow(e)||!e.exercise_name) return; const kg=exKg(e); if(!kg) return;
+    const k=cidOf[e.session_id]+"|"+notesKey(e.exercise_name), x=last[k]; if(!x||d>x.date||(d===x.date&&kg>x.kg)) last[k]={date:d,kg,name:e.exercise_name,cid:cidOf[e.session_id]}; });
+  const out=(cw||[]).map(w=>({...w})), idx={}; out.forEach((w,i)=>{ idx[w.client_id+"|"+notesKey(w.exercise_name)]=i; });
+  Object.entries(last).forEach(([k,x])=>{ const i=idx[k], at=x.date+"T20:00:00";
+    if(i==null) out.push({id:"d-"+k,client_id:x.cid,exercise_name:x.name,weight:x.kg,updated_at:at,derived:x.date});
+    else { const w=out[i]; if(!w.updated_at||String(w.updated_at).slice(0,10)<x.date) out[i]={...w,weight:x.kg,updated_at:at,derived:x.date}; } });
+  return out;
+}
 const exKg = (e) => { const v=e&&(e.actual_weight!=null&&e.actual_weight!==""?e.actual_weight:e.prescribed_weight); const n=parseFloat(v); return isFinite(n)?n:null; };
 function athleteSessions(client,history,assignedSessions,assignedExercises){
   const mine=(assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date&&a.date<=TODAY);
@@ -8847,7 +8878,9 @@ function athleteSessions(client,history,assignedSessions,assignedExercises){
   mine.forEach(a=>{ const exs=(assignedExercises||[]).filter(e=>e.session_id===a.id).sort((x,y)=>(x.order_index||0)-(y.order_index||0));
     const nDone=exs.filter(exDone).length; if(!byDate[a.date]&&!nDone&&a.status!=="completed") return; // planificado pero no hecho
     byDate[a.date]={...(byDate[a.date]||{date:a.date,came:false}),asig:a,exs,nDone}; });
-  (OPEN.list||[]).filter(o=>o.client_id===client.id&&o.status==="done"&&o.date<=TODAY).forEach(o=>{ const x=byDate[o.date]; if(x) x.open=true; else byDate[o.date]={date:o.date,time:o.time,type:"Open",came:true,open:true}; });
+  (OPEN.list||[]).filter(o=>o.client_id===client.id&&o.status==="done"&&o.date<=TODAY).forEach(o=>{ const x=byDate[o.date]; if(x){ x.open=true; if(!x.time) x.time=o.time; } else byDate[o.date]={date:o.date,time:o.time,type:"Open",came:true,open:true}; });
+  // Open sin marcar «He entrenado» pero con ejercicios hechos: también es su open.
+  (OPEN.list||[]).filter(o=>o.client_id===client.id&&o.status!=="done"&&o.date<=TODAY).forEach(o=>{ const x=byDate[o.date]; if(x&&!x.came){ x.open=true; if(!x.time) x.time=o.time; } });
   return Object.values(byDate).map(x=>{ const exs=x.exs||[];
     const vol=exs.filter(exDone).reduce((t,e)=>{ const kg=exKg(e), r=parseInt(e.actual_reps||e.reps)||0, st=parseInt(e.sets)||0; return t+(kg&&r&&st&&!isIsoRow(e)?kg*r*st:0); },0);
     return {...x,label:((x.asig&&DAY_LABEL[x.asig.day_type])||(x.open?"🔓 Open · por tu cuenta":x.type)||"Entreno")+(x.open&&x.asig?" · 🔓 open":""),vol:Math.round(vol)}; })
@@ -11039,7 +11072,7 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
                       <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:hist.length>0?8:0}}>
                         <div style={{flex:1}}>
                           <div style={{fontWeight:600,fontSize:14}}>{cw.exercise_name}</div>
-                          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Actualizado: {new Date(cw.updated_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>
+                          <div style={{fontSize:11,color:"#64748b",marginTop:2}}>{cw.derived?<span title="Lo que hizo en su último entreno (clase u open)">🏋️ Lo que hizo el {fmtDate(cw.derived)}</span>:<>Actualizado: {new Date(cw.updated_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</>}</div>
                         </div>
                         <div style={{display:"flex",gap:8,alignItems:"center"}}>
                           <div className="mono" style={{fontSize:22,fontWeight:700,color:"#ca8a04"}}>{cw.weight}<span style={{fontSize:12,color:"#64748b"}}>kg</span></div>
@@ -12070,8 +12103,9 @@ function rmHistory(clientId, assignedSessions, assignedExercises, tests){
   const g={}; const push=(name,p)=>{ const k=notesKey(name); (g[k]=g[k]||{name,pts:[]}).pts.push(p); };
   (assignedExercises||[]).forEach(e=>{
     const d=dateOf[e.session_id]; if(!d||d>TODAY||!(e.done||e.completed)||!isRmRow(e)) return;
-    const kg=e.actual_weight!=null?Number(e.actual_weight):null; const reps=repsLow(e.actual_reps!=null?e.actual_reps:e.reps);
-    const rir=e.actual_rir!=null?Number(e.actual_rir):(e.rir!=null?Number(e.rir):null);
+    const kg=e.actual_weight!=null&&e.actual_weight!==""?Number(e.actual_weight):(e.completed&&e.prescribed_weight!=null?Number(e.prescribed_weight):null); const reps=repsLow(e.actual_reps!=null?e.actual_reps:e.reps);
+    const rpe=e.rpe_felt!=null&&e.rpe_felt!==""?Number(e.rpe_felt):null;
+    const rir=e.actual_rir!=null?Number(e.actual_rir):(rpe!=null&&rpe>=5&&rpe<=10?Math.round(10-rpe):(e.rir!=null?Number(e.rir):null));
     const v=e1rmOf(kg,reps,rir!=null?rir:RIR_DEFAULT_UNKNOWN); if(!v) return;
     push(e.exercise_name,{date:d,e1rm:v,kg,reps,rir,approx:rir==null,src:"serie"});
   });
