@@ -953,7 +953,8 @@ function App() {
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
       {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
-      {mode==="client"&&loggedClient&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&isBaja(loggedClient)&&<BajaScreen client={loggedClient} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&!isBaja(loggedClient)&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeights.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
@@ -1064,8 +1065,13 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify,onLogout,secure}) {
+function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify,onLogout,secure}) {
   setCustomExercises(exercises); // ejercicios propios (músculos y material) para buscador y generador
+  // Activos (todo el panel) y de baja (se conservan para el futuro; búsquedas por id sobre todos).
+  const clients = React.useMemo(()=>(allClients||[]).filter(c=>!isBaja(c)),[allClients]);
+  const bajaClients = React.useMemo(()=>(allClients||[]).filter(isBaja).sort((x,y)=>String(bajaOf(y).date).localeCompare(String(bajaOf(x).date))),[allClients]);
+  const [cliTab,setCliTab] = React.useState("act"); // act | baja
+  const [bajaFor,setBajaFor] = React.useState(null);
   const [view,setView] = React.useState("dashboard");
   const [schedView,setSchedView] = React.useState("day");
   const [weekBig,setWeekBig] = React.useState(false); // vista de semana ampliada (más espacio para arrastrar)
@@ -1274,7 +1280,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const daySlots = Array.from(new Set([...(dayIsOff?[]:baseOf(activeDay)),...extraOf(activeDay),...sessions.filter(s=>s.date===activeDay).map(s=>s.time),
     ...(openSessions||[]).filter(o=>o.date===activeDay&&o.time).map(o=>String(o.time).slice(0,5))])).sort();
   // Open con hora en una franja (personas por su cuenta que también usan la sala).
-  const opensHere = (d,t) => opensAt(d,t,openSessions).map(o=>({o,client:clients.find(c=>c.id===o.client_id)})).filter(x=>x.client);
+  const opensHere = (d,t) => opensAt(d,t,openSessions).map(o=>({o,client:allClients.find(c=>c.id===o.client_id)})).filter(x=>x.client);
 
   // Alertas quitadas (deslizando). La clave incluye el estado: si la situación
   // cambia o empeora (vence, quedan menos sesiones…), la alerta vuelve a salir.
@@ -1296,7 +1302,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   // para no saturar las alertas de pago/bono).
   const TOMORROW = (()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return x.toISOString().split("T")[0];})();
   const allSessionReminders = sessions.filter(s=>(s.date===TODAY||s.date===TOMORROW)&&s.status!=="completed"&&!s.requested)
-    .map(s=>{const c=clients.find(cl=>cl.id===s.client_id); return c?{c,type:"session",days:s.date===TODAY?0:1,time:s.time,date:s.date}:null;})
+    .map(s=>{const c=allClients.find(cl=>cl.id===s.client_id); return c?{c,type:"session",days:s.date===TODAY?0:1,time:s.time,date:s.date}:null;})
     .filter(Boolean)
     .sort((a,b)=>a.days-b.days || String(a.time).localeCompare(String(b.time)));
   const sessionReminders = allSessionReminders.filter(r=>!dismissed[alertKey(r)]);
@@ -1308,7 +1314,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const allFreedWaitlist = (waitlist||[]).filter(x=>x.date>=TODAY).map(x=>{
     const taken=sessions.filter(s=>s.date===x.date&&s.time===x.time).length;
     const blk=blocked.some(b=>b.date===x.date&&(b.time===x.time||b.time==="ALL"));
-    const c=clients.find(cl=>cl.id===x.client_id);
+    const c=allClients.find(cl=>cl.id===x.client_id);
     return {wl:x,c,free:!blk&&taken<capOf(x.time),type:"waitlist"};
   }).filter(o=>o.c&&o.free);
   const freedWaitlist = allFreedWaitlist.filter(r=>!dismissed[alertKey(r)]);
@@ -1338,7 +1344,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const addClient = () => w(async()=>{
     if(!nc.name||!nc.code||!nc.nextPayment) return notify("Completa los campos requeridos","err");
     if(!/^[A-Za-z0-9]{4,8}$/.test(nc.code)) return notify("El código debe tener de 4 a 8 letras o números","err");
-    if(clients.find(c=>String(c.code).toUpperCase()===nc.code.toUpperCase())) return notify("Ese código ya existe","err");
+    if(allClients.find(c=>String(c.code).toUpperCase()===nc.code.toUpperCase())) return notify("Ese código ya existe","err");
     const color=COLORS[clients.length%COLORS.length];
     const {error}=await sb.from("clients").insert({name:nc.name,code:nc.code,phone:nc.phone,email:nc.email,color,sessions_left:parseInt(nc.sessions),total_sessions:parseInt(nc.sessions),next_payment:nc.nextPayment,payment_amount:parseFloat(nc.cost),welcome_msg:nc.welcome,notes:nc.notes,goal:nc.goal,days_week:(nc.trainDays&&nc.trainDays.length)||4,train_days:(nc.trainDays||[]).join(",")});
     if(error) return notify("Error: "+error.message,"err");
@@ -1407,7 +1413,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const trainingName = (clientId,date,fallback) => {
     const a=(assignedSessions||[]).find(s=>s.client_id===clientId&&s.date===date);
     const n=asigName(a,sessionTemplates); if(n) return n;
-    const c=clients.find(x=>x.id===clientId);
+    const c=allClients.find(x=>x.id===clientId);
     if(c&&blockForDate(annualBlocks,date,c)){ const au=autoRoutineFor(c,date,sessions,annualBlocks); if(au&&au.label) return au.label; }
     return (fallback&&fallback!=="Sesión")?fallback:"Sesión";
   };
@@ -1418,7 +1424,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(sess.status==="completed") return;
     await sb.from("sessions").update({status:"completed"}).eq("id",sess.id);
     await sb.from("history").insert({client_id:sess.client_id,date:sess.date,time:sess.time,type:trainingName(sess.client_id,sess.date,sess.type)});
-    const client=clients.find(c=>c.id===sess.client_id);
+    const client=allClients.find(c=>c.id===sess.client_id);
     if(client) await sb.from("clients").update({sessions_left:(parseInt(client.sessions_left)||0)-1}).eq("id",client.id); // puede quedar en negativo (debe sesiones)
     notify("✓ Vino · sesión contada");
   });
@@ -1427,7 +1433,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(sess.status!=="completed") return;
     await sb.from("sessions").update({status:"confirmed"}).eq("id",sess.id);
     await sb.from("history").delete().eq("client_id",sess.client_id).eq("date",sess.date).eq("time",sess.time);
-    const client=clients.find(c=>c.id===sess.client_id);
+    const client=allClients.find(c=>c.id===sess.client_id);
     if(client) await sb.from("clients").update({sessions_left:client.sessions_left+1}).eq("id",client.id);
     notify("Asistencia deshecha");
   });
@@ -1439,7 +1445,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
     if(bk){
       await sb.from("sessions").update({status:"completed"}).eq("id",bk.id);
       await sb.from("history").insert({client_id:client.id,date,time:bk.time,type:trainingName(client.id,date,bk.type)});
-      const c=clients.find(x=>x.id===client.id);
+      const c=allClients.find(x=>x.id===client.id);
       if(c) await sb.from("clients").update({sessions_left:(parseInt(c.sessions_left)||0)-1}).eq("id",c.id);
     }
     const asig=assignedSessions.find(s=>s.client_id===client.id&&s.date===date);
@@ -1453,7 +1459,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const quickRecord = (client,date) => w(async()=>{ const ok=await _quickRecord(client,date); if(ok) notify(`${client.name.split(" ")[0]}: registrado ✓`); else notify("Nada que registrar","err"); });
   const quickRecordClass = (date,time) => w(async()=>{
     const ids=[...new Set(sessions.filter(s=>s.date===date&&s.time===time).map(s=>s.client_id))];
-    let n=0; for(const id of ids){ const c=clients.find(x=>x.id===id); if(c && await _quickRecord(c,date)) n++; }
+    let n=0; for(const id of ids){ const c=allClients.find(x=>x.id===id); if(c && await _quickRecord(c,date)) n++; }
     notify(`Clase registrada: ${n} sesión(es) ✓`);
   });
 
@@ -1469,7 +1475,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const deleteSession = (id) => w(async()=>{ await sb.from("sessions").delete().eq("id",id); notify("Sesión eliminada"); });
   // Open apuntados por el coach (clientes híbridos). time null = sin hora.
   const hybClients = clients.filter(isHybrid);
-  const addOpenFor = (cid,date,time) => w(async()=>{ const c=clients.find(x=>x.id===cid);
+  const addOpenFor = (cid,date,time) => w(async()=>{ const c=allClients.find(x=>x.id===cid);
     const ex=(openSessions||[]).find(o=>o.client_id===cid&&o.date===date);
     const r=ex?await sb.from("open_sessions").update({time:time||null}).eq("id",ex.id)
       :await sb.from("open_sessions").insert({client_id:cid,date,time:time||null,status:"planned"});
@@ -1485,7 +1491,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   });
   // Copiar la reserva de un cliente a otro día/hora (y, si se pide, su entreno de ese día).
   const copyBooking = (sess,date,time,withTraining) => w(async()=>{
-    const c=clients.find(x=>x.id===sess.client_id); if(!c) return;
+    const c=allClients.find(x=>x.id===sess.client_id); if(!c) return;
     if(sessions.some(x=>x.client_id===c.id&&x.date===date&&x.time===time)) return notify(`${c.name.split(" ")[0]} ya está apuntado ese día a las ${time}`,"err");
     const {error}=await sb.from("sessions").insert({client_id:c.id,date,time,type:sess.type&&sess.type!==PRIV_TYPE?sess.type:"Sesión",status:"confirmed",requested:false});
     if(error) return notify("No se pudo copiar la sesión","err");
@@ -1515,7 +1521,24 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const resetAccess = (c) => { if(!window.confirm(`¿Restablecer el acceso de ${c.name}? Tendrá que volver a activar su cuenta con su nombre y su código.`)) return;
     w(async()=>{ const {error}=await sb.rpc("admin_reset_access",{p_client:c.id}); notify(error?("No se pudo: "+error.message):"Acceso restablecido ✓ · ya puede activar su cuenta de nuevo",error?"err":undefined); }); };
   const accessMsg = (c) => `Hola ${String(c.name||"").split(" ")[0]} 👋 Ya puedes entrar en tu app de ${GYM_NAME}: ${location.origin}\n\n1️⃣ Pulsa «Soy atleta» → «¿Primera vez? Activa tu cuenta».\n2️⃣ Escribe tu nombre (${c.name}) y tu código: ${c.code}\n3️⃣ Elige tu contraseña (mín. 8 caracteres).\n\nDespués entrarás siempre con tu código y tu contraseña. ¡No la compartas! 💪`;
-  const deleteClient = (id) => w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); });
+  const deleteClient = (id) => { const c=allClients.find(x=>x.id===id);
+    if(!window.confirm(`¿Eliminar a ${c?c.name:"este cliente"} DEFINITIVAMENTE?\n\nSe borra su perfil y no se puede deshacer. Si solo deja de venir, usa «Dar de baja»: se guarda todo para el futuro.`)) return;
+    w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); }); };
+  // Dar de baja: deja de salir como activo (agenda, avisos, listas, reservas) y se guarda todo su perfil.
+  const futureOf = (c) => ({ ss:sessions.filter(x=>x.client_id===c.id&&x.date>=TODAY&&x.status!=="completed"), os:(openSessions||[]).filter(o=>o.client_id===c.id&&o.date>=TODAY&&o.status!=="done"), wl:(waitlist||[]).filter(x=>x.client_id===c.id&&x.date>=TODAY) });
+  const darDeBaja = (c, reason, cancel) => w(async()=>{
+    const {error}=await sb.from("clients").update({profile:{...profileOf(c),baja:{date:TODAY,reason:reason||""}}}).eq("id",c.id);
+    if(error){ notify("No se pudo dar de baja: ejecuta docs/ficha-cliente.sql en Supabase","err"); return; }
+    if(cancel){ const f=futureOf(c);
+      if(f.ss.length) await sb.from("sessions").delete().in("id",f.ss.map(x=>x.id));
+      if(f.os.length) await sb.from("open_sessions").delete().in("id",f.os.map(x=>x.id));
+      if(f.wl.length) await sb.from("waitlist").delete().in("id",f.wl.map(x=>x.id)); }
+    setBajaFor(null); setExpanded(null); notify(`Baja de ${c.name.split(" ")[0]} guardada · su perfil queda en la pestaña «De baja»`); });
+  const reactivar = (c) => w(async()=>{ const p={...profileOf(c)}, b=p.baja; delete p.baja;
+    p.bajas_hist=[...(Array.isArray(p.bajas_hist)?p.bajas_hist:[]),{...b,until:TODAY}];
+    const {error}=await sb.from("clients").update({profile:p}).eq("id",c.id);
+    if(error) return notify("No se pudo reactivar","err");
+    setCliTab("act"); setExpanded(c.id); notify(`${c.name.split(" ")[0]} vuelve a estar en activo ✓`); });
   // ── Valoraciones / Leads ──
   const saveLead = (data) => w(async()=>{
     const put=(row)=>{ const {id,...rest}=row; return id?sb.from("leads").update(rest).eq("id",id):sb.from("leads").insert(rest); };
@@ -1744,7 +1767,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
   const privSessAt = (date,time) => sessions.filter(s=>s.date===date&&s.time===time&&s.type===PRIV_TYPE);
   const toggleBlock = (date, time, kind="Bloqueado", note="", clientId=null, dropPriv=false) => w(async()=>{
     const ex=blocked.find(b=>b.date===date&&b.time===time);
-    const who=clientId&&clients.find(c=>c.id===clientId);
+    const who=clientId&&allClients.find(c=>c.id===clientId);
     if(ex){ await sb.from("blocked_slots").delete().eq("id",ex.id);
       if(dropPriv){ const ids=privSessAt(date,time).filter(s=>s.status!=="completed").map(s=>s.id); if(ids.length) await sb.from("sessions").delete().in("id",ids); }
       return notify(dropPriv?"Clase privada cancelada ✓":"Hora liberada ✓"); }
@@ -1784,7 +1807,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         <div style={{fontSize:10,fontWeight:800,color:"#94a3b8",margin:"18px 8px 6px"}}>HOY · {todaySessions.length} SESIÓN{todaySessions.length===1?"":"ES"}</div>
         <div style={{display:"flex",flexDirection:"column",gap:4}}>
           {todaySessions.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"2px 8px"}}>Sin sesiones hoy</div>}
-          {[...todaySessions].sort((a,b)=>String(a.time).localeCompare(String(b.time))).slice(0,12).map(s=>{ const c=clients.find(x=>x.id===s.client_id); if(!c) return null; const done=s.status==="completed";
+          {[...todaySessions].sort((a,b)=>String(a.time).localeCompare(String(b.time))).slice(0,12).map(s=>{ const c=allClients.find(x=>x.id===s.client_id); if(!c) return null; const done=s.status==="completed";
             return <button key={s.id} onClick={()=>goToPerson(s,c)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",border:`1px solid ${quickView&&quickView.id===c.id?"#bcd3ee":"transparent"}`,background:quickView&&quickView.id===c.id?"#eef4fc":"none",borderRadius:9,padding:"6px 8px"}}>
               <span className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",width:38,flexShrink:0}}>{s.time}</span>
               <span style={{width:8,height:8,borderRadius:4,background:done?"#16a34a":c.color,flexShrink:0}}/>
@@ -1850,7 +1873,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
           return a.getMonth()===z.getMonth()?`${a.getDate()}–${z.getDate()} ${m(z)}`:`${a.getDate()} ${m(a)} – ${z.getDate()} ${m(z)}`; })()
           :new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",vw<520?{weekday:"short",day:"numeric",month:"short"}:{weekday:"long",day:"numeric",month:"short"}).replace(/\./g,"");
         const short=(t)=>String(t||"").replace(/^[^A-Za-zÁÉÍÓÚÑáéíóúñ0-9]+/,"").replace(/\s*\(.*\)/,"").split("·")[0].trim();
-        const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&clients.find(c=>c.id===dragSess.client_id);
+        const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&allClients.find(c=>c.id===dragSess.client_id);
         const Chip=({s,fs,label,sub,narrow,line2})=>{ const done=s.status==="completed"; if(line2) return(
           <div className={(dragId===s.id?"drag-src ":"")+(landedId===s.id?"drag-landed ":"")+(holdId===s.id?"hold-pending":"")} title={`${s.client.name} · ${s.time} — mantén pulsado y arrastra para mover`}
             onPointerDown={e=>{e.stopPropagation();startSessDrag(e,s);}} onClick={e=>{e.stopPropagation(); if(justDragged.current)return; setQuickView(s.client);}}
@@ -1906,7 +1929,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   color:days.includes(TODAY)&&time===curHour?"#fff":"#64748b",background:days.includes(TODAY)&&time===curHour?"#0284c7":"transparent",borderRadius:8}}>{time}</div>
                 {days.map(day=>{
                   const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL"), slotBlocked=isBlkDay||isBlocked(day,time);
-                  const ss=sessions.filter(s=>s.date===day&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                  const ss=sessions.filter(s=>s.date===day&&s.time===time).map(s=>({...s,client:allClients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                   const vals=(leads||[]).filter(l=>l.date===day&&l.time===time);
                   const k=day+"|"+time, isDrop=dropKey===k;
                   const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l})),...opensHere(day,time).map(x=>({t:"o",...x}))];
@@ -1949,7 +1972,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             body=(<div style={{height:availH,display:"flex",flexDirection:"column",gap}}>
               {slots.map(time=>{
                 const slotBlocked=isBlocked(activeDay,time);
-                const ss=sessions.filter(s=>s.date===activeDay&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                const ss=sessions.filter(s=>s.date===activeDay&&s.time===time).map(s=>({...s,client:allClients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                 const vals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
                 const k=activeDay+"|"+time, isDrop=dropKey===k, cp=capOf(time), isWork=isWorkSlot(activeDay,time);
                 const all=[...ss.map(s=>({t:"s",s})),...vals.map(l=>({t:"v",l})),...opensHere(activeDay,time).map(x=>({t:"o",...x}))];
@@ -2041,7 +2064,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               const nowHM=new Date().toTimeString().slice(0,5);
               const vals=(leads||[]).filter(l=>l.date===TODAY&&l.time&&l.status!=="descartado");
               const times=[...new Set([...todaySessions.map(s=>s.time),...vals.map(l=>l.time)])].filter(Boolean).sort();
-              const groups=times.map(t=>({t,ss:todaySessions.filter(s=>s.time===t).map(s=>({s,c:clients.find(c=>c.id===s.client_id)})).filter(x=>x.c),vs:vals.filter(l=>l.time===t)}));
+              const groups=times.map(t=>({t,ss:todaySessions.filter(s=>s.time===t).map(s=>({s,c:allClients.find(c=>c.id===s.client_id)})).filter(x=>x.c),vs:vals.filter(l=>l.time===t)}));
               const endOf=(t)=>{ const [h,m]=t.split(":").map(Number); return String(h+1).padStart(2,"0")+":"+String(m).padStart(2,"0"); };
               const nowG=groups.find(g=>g.t<=nowHM&&nowHM<endOf(g.t)), nextG=groups.find(g=>g.t>nowHM);
               const people=new Set(todaySessions.map(s=>s.client_id)).size, doneN=todaySessions.filter(s=>s.status==="completed").length;
@@ -2064,7 +2087,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                     {nowG?<>🔴 <b>Ahora · {nowG.t}</b> con {[...nowG.ss.map(x=>x.c.name.split(" ")[0]),...nowG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")||"nadie"}</>
                       :<>⏭️ <b>Siguiente · {nextG.t}</b>{mins(nextG.t)<=120?` (en ${mins(nextG.t)<60?`${mins(nextG.t)} min`:`${Math.floor(mins(nextG.t)/60)} h ${mins(nextG.t)%60?`${mins(nextG.t)%60} min`:""}`})`:""} con {[...nextG.ss.map(x=>x.c.name.split(" ")[0]),...nextG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")}</>}
                   </div>}
-                  {(()=>{ const ops=(openSessions||[]).filter(o=>o.date===TODAY).map(o=>({o,c:clients.find(c=>c.id===o.client_id)})).filter(x=>x.c); if(!ops.length) return null; return(
+                  {(()=>{ const ops=(openSessions||[]).filter(o=>o.date===TODAY).map(o=>({o,c:allClients.find(c=>c.id===o.client_id)})).filter(x=>x.c); if(!ops.length) return null; return(
                     <div style={{marginTop:10,display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",background:"rgba(255,255,255,.12)",borderRadius:12,padding:"7px 10px"}}>
                       <span style={{fontSize:12,fontWeight:800}}>🔓 Por su cuenta:</span>
                       {ops.map(({o,c})=><button key={o.id} type="button" onClick={()=>setQuickView(c)} style={{border:"none",borderRadius:20,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:"rgba(255,255,255,.92)",color:"#0f766e"}}>{c.name.split(" ")[0]}{o.time?` ${o.time}`:""}{o.status==="done"?" ✓":""}</button>)}
@@ -2152,7 +2175,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <div style={{fontSize:12}}>Toca <b style={{color:"#0284c7"}}>+ Nueva</b> o ve a la Agenda</div>
                 </div>
                 :todaySessions.sort((a,b)=>a.time.localeCompare(b.time)).map((s,i)=>{
-                    const c=clients.find(x=>x.id===s.client_id); if(!c) return null;
+                    const c=allClients.find(x=>x.id===s.client_id); if(!c) return null;
                     // Lo que le toca hoy: entreno asignado o, si no, bloque del momento.
                     const asig=assignedSessions.find(a=>a.client_id===c.id&&a.date===TODAY);
                     const tmpl=asig&&sessionTemplates.find(t=>t.id===asig.template_id);
@@ -2325,13 +2348,39 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         {view==="clients"&&(
           <div>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
-              <div><h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="clients" size={32}/>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} registrados{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones${pend?` · ${pend} pendientes`:""}`:"";})()}</p></div>
+              <div><h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="clients" size={32}/>Clientes</h1><p style={{color:"#94a3b8",fontSize:12,marginTop:3}}>{clients.length} activos{bajaClients.length?` · ${bajaClients.length} de baja`:""}{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return leads&&leads.length?` · ${leads.filter(l=>l.status!=="cliente").length} valoraciones${pend?` · ${pend} pendientes`:""}`:"";})()}</p></div>
               <div style={{display:"flex",gap:8}}>
                 <button className="btn ghost" style={{fontWeight:700,position:"relative"}} onClick={()=>setShowLeads(true)}>📋 Valoraciones{(()=>{const pend=(leads||[]).filter(l=>l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length; return pend?<span style={{position:"absolute",top:-6,right:-6,minWidth:18,height:18,borderRadius:9,background:"#dc2626",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{pend}</span>:null;})()}</button>
                 <button className="btn sky" onClick={()=>setShowNC(true)}>+ Nuevo</button>
               </div>
             </div>
-            <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+            {bajaClients.length>0&&<div className="seg" role="tablist" aria-label="Clientes" style={{marginBottom:14,maxWidth:360}}>
+              {[["act",`✅ Activos · ${clients.length}`],["baja",`🗄 De baja · ${bajaClients.length}`]].map(([k,l])=><button key={k} role="tab" aria-selected={cliTab===k} className={"sb"+(cliTab===k?" on":"")} onClick={()=>setCliTab(k)} style={{fontSize:13}}>{l}</button>)}
+            </div>}
+            {cliTab==="baja"&&bajaClients.length>0&&<div>
+              <div style={{fontSize:12,color:"#64748b",marginBottom:10,lineHeight:1.45}}>No salen en la agenda, los avisos ni las listas, y no pueden reservar. Se guarda todo: datos, historial, pagos, entrenos, medidas y fotos. Reactívalos cuando vuelvan.</div>
+              <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
+                {bajaClients.map(c=>{ const b=bajaOf(c), nH=history.filter(h=>h.client_id===c.id).length, last=history.filter(h=>h.client_id===c.id).map(h=>h.date).sort().pop(); return(
+                  <div key={c.id} data-baja={c.id} className="card" style={{opacity:.92,border:"1px dashed #dbe2ec"}}>
+                    <div style={{display:"flex",gap:11,alignItems:"center"}}>
+                      <div className="ring" style={{width:42,height:42,background:"#94a3b818",color:"#94a3b8",border:"1.5px solid #94a3b835",fontSize:13,filter:"grayscale(1)"}}>{ini(c.name)}</div>
+                      <div style={{flex:1,minWidth:0}}>
+                        <div style={{fontWeight:700,fontSize:14}}>{c.name}</div>
+                        <div style={{fontSize:11,color:"#94a3b8",marginTop:2}}>De baja desde {fmtDate(b.date)}{b.reason?` · ${b.reason}`:""}</div>
+                        <div style={{fontSize:11,color:"#94a3b8"}}>{nH} {nH!==1?"sesiones hechas":"sesión hecha"}{last?` · última ${fmtDate(last)}`:""}</div>
+                      </div>
+                    </div>
+                    <div style={{display:"flex",gap:7,flexWrap:"wrap",marginTop:12}}>
+                      <button className="btn grn" style={{fontSize:12,padding:"7px 12px",fontWeight:800}} onClick={()=>reactivar(c)}>↩ Reactivar</button>
+                      <button className="btn ghost" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setEditData(c)}>✏️ Ver ficha</button>
+                      <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#0284c7",border:"1px solid #bcd3ee"}} onClick={()=>setProgData(c)}>📈 Evolución</button>
+                      <button className="btn wa" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setWaClient(c)}>📱 WA</button>
+                      <button className="btn danger" style={{fontSize:11,padding:"6px 10px",marginLeft:"auto"}} title="Eliminar definitivamente" aria-label={`Eliminar definitivamente a ${c.name}`} onClick={()=>deleteClient(c.id)}>🗑</button>
+                    </div>
+                  </div>); })}
+              </div>
+            </div>}
+            {(cliTab==="act"||!bajaClients.length)&&<div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(280px,1fr))",gap:12}}>
               {clients.map(c=>{
                 const st=statusOf(c),pct=Math.max(0,Math.round(c.sessions_left/c.total_sessions*100)),pd=daysUntil(c.next_payment),open=expanded===c.id;
                 const cSess=sessions.filter(s=>s.client_id===c.id&&s.date>=TODAY);
@@ -2384,7 +2433,8 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
 
                           <button className="btn sky" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>setShowPay(c)}>💳 Pagos</button>
                           <button className="btn grn" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>renewSessions(c)}>↺ Renovar</button>
-                          <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} onClick={()=>deleteClient(c.id)}>🗑</button>
+                          <button className="btn ghost" style={{fontSize:11,padding:"6px 10px",color:"#b45309",border:"1px solid #fde68a",fontWeight:700}} onClick={()=>setBajaFor(c)}>🗄 Dar de baja</button>
+                          <button className="btn danger" style={{fontSize:11,padding:"6px 10px"}} title="Eliminar definitivamente" aria-label={`Eliminar definitivamente a ${c.name}`} onClick={()=>deleteClient(c.id)}>🗑</button>
                         </div>
                         {"auth_user_id" in c&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:c.auth_user_id?"#f0fdf4":"#fffbeb",border:`1px solid ${c.auth_user_id?"#bbf7d0":"#fde68a"}`,borderRadius:10,padding:"8px 10px",marginBottom:14}}>
                           <span style={{fontSize:12,fontWeight:700,color:c.auth_user_id?"#15803d":"#b45309",flex:1,minWidth:150}}>{c.auth_user_id?"🔐 App activada (entra con su código y su contraseña)":`⏳ Aún no ha activado su cuenta · código ${c.code}`}</span>
@@ -2453,7 +2503,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   </div>
                 );
               })}
-            </div>
+            </div>}
           </div>
         )}
 
@@ -2523,7 +2573,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
             </div>
 
             {/* Modalidad híbrida: quién viene hoy por su cuenta (no ocupa plaza de clase) */}
-            {schedView==="day"&&(()=>{ const ops=(openSessions||[]).filter(o=>o.date===activeDay).map(o=>({o,c:clients.find(c=>c.id===o.client_id)})).filter(x=>x.c).sort((a,b)=>String(a.o.time||"99").localeCompare(String(b.o.time||"99")));
+            {schedView==="day"&&(()=>{ const ops=(openSessions||[]).filter(o=>o.date===activeDay).map(o=>({o,c:allClients.find(c=>c.id===o.client_id)})).filter(x=>x.c).sort((a,b)=>String(a.o.time||"99").localeCompare(String(b.o.time||"99")));
               if(!ops.length&&!hybClients.length) return null;
               const addBtn=<button type="button" onClick={()=>setOpenAdd({date:activeDay,time:null})} style={{marginLeft:"auto",borderRadius:20,border:"1px solid #b5e3da",background:"#fff",color:"#0f766e",fontSize:11,fontWeight:800,cursor:"pointer",padding:"3px 10px",whiteSpace:"nowrap"}}>➕ Añadir open</button>;
               if(!ops.length) return(<div style={{marginBottom:12,display:"flex",alignItems:"center",gap:8,background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"7px 11px"}}>
@@ -2580,7 +2630,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                       const slotBlocked=isBlocked(activeDay,time);
                       const bk0=slotBlocked?blockAt(activeDay,time):null, priv=!!bk0&&bk0.k==="Clase privada";
                       const slots=(!slotBlocked||priv)?sessions.filter(s=>s.date===activeDay&&s.time===time)
-                        .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
+                        .map(s=>({...s,client:allClients.find(c=>c.id===s.client_id)})).filter(s=>s.client):[];
                       const slotVals=(leads||[]).filter(l=>l.date===activeDay&&l.time===time);
                       const ops=opensHere(activeDay,time);
                       const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!isBaseSlot(activeDay,time), xPriv=isWork&&isPrivExtra(activeDay,time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
@@ -2712,7 +2762,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
               // Tamaño del nombre según el ancho real de cada columna (vertical/horizontal).
               const colW=(Math.min(vw,1200)-60-(weekBig?44:38))/weekDays.length;
               const chipFs=colW>=110?15:colW>=80?13:11, withInitial=colW>=95;
-              const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&clients.find(c=>c.id===dragSess.client_id);
+              const dragSess=dragId?sessions.find(x=>x.id===dragId):null, dragCli=dragSess&&allClients.find(c=>c.id===dragSess.client_id);
               const weekSlots=Array.from(new Set([...weekDays.flatMap(d=>blocked.some(b=>b.date===d&&b.time==="ALL")?[]:baseOf(d)),...weekDays.flatMap(d=>extraOf(d)),...sessions.filter(s=>weekDays.includes(s.date)).map(s=>s.time),
                 ...(openSessions||[]).filter(o=>weekDays.includes(o.date)&&o.time).map(o=>String(o.time).slice(0,5))])).sort();
               return(
@@ -2754,7 +2804,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                           const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
                           const slotBlocked=isBlkDay||isBlocked(day,time);
                           const daySessions=sessions.filter(s=>s.date===day&&s.time===time)
-                            .map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
+                            .map(s=>({...s,client:allClients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
                           const dayVals=(leads||[]).filter(l=>l.date===day&&l.time===time);
                           const dayOps=opensHere(day,time);
                           const hasStuff=daySessions.length>0||dayVals.length>0||dayOps.length>0;
@@ -2881,7 +2931,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
                   <div style={{color:"#64748b",fontSize:13}}>Sin publicaciones aún</div>
                 </div>
               : forum.map(post=>{
-                  const c=clients.find(x=>x.id===post.client_id);
+                  const c=allClients.find(x=>x.id===post.client_id);
                   return(
                     <div key={post.id} className="card" style={{marginBottom:10}}>
                       <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
@@ -3076,14 +3126,14 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {/* Modals */}
       {showNS&&<SessionModal clients={clients} ns={ns} setNs={setNs} onSave={addSession} onClose={()=>setShowNS(false)}/>}
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
-      {showPay&&(()=>{ const pc=clients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
+      {showPay&&(()=>{ const pc=allClients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal openSessions={openSessions} loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal openSessions={openSessions} loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={allClients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{setExecData({client,date:classView.date});setClassView(null);}} onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
       {showSched&&<ScheduleModal config={config} onSave={saveConfig} onClose={()=>setShowSched(false)}/>}
-      {sessMenu&&(()=>{ const sm=sessMenu, ss=sessions.find(x=>x.id===sm.sess.id)||sm.sess, c=clients.find(x=>x.id===ss.client_id);
+      {sessMenu&&(()=>{ const sm=sessMenu, ss=sessions.find(x=>x.id===sm.sess.id)||sm.sess, c=allClients.find(x=>x.id===ss.client_id);
         if(!c) return null;
         const hasT=assignedSessions.some(a=>a.client_id===c.id&&a.date===ss.date), nx=addDays(ss.date,7);
         const nxBusy=sessions.some(x=>x.client_id===c.id&&x.date===nx&&x.time===ss.time);
@@ -3104,7 +3154,7 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         onAdd={(cid)=>addOpenFor(cid,openAdd.date,openAdd.time)} onRemove={removeOpen} onClose={()=>setOpenAdd(null)}/>}
       {quickAdd&&<QuickAddModal date={quickAdd.date} time={quickAdd.time} sessions={sessions} clients={clients} cap={capOf(quickAdd.time)} onAdd={(cid)=>quickAddSession(cid,quickAdd.date,quickAdd.time)} onClose={()=>setQuickAdd(null)}/>}
       {slotMenu&&<SlotActionModal vis={isWorkSlot(slotMenu.date,slotMenu.time)?(isPrivHour(config,slotMenu.date,slotMenu.time)?"priv":"pub"):null} onVis={()=>{ toggleExtraPriv(slotMenu.date,slotMenu.time); setSlotMenu(null); }} onOpen={hybClients.length?()=>{const s=slotMenu;setSlotMenu(null);setOpenAdd(s);}:null} date={slotMenu.date} time={slotMenu.time} block={blockAt(slotMenu.date,slotMenu.time)} booked={sessions.filter(s=>s.date===slotMenu.date&&s.time===slotMenu.time).length}
-        clients={clients} sessions={sessions} privSess={privSessAt(slotMenu.date,slotMenu.time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client)}
+        clients={clients} sessions={sessions} privSess={privSessAt(slotMenu.date,slotMenu.time).map(s=>({...s,client:allClients.find(c=>c.id===s.client_id)})).filter(s=>s.client)}
         onTraining={()=>{const s=slotMenu;setSlotMenu(null);setQuickAdd(s);}}
         onValoracion={()=>{const s=slotMenu;setSlotMenu(null);setShowValoracion({date:s.date,time:s.time});}}
         onBlock={(kind,note,cid,drop)=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time,kind,note,cid,drop);}}
@@ -3114,9 +3164,10 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
       <ExPhotoHost coach notify={notify}/>
-      {editData&&<EditClientModal client={clients.find(c=>c.id===editData.id)||editData} clients={clients} saving={saving} lead={leadOf(editData)} onValoracion={()=>{ const c=editData; setEditData(null); openValoracion(c); }} onSave={(f,o)=>saveClientData(editData,f,o)} onClose={()=>setEditData(null)}/>}
+      {bajaFor&&<BajaModal client={bajaFor} future={futureOf(bajaFor)} saving={saving} onConfirm={(r,cancel)=>darDeBaja(bajaFor,r,cancel)} onClose={()=>setBajaFor(null)}/>}
+      {editData&&<EditClientModal client={allClients.find(c=>c.id===editData.id)||editData} clients={clients} saving={saving} lead={leadOf(editData)} onValoracion={()=>{ const c=editData; setEditData(null); openValoracion(c); }} onSave={(f,o)=>saveClientData(editData,f,o)} onClose={()=>setEditData(null)}/>}
       {showMeasures&&<MeasuresModal client={showMeasures} progress={progress} loadAll={loadAll} notify={notify} onClose={()=>setShowMeasures(null)}/>}
-      {viewAs&&(()=>{ const c=clients.find(x=>x.id===viewAs.id)||viewAs; return(
+      {viewAs&&(()=>{ const c=allClients.find(x=>x.id===viewAs.id)||viewAs; return(
         <div style={{position:"fixed",inset:0,zIndex:300,background:"#eef1f7",overflowY:"auto",WebkitOverflowScrolling:"touch"}}>
           <div style={{position:"sticky",top:0,zIndex:5,display:"flex",alignItems:"center",gap:10,padding:"calc(8px + env(safe-area-inset-top)) 14px 8px",background:"#7c3aed",color:"#fff"}}>
             <span style={{fontSize:13,fontWeight:700,flex:1,minWidth:0,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>👁 Vista de {c.name} · así ve su app</span>
@@ -3129,9 +3180,9 @@ function AdminPanel({clients,sessions,history,payments,blocked,waitlist,forum,ex
         </div>); })()}
       {showSummary&&<ClientSummaryModal client={showSummary} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} progress={progress} annualBlocks={annualBlocks} sessions={sessions} onClose={()=>setShowSummary(null)}/>}
       {histView&&<HistorySessionModal client={histView.client} date={histView.date} type={histView.type} time={histView.time} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clients={clients} sessions={sessions} onReplicate={(toDate)=>replicateSession(histView.client,histView.date,toDate)} onCopyTo={(targets,loads)=>copySessionTo(histView.client,histView.date,targets,loads)} onEdit={()=>{setSessionEdit({client:histView.client,date:histView.date});setHistView(null);}} onClose={()=>setHistView(null)}/>}
-      {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} clientName={(()=>{ const c=clients.find(x=>x.id===showValoracion.converted_client_id); return c&&c.name; })()} onGoClient={(id)=>{ const c=clients.find(x=>x.id===id); if(c){ setShowValoracion(null); goToProfile(c); } }} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
+      {showValoracion&&<ValoracionModal lead={showValoracion} saving={saving} clientName={(()=>{ const c=allClients.find(x=>x.id===showValoracion.converted_client_id); return c&&c.name; })()} onGoClient={(id)=>{ const c=allClients.find(x=>x.id===id); if(c){ setShowValoracion(null); goToProfile(c); } }} onSave={saveLead} onConvert={convertLead} onDelete={deleteLead} onClose={()=>setShowValoracion(null)}/>}
       {execData&&<SessionExecModal client={execData.client} date={execData.date} sessions={sessions} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setExecData(null)}/>}
-      {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={clients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
+      {classExec&&<ClassExecModal date={classExec.date} time={classExec.time} sessions={sessions} clients={allClients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} loadAll={loadAll} notify={notify} onClose={()=>setClassExec(null)}/>}
       {assignData&&<AssignTrainingModal client={assignData.client} date={assignData.date} sessionTemplates={sessionTemplates} templateExercises={templateExercises} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onClose={()=>setAssignData(null)}/>}
       {progData&&<ProgressionModal client={progData} clientWeights={clientWeights} weightHistory={weightHistory} records={records} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} annualBlocks={annualBlocks} notify={notify} onClose={()=>setProgData(null)}/>}
     </div>
@@ -7737,6 +7788,10 @@ const PROFILE_FIELDS = [
 ];
 const ageOf = (d) => { if(!d) return null; const b=new Date(d+"T12:00:00"), n=new Date(); let a=n.getFullYear()-b.getFullYear(); if(n.getMonth()<b.getMonth()||(n.getMonth()===b.getMonth()&&n.getDate()<b.getDate())) a--; return a>=0&&a<120?a:null; };
 const profileOf = (c) => (c&&c.profile&&typeof c.profile==="object")?c.profile:{};
+// Baja: el cliente deja de estar activo pero se conserva todo su perfil e historial (ficha → profile.baja).
+const bajaOf = (c) => { const b=profileOf(c).baja; return b&&b.date?b:null; };
+const isBaja = (c) => !!bajaOf(c);
+const BAJA_REASONS = ["Pausa temporal","Lesión","Motivos económicos","Horarios / trabajo","Se ha mudado","Ha terminado su objetivo","Otro"];
 // Campos de la ficha que en la valoración tienen columna propia (el resto van en leads.profile).
 const LEAD_COL = {age:"age",occupation:"job",injuries:"injuries",experience:"experience",diet:"diet",availability:"availability"};
 const LEAD_EXTRA = {phone:{l:"Teléfono (WhatsApp)",t:"tel",ph:"600 000 000"},email:{l:"Email",t:"email",ph:"nombre@email.com"}};
@@ -8921,90 +8976,162 @@ const sessionMinutes = (exs) => { const d=(exs||[]).filter(exDone); if(!d.length
   const s=d.reduce((t,e)=>t+(parseInt(e.sets)||1)*(45+(parseInt(e.rest_seconds)||90)),0); return Math.max(30,Math.min(120,Math.round(s/60+10))); };
 const fmtMin = (m) => m<60?`${m} min`:`${Math.floor(m/60)} h${m%60?` ${m%60}′`:""}`;
 
-// Silueta anatómica (vista frontal o trasera) con cada músculo coloreado por nivel.
-// Se dibuja la mitad izquierda y se refleja; cada músculo lleva un degradado de volumen encima.
-const BODY_SIL = "M100 50 L91 51 C90 56 90 61 89 64 C82 68 74 70 66 73 C58 75 52 82 50 92 C48 102 47 112 46 122 C45 132 43 142 42 150 C40 158 38 166 38 176 C37 188 37 198 38 208 C35 214 33 222 34 232 C35 239 39 243 44 242 C48 240 48 232 48 226 C48 220 48 214 48 208 C50 196 53 184 55 172 C56 164 57 156 58 150 C60 140 61 130 62 122 C63 116 65 111 68 108 C69 116 70 124 70 132 C72 144 74 154 76 165 C74 174 71 183 70 192 C67 204 65 218 66 232 C66 252 68 272 71 292 C72 300 74 306 74 312 C72 320 70 330 70 342 C71 356 75 368 79 378 C80 382 80 386 78 390 C76 394 80 398 88 398 C94 398 97 396 96 390 C95 386 96 382 96 376 C97 362 98 348 97 334 C96 326 96 318 96 312 C97 300 98 284 98 268 C98 252 99 236 100 220 Z";
-const BODY_FRONT = {
-  "Espalda":   ["M91 62 C85 67 77 70 68 73 C74 75 81 76 87 75 C89 71 90 67 91 62 Z"],
-  "Hombro":    ["M68 74 C58 75 51 82 49 92 C47 102 47 110 48 117 C52 119 56 117 58 111 C60 100 64 92 72 85 C73 80 71 76 68 74 Z"],
-  "Pecho":     ["M98 79 C90 76 80 77 74 82 C67 88 64 98 66 108 C69 116 78 121 88 120 C93 119 97 117 98 114 Z"],
-  "Bíceps":    ["M58 113 C52 118 49 128 48.5 140 C48.5 146 50 150 53 152 C57 152 60 149 61.5 144 C62.5 134 62 122 60 114 Z"],
-  "Antebrazo": ["M47 154 C42 162 39 174 39 188 C39 197 40 203 42 206 C45 200 47 190 49 180 C51 170 52 162 52 156 Z",
-                "M53 156 C54 166 53 178 50.5 190 C49.5 198 48.5 204 47.5 207 L48 207 C51 196 54 184 56 172 C57 166 57 160 56 155 Z"],
-  "Core":      ["M88 123 C92 122 95 121 98 121 L98 134 C95 134 91 135 88 136 C87 131 87 127 88 123 Z",
-                "M87.5 139 C91 138 95 138 98 138 L98 152 C95 152 91 152 87.5 153 C87 148 87 143 87.5 139 Z",
-                "M87 156 C91 156 95 156 98 156 L98 170 C95 170 91 170 87.5 171 C87 166 87 161 87 156 Z",
-                "M87.5 174 C91 174 95 174 98 174 L98 206 C94 201 90 193 88 185 C87.5 181 87.5 177 87.5 174 Z",
-                "M69.5 112 L76 114 C77 117 77 120 76 123 L70.5 122 Z","M70.5 125 L77 124 C78 127 78 130 77 133 L71.5 132 Z",
-                "M72 135 C77 134 82 135 86 137 C86 154 85 170 83 186 C80 189 76 190 72 191 C73.5 182 75.5 173 76 165 C74.5 155 73 145 72 135 Z"],
-  "Cuádriceps":["M70.5 196 C66.5 214 65.5 236 66.5 256 C67.5 276 70.5 292 74.5 304 C78 302 80 292 80 278 C80 252 77 224 72.5 200 Z",
-                "M78.5 203 C76.5 223 76.5 248 79 270 C80 282 82.5 292 85.5 298 C89.5 292 91 280 91 266 C91 244 88 222 83.5 205 Z",
-                "M91.5 262 C87.5 272 86.5 288 88.5 300 C91 307 95.5 308 97.5 303 C98 294 97 280 95 268 Z"],
-  "Aductores": ["M87.5 206 C91.5 213 95.5 216 99.5 220 C99 236 98 250 96 262 C93 256 90.5 246 88.5 236 C86.5 226 86.5 215 87.5 206 Z"],
-  "Gemelo":    ["M74.5 322 C70.5 332 69.5 346 71 358 C72.5 366 75.5 372 78.5 375 C79.5 360 79.5 342 78.5 328 Z",
-                "M80 323 C82 340 83 358 83 377 L86.5 377 C86.5 356 86 338 85 322 Z",
-                "M90 321 C95 331 97 345 96 359 C95 367 93 373 90 376 C88 364 87 350 88 336 C88 330 89 325 90 321 Z"],
+// Silueta anatómica (frente o espalda, de hombre o de mujer) con cada músculo coloreado por nivel.
+// ── MAPA MUSCULAR (anatomía) ─────────────────────────────────────────────
+// Mitad izquierda de la figura (x<100); se refleja en x=100. Solo M, C, L, Z
+// absolutos (la versión de mujer se obtiene deformando estas coordenadas).
+const ANAT={};
+ANAT.SIL="M100 52 L91.5 52 C91.5 54 91.2 56 91 57 C88 61 80 65 69 70 C58 71 52 80 51 92 C50 102 51 112 53 120 C51 130 49 140 47 154 C43 165 40 178 39 190 C38 198 38 204 37.5 210 C34 218 33 228 35 238 C37 244 42 246 45 242 C47 236 48 226 47.5 210 C49 198 52 186 55 174 C57 166 58 160 59 152 C61 142 63 128 64 116 C65 108 66 102 68 96 C70 104 72 112 73 122 C74 134 75 146 76.5 160 C75 170 72 180 69.5 196 C67 210 66 228 67 246 C68 262 71 280 75 300 C75.5 308 75 314 74 320 C71 332 71 346 73 358 C75 368 77 376 79 388 C76 395 77 402 84 404 C90 405 95 404 96 400 C96 395 95 390 94 386 C93 376 93 366 94 356 C95 346 96 334 95 324 C94 316 93 310 93.5 300 C95 290 97 276 98 262 C99 246 99.5 228 100 210 Z";
+ANAT.HEAD="M100 7 C108.5 7 114.5 13.5 115 23 C115.5 31 114.5 37 111.5 43 C109 47.5 105 50 100 50.5 C95 50 91 47.5 88.5 43 C85.5 37 84.5 31 85 23 C85.5 13.5 91.5 7 100 7 Z";
+ANAT.EARS="M85.5 24 C83 24 82.5 30 84 34 C85 36 86 35 86.5 33 Z";
+ANAT.FRONT={
+ "Espalda":["M91 56.5 C88 61 80 65 69 70 L74 72.5 C81 70.5 88 67 93 63.5 Z",
+            "M68 97 C70 105 72 113 73 122 C73.8 130 74.4 137 75 144 L72.6 141 C71.4 131 70 120 67.4 105 Z"],
+ "Pecho":["M99 74 L77 74.5 C72 76 68 80 66.5 86 C72 85 80 85 88 86 C93 87 97 87 99 87 Z",
+          "M99 88.5 C93 88.5 85 87.5 78 87.5 C72 87.5 67 88.5 65.5 91.5 C66 98 68 106 72 112 C76 117 83 120 90 120 C95 120 98 119 99 118 Z"],
+ "Hombro":["M74 73.5 C70 72.5 65 73 61 76 C58 80 57 86 58 92 C59 98 61 103 63.5 108 C64.5 100 65.5 94 66 88 C67.5 82 70.5 77 74 73.5 Z",
+           "M60.5 75.5 C55 78 51.5 85 51 94 C50.5 104 52 113 54 119 C57 116 60 112 62.5 108 C60 102 57.5 95 57.5 88 C57.5 83 58.5 79 60.5 75.5 Z"],
+ "Bíceps":["M64 109 C59.5 113 56 121 55.5 132 C55 141 56.5 148 59 152.5 C62.5 149 64.5 141 65 131 C65.5 122 65.2 114 64 109 Z",
+           "M54.3 120 C52 127 50 136 49 146 C48.8 150 49.5 153 51 154 C52.5 150 54.3 142 54.8 134 C55.1 128 55 123 54.3 120 Z"],
+ "Antebrazo":["M48 155.5 C44 163 41 174 40 186 C39.5 194 39.5 200 40 206 C42.5 198 45 188 47.5 178 C49.5 170 51 162 51.5 156 Z",
+              "M52.8 155.5 C55 156.5 57 156.5 58.3 155 C57.5 165 54.5 176 51 188 C49 196 47.5 203 46.5 208 L41.8 208 C43.5 200 46 190 49 180 C51 171 52.5 162 52.8 155.5 Z"],
+ "Core":["M99 122 L99 134.5 C95 134.8 91.5 135.3 89 136 C88.4 131 88.5 126 89.2 122.5 C92.5 121.8 96 121.8 99 122 Z",
+         "M99 137.5 L99 150 C95 150.2 91.5 150.6 88.8 151.2 C88.3 146.5 88.3 142 88.8 138.5 C92 137.8 95.5 137.5 99 137.5 Z",
+         "M99 153 L99 165.5 C95.5 165.7 92 166 89.2 166.6 C88.6 162 88.5 158 88.8 154 C92 153.4 95.5 153.1 99 153 Z",
+         "M99 168.5 L99 204 C96 200 93 193 91 185 C90 179 89.5 174 89.4 169.6 C92.5 169 95.8 168.6 99 168.5 Z",
+         "M73.6 124 C78 126.5 83 127.5 87 126.5 C86.5 140 86.5 154 87.5 168 C88.5 178 90 186 92 193 C86 190 79 186 74.6 180 C76 170 76.6 160 76.2 150 C75.8 140 75 132 73.6 124 Z"],
+ "Cuádriceps":["M70 198 C67 214 66.5 234 67.5 254 C68.5 272 71 288 74.5 298 C78 294 79.5 284 79.5 270 C79.5 250 77.5 226 73.5 204 Z",
+               "M79 204 C77 222 77 246 79.5 268 C80.5 280 82.5 290 85.5 296 C89 289 90.5 277 90.5 263 C90.5 241 88 221 83.5 207 C82 205 80.5 204 79 204 Z",
+               "M90.5 258 C87 268 86 283 88 296 C90 303 94 305 96.5 300 C97.3 290 96.5 278 94.5 266 C93.5 262 92 259 90.5 258 Z"],
+ "Aductores":["M86 208 C90 214 94.5 218 99.6 221 C99 236 98 250 96 262 C93 254 90.5 244 89 234 C87.5 224 86.5 215 86 208 Z",
+              "M74 193.5 C79.5 199 83.5 208 86.8 219 C89.5 229 92 242 94.2 255 L92 257.5 C89.6 245 86.8 233 83.8 223 C80.8 213 77.4 205 73.2 199.5 Z"],
+ "Glúteo":["M69.9 195 C72 191 75 189 78.2 189.6 C77.6 198 76 206 73.8 214 C72.2 209 70.8 202.5 69.9 195 Z"],
+ "Gemelo":["M74.3 318 C71.2 328 70.8 342 72.4 354 C73.6 363 76 370 78.6 375 C79.8 360 80 343 79 329 C78.4 323 76.6 319.5 74.3 318 Z",
+           "M92.6 315.5 C96.2 326 97.2 340 96.2 352 C95.6 360 94.6 366 93.6 372 C91.2 361 90 349 90.2 337 C90.4 328 91.2 320.5 92.6 315.5 Z"],
 };
-const BODY_FRONT_N = ["M72.5 192 C77 190.5 82 190 85.5 191 C86.5 196 87.5 201 88 206 C83 203 77 200.5 71.5 197.5 Z","M91 52 C92 58 95 64 98.5 70 L96 71.5 C92.5 66 90.5 60 90 54 Z",
-  "M38 209 C35 216 34 226 35 234 C36 240 40 242 44 241 C47 238 48 230 48 222 C48 216 48 212 47 209 Z",
-  "M73.5 199 C80 222 88 252 94.5 292 L92.5 293 C86 254 78 224 72 201 Z",
-  "M76 306 C80 301 92 301 96.5 307 C97.5 314 94 320 86 320 C79 320 75 314 76 306 Z",
-  "M78.5 381 C76 388 77 395 84 397 C90 398 95 397 95.5 392 C95.5 387 95 382 94 379 C89 380 83 380 78.5 381 Z"];
-const BODY_BACK = {
-  "Espalda":   ["M100 51 L92 56 C90 63 86 68 76 71 C71 73 67 74 65 76 C74 79 82 86 88 96 C92 104 96 116 100 130 Z",
-                "M74 88 C69 95 68 104 71 111 C78 112 86 106 90 98 C86 92 81 89 74 88 Z",
-                "M69.5 113 C69.5 130 72 148 77 164 C80 170 85 170 89 165 C94 155 97 143 99 133 C96 125 93 118 90 110 C83 114 76 115 69.5 113 Z"],
-  "Hombro":    ["M66 76 C57 77 51 84 49 95 C47.5 103 47.5 111 48.5 117 C52 119 56 117 58 111 C61 100 66 92 73 86 C72 81 70 78 66 76 Z"],
-  "Tríceps":   ["M58 113 C52 118 48.5 128 47.5 140 C47 146 48.5 150 51.5 152 C56 153 59.5 150 61 144 C62.5 134 62 122 60 114 Z"],
-  "Antebrazo": ["M47 154 C42 162 39 174 39 188 C39 197 40 203 42 206 C45 200 47 190 49 180 C51 170 52 162 52 156 Z",
-                "M53 156 C54 166 53 178 50.5 190 C49.5 198 48.5 204 47.5 207 L48 207 C51 196 54 184 56 172 C57 166 57 160 56 155 Z"],
-  "Core":      ["M77 167 C81 172 86 173 90 171 C90 179 89.5 185 89 190 C83 189 77 190 71.5 192 C73.5 183 75.5 175 77 167 Z"],
-  "Lumbar":    ["M93 134 C89.5 146 88 160 88.5 174 C89 181 92 186 98 187.5 L98 131 C96.5 132 94.5 133 93 134 Z"],
-  "Glúteo":    ["M99 188 C90 186 79 189 73 196 C67 204 66 216 71 226 C76 233 85 235 93 232 C97 230 99 224 99.5 216 Z",
-],
-  "Isquios":   ["M68 235 C66 254 67 276 71 294 C73 302 76 306 80 306 C83 296 84 280 83 262 C82 250 80 240 78 235 Z",
-                "M81 236 C84 254 86 274 87 292 C88 300 91 306 95 306 C98 296 99 280 99 262 C99 252 99 244 98 236 C92 234 86 234 81 236 Z"],
-  "Gemelo":    ["M74 316 C69 326 68 340 70 352 C72 360 76 364 81 362 C84 352 85 338 85 326 C84 320 80 316 74 316 Z",
-                "M86 316 C85 328 86 342 89 354 C91 362 95 364 97.5 358 C99 346 98 330 96 320 C93 316 89 315 86 316 Z",
-                "M71.5 357 C73.5 366 76.5 374 79.5 379 L84 379 C84 371 83 365 82 363 C78 365 74 363 71.5 357 Z",
-                "M88 357 C88.5 366 90 373 91.5 379 L95.5 379 C96.5 371 97 365 97 359 C95 364 91 364 88 357 Z"],
+ANAT.FRONT_N=["M80 300 C83 296 90 296 93 300 C94.5 306 92 312 86.5 312 C81 312 79 306 80 300 Z",
+ "M80 318 C82.5 334 83.6 352 83.4 376 L88 378 C88.6 358 88.4 338 86.8 316 C84.6 316 82.2 316.6 80 318 Z",
+ "M68.6 99 C71 101 74 103 76.5 106 C75.5 108 74 109 72 109.5 C71 106 70 102.5 68.6 99 Z",
+ "M71.3 110.5 C74.5 112 77.5 114 79.5 117 C78 119 76 120 73.6 120.5 C73 117 72.4 113.5 71.3 110.5 Z",
+ "M73.7 121.5 C76.5 122.3 79 123.5 81.5 125.5 C79 126.5 76.5 126.8 74.2 126.5 C74.1 124.8 74 123 73.7 121.5 Z"];
+ANAT.FRONT_DET=["M91 47 C93 55 96 62 98.5 70","M99 74 L99.5 120","M70 86 C78 92 88 100 98 104","M68 90 C77 98 87 106 97 112","M72 96 C80 104 89 112 96 117",
+ "M58 84 C58.5 94 60 102 62 108","M54 90 C54 100 55 110 56 116","M60.5 122 C60 132 60 142 61 150",
+ "M77 136 L86 134","M77.5 148 L86.5 146","M77.5 160 L87 158","M76.5 172 L88 170",
+ "M72 200 C80 230 88 262 94 296","M74 222 C73.5 246 75 268 77 286","M84 220 C84.5 244 85.5 264 87 284",
+ "M44 168 C46 180 46 192 44 202","M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233","M80 389 L80 395","M84 390 L84 397","M88 390 L88 397.5","M92 390 L92 397"];
+ANAT.BACK={
+ "Espalda":["M100 50 L93 54 C91 60 85 65 73 69.5 C70 70.5 67.5 72 66 74 C72 76.5 79 80 84 85 C87 92 89 101 91 112 C93.5 124 96.5 138 100 150 Z",
+            "M84 87 C78 86 73 87 70 91 C68 97 69 105 72 110 C77 112 84 110 89 105 C88 99 86.5 92 84 87 Z",
+            "M70 111.5 C70.5 116 72 120 75 122 C80 121 85 117 89.5 112 C84 113.5 77 113 70 111.5 Z",
+            "M69.5 118 C70 132 72 146 76 158 C79 166 84 172 90 176 C94 168 97 158 99.5 151 C96.5 140 93.5 129 91 117 C86 121 80 123 75.5 123.5 C73 122.5 71 120.5 69.5 118 Z"],
+ "Hombro":["M66 74 C58 75 52.5 81 51 91 C50 100 50.5 109 52 116 C55 117 58 114 60 109 C62 100 66 92 71.5 87.5 C71 82 69 77.5 66 74 Z"],
+ "Tríceps":["M52.5 117.5 C50.5 125 49 134 48.5 143 C48.5 148 49.5 151 51 152.5 C53.5 146 55.5 138 56.5 130 C57 125 56.5 120 55.5 116.5 Z",
+            "M57 113 C56.5 122 56 132 56 140 C56 146 57 150 59 152.5 C62 148 64 140 65 130 C65.5 122 65.3 115 64.5 110 C62 111 59.5 112 57 113 Z"],
+ "Antebrazo":["M48 155.5 C44 163 41 174 40 186 C39.5 194 39.5 200 40 206 C42.5 198 45 188 47.5 178 C49.5 170 51 162 51.5 156 Z",
+              "M52.8 156.5 C55 157.5 57 157.5 58.3 155.5 C57.5 165 54.5 176 51 188 C49 196 47.5 203 46.5 208 L41.8 208 C43.5 200 46 190 49 180 C51 171 52.5 162 52.8 156.5 Z"],
+ "Lumbar":["M98.5 132 C95.5 142 93 153 92 166 C91.5 176 92.5 186 95 193 C97 195 98.5 195 99.5 194 L99.5 132 Z"],
+ "Core":["M75.6 160 C78 168 82 174 88 178 C88 184 87 189 85.5 193 C80 192 75 192 70.6 193.5 C72.5 182 74.5 171 75.6 160 Z"],
+ "Glúteo":["M70.5 192 C76 187 84 185 91 186.5 C88 192 84 196.5 78 198.5 C75 199 72.3 197.5 70.3 195 Z",
+           "M99.6 191 C91 189.5 82 193 76 199 C70 206 68.5 218 72 228 C76 236 85 240 93 238 C97 236.5 99.4 232 99.8 226 Z"],
+ "Isquios":["M70 232 C67.5 250 68 270 71.5 288 C73 296 75.5 301 79 303 C82 292 83 276 82 258 C81.5 248 80 240 78 236 C75 236 72 234.5 70 232 Z",
+            "M82.5 240.5 C85 256 86.5 274 87.5 290 C88 298 90.5 303 94.5 304 C97.5 294 98.5 278 98.5 262 C98.5 252 98 245 97 240 C92 241 87 241 82.5 240.5 Z"],
+ "Aductores":["M93.5 239 C96 238 98.6 236.5 99.8 234 C99.6 242 99 248 98 253 C96.5 248 94.8 244 93.5 239 Z"],
+ "Gemelo":["M75 314 C71 324 70 338 71.5 350 C73 358 76.5 363 81 362 C83.5 352 84.5 338 84 326 C83.5 319 80 315 75 314 Z",
+           "M86.5 314 C85.5 326 86 340 88.5 352 C90 360 93.5 364 96.5 359 C98 347 97.5 331 95.5 320 C93 315 89.5 313.5 86.5 314 Z",
+           "M72 356 C74 366 77 374 79.5 380 L84.5 380 C84.5 372 83.5 366 82 362 C78 364 74.5 362 72 356 Z",
+           "M88.5 357 C89 366 90.5 374 92 380 L95.5 380 C96.5 372 97 365 97 358 C95 363 91.5 363 88.5 357 Z"],
 };
-const BODY_BACK_N = ["M90.5 54 C90.5 60 90 66 88 70 L92 68 C93 63 93 58 92.5 53 Z",
-  "M38 209 C35 216 34 226 35 234 C36 240 40 242 44 241 C47 238 48 230 48 222 C48 216 48 212 47 209 Z",
-  "M77 308 C84 312 92 312 96.5 308 L96.5 315 C90 318 82 318 75.5 315 Z",
-  "M84.5 379 L91 379 C91 385 92 389 93 393 L84 393 C84.5 388 84.5 384 84.5 379 Z",
-  "M78.5 382 C76 389 77 395 84 397 C90 398 95 397 95.5 392 C95.5 387 95 383 94 380 Z"];
-function BodyMap({side,lv,sel,onPick}){
-  // Estilo «lámina»: cuerpo negro con contornos finos grises; los músculos trabajados, en color plano.
-  const shapes=side==="front"?BODY_FRONT:BODY_BACK;
-  const mirror="translate(200 0) scale(-1 1)", INK="#0c0c0f", LINE="#8d8d98", SUB="#5c5c68";
+ANAT.BACK_N=["M76 304.5 C82 308 90 308 96 304.5 L96 313.5 C90 316.5 82 316.5 75.5 313.5 Z",
+ "M84.5 380 L91.5 380 C91.5 386 92 390 93 394 L84 394 C84.5 389 84.5 384 84.5 380 Z",
+ "M50.5 152.5 C53 155.5 56 155.5 58.8 152.8 L58.5 156 C55.5 158 52.5 158 50 155.8 Z"];
+ANAT.BACK_DET=["M100 52 L100 196","M88 70 C84 78 80 82 72 84","M73 96 C78 99 83 102 87 104","M74 132 C80 140 86 148 92 156","M78 150 C83 156 88 162 93 168",
+ "M60.5 120 C60 130 60 140 61 148","M53 124 C52 132 51.5 140 51.5 146","M44 168 C46 180 46 192 44 202",
+ "M80 200 C82 212 86 222 92 230","M76 248 C76 266 77 282 78 296","M90 250 C91 266 92 282 93 296","M78 324 C77 336 77 346 78 356","M92 324 C93 336 93 346 92 354",
+ "M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233"];
+// Pelo y detalles por sexo
+ANAT.HAIR_M_FRONT="M100 6 C91 6 85.2 12 85 22.5 C86.8 17.5 90.5 14 95.5 13 C98.5 12.4 101.5 12.4 104.5 13 C109.5 14 113.2 17.5 115 22.5 C114.8 12 109 6 100 6 Z";
+ANAT.HAIR_M_BACK="M100 6 C90.5 6 84.5 13 85 24 C85.5 32 87 38 89.5 42 C93 44 97 44.6 100 44.6 C103 44.6 107 44 110.5 42 C113 38 114.5 32 115 24 C115.5 13 109.5 6 100 6 Z";
+ANAT.HAIR_F_BEHIND="M100 4 C88 4 80.5 12 80 25 C79.6 39 80.5 53 83.5 64 C85.5 69 90 69.5 92 66 C91.5 60 91.2 55 91.5 51 L108.5 51 C108.8 55 108.5 60 108 66 C110 69.5 114.5 69 116.5 64 C119.5 53 120.4 39 120 25 C119.5 12 112 4 100 4 Z";
+ANAT.HAIR_F_FRONT="M100 5 C90 5 84 11 83.6 22 C86 17 90 14.5 95 13.8 C99 14.5 104 16.5 108 19.5 C111 21.5 114 24 116.4 27 C116.8 13 110 5 100 5 Z";
+ANAT.HAIR_F_BACK="M100 4 C88 4 81.5 12 81 25 C80.5 40 82 56 85 68 C90 73.5 95 74.5 100 74.5 C105 74.5 110 73.5 115 68 C118 56 119.5 40 119 25 C118.5 12 112 4 100 4 Z";
+ANAT.BREAST="M99.5 95 C92 93.5 83.5 94.5 77 99 C71.5 103 69.5 110 71.5 116.5 C74 123 81 126.5 88.5 126 C94 125.5 97.5 123 99.5 120";
+// Mujer: misma anatomía con otras proporciones (hombros y cintura más estrechos, cadera más ancha).
+ANAT.F_WARP=[[0,.95],[52,.9],[64,.86],[118,.85],[148,.8],[166,.83],[186,1.03],[205,1.09],[235,1.06],[270,1.0],[310,.96],[420,.94]];
+const anatSx=(y)=>{ const W=ANAT.F_WARP; if(y<=W[0][0]) return W[0][1]; for(let i=1;i<W.length;i++){ if(y<=W[i][0]){ const [y0,a]=W[i-1],[y1,b]=W[i]; return a+(b-a)*(y-y0)/(y1-y0); } } return W[W.length-1][1]; };
+const ANAT_W={};
+const anatD=(d,fem)=>{ if(!fem) return d; const k=d; return ANAT_W[k]||(ANAT_W[k]=d.replace(/(-?\d*\.?\d+)[ ,]+(-?\d*\.?\d+)/g,(m,x,y)=>`${(100-(100-(+x))*anatSx(+y)).toFixed(2)} ${y}`)); };
+// Sexo del cliente para el muñeco (ficha → Sexo). Sin dato: hombre.
+const bodySexOf = (c) => profileOf(c).sex==="mujer"?"f":"m";
+function BodyMap({side,lv,sel,onPick,sex}){
+  // Músculos con volumen (luz y sombra), separaciones finas y fibras; los trabajados, con el color de su nivel.
+  const fem=sex==="f", w=(d)=>anatD(d,fem);
+  const shapes=side==="front"?ANAT.FRONT:ANAT.BACK, N=side==="front"?ANAT.FRONT_N:ANAT.BACK_N, DET=side==="front"?ANAT.FRONT_DET:ANAT.BACK_DET;
+  const uid=String(React.useId?React.useId():Math.random()).replace(/[^a-zA-Z0-9]/g,"");
+  const SH=`url(#bm${uid}sh)`, SEP="#0b0b0e", BASE="#383843", SKIN="#24242c", RIM="#55555f";
+  const mirror="translate(200 0) scale(-1 1)";
   const both=(el)=>[undefined,mirror].map((tf,k)=><g key={k} transform={tf}>{el}</g>);
-  const det=side==="front"
-    ?["M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233", "M80 389 L80 395","M84 390 L84 397","M88 390 L88 397.5","M92 390 L92 397",
-      "M98 71 C90 72 81 73 73 75","M54 140 C55 132 56 124 57 118","M44 168 C46 180 46 192 44 202"]
-    :["M41 223 L40 235","M44 224 L44 238","M47 222 L47.5 233","M72 120 C76 132 80 146 86 158","M80 245 C80 262 81 280 82 296","M89 386 L89 393"];
-  return <svg viewBox="28 0 144 402" style={{width:"100%",maxWidth:160,height:"auto",display:"block",margin:"0 auto",overflow:"visible"}}>
+  const hair=fem?(side==="front"?ANAT.HAIR_F_FRONT:ANAT.HAIR_F_BACK):(side==="front"?ANAT.HAIR_M_FRONT:ANAT.HAIR_M_BACK);
+  return <svg viewBox="28 0 144 410" role="img" aria-label={`Mapa muscular ${side==="front"?"de frente":"de espaldas"}${fem?" (mujer)":" (hombre)"}`} data-sex={fem?"mujer":"hombre"}
+    style={{width:"100%",maxWidth:170,height:"auto",display:"block",margin:"0 auto",overflow:"visible"}}>
+    <defs>
+      <radialGradient id={`bm${uid}sh`} cx=".5" cy=".35" r=".75"><stop offset="0" stopColor="#fff" stopOpacity=".30"/><stop offset=".55" stopColor="#fff" stopOpacity="0"/><stop offset="1" stopColor="#000" stopOpacity=".55"/></radialGradient>
+      <linearGradient id={`bm${uid}hair`} x1="0" x2="1" y1="0" y2="1"><stop offset="0" stopColor="#4a3426"/><stop offset="1" stopColor="#22170f"/></linearGradient>
+      <linearGradient id={`bm${uid}skin`} x1="0" x2="0" y1="0" y2="1"><stop offset="0" stopColor="#2c2c35"/><stop offset="1" stopColor="#1c1c22"/></linearGradient>
+    </defs>
+    {fem&&side==="front"&&<path d={ANAT.HAIR_F_BEHIND} fill={`url(#bm${uid}hair)`} stroke={SEP} strokeWidth=".7"/>}
     {/* Silueta */}
-    <g stroke={LINE} strokeWidth="1.1" strokeLinejoin="round" fill={INK}>
-      {both(<path d={BODY_SIL}/>)}
-      <path d="M100 8 C109 8 115 15 115 26 C115 36 111 45 104 49 C102 50 98 50 96 49 C89 45 85 36 85 26 C85 15 91 8 100 8 Z"/>
-      <path d="M85.5 24 C83 24 82.5 30 84 34 C85 36 86 35 86.5 33 Z"/><path d="M114.5 24 C117 24 117.5 30 116 34 C115 36 114 35 113.5 33 Z"/>
+    <g fill={`url(#bm${uid}skin)`} stroke={RIM} strokeWidth=".9" strokeLinejoin="round">
+      {both(<path d={w(ANAT.SIL)}/>)}<path d={w(ANAT.HEAD)}/>{both(<path d={w(ANAT.EARS)}/>)}
     </g>
-    {/* Zonas sin nivel (cuello, manos, rodillas, pies) */}
-    <g pointerEvents="none" fill={INK} stroke={SUB} strokeWidth=".8" strokeLinejoin="round">{both((side==="front"?BODY_FRONT_N:BODY_BACK_N).map((d,i)=><path key={i} d={d}/>))}</g>
+    {/* Zonas sin nivel (rodillas, tibial, serrato, tendones) */}
+    <g pointerEvents="none" fill={SKIN} stroke={SEP} strokeWidth=".7" strokeLinejoin="round">{both(N.map((d,i)=><g key={i}><path d={w(d)}/><path d={w(d)} fill={SH} stroke="none"/></g>))}</g>
     {/* Músculos */}
     {Object.entries(shapes).map(([name,ds])=>{ const L=lv[name], on=sel===name;
       return <g key={name} onClick={()=>onPick(name)} style={{cursor:"pointer",filter:L&&L.k==="oro"?"drop-shadow(0 0 2.5px rgba(255,210,63,.75))":"none"}} role="button" aria-label={`${name}: ${L?L.l:"sin trabajar"}`}>
-        {both(ds.map((d,i)=><path key={i} d={d} fill={L?L.c:INK} stroke={on?"#fff":L?"#1b1206":SUB} strokeWidth={on?1.6:.8} strokeLinejoin="round" style={{transition:"fill .4s"}}/>))}
+        {both(ds.map((d,i)=><g key={i}><path d={w(d)} fill={L?L.c:BASE} stroke={on?"#fff":SEP} strokeWidth={on?1.6:fem?.65:.8} strokeLinejoin="round" style={{transition:"fill .4s"}}/><path d={w(d)} fill={SH} pointerEvents="none"/></g>))}
       </g>; })}
-    {/* Líneas de detalle (dedos, fibras, línea media) */}
-    <g fill="none" stroke={SUB} strokeWidth=".6" strokeLinecap="round" pointerEvents="none" opacity=".9">
-      {both(det.map((d,i)=><path key={i} d={d}/>))}
-      {side==="front"?<path d="M100 76 L100 120"/>:<path d="M100 52 L100 186"/>}
-    </g>
+    {/* Fibras, línea alba y detalles */}
+    <g fill="none" stroke={SEP} strokeWidth=".55" strokeLinecap="round" pointerEvents="none" opacity={fem?.4:.55}>{both(DET.map((d,i)=><path key={i} d={w(d)}/>))}</g>
+    {fem&&side==="front"&&<g pointerEvents="none">{both(<><path d={w(ANAT.BREAST)+" Z"} fill={SH} opacity=".9"/><path d={w(ANAT.BREAST)} fill="none" stroke={SEP} strokeWidth="1.1"/></>)}</g>}
+    <path d={hair} fill={`url(#bm${uid}hair)`} stroke={SEP} strokeWidth=".7" pointerEvents="none"/>
   </svg>;
 }
 
+// Confirmar la baja de un cliente: motivo y qué hacer con sus próximas reservas.
+function BajaModal({client,future,saving,onConfirm,onClose}){
+  const [reason,setReason]=React.useState(""), [other,setOther]=React.useState(""), n=future.ss.length+future.os.length+future.wl.length;
+  const [cancel,setCancel]=React.useState(true);
+  const fut=[future.ss.length&&`${future.ss.length} clase${future.ss.length>1?"s":""}`,future.os.length&&`${future.os.length} open`,future.wl.length&&`${future.wl.length} en lista de espera`].filter(Boolean).join(", ");
+  return <div className="ovl" style={{zIndex:1400}} onClick={onClose}>
+    <div className="mdl fade" role="dialog" aria-label={`Dar de baja a ${client.name}`} onClick={e=>e.stopPropagation()} style={{maxWidth:440}}>
+      <h2 style={{fontSize:18,fontWeight:800,color:"#0f172a"}}>🗄 Dar de baja a {client.name.split(" ")[0]}</h2>
+      <div style={{fontSize:13,color:"#475569",lineHeight:1.5,margin:"6px 0 12px"}}>Deja de salir en activo (agenda, avisos, listas) y no podrá reservar. <b>Se guarda todo su perfil</b>: datos, historial, pagos, entrenos, medidas y fotos. Lo puedes reactivar cuando quieras desde <b>Clientes → De baja</b>.</div>
+      <span className="lbl">MOTIVO (OPCIONAL)</span>
+      <div style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:8}}>
+        {BAJA_REASONS.map(r=><button key={r} type="button" aria-pressed={reason===r} onClick={()=>setReason(reason===r?"":r)} style={{fontSize:12,fontWeight:700,padding:"6px 11px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${reason===r?"#b45309":"#dbe2ec"}`,background:reason===r?"#fffbeb":"#fff",color:reason===r?"#b45309":"#475569"}}>{r}</button>)}
+      </div>
+      {reason==="Otro"&&<input className="inp" placeholder="Cuéntalo en pocas palabras" value={other} onChange={e=>setOther(e.target.value)} maxLength={120} style={{marginBottom:8}}/>}
+      {n>0&&<label style={{display:"flex",alignItems:"flex-start",gap:8,fontSize:13,color:"#334155",background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:10,padding:"9px 10px",margin:"6px 0 4px",cursor:"pointer"}}>
+        <input type="checkbox" checked={cancel} onChange={e=>setCancel(e.target.checked)} style={{marginTop:2}}/>
+        <span>Quitar sus próximas reservas ({fut}) para liberar los huecos</span></label>}
+      <div style={{display:"flex",gap:8,marginTop:14}}>
+        <button className="btn ghost" style={{flex:"0 0 auto",padding:"11px 16px"}} onClick={onClose}>Cancelar</button>
+        <button className="btn" disabled={saving} style={{flex:1,padding:11,justifyContent:"center",fontWeight:800,background:"#b45309",color:"#fff",border:"none"}} onClick={()=>onConfirm(reason==="Otro"?(other.trim()||"Otro"):reason,cancel&&n>0)}>🗄 Dar de baja</button>
+      </div>
+    </div>
+  </div>;
+}
+// Atleta dado de baja: no entra en la app (su perfil sigue guardado).
+function BajaScreen({client,onLogout}){
+  return <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:24,background:DK.bg,color:DK.tx}}>
+    <div style={{maxWidth:380,textAlign:"center"}}>
+      <div style={{fontSize:46}}>🗄</div>
+      <div style={{fontSize:22,fontWeight:800,marginTop:8}}>Tu cuenta está en pausa</div>
+      <div style={{fontSize:14,color:DK.sub,lineHeight:1.5,marginTop:8}}>Hola {client.name.split(" ")[0]}, ahora mismo no estás activo en {GYM_NAME}. Todo tu historial se guarda: cuando quieras volver, habla con tu coach y te reactivará 💪</div>
+      <button className="dk-pill" style={{marginTop:18,border:"none",cursor:"pointer",padding:"12px 22px",fontSize:14}} onClick={onLogout}>Salir</button>
+    </div>
+  </div>;
+}
 function AthleteStats({client,history,assignedSessions,assignedExercises}){
   const [per,setPer]=React.useState("mes"); // semana | mes | año | todo
   const [sel,setSel]=React.useState(null);
@@ -9060,8 +9187,8 @@ function AthleteStats({client,history,assignedSessions,assignedExercises}){
         </div>
         {info&&<div style={{fontSize:12,color:DK.sub,lineHeight:1.45,background:DK.card2,borderRadius:12,padding:"9px 11px",marginTop:8}}>Cada músculo sube de nivel según las <b>series por semana</b> que le dedicas en este periodo (el músculo principal del ejercicio cuenta 1 serie y los que ayudan, ½): <b style={{color:LVL[0].c}}>Oro</b> 10 o más · <b style={{color:LVL[1].c}}>Plata</b> 6 · <b style={{color:LVL[2].c}}>Bronce</b> 3 · <b style={{color:LVL[3].c}}>Madera</b> menos de 3. Toca un músculo para verlo.</div>}
         <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:8,marginTop:10}}>
-          <div><BodyMap side="front" lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DELANTE</div></div>
-          <div><BodyMap side="back" lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DETRÁS</div></div>
+          <div><BodyMap side="front" sex={bodySexOf(client)} lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DELANTE</div></div>
+          <div><BodyMap side="back" sex={bodySexOf(client)} lv={cur.lv} sel={sel} onPick={setSel}/><div style={{textAlign:"center",fontSize:10,color:DK.dim,fontWeight:700,marginTop:2}}>DETRÁS</div></div>
         </div>
         {sel&&<div className="ember-pop" style={{marginTop:10,background:DK.card2,borderRadius:12,padding:"9px 12px",display:"flex",alignItems:"center",gap:10}}>
           <span style={{width:12,height:12,borderRadius:"50%",background:sl?sl.c:"#30303a",flexShrink:0}}/>
