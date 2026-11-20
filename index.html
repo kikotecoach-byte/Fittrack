@@ -558,18 +558,34 @@ const valDone = (l) => !!(l && ((l.weight!=null&&l.weight!=="") || (l.tests&&typ
 
 // Gomas elásticas (bandas) por color, ordenadas de más suave a más fuerte.
 // Para ejercicios de peso corporal se registra la goma en vez de kg.
+// [clave, emoji, nombre, color, fondo, nivel]
 const BANDS = [
-  ["amarilla","🟡","Amarilla","#eab308","#fbf1d8"],
-  ["roja","🔴","Roja","#dc2626","#fbe6e6"],
-  ["negra","⚫","Negra","#334155","#e5e9f0"],
-  ["morada","🟣","Morada","#7c3aed","#f3ecfb"],
-  ["verde","🟢","Verde","#16a34a","#e2f4e8"],
+  ["blanca","⚪","Blanca","#94a3b8","#f1f5f9","Extra suave"],
+  ["amarilla","🟡","Amarilla","#eab308","#fbf1d8","Muy suave"],
+  ["naranja","🟠","Naranja","#ea580c","#fdeee3","Suave"],
+  ["roja","🔴","Roja","#dc2626","#fbe6e6","Ligera"],
+  ["negra","⚫","Negra","#334155","#e5e9f0","Media"],
+  ["morada","🟣","Morada","#7c3aed","#f3ecfb","Media-fuerte"],
+  ["verde","🟢","Verde","#16a34a","#e2f4e8","Fuerte"],
+  ["azul","🔵","Azul","#2563eb","#e3ecfc","Muy fuerte"],
+  ["marron","🟤","Marrón","#92400e","#f5ebe0","Extra fuerte"],
 ];
+const BAND_MAX = 3; // hasta 3 gomas del mismo color a la vez
 const bandOf = (key) => BANDS.find(b=>b[0]===key);
-// Se pueden combinar varias gomas a la vez: se guardan separadas por comas.
+// Se pueden combinar varias gomas (también repetir color): se guardan separadas por
+// comas, p. ej. "roja,roja,negra" = 2 rojas + 1 negra.
 const bandKeys = (s) => String(s||"").split(",").map(x=>x.trim()).filter(Boolean);
-const bandLabel = (s) => { const ks=bandKeys(s); if(!ks.length) return ""; return ks.map(k=>{const b=bandOf(k); return b?b[1]:"";}).join("")+" "+ks.map(k=>{const b=bandOf(k); return b?b[2]:k;}).join(" + "); };
-const toggleBandKey = (s,key) => { const ks=bandKeys(s); const i=ks.indexOf(key); if(i>=0)ks.splice(i,1); else ks.push(key); return BANDS.filter(b=>ks.includes(b[0])).map(b=>b[0]).join(","); };
+const bandNorm = (ks) => { const ord=Object.fromEntries(BANDS.map((b,i)=>[b[0],i])); return ks.slice().sort((a,b)=>(ord[a]??99)-(ord[b]??99)).join(","); };
+const bandCounts = (s) => { const c={}; bandKeys(s).forEach(k=>{ c[k]=(c[k]||0)+1; }); return c; };
+const bandLabel = (s) => { const ks=bandKeys(bandNorm(bandKeys(s))); if(!ks.length) return ""; const c=bandCounts(ks.join(","));
+  const emo=ks.map(k=>{const b=bandOf(k); return b?b[1]:"";}).join("");
+  const txt=Object.keys(c).map(k=>{ const b=bandOf(k), n=c[k]; return (n>1?n+"× ":"")+(b?b[2]:k); }).join(" + ");
+  return emo+" "+txt; };
+// Toque en un color: suma una goma de ese color (hasta BAND_MAX) y luego vuelve a 0.
+const cycleBandKey = (s,key) => { const ks=bandKeys(s), n=ks.filter(k=>k===key).length, rest=ks.filter(k=>k!==key);
+  const m=n>=BAND_MAX?0:n+1; return bandNorm([...rest,...Array(m).fill(key)]); };
+const toggleBandKey = cycleBandKey;
+const sameBand = (a,b) => bandNorm(bandKeys(a))===bandNorm(bandKeys(b));
 // Ejercicios sin carga externa (peso corporal) → por defecto se registran con goma.
 // ── ISOMÉTRICOS / READAPTACIÓN ──
 // Un ejercicio es isométrico si lleva el protocolo, su nombre lo indica o se
@@ -937,6 +953,7 @@ function App() {
   };
 
   const clientWeightsEff = React.useMemo(()=>effectiveWeights(clientWeights,assignedSessions,assignedExercises),[clientWeights,assignedSessions,assignedExercises]);
+  React.useEffect(()=>{ ASG.list=assignedSessions||[]; ASG.ex=assignedExercises||[]; },[assignedSessions,assignedExercises]);
   // Atleta con sesión segura: sus reservas + el aforo de los demás (sin datos privados).
   const portalSessions = React.useMemo(()=>{
     if(mode!=="client"||!loggedClient||!roster) return sessions;
@@ -1629,7 +1646,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     const {data:sess,error}=ins;
     if(error) return "err";
     const rows=prescribeRows(routine,{client,blk,date,clientWeights,assignedSessions,assignedExercises,sessionId:sess.id});
-    await insertExRows(rows);
+    await insertExRows(rows,{client_id:client.id,date});
     if(dt&&DAY_LABEL[dt]) await sb.from("history").update({type:DAY_LABEL[dt]}).eq("client_id",client.id).eq("date",date);
     return "ok";
   };
@@ -1677,7 +1694,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
         if(Object.keys(upd).length){ await sb.from("assigned_exercises").update(upd).eq("id",e.id); if(Object.keys(upd).some(k=>k!=="order_index")) n++; }
       } else {
         const x=rmLoad(client,r[0],r[2],{main:r[5],blk,assignedSessions,assignedExercises});
-        await insertExRows([{session_id:asig.id,exercise_name:r[0],prescribed_weight:x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),...(x?{rir:x.rir}:{}),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}]); n++;
+        await insertExRows([{session_id:asig.id,exercise_name:r[0],prescribed_weight:x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),...(x?{rir:x.rir}:{}),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}],{client_id:client.id,date:asig.date}); n++;
       }
     }
     const del=exs.filter(e=>!keep.has(e.id)).map(e=>e.id);
@@ -1722,7 +1739,8 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
       const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e.exercise_name).toLowerCase()); return cw?suggestLoad(cw,isMainRow(e),blk,toDate):null; };
     const rows=srcEx.map((e,i)=>{ const used=e.actual_weight!=null?e.actual_weight:e.prescribed_weight;
       return {session_id:sess.id,exercise_name:e.exercise_name,prescribed_weight:loads==="own"?ownLoad(e):used,sets:e.sets,reps:e.reps,protocol:e.protocol,rest_seconds:e.rest_seconds,
-        notes:other?"":(e.notes||""),load_band:e.load_band||null,rir:e.rir!=null?e.rir:null,order_index:i}; });
+        notes:other?"":(e.notes||""),load_band:loads==="own"?null:(e.load_band||null),rir:e.rir!=null?e.rir:null,order_index:i}; });
+    if(loads==="own") withBandMemory(rows,client.id,toDate).forEach((r,i)=>{ rows[i]=r.load_band?r:{...r,load_band:srcEx[i].load_band||null}; });
     if(rows.length){ let r=await sb.from("assigned_exercises").insert(rows);
       if(r.error){ r=await sb.from("assigned_exercises").insert(rows.map(({rir,...x})=>x)); }
       if(r.error){ await sb.from("assigned_exercises").insert(rows.map(({rir,load_band,...x})=>x)); } }
@@ -4542,16 +4560,16 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const valOf=(ex,k)=>{ const e=edited[ex.id]; if(e&&e[k]!==undefined) return e[k];
     if(k==="w") return ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:"");
     if(k==="r") return ex.actual_reps!=null?ex.actual_reps:(ex.protocol==="test_amrap"?"":(ex.reps!=null?ex.reps:""));
-    if(k==="band") return ex.load_band||(!ex.done&&lbOf(ex)?lbOf(ex).band:"");
-    if(k==="mode") return (ex.load_band||(!ex.done&&lbOf(ex)))?"goma":(isBodyweight(ex.exercise_name)&&ex.prescribed_weight==null?"goma":"kg");
+    if(k==="band") return ex.load_band||(!ex.done&&ex.prescribed_weight==null&&lbOf(ex)?lbOf(ex).band:"");
+    if(k==="mode") return (ex.load_band||(!ex.done&&ex.prescribed_weight==null&&lbOf(ex)))?"goma":(isBodyweight(ex.exercise_name)&&ex.prescribed_weight==null?"goma":"kg");
     return !!ex.done; };
   const setVal=(ex,k,v)=>setEdited(m=>({...m,[ex.id]:{...m[ex.id],[k]:v}}));
   const numW=(raw)=> raw===""||raw==null?null:parseFloat(String(raw).replace(",","."));
   // Autoguardado: al salir del campo se guarda la carga/reps aunque no marques hecho.
   const saveW=(ex)=>{ sb.from("assigned_exercises").update({actual_weight:numW(valOf(ex,"w"))}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta el SQL de entrenamiento (docs)","err"); }); };
-  const saveR=(ex)=>{ sb.from("assigned_exercises").update({actual_reps:valOf(ex,"r")||null}).eq("id",ex.id); };
-  const setBand=(ex,band)=>{ const v=toggleBandKey(valOf(ex,"band"),band); setVal(ex,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta docs/gomas.sql","err"); }); };
-  const setMode=(ex,mode)=>{ setVal(ex,"mode",mode); if(mode==="kg"){ setVal(ex,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ex.id); } };
+  const saveR=(ex)=>{ sb.from("assigned_exercises").update({actual_reps:valOf(ex,"r")||null}).eq("id",ex.id).then(()=>{}); };
+  const setBand=(ex,v)=>{ setVal(ex,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",ex.id).then(({error})=>{ if(error) notify("Ejecuta docs/gomas.sql","err"); }); };
+  const setMode=(ex,mode)=>{ setVal(ex,"mode",mode); if(mode==="kg"){ setVal(ex,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ex.id).then(()=>{}); } };
   const toggleDone=async(ex)=>{
     const nowDone=!valOf(ex,"done"); setVal(ex,"done",nowDone);
     if(nowDone) startRest(ex.rest_seconds,ex.exercise_name);
@@ -4569,8 +4587,8 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
   const [picker,setPicker]=React.useState(null); // {mode:"swap",ex} | {mode:"add"}
   const cwOfSel=(name,reps,rir)=>{ const r=rmLoad(selClient,name,reps,{rir,assignedSessions,assignedExercises}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===sel&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const pickIt=async(it)=>{ const p=picker; setPicker(null); setBusy(true);
-    if(p.mode==="swap"){ await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:cwOfSel(it.name,p.ex.reps,p.ex.rir),actual_weight:null,load_band:null}).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
-    else if(asig){ await sb.from("assigned_exercises").insert({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name,it.reps||"10-12"),order_index:allExs.length}); notify("Ejercicio añadido ✓"); }
+    if(p.mode==="swap"){ await sb.from("assigned_exercises").update(bandSwap({exercise_name:it.name,prescribed_weight:cwOfSel(it.name,p.ex.reps,p.ex.rir),actual_weight:null,load_band:null},sel,date)).eq("id",p.ex.id); setEdited(m=>{ const n={...m}; delete n[p.ex.id]; return n; }); notify("Ejercicio cambiado ✓"); }
+    else if(asig){ await sb.from("assigned_exercises").insert(bandRow({session_id:asig.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:cwOfSel(it.name,it.reps||"10-12"),order_index:allExs.length})); notify("Ejercicio añadido ✓"); }
     await loadAll(); setBusy(false); };
   const finalizarPersona=async()=>{ if(!asig) return; setBusy(true); await sb.from("assigned_sessions").update({status:"done"}).eq("id",asig.id); await loadAll(); setBusy(false); notify(`${selClient.name.split(" ")[0]}: entreno registrado ✓`); };
   const cerrar=async()=>{ setBusy(true); await loadAll(); setBusy(false); onClose(); };
@@ -4635,11 +4653,7 @@ function ClassExecModal({date,time,sessions,clients,assignedSessions,assignedExe
                         <button onClick={()=>setMode(ex,valOf(ex,"mode")==="goma"?"kg":"goma")} style={{fontSize:9,fontWeight:700,color:"#0284c7",background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px",cursor:"pointer"}}>{valOf(ex,"mode")==="goma"?"⇄ kg":"⇄ goma"}</button>
                       </div>
                       {valOf(ex,"mode")==="goma"
-                        ?<><div style={{display:"flex",gap:4}}>
-                          {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(valOf(ex,"band")).includes(k); return(
-                            <button key={k} title={lbl} onClick={()=>setBand(ex,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
-                          );})}
-                        </div><LastBandHint lb={lbOf(ex)} current={valOf(ex,"band")}/></>
+                        ?<><BandPicker value={valOf(ex,"band")} onChange={v=>setBand(ex,v)} recent={bandHistoryOf(sel,ex.exercise_name,assignedSessions,assignedExercises,date)}/><LastBandHint lb={lbOf(ex)} current={valOf(ex,"band")}/></>
                         :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={valOf(ex,"w")} onChange={e=>setVal(ex,"w",e.target.value)} onBlur={()=>saveW(ex)}/>}
                     </div>
                     <div style={{flex:1}}>
@@ -5256,8 +5270,8 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const toDay=(d)=>{ const u=dayFor; setDayFor(null); if(!u) return; w(async()=>{ const err=await moveExToDay(client.id,u.rows,d,assignedSessions,assignedExercises);
     notify(err?"No se pudo pasar al otro día":`${u.ex?u.ex.exercise_name:u.b.title} → ${fmtDate(d)} ✓`,err?"err":undefined); }); };
   const moveEx = (ex,dir)=>w(async()=>{ const arr=exs.slice(); const i=arr.indexOf(ex); let j=i+dir; while(j>=0&&j<arr.length&&inBlock.has(arr[j].id)) j+=dir; if(j<0||j>=arr.length) return; [arr[i],arr[j]]=[arr[j],arr[i]]; await renumber(arr); });
-  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name,it.reps||"10-12"),order_index:exs.length}); setPicker(null); notify("Ejercicio añadido ✓"); });
-  const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName,lib?lib[2]:"10-12"),order_index:exs.length}); setAddName(""); notify("Ejercicio añadido ✓"); }); };
+  const addItem = (it)=>w(async()=>{ await sb.from("assigned_exercises").insert(bandRow({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:wOf(it.name,it.reps||"10-12"),order_index:exs.length})); setPicker(null); notify("Ejercicio añadido ✓"); });
+  const add = ()=>{ if(!addName) return; w(async()=>{ const lib=Object.values(EXERCISE_LIBRARY).flat().find(x=>x[0]===addName); await sb.from("assigned_exercises").insert(bandRow({session_id:sess.id,exercise_name:addName,sets:lib?lib[1]:3,reps:lib?lib[2]:"10-12",rest_seconds:lib?lib[3]:90,protocol:"",notes:"",prescribed_weight:wOf(addName,lib?lib[2]:"10-12"),order_index:exs.length})); setAddName(""); notify("Ejercicio añadido ✓"); }); };
   return(
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:480,maxHeight:"90vh",overflowY:"auto"}}>
@@ -6051,6 +6065,8 @@ function IsoLogger({ex,clientId,client,clientWeights,notify,onDone,onSwap}){
     return {secs:s0!=null?String(s0):(s1!=null?String(s1):""), mode, kg:ex.actual_weight!=null?ex.actual_weight:(ex.prescribed_weight!=null?ex.prescribed_weight:""), band:ex.load_band||"", pain:ex.pain!=null?ex.pain:null, done:!!ex.done}; };
   const [v,setV]=React.useState(init);
   React.useEffect(()=>{ setV(init()); },[ex.id,ex.exercise_name]);
+  const bandRecent=React.useMemo(()=>{ const a=(ASG.list||[]).find(x=>x.id===ex.session_id)||{};
+    return bandHistoryOf(clientId||(client&&client.id)||a.client_id,ex.exercise_name,ASG.list,ASG.ex,a.date); },[ex.id,ex.exercise_name]);
   const target=secsOf(ex.reps);
   const kgOf=(x)=>(x.mode==="kg"||x.mode==="pckg")&&x.kg!==""&&x.kg!=null?parseFloat(String(x.kg).replace(",",".")):null;
   const payload=(x)=>({actual_reps:x.secs!==""&&x.secs!=null?`${x.secs}s`:null, actual_weight:kgOf(x), load_band:x.mode==="goma"?(x.band||null):null, load_type:x.mode, pain:x.pain});
@@ -6111,11 +6127,7 @@ function IsoLogger({ex,clientId,client,clientWeights,notify,onDone,onSwap}){
         <input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px",width:110}} value={v.kg} placeholder="kg" onChange={e=>setV({...v,kg:e.target.value})} onBlur={()=>save(v)}/>
         <span style={{fontSize:11,color:"#64748b"}}>{v.mode==="pckg"?"kg de lastre sobre su peso corporal":"kg de carga externa"}</span>
       </div>}
-      {v.mode==="goma"&&<div style={{display:"flex",gap:4,marginBottom:8}}>
-        {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(v.band).includes(k); return(
-          <button key={k} title={lbl} onClick={()=>set({band:toggleBandKey(v.band,k)})} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
-        );})}
-      </div>}
+      {v.mode==="goma"&&<div style={{marginBottom:8}}><BandPicker value={v.band} onChange={b=>set({band:b})} recent={bandRecent||[]}/></div>}
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:4}}>
         <span className="lbl" style={{marginBottom:0}}>DOLOR (EVA 0-10)</span>
         <span style={{fontSize:11,fontWeight:800,color:painColor(v.pain)}}>{v.pain==null?"sin registrar":`${v.pain}/10`}</span>
@@ -6142,8 +6154,8 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
     id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
     w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
     r:(e.actual_reps!=null?e.actual_reps:(e.protocol==="test_amrap"?"":(e.reps!=null?e.reps:""))),
-    band:e.load_band||(!e.done&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)||{}).band||"",
-    mode:((e.load_band||(!e.done&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)))?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
+    band:e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)||{}).band||"",
+    mode:((e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)))?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
     done:!!e.done,
     rest:e.rest_seconds,
   })));
@@ -6177,8 +6189,8 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
     <button type="button" aria-label={`Bajar ${row.name}`} title="Bajar" disabled={i>=n-1} onClick={()=>reorderRows(row.id,i+1)} style={{...arrow,opacity:i>=n-1?.3:1,cursor:i>=n-1?"default":"pointer"}}>▼</button>
   </div>; };
   const setField=(id,k,v)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x));
-  const setBand=(row,band)=>{ const v=toggleBandKey(row.band,band); setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id); };
-  const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id); } };
+  const setBand=(row,v)=>{ setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id).then(()=>{}); };
+  const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id).then(()=>{}); } };
 
   const toggleDone=async(row)=>{
     const nowDone=!row.done;
@@ -6202,11 +6214,11 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
 
   const [picker,setPicker]=React.useState(null); // {mode:"swap",row} | {mode:"add"}
   const cwOf=(name,reps,rir)=>{ const r=rmLoad(client,name,reps,{rir,hist:rmHist}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
-  const swapRow=async(row,it)=>{ const pw=cwOf(it.name,row.reps,(baseExs.find(e=>e.id===row.id)||{}).rir); const {error}=await sb.from("assigned_exercises").update({exercise_name:it.name,prescribed_weight:pw,actual_weight:null,load_band:null}).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
-    setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg"}:x)); notify("Ejercicio cambiado ✓"); };
-  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name,it.reps||"10-12"); const {data,error}=await sb.from("assigned_exercises").insert({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length}).select().single();
+  const swapRow=async(row,it)=>{ const upd=bandSwap({exercise_name:it.name,prescribed_weight:cwOf(it.name,row.reps,(baseExs.find(e=>e.id===row.id)||{}).rir),actual_weight:null,load_band:null},client.id,date), pw=upd.prescribed_weight; const {error}=await sb.from("assigned_exercises").update(upd).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
+    setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:upd.load_band||"",mode:(upd.load_band||(isBodyweight(it.name)&&pw==null))?"goma":"kg"}:x)); notify(upd.load_band?`Ejercicio cambiado ✓ · ${bandLabel(upd.load_band)} (la de la última vez)`:"Ejercicio cambiado ✓"); };
+  const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name,it.reps||"10-12"); const {data,error}=await sb.from("assigned_exercises").insert(bandRow({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length})).select().single();
     if(error||!data) return notify("No se pudo añadir","err");
-    setRows(rs=>[...rs,{id:data.id,name:data.exercise_name,sets:data.sets,reps:data.reps,protocol:"",prescribed:pw,w:pw!=null?pw:"",r:data.reps||"",band:"",mode:(isBodyweight(it.name)&&pw==null)?"goma":"kg",done:false}]); notify("Ejercicio añadido ✓"); };
+    setRows(rs=>[...rs,{id:data.id,name:data.exercise_name,sets:data.sets,reps:data.reps,protocol:"",prescribed:data.prescribed_weight,w:data.prescribed_weight!=null?data.prescribed_weight:"",r:data.reps||"",band:data.load_band||"",mode:(data.load_band||(isBodyweight(it.name)&&data.prescribed_weight==null))?"goma":"kg",done:false}]); notify("Ejercicio añadido ✓"); };
   const finalizar=async()=>{
     setSaving(true);
     if(sess) await sb.from("assigned_sessions").update({status:"done"}).eq("id",sess.id);
@@ -6299,16 +6311,12 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                       <button onClick={()=>setMode(row,row.mode==="goma"?"kg":"goma")} style={{fontSize:9,fontWeight:700,color:"#0284c7",background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:20,padding:"1px 7px",cursor:"pointer"}}>{row.mode==="goma"?"⇄ kg":"⇄ goma"}</button>
                     </div>
                     {row.mode==="goma"
-                      ?<><div style={{display:"flex",gap:4}}>
-                        {BANDS.map(([k,emo,lbl,col,bg])=>{ const on=bandKeys(row.band).includes(k); return(
-                          <button key={k} title={lbl} onClick={()=>setBand(row,k)} style={{flex:1,padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:on?bg:"#fff",border:`1px solid ${on?col:"#e6ebf3"}`,lineHeight:1,position:"relative"}}>{emo}{on&&<span style={{position:"absolute",top:1,right:3,fontSize:8,color:col,fontWeight:800}}>✓</span>}</button>
-                        );})}
-                      </div><LastBandHint lb={lastBandOf(client.id,row.name,assignedSessions,assignedExercises,date)} current={row.band}/></>
-                      :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id);}}/>}
+                      ?<><BandPicker value={row.band} onChange={v=>setBand(row,v)} recent={bandHistoryOf(client.id,row.name,assignedSessions,assignedExercises,date)}/><LastBandHint lb={lastBandOf(client.id,row.name,assignedSessions,assignedExercises,date)} current={row.band}/></>
+                      :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id).then(()=>{});}}/>}
                   </div>
                   <div style={{flex:1}}>
                     <span className="lbl" style={{marginBottom:3}}>REPS</span>
-                    <input type="text" className="inp" style={{padding:"8px 10px"}} value={row.r} onChange={e=>setField(row.id,"r",e.target.value)} onBlur={()=>{sb.from("assigned_exercises").update({actual_reps:row.r||null}).eq("id",row.id);}}/>
+                    <input type="text" className="inp" style={{padding:"8px 10px"}} value={row.r} onChange={e=>setField(row.id,"r",e.target.value)} onBlur={()=>{sb.from("assigned_exercises").update({actual_reps:row.r||null}).eq("id",row.id).then(()=>{});}}/>
                   </div>
                   <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
                 </div>
@@ -6376,7 +6384,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
       return {session_id:sess.id,exercise_name:ex.exercise_name,prescribed_weight:x?x.kg:(cw?cw.weight:null),...(x?{rir:x.rir}:{}),
         sets:ex.sets,reps:ex.reps,protocol:ex.protocol,rest_seconds:ex.rest_seconds,notes:ex.notes,order_index:ex.order_index};
     });
-    if(rows.length>0) await insertExRows(rows);
+    if(rows.length>0) await insertExRows(rows,{client_id:client.id,date});
     if(tmpl.name) await sb.from("history").update({type:tmpl.name}).eq("client_id",client.id).eq("date",date); // si ya vino, el historial toma el nombre
     await loadAll(); setSaving(false); notify("Entreno asignado ✓"); onClose();
   };
@@ -6394,7 +6402,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     if(error){ notify("Error al generar","err"); setSaving(false); return; }
     const routine=buildDayRoutine(dayType,blk,client.goal,macroWeek(date),levelOf(client),sameTypeBefore(assignedSessions,client.id,date,dayType));
     const rows=prescribeRows(routine,{client,blk,date,clientWeights,assignedSessions,assignedExercises,sessionId:sess.id});
-    await insertExRows(rows);
+    await insertExRows(rows,{client_id:client.id,date});
     if(DAY_LABEL[dayType]) await sb.from("history").update({type:DAY_LABEL[dayType]}).eq("client_id",client.id).eq("date",date);
     await loadAll(); setSaving(false); notify("Rutina del día generada ✓"); onClose();
   };
@@ -7249,15 +7257,89 @@ function ExName({client,name,children,style}){
     onClick={e=>{ e.stopPropagation(); openExHistory(client,name); }} onKeyDown={e=>{ if(e.key==="Enter"){ e.stopPropagation(); openExHistory(client,name); } }}
     style={{cursor:"pointer",textDecoration:"underline",textDecorationStyle:"dotted",textDecorationColor:"#94a3b8",textUnderlineOffset:3,...(style||{})}}>{children||name}</span>;
 }
+// Gomas que ha usado en este ejercicio (antes de la fecha dada): combinaciones
+// distintas, primero las que hizo de verdad y la más reciente delante.
+function bandHistoryOf(clientId, name, assignedSessions, assignedExercises, before){
+  const k=notesKey(name), lim=before||addDays(TODAY,1);
+  const dateOf={}; (assignedSessions||[]).forEach(a=>{ if(a.client_id===clientId&&a.date&&a.date<lim) dateOf[a.id]=a.date; });
+  const rows=(assignedExercises||[]).filter(e=>dateOf[e.session_id]&&e.load_band&&notesKey(e.exercise_name)===k)
+    .map(e=>({band:bandNorm(bandKeys(e.load_band)),date:dateOf[e.session_id],done:exDone(e)?1:0}))
+    .sort((a,b)=>(b.done-a.done)||b.date.localeCompare(a.date));
+  const seen=new Set(), out=[]; rows.forEach(r=>{ if(r.band&&!seen.has(r.band)){ seen.add(r.band); out.push(r); } }); return out;
+}
 // Goma usada la última vez en este ejercicio (antes de la fecha dada), para proponerla.
 function lastBandOf(clientId, name, assignedSessions, assignedExercises, before){
-  const k=notesKey(name);
-  const prev=(assignedSessions||[]).filter(a=>a.client_id===clientId&&a.date&&a.date<before).sort((a,b)=>b.date.localeCompare(a.date));
-  for(const a of prev){ const e=(assignedExercises||[]).find(x=>x.session_id===a.id&&notesKey(x.exercise_name)===k&&x.load_band); if(e) return {band:e.load_band,date:a.date}; }
-  return null;
+  const h=bandHistoryOf(clientId,name,assignedSessions,assignedExercises,before); return h.length?h[0]:null;
 }
-const LastBandHint=({lb,current})=>lb?<div style={{fontSize:10,fontWeight:700,color:bandKeys(current).join("+")===bandKeys(lb.band).join("+")?"#16a34a":"#64748b",marginTop:4}}>
-  {bandKeys(current).join("+")===bandKeys(lb.band).join("+")?"✓ Misma goma que la última vez":"Última vez"}: {bandLabel(lb.band)} · {fmtD(lb.date)}</div>:null;
+// Memoria para entrenos futuros: si lo último que HIZO en este ejercicio (antes de
+// esa fecha) fue con goma, el nuevo entreno ya sale con esa misma combinación.
+function bandMemoryFor(clientId, name, before, src){
+  const S=src||ASG, k=notesKey(name), lim=before||addDays(TODAY,1);
+  const dateOf={}; (S.list||[]).forEach(a=>{ if(a.client_id===clientId&&a.date&&a.date<lim&&a.date<=TODAY) dateOf[a.id]=a.date; });
+  let best=null;
+  (S.ex||[]).forEach(e=>{ const d=dateOf[e.session_id]; if(!d||!exDone(e)||notesKey(e.exercise_name)!==k) return;
+    if(!best||d>best.date||(d===best.date&&e.load_band&&!best.band)) best={date:d,band:e.load_band||null}; });
+  return best&&best.band?{band:bandNorm(bandKeys(best.band)),date:best.date}:null;
+}
+function withBandMemory(rows, clientId, date, src){
+  if(!clientId) return rows;
+  return rows.map(r=>{ if(!r||r.load_band||!r.exercise_name) return r; const m=bandMemoryFor(clientId,r.exercise_name,date,src);
+    return m?{...r,load_band:m.band,prescribed_weight:null}:r; });
+}
+const bandSwap = (upd, clientId, date) => { const m=bandMemoryFor(clientId,upd.exercise_name,date); return m?{...upd,load_band:m.band,prescribed_weight:null}:upd; };
+// Igual, deduciendo cliente y fecha del entreno (ya cargado) al que pertenece la fila.
+const bandRow = (row, ctx) => { const a=(ASG.list||[]).find(x=>x.id===row.session_id)||{}; return withBandMemory([row],(ctx&&ctx.client_id)||a.client_id,(ctx&&ctx.date)||a.date)[0]; };
+const LastBandHint=({lb,current})=>lb?<div style={{fontSize:10,fontWeight:700,color:sameBand(current,lb.band)?"#16a34a":"#64748b",marginTop:4}}>
+  {sameBand(current,lb.band)?"✓ Misma goma que la última vez":"Última vez"}: {bandLabel(lb.band)} · {fmtD(lb.date)}</div>:null;
+// Gomas guardadas de un cliente: por ejercicio, la última combinación que hizo y
+// las anteriores. Es lo que se propone en sus próximos entrenos.
+function BandMemoryList({clientId,assignedSessions,assignedExercises}){
+  const list=React.useMemo(()=>{
+    const dateOf={}; (assignedSessions||[]).forEach(a=>{ if(a.client_id===clientId&&a.date&&a.date<=TODAY) dateOf[a.id]=a.date; });
+    const g={}; (assignedExercises||[]).forEach(e=>{ const d=dateOf[e.session_id]; if(!d||!e.load_band||!exDone(e)) return; const k=notesKey(e.exercise_name);
+      (g[k]=g[k]||{name:e.exercise_name,items:[]}).items.push({band:bandNorm(bandKeys(e.load_band)),date:d}); });
+    return Object.values(g).map(x=>{ x.items.sort((a,b)=>b.date.localeCompare(a.date)); const seen=new Set(); x.items=x.items.filter(i=>!seen.has(i.band)&&seen.add(i.band));
+      x.mem=bandMemoryFor(clientId,x.name,null,{list:assignedSessions,ex:assignedExercises}); return x; })
+      .sort((a,b)=>b.items[0].date.localeCompare(a.items[0].date));
+  },[clientId,assignedSessions,assignedExercises]);
+  if(!list.length) return null;
+  return(
+    <div data-bandmem="1" style={{marginTop:16}}>
+      <div style={{fontSize:11,color:"#94a3b8",fontWeight:700,marginBottom:4}}>GOMAS GUARDADAS</div>
+      <div style={{fontSize:10.5,color:"#64748b",marginBottom:8}}>Lo último que hizo con goma en cada ejercicio (clase u open). Sus próximos entrenos ya salen con esa combinación.</div>
+      {list.map(x=>(
+        <div key={x.name} className="card" style={{marginBottom:6,padding:"9px 12px"}}>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",gap:8}}>
+            <div style={{fontWeight:600,fontSize:13,minWidth:0}}>{x.name}</div>
+            <div style={{fontSize:12,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{bandLabel(x.items[0].band)}</div>
+          </div>
+          <div style={{fontSize:10,color:"#64748b",marginTop:2}}>🏋️ {fmtD(x.items[0].date)}{x.mem?" · se propone en el próximo":" · su último entreno fue con kg"}
+            {x.items.length>1&&<> · antes: {x.items.slice(1,4).map(i=>bandLabel(i.band)).join(" · ")}</>}</div>
+        </div>))}
+    </div>);
+}
+// Selector de gomas: 9 colores; cada toque suma una goma de ese color (hasta 3) y
+// el siguiente la quita. Debajo, las combinaciones que ya ha usado en este ejercicio.
+function BandPicker({value,onChange,recent}){
+  const c=bandCounts(value), any=bandKeys(value).length>0;
+  const rec=(recent||[]).filter(r=>r.band&&!sameBand(r.band,value)).slice(0,4);
+  return(
+    <div data-bandpicker="1">
+      <div style={{display:"grid",gridTemplateColumns:"repeat(5,1fr)",gap:4}}>
+        {BANDS.map(([k,emo,lbl,col,bg,lv])=>{ const n=c[k]||0; return(
+          <button key={k} data-band={k} title={`${lbl} · ${lv} — toca para sumar (hasta ${BAND_MAX})`} onClick={()=>onChange(cycleBandKey(value,k))}
+            style={{padding:"7px 0",borderRadius:8,fontSize:14,cursor:"pointer",background:n?bg:"#fff",border:`1px solid ${n?col:"#e6ebf3"}`,boxShadow:n?`0 0 0 1.5px ${col}`:"none",lineHeight:1,position:"relative"}}>
+            {emo}{n>0&&<span style={{position:"absolute",top:1,right:2,fontSize:8,color:col,fontWeight:800}}>{n>1?"×"+n:"✓"}</span>}</button>); })}
+        {any&&<button data-band="none" title="Quitar todas las gomas" onClick={()=>onChange("")} style={{padding:"7px 0",borderRadius:8,fontSize:11,cursor:"pointer",background:"#fff",border:"1px dashed #cbd5e1",color:"#94a3b8",fontWeight:800,lineHeight:1}}>✕</button>}
+      </div>
+      {any&&<div data-bandsel="1" style={{fontSize:10.5,fontWeight:800,color:"#0f172a",marginTop:4}}>{bandLabel(value)}</div>}
+      {rec.length>0&&<div style={{display:"flex",flexWrap:"wrap",gap:4,marginTop:4,alignItems:"center"}}>
+        <span style={{fontSize:9,color:"#94a3b8",fontWeight:800}}>YA USADAS:</span>
+        {rec.map(r=><button key={r.band} data-bandrec={r.band} title={`Usada el ${fmtD(r.date)}${r.done?"":" (prescrita)"}`} onClick={()=>onChange(r.band)}
+          style={{fontSize:10,fontWeight:700,padding:"2px 7px",borderRadius:20,border:"1px solid #e2e8f0",background:"#f8fafc",color:"#334155",cursor:"pointer"}}>{bandLabel(r.band)}</button>)}
+      </div>}
+    </div>);
+}
 function exHistory(clientId, name, assignedSessions, assignedExercises){
   const dateOf=Object.fromEntries((assignedSessions||[]).filter(a=>a.client_id===clientId).map(a=>[a.id,a.date]));
   const k=notesKey(name);
@@ -10730,7 +10812,7 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
     });
 
     if(assigns.length > 0) {
-      await insertExRows(assigns);
+      await insertExRows(assigns,{client_id:clientId,date});
     }
   };
 
@@ -11020,6 +11102,7 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
                   );
                 })
               }
+              <BandMemoryList clientId={selClient} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
             </div>
           )}
         </div>
@@ -12055,10 +12138,13 @@ function prescribeRows(routine,{client,blk,date,clientWeights,assignedSessions,a
   });
 }
 // Inserta ejercicios; si falta la columna del RIR (docs/rir-rm.sql) los guarda sin él.
-async function insertExRows(rows){
-  if(!rows.length) return;
-  const r=await sb.from("assigned_exercises").insert(rows);
-  if(r&&r.error&&rows.some(x=>"rir" in x)) await sb.from("assigned_exercises").insert(rows.map(({rir,...x})=>x));
+async function insertExRows(rows0, ctx){
+  if(!rows0.length) return;
+  const a0=(ASG.list||[]).find(a=>a.id===rows0[0].session_id)||{};
+  const rows=withBandMemory(rows0,(ctx&&ctx.client_id)||a0.client_id,(ctx&&ctx.date)||a0.date);
+  let r=await sb.from("assigned_exercises").insert(rows);
+  if(r&&r.error&&rows.some(x=>"rir" in x)) r=await sb.from("assigned_exercises").insert(rows.map(({rir,...x})=>x));
+  if(r&&r.error) await sb.from("assigned_exercises").insert(rows0.map(({rir,load_band,...x})=>x)); // sin columna de gomas
 }
 let RIR_SQL_WARNED=false;
 // Barra de RIR al ejecutar: RIR real (0-5), RM estimado de la serie y carga sugerida.
@@ -12624,14 +12710,12 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
   const todaySessions = myAssignedSessions.filter(s=>s.date===TODAY_STR);
   const completedAll = todaySessions.length>0 && todaySessions.every(s=>s.status==="completed"||s.status==="done");
 
-  const markExerciseComplete = async(exerciseId, actualWeight, actualReps, rpeFelt) => {
+  const markExerciseComplete = async(exerciseId, actualWeight, actualReps, rpeFelt, band) => {
     setSaving(true);
-    await sb.from("assigned_exercises").update({
-      completed: true,
-      actual_weight: actualWeight||null,
-      actual_reps: actualReps||null,
-      rpe_felt: rpeFelt||null,
-    }).eq("id",exerciseId);
+    const upd={ completed: true, actual_weight: band?null:(actualWeight||null), actual_reps: actualReps||null, rpe_felt: rpeFelt||null };
+    if(band!==undefined) upd.load_band=band||null;
+    const r=await sb.from("assigned_exercises").update(upd).eq("id",exerciseId);
+    if(r&&r.error&&"load_band" in upd){ const {load_band,...rest}=upd; await sb.from("assigned_exercises").update(rest).eq("id",exerciseId); }
 
     // Check if all exercises in session are completed
     const sessId = myAssignedExercises.find(ae=>ae.id===exerciseId)?.session_id;
@@ -12751,6 +12835,16 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
   const touched=React.useRef({w:false,r:false});
   React.useEffect(()=>{ if(!touched.current.w) setActualWeight(ae.prescribed_weight||""); },[ae.prescribed_weight]);
   React.useEffect(()=>{ if(!touched.current.r) setActualReps(ae.reps||""); },[ae.reps]);
+  // Gomas: en peso corporal se registra la combinación de gomas; se propone la última que hizo.
+  const sessA=(ASG.list||[]).find(a=>a.id===ae.session_id)||{}, cid=(client&&client.id)||sessA.client_id;
+  const bandHist=React.useMemo(()=>cid?bandHistoryOf(cid,ae.exercise_name,ASG.list,ASG.ex,sessA.date):[],[cid,ae.id,ae.exercise_name,sessA.date]);
+  const lb=bandHist[0]||null, propose=ae.prescribed_weight==null&&!ae.load_band;
+  const [goma,setGoma]=React.useState(()=>!!(ae.load_band||(propose&&(lb||isBodyweight(ae.exercise_name)))));
+  const [band,setBandS]=React.useState(()=>ae.load_band||(propose&&lb?lb.band:""));
+  React.useEffect(()=>{ if(ae.load_band&&!sameBand(ae.load_band,band)){ setBandS(ae.load_band); setGoma(true); } },[ae.load_band]);
+  const setBand=(v)=>{ setBandS(v); sb.from("assigned_exercises").update({load_band:v||null}).eq("id",ae.id).then(()=>{}); };
+  const switchMode=()=>{ const g=!goma; setGoma(g); if(!g&&band){ setBandS(""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ae.id).then(()=>{}); } };
+  const hdrBand=ae.load_band||(goma?band:"");
 
   if(ae.completed||ae.done) return(
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3",opacity:0.6}}>
@@ -12759,7 +12853,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
         <ExPhoto name={ae.exercise_name} size={56} onClick={()=>openExPhoto(ae.exercise_name,ae)}/>
         <div>
           <div style={{fontSize:13,fontWeight:600,color:"#16a34a",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap"}}>{ae.exercise_name}{howBtn}</div>
-          <div style={{fontSize:11,color:"#94a3b8"}}>{ae.actual_weight||ae.prescribed_weight}kg · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
+          <div style={{fontSize:11,color:"#94a3b8"}}>{ae.load_band?bandLabel(ae.load_band):(ae.actual_weight||ae.prescribed_weight)?`${ae.actual_weight||ae.prescribed_weight}kg`:"PC"} · {ae.actual_reps||ae.reps} reps{ae.rpe_felt?` · RPE ${ae.rpe_felt}`:""}</div>
         </div>
       </div>
       <span style={{fontSize:16}}>✅</span>
@@ -12778,7 +12872,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
             <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
             <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
               <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
-              {ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+              {hdrBand?<span data-hdrband="1" style={{fontSize:12,color:"#0f172a",fontWeight:700}}>{bandLabel(hdrBand)}</span>:ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
               {ae.rir!=null&&<span style={{fontSize:11,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:20,padding:"0 7px"}}>RIR {ae.rir}</span>}
               {howBtn}
               {ae.rest_seconds?<span onClick={e=>e.stopPropagation()}><RestButton secs={ae.rest_seconds} label={ae.exercise_name} style={{padding:"1px 8px",fontSize:11,borderRadius:20}}/></span>:null}
@@ -12793,11 +12887,16 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 
       {expanded&&(
         <div style={{marginTop:10,paddingLeft:32,display:"flex",flexDirection:"column",gap:10}}>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8}}>
-            <div>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between"}}>
+            <span className="lbl" style={{fontSize:9,marginBottom:0}}>{goma?"GOMAS":"CARGA"}</span>
+            <button type="button" data-modeswitch="1" onClick={switchMode} style={{fontSize:10,fontWeight:700,color:"#0284c7",background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:20,padding:"2px 9px",cursor:"pointer"}}>{goma?"⇄ Usar kg":"⇄ Usar gomas"}</button>
+          </div>
+          {goma&&<div><BandPicker value={band} onChange={setBand} recent={bandHist}/><LastBandHint lb={lb} current={band}/></div>}
+          <div style={{display:"grid",gridTemplateColumns:goma?"1fr 1fr":"1fr 1fr 1fr",gap:8}}>
+            {!goma&&<div>
               <span className="lbl" style={{fontSize:9}}>PESO REAL (kg)</span>
               <input type="number" className="inp" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={actualWeight} onChange={e=>{ touched.current.w=true; setActualWeight(e.target.value); }} placeholder={ae.prescribed_weight||"0"}/>
-            </div>
+            </div>}
             <div>
               <span className="lbl" style={{fontSize:9}}>REPS REALES</span>
               <input className="inp" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={actualReps} onChange={e=>{ touched.current.r=true; setActualReps(e.target.value); }} placeholder={ae.reps}/>
@@ -12807,7 +12906,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
               <input type="number" className="inp" min="1" max="10" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={rpe} onChange={e=>setRpe(e.target.value)} placeholder="8"/>
             </div>
           </div>
-          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>{ startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,parseFloat(actualWeight)||null,actualReps||null,parseFloat(rpe)||null); }} disabled={saving}>
+          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>{ startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:(parseFloat(actualWeight)||null),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); }} disabled={saving}>
             ✓ Marcar como completado
           </button>
         </div>
