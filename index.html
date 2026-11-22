@@ -28,6 +28,7 @@
 <meta name="apple-mobile-web-app-title" content="Kikote Gym">
 <meta name="mobile-web-app-capable" content="yes">
 <meta name="theme-color" content="#0b0b0e">
+<meta name="color-scheme" content="dark">
 <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png">
 <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32.png">
 <link rel="icon" type="image/png" sizes="192x192" href="/icon-192.png">
@@ -301,6 +302,24 @@ body.dragging{cursor:grabbing;}
 body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;}
 @keyframes dragtarget{0%,100%{box-shadow:0 0 0 0 hsla(15,98%,50%,0.35)}50%{box-shadow:0 0 0 4px hsla(15,98%,50%,0.35)}}
 
+/* ── Reservar: alto del panel con respaldo para móviles sin «dvh» (Android/iOS antiguos) ── */
+.book-panel{height:calc(100vh - 196px);height:calc(100vh - 196px - env(safe-area-inset-bottom));}
+@supports (height:100dvh){.book-panel{height:calc(100dvh - 196px - env(safe-area-inset-bottom));}}
+.book-grid{overflow-y:auto;overscroll-behavior:contain;}
+html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
+.pt-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
+.bnav-btn>span:last-child{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+/* Móviles estrechos o con letra/zoom grande */
+@media (max-width:340px){
+  .pt-title{font-size:22px!important;}
+  .pt-head{gap:7px!important;}
+  .pt-head .dk-ghost{padding:6px 9px!important;font-size:12px!important;}
+  .bk-lbl{display:none!important;}
+  .bk-time{font-size:10px!important;letter-spacing:-.3px;}
+  .bnav-btn>span:last-child{font-size:9.5px!important;}
+}
+@media (max-width:300px){ .book-panel .ember-flame{display:none;} }
+
 /* ── Tema oscuro común (cliente y coach) ── */
 :root{--bg:#0b0b0e;--card:#16161c;--sky:#ff6a3d;color-scheme:dark;}
 html,body{background:#0b0b0e;}
@@ -437,6 +456,9 @@ const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // Coach: email + contraseña. Atleta: código + contraseña propia (la cuenta usa
 // un email interno derivado del código; el atleta nunca lo ve).
 const ATHLETE_DOMAIN = "atleta.kikotegym.app";
+// Acceso del atleta con su nombre + su código (docs/acceso-codigo.sql calcula lo mismo).
+const athleteKey = (t) => String(t||"").trim().toLowerCase().replace(/[áéíóúüñàèìòù]/g,ch=>"aeiouunaeiou"["áéíóúüñàèìòù".indexOf(ch)]).replace(/\s+/g," ");
+const athletePw = (name,code) => "kk1|"+athleteKey(name)+"|"+String(code||"").toUpperCase().replace(/[^A-Z0-9]/g,"");
 const athleteEmail = (code) => String(code||"").trim().toLowerCase().replace(/[^a-z0-9]/g,"")+"@"+ATHLETE_DOMAIN;
 // Paso 1 de seguridad: el acceso antiguo sigue disponible mientras se configura
 // el nuevo. Tras ejecutar docs/seguridad-2.sql se pone a false.
@@ -445,7 +467,9 @@ const LEGACY_LOGIN = true;
 const sbAnon = supabase.createClient(SUPABASE_URL, SUPABASE_KEY, {auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false,storageKey:"kg-anon-check"}});
 async function dbIsOpen(){ try{ const {data,error}=await sbAnon.from("clients").select("id").limit(1); return !error&&Array.isArray(data)&&data.length>0; }catch(e){ return false; } }
 
-const TODAY = new Date().toISOString().split("T")[0];
+// Fecha (AAAA-MM-DD) en la hora del móvil, no en UTC: a las 00:30 en España ya es el día nuevo.
+function isoLocal(d){ const x=d||new Date(); return x.getFullYear()+"-"+String(x.getMonth()+1).padStart(2,"0")+"-"+String(x.getDate()).padStart(2,"0"); }
+const TODAY = isoLocal();
 const TIME_SLOTS = ["08:00","09:00","10:00","11:00","12:00","13:00","14:00","15:00","16:00","17:00","18:00","19:00","20:00","21:00"];
 const SESSION_TYPES = ["Fuerza","Cardio","Funcional","HIIT","Movilidad","Evaluación"];
 const HOURS = Array.from({length:24},(_,h)=>String(h).padStart(2,"0")+":00");
@@ -546,7 +570,7 @@ const reminderWA = (r) => {
   if(owedOf(r.c)) return `Hola ${first}! Llevas ${owedOf(r.c)} sesión(es) fuera del bono. ¿Renovamos? Te las descuento del siguiente bono 💪`;
   return `Hola ${first}! Se te agotaron las sesiones. ¿Renovamos para seguir entrenando? 💪`;
 };
-const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return d.toISOString().split("T")[0];});
+const getWeekDays = (from=TODAY) => Array.from({length:7},(_,i)=>{const d=new Date(from+"T12:00:00");d.setDate(d.getDate()+i);return isoLocal(d);});
 // Estilo de una valoración/lead según su estado (color de un vistazo en la agenda).
 const VAL_STY = (status) => status==="cliente"
   ? {tag:"ya es cliente",fg:"#0f766e",bg:"#e6f6f3",bd:"#b5e3da",chip:"#cdeee7"}
@@ -638,7 +662,7 @@ const blockForDate = (blocks,date=TODAY,client) => {
   return undefined;
 };
 // Lunes de la semana de una fecha.
-const mondayOfDate = (d) => { const x=new Date(d+"T12:00:00"); const g=x.getDay(); x.setDate(x.getDate()+(g===0?-6:1-g)); return x.toISOString().split("T")[0]; };
+const mondayOfDate = (d) => { const x=new Date(d+"T12:00:00"); const g=x.getDay(); x.setDate(x.getDate()+(g===0?-6:1-g)); return isoLocal(x); };
 // Días de la semana (getDay: 0=Dom..6=Sáb) en orden Lun→Dom para la interfaz.
 const WEEKDAYS = [[1,"L"],[2,"M"],[3,"X"],[4,"J"],[5,"V"],[6,"S"],[0,"D"]];
 const parseDays = (s) => Array.isArray(s)?s:String(s||"").split(",").map(x=>parseInt(x,10)).filter(x=>!isNaN(x));
@@ -902,6 +926,24 @@ function App() {
     if(error) return setLoginErr(/invalid login/i.test(error.message)?"Código o contraseña incorrectos. ¿Ya activaste tu cuenta?":error.message);
     setLoading(true); await enterWithAuth();
   };
+  // Entrar con nombre + código. La primera vez se crea su cuenta y se une a su ficha.
+  const handleAthleteEnter = async (name, code) => {
+    setLoginErr("");
+    const nm=String(name||"").trim(), cd=String(code||"").trim();
+    if(!nm||!cd) return setLoginErr("Escribe tu nombre y tu código");
+    const email=athleteEmail(cd), pw=athletePw(nm,cd);
+    const s=await sb.auth.signInWithPassword({email,password:pw});
+    if(!s.error){ try{ localStorage.setItem("kk_last_name",nm); }catch(e){} setLoading(true); await enterWithAuth(); return; }
+    if(!/invalid|credentials/i.test(s.error.message)) return setLoginErr(s.error.message);
+    const r=await sb.auth.signUp({email,password:pw});
+    if(r.error) return setLoginErr(/registered|already|exists/i.test(r.error.message)?"El nombre o el código no coinciden. Escríbelos tal como te los dio tu coach.":r.error.message);
+    if(!r.data||!r.data.session) return setLoginErr("Falta un ajuste en Supabase: desactiva «Confirm email» (Authentication → Providers → Email).");
+    const c=await sb.rpc("claim_client",{p_name:nm,p_code:cd});
+    if(c.error||!c.data){ try{ await sb.rpc("drop_unclaimed_me"); }catch(e){} await sb.auth.signOut();
+      return setLoginErr(c.error&&/intentos/i.test(c.error.message)?"Demasiados intentos. Prueba dentro de una hora.":"El nombre o el código no coinciden. Escríbelos tal como te los dio tu coach."); }
+    try{ localStorage.setItem("kk_last_name",nm); }catch(e){}
+    setLoading(true); if(await enterWithAuth()) notify("¡Bienvenido/a! Entra siempre con tu nombre y tu código 💪");
+  };
   const handleAthleteActivate = async (name, code, pass, pass2) => {
     setLoginErr("");
     if(!String(name||"").trim()||!String(code||"").trim()) return setLoginErr("Escribe tu nombre completo y tu código");
@@ -952,6 +994,11 @@ function App() {
     }
   };
 
+  // Si la app se queda abierta y cambia el día (pasa la medianoche), al volver a
+  // ella se recarga para que «hoy», la semana y las reservas sean las del día nuevo.
+  React.useEffect(()=>{ const chk=()=>{ if(document.visibilityState==="visible"&&isoLocal()!==TODAY){ try{ location.reload(); }catch(e){} } };
+    document.addEventListener("visibilitychange",chk); window.addEventListener("focus",chk); const iv=setInterval(()=>{ if(!document.querySelector("input:focus,textarea:focus,select:focus")) chk(); },60000);
+    return ()=>{ document.removeEventListener("visibilitychange",chk); window.removeEventListener("focus",chk); clearInterval(iv); }; },[]);
   const clientWeightsEff = React.useMemo(()=>effectiveWeights(clientWeights,assignedSessions,assignedExercises),[clientWeights,assignedSessions,assignedExercises]);
   React.useEffect(()=>{ ASG.list=assignedSessions||[]; ASG.ex=assignedExercises||[]; },[assignedSessions,assignedExercises]);
   // Atleta con sesión segura: sus reservas + el aforo de los demás (sin datos privados).
@@ -977,7 +1024,7 @@ function App() {
   return (
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
-      {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}}/>}
+      {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleAthleteEnter,handleCoachLogin}}/>}
       {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights:clientWeightsEff,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
       {mode==="client"&&loggedClient&&isBaja(loggedClient)&&<BajaScreen client={loggedClient} onLogout={doLogout}/>}
@@ -987,11 +1034,11 @@ function App() {
 }
 
 // ── LOGIN ──────────────────────────────────────────────────────────────────
-function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleCoachLogin}) {
+function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleAthleteEnter,handleCoachLogin}) {
   const [remember, setRemember] = React.useState(true);
-  const [sub, setSub] = React.useState("login");       // atleta: login | activate
+  const [sub, setSub] = React.useState("login");       // atleta: login (nombre + código) | pass (contraseña, acceso anterior) | activate
   const [legacy, setLegacy] = React.useState(false);   // acceso antiguo (temporal)
-  const [f, setF] = React.useState({code:"",pass:"",pass2:"",name:"",email:""});
+  const [f, setF] = React.useState(()=>{ let n=""; try{ n=localStorage.getItem("kk_last_name")||""; }catch(e){} return {code:"",pass:"",pass2:"",name:n,email:""}; });
   const [busy, setBusy] = React.useState(false);
   const [show, setShow] = React.useState(false);
   const [dbOpen, setDbOpen] = React.useState(false); // el acceso antiguo solo existe mientras la base de datos está abierta
@@ -1013,6 +1060,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
   );
   const err=loginErr?<p style={{fontSize:12,color:"#dc2626",lineHeight:1.4}}>{loginErr}</p>:null;
   const athleteLogin=()=>run(()=>handleAthleteLogin(f.code,f.pass));
+  const athleteEnter=()=>run(()=>handleAthleteEnter(f.name,f.code));
   const activate=()=>run(()=>handleAthleteActivate(f.name,f.code,f.pass,f.pass2));
   const coachLogin=()=>run(()=>handleCoachLogin(f.email,f.pass));
   return (
@@ -1029,6 +1077,20 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
         </div>
         <div className="card" style={{padding:24}}>
           {!legacy&&loginTab==="client"&&sub==="login"&&(
+            <form data-login="code" onSubmit={e=>{e.preventDefault();athleteEnter();}} style={{display:"flex",flexDirection:"column",gap:14}}>
+              <div><span className="lbl">TU NOMBRE</span>
+                <input className="inp" autoComplete="name" autoCapitalize="words" placeholder="Tal como te lo dio tu coach" value={f.name} onChange={e=>set("name",e.target.value)}/>
+              </div>
+              <div><span className="lbl">TU CÓDIGO</span>
+                <input className="inp mono" autoComplete="off" autoCapitalize="characters" spellCheck={false} placeholder="Ej. X7K9QP" value={f.code} onChange={e=>set("code",e.target.value)} style={{letterSpacing:4,fontSize:18,textAlign:"center"}}/>
+              </div>
+              {err}
+              <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Entrando…":"Entrar"}</button>
+              <p style={{fontSize:11,color:"#94a3b8",textAlign:"center",lineHeight:1.45}}>Da igual mayúsculas y tildes. La primera vez tu cuenta se activa sola.<br/>¿No te acuerdas del código? Pídeselo a tu coach.</p>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:9,fontSize:12,color:"#64748b"}} onClick={()=>{setSub("pass");setLoginErr("");}}>Entrar con contraseña (acceso anterior)</button>
+            </form>
+          )}
+          {!legacy&&loginTab==="client"&&sub==="pass"&&(
             <form onSubmit={e=>{e.preventDefault();athleteLogin();}} style={{display:"flex",flexDirection:"column",gap:14}}>
               <div><span className="lbl">TU CÓDIGO</span>
                 <input className="inp mono" autoComplete="username" placeholder="Ej. 1000" value={f.code} onChange={e=>set("code",e.target.value)} style={{letterSpacing:4,fontSize:18,textAlign:"center"}}/>
@@ -1036,8 +1098,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
               <div><span className="lbl">CONTRASEÑA</span>{passInput("pass",athleteLogin)}</div>
               {err}
               <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Entrando…":"Entrar"}</button>
-              <button type="button" className="btn ghost" style={{width:"100%",padding:11,fontSize:13,color:"#0284c7"}} onClick={()=>{setSub("activate");setLoginErr("");}}>¿Primera vez? Activa tu cuenta</button>
-              <p style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>¿Olvidaste la contraseña? Pide a tu coach que restablezca tu acceso.</p>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:10,fontSize:12}} onClick={()=>{setSub("login");setLoginErr("");}}>← Entrar con nombre y código</button>
             </form>
           )}
           {!legacy&&loginTab==="client"&&sub==="activate"&&(
@@ -1332,7 +1393,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
   const reminders = allReminders.filter(r=>!dismissed[alertKey(r)]);
   // Recordatorios de sesión: sesiones confirmadas de hoy y mañana (lista aparte
   // para no saturar las alertas de pago/bono).
-  const TOMORROW = (()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return x.toISOString().split("T")[0];})();
+  const TOMORROW = (()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return isoLocal(x);})();
   const allSessionReminders = sessions.filter(s=>(s.date===TODAY||s.date===TOMORROW)&&s.status!=="completed"&&!s.requested)
     .map(s=>{const c=allClients.find(cl=>cl.id===s.client_id); return c?{c,type:"session",days:s.date===TODAY?0:1,time:s.time,date:s.date}:null;})
     .filter(Boolean)
@@ -1371,7 +1432,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     navigator.serviceWorker.addEventListener("message",h); return ()=>navigator.serviceWorker.removeEventListener("message",h); },[]);
 
   // Income stats
-  const thisMonth = new Date().toISOString().slice(0,7);
+  const thisMonth = TODAY.slice(0,7);
   const monthIncome = payments.filter(p=>p.paid_at&&p.paid_at.startsWith(thisMonth)).reduce((a,p)=>a+parseFloat(p.amount||0),0);
   const totalIncome = payments.reduce((a,p)=>a+parseFloat(p.amount||0),0);
 
@@ -1420,7 +1481,6 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     if(f.level!==client.level){ const r=await sb.from("clients").update({level:f.level}).eq("id",client.id); if(r.error) warn.push("nivel (docs/nivel.sql)"); }
     const prof=Object.fromEntries(Object.entries(f.profile||{}).filter(([k,v])=>v!==""&&v!=null));
     const r2=await sb.from("clients").update({profile:prof}).eq("id",client.id); if(r2.error) warn.push("ficha personal (docs/ficha-cliente.sql)");
-    if(codeChanged&&activated) await sb.rpc("admin_reset_access",{p_client:client.id});
     setEditData(null);
     if(quickView&&quickView.id===client.id) setQuickView(q=>({...q,...base,level:f.level,profile:prof}));
     notify(warn.length?`Datos guardados ✓ · falta en Supabase: ${warn.join(", ")}`:"Datos guardados ✓",warn.length?"err":undefined);
@@ -1540,7 +1600,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
   const markPayment = (client, amount, date) => w(async()=>{
     const base=client.next_payment||TODAY;
     const next=new Date(base+"T12:00:00"); next.setMonth(next.getMonth()+1);
-    await sb.from("clients").update({next_payment:next.toISOString().split("T")[0]}).eq("id",client.id);
+    await sb.from("clients").update({next_payment:isoLocal(next)}).eq("id",client.id);
     await sb.from("payments").insert({client_id:client.id,client_name:client.name,amount:amount||client.payment_amount,paid_at:date||TODAY});
     notify(`Pago registrado ✓ (${fmtDate(date||TODAY)})`);
   });
@@ -1554,9 +1614,9 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     notify(owed?`Bono renovado ✓ · descontadas ${owed} sesión(es) que debía`:"Sesiones renovadas ✓");
   });
   // Restablece el acceso a la app de un atleta (olvidó la contraseña, cambió de móvil…).
-  const resetAccess = (c) => { if(!window.confirm(`¿Restablecer el acceso de ${c.name}? Tendrá que volver a activar su cuenta con su nombre y su código.`)) return;
+  const resetAccess = (c) => { if(!window.confirm(`¿Restablecer el acceso de ${c.name}? Volverá a entrar con su nombre y su código (su cuenta se activa de nuevo sola).`)) return;
     w(async()=>{ const {error}=await sb.rpc("admin_reset_access",{p_client:c.id}); notify(error?("No se pudo: "+error.message):"Acceso restablecido ✓ · ya puede activar su cuenta de nuevo",error?"err":undefined); }); };
-  const accessMsg = (c) => `Hola ${String(c.name||"").split(" ")[0]} 👋 Ya puedes entrar en tu app de ${GYM_NAME}: ${location.origin}\n\n1️⃣ Pulsa «Soy atleta» → «¿Primera vez? Activa tu cuenta».\n2️⃣ Escribe tu nombre (${c.name}) y tu código: ${c.code}\n3️⃣ Elige tu contraseña (mín. 8 caracteres).\n\nDespués entrarás siempre con tu código y tu contraseña. ¡No la compartas! 💪`;
+  const accessMsg = (c) => `Hola ${String(c.name||"").split(" ")[0]} 👋 Ya puedes entrar en tu app de ${GYM_NAME}: ${location.origin}\n\nPulsa «Soy atleta» y escribe:\n👤 Nombre: ${c.name}\n🔑 Código: ${c.code}\n\nNo hace falta contraseña. Guarda tu código y no lo compartas 💪`;
   const deleteClient = (id) => { const c=allClients.find(x=>x.id===id);
     if(!window.confirm(`¿Eliminar a ${c?c.name:"este cliente"} DEFINITIVAMENTE?\n\nSe borra su perfil y no se puede deshacer. Si solo deja de venir, usa «Dar de baja»: se guarda todo para el futuro.`)) return;
     w(async()=>{ await sb.from("clients").delete().eq("id",id); setExpanded(null); notify("Cliente eliminado"); }); };
@@ -1787,7 +1847,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     const end=new Date(endDate+"T12:00:00");
     const inserts=[];
     for(let d=new Date(start);d<=end;d.setDate(d.getDate()+1)){
-      const ds=d.toISOString().split("T")[0];
+      const ds=isoLocal(d);
       const dow=d.getDay();
       if(dow>=1&&dow<=5) inserts.push({date:ds,time:"ALL",reason:"Vacaciones"});
     }
@@ -1905,7 +1965,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
         const low=vh<500, padT=Math.max(low?4:8,safe.t), padB=Math.max(6,safe.b), padL=Math.max(8,safe.l+(safe.l?4:0)), padR=docked?8:Math.max(8,safe.r+(safe.r?4:0));
         const week=schedView==="week", W=vw-(docked?DOCK_W:0)-padL-padR, headH=low?42:52, availH=Math.max(200,vh-padT-padB-headH-(low?6:10));
         const nowHM=new Date().toTimeString().slice(0,5), curHour=nowHM.slice(0,2)+":00";
-        const shift=(dir)=>{ const d=new Date(activeDay+"T12:00:00"); d.setDate(d.getDate()+(week?7:1)*dir); setActiveDay(d.toISOString().split("T")[0]); };
+        const shift=(dir)=>{ const d=new Date(activeDay+"T12:00:00"); d.setDate(d.getDate()+(week?7:1)*dir); setActiveDay(isoLocal(d)); };
         const lbl=week?(()=>{ const wd=getWeekDays(mondayOfDate(activeDay)).slice(0,5), a=new Date(wd[0]+"T12:00:00"), z=new Date(wd[4]+"T12:00:00"), m=(x)=>x.toLocaleDateString("es-ES",{month:"short"}).replace(".","");
           return a.getMonth()===z.getMonth()?`${a.getDate()}–${z.getDate()} ${m(z)}`:`${a.getDate()} ${m(a)} – ${z.getDate()} ${m(z)}`; })()
           :new Date(activeDay+"T12:00:00").toLocaleDateString("es-ES",vw<520?{weekday:"short",day:"numeric",month:"short"}:{weekday:"long",day:"numeric",month:"short"}).replace(/\./g,"");
@@ -2179,7 +2239,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
             {(()=>{
               const ppS=(c)=>{ const t=parseInt(c&&c.total_sessions)||0; return t>0?(parseFloat(c.payment_amount)||0)/t:0; };
               const byId=Object.fromEntries(clients.map(c=>[c.id,c]));
-              const weekOf=(off)=>{ const m=new Date(mondayOfDate(TODAY)+"T12:00:00"); m.setDate(m.getDate()+off*7); const a=m.toISOString().split("T")[0]; m.setDate(m.getDate()+6); const b=m.toISOString().split("T")[0];
+              const weekOf=(off)=>{ const m=new Date(mondayOfDate(TODAY)+"T12:00:00"); m.setDate(m.getDate()+off*7); const a=isoLocal(m); m.setDate(m.getDate()+6); const b=isoLocal(m);
                 const wk=history.filter(h=>h.date>=a&&h.date<=b&&byId[h.client_id]); return {wk,gen:wk.reduce((x,h)=>x+ppS(byId[h.client_id]),0),horas:new Set(wk.map(h=>h.date+"|"+(h.time||""))).size}; };
               let cur=weekOf(0), lbl="Esta semana"; if(!cur.horas){ cur=weekOf(-1); lbl="Semana pasada"; }
               const {gen,horas}=cur;
@@ -2571,7 +2631,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 <button className="btn ghost" style={{padding:"6px 10px",fontSize:13,flexShrink:0}} onClick={()=>{
                   const d=new Date(activeDay+"T12:00:00");
                   d.setDate(d.getDate()-(schedView==="week"?7:1));
-                  setActiveDay(d.toISOString().split("T")[0]);
+                  setActiveDay(isoLocal(d));
                 }}>‹</button>
                 {schedView==="week"
                   ? <span style={{fontSize:14,fontWeight:600,color:"#64748b",flex:1,textAlign:"center",textTransform:"capitalize"}}>{(()=>{
@@ -2585,7 +2645,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 <button className="btn ghost" style={{padding:"6px 10px",fontSize:13,flexShrink:0}} onClick={()=>{
                   const d=new Date(activeDay+"T12:00:00");
                   d.setDate(d.getDate()+(schedView==="week"?7:1));
-                  setActiveDay(d.toISOString().split("T")[0]);
+                  setActiveDay(isoLocal(d));
                 }}>›</button>
               </div>
             )}
@@ -2895,7 +2955,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               <div className="swipe">
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
                   <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()-1);setCalDate(d);}}>‹</button>
-                  <span style={{fontSize:14,fontWeight:600,textTransform:"capitalize"}}>{fmtMonth(calDate.toISOString().split("T")[0])}</span>
+                  <span style={{fontSize:14,fontWeight:600,textTransform:"capitalize"}}>{fmtMonth(isoLocal(calDate))}</span>
                   <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()+1);setCalDate(d);}}>›</button>
                 </div>
                 <div className="card" style={{display:"flex",flexDirection:"column",height:"calc(100dvh - 250px)",minHeight:360,maxHeight:700,padding:12}}>
@@ -3003,7 +3063,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               <h1 className="mono" style={{fontSize:20,fontWeight:700}}>Calendario</h1>
               <div style={{display:"flex",gap:8,alignItems:"center"}}>
                 <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()-1);setCalDate(d);}}>‹</button>
-                <span style={{fontSize:14,fontWeight:600,textTransform:"capitalize",minWidth:140,textAlign:"center"}}>{fmtMonth(calDate.toISOString().split("T")[0])}</span>
+                <span style={{fontSize:14,fontWeight:600,textTransform:"capitalize",minWidth:140,textAlign:"center"}}>{fmtMonth(isoLocal(calDate))}</span>
                 <button className="btn ghost" style={{padding:"6px 10px",fontSize:13}} onClick={()=>{const d=new Date(calDate);d.setMonth(d.getMonth()+1);setCalDate(d);}}>›</button>
               </div>
             </div>
@@ -4189,7 +4249,7 @@ function FinanceView({clients,sessions,history,payments}) {
   const eur0=(n)=>`${Math.round(n||0)}€`;
   const ppS=(c)=>{ const t=parseInt(c&&c.total_sessions)||0; const a=parseFloat(c&&c.payment_amount)||0; return t>0?a/t:0; };
   const byId=Object.fromEntries((clients||[]).map(c=>[c.id,c]));
-  const ds=(d)=>d.toISOString().split("T")[0];
+  const ds=(d)=>isoLocal(d);
   const range=(()=>{ const a=new Date(anchor+"T12:00:00");
     if(mode==="day") return [anchor,anchor];
     if(mode==="week"){ const m=mondayOfDate(anchor); const e=new Date(m+"T12:00:00"); e.setDate(e.getDate()+6); return [m,ds(e)]; }
@@ -4456,7 +4516,7 @@ function ClientHistoryPanel({client,history,payments,assignedSessions,assignedEx
 function HistorySessionModal({client,date,type,time,assignedSessions,assignedExercises,clients,sessions,onReplicate,onCopyTo,onEdit,onClose}) {
   const asig=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const exs=asig?(assignedExercises||[]).filter(e=>e.session_id===asig.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
-  const nextWeek=(()=>{const x=new Date(date+"T12:00:00");x.setDate(x.getDate()+7);return x.toISOString().split("T")[0];})();
+  const nextWeek=(()=>{const x=new Date(date+"T12:00:00");x.setDate(x.getDate()+7);return isoLocal(x);})();
   const [toDate,setToDate]=React.useState(nextWeek);
   const [dates,setDates]=React.useState([]); // fechas seleccionadas para replicar
   const addDate=()=>{ if(toDate&&!dates.includes(toDate)) setDates(d=>[...d,toDate].sort()); };
@@ -5731,7 +5791,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
   const [wkOff,setWkOff] = React.useState(0);
   const [openDay,setOpenDay] = React.useState(null);
   React.useEffect(()=>{ setWkOff(0); setOpenDay(null); },[client&&client.id]);
-  const anchor=(()=>{const x=new Date(mondayOfDate(date)+"T12:00:00");x.setDate(x.getDate()+wkOff*7);return x.toISOString().split("T")[0];})();
+  const anchor=(()=>{const x=new Date(mondayOfDate(date)+"T12:00:00");x.setDate(x.getDate()+wkOff*7);return isoLocal(x);})();
   const week=getWeekDays(anchor);
   const td=parseDays(client.train_days);
   const mine=(arr)=>(arr||[]).filter(x=>x.client_id===client.id);
@@ -5763,7 +5823,7 @@ function ClientWeekPlanner({client,date,sessions,history,assignedSessions,assign
     const pairs=pending.map(d=>[d,key==="auto"?null:SEQ[key][realRows.indexOf(d)%SEQ[key].length]]);
     onPlanWeek(pairs);
   };
-  const prevWeek=getWeekDays((()=>{const x=new Date(anchor+"T12:00:00");x.setDate(x.getDate()-7);return x.toISOString().split("T")[0];})());
+  const prevWeek=getWeekDays((()=>{const x=new Date(anchor+"T12:00:00");x.setDate(x.getDate()-7);return isoLocal(x);})());
   const prevAsig=mine(assignedSessions).filter(a=>prevWeek.includes(a.date)&&exsOf(a).length>0).sort((a,b)=>a.date.localeCompare(b.date));
   // Nivel: volumen semanal y días pendientes con entreno ya creado (ajustables).
   const lvl=levelOf(client);
@@ -6383,7 +6443,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
 // minutos de WOD. Cuenta solo lo realizado (día en historial o sesión hecha);
 // si se marcaron ejercicios uno a uno, solo esos.
 const repsNum = (r) => { const t=String(r||"").trim(); if(!t||/\d\s*(s|seg|min|m|km|cal)\b|'|"/i.test(t)) return null; const m=t.match(/(\d+(?:[.,]\d+)?)(?:\s*-\s*(\d+(?:[.,]\d+)?))?/); if(!m) return null; const a=parseFloat(m[1].replace(",",".")), b=m[2]?parseFloat(m[2].replace(",",".")):a; return (a+b)/2; };
-const addDays = (d,n) => { const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return x.toISOString().split("T")[0]; };
+const addDays = (d,n) => { const x=new Date(d+"T12:00:00"); x.setDate(x.getDate()+n); return isoLocal(x); };
 function workByWeek(client, {history, assignedSessions, assignedExercises, annualBlocks}){
   const mineH=(history||[]).filter(h=>h.client_id===client.id&&h.date&&h.date<=TODAY);
   const mineA=(assignedSessions||[]).filter(a=>a.client_id===client.id&&a.date&&a.date<=TODAY);
@@ -7843,7 +7903,7 @@ function EditClientModal({client,clients,saving,lead,onValoracion,onSave,onClose
     if(!f.name.trim()) return setErr("El nombre es obligatorio");
     if(!/^[A-Za-z0-9]{4,8}$/.test(f.code)) return setErr("El código debe tener de 4 a 8 letras o números");
     if(codeChanged&&(clients||[]).some(c=>c.id!==client.id&&String(c.code||"").toUpperCase()===f.code.toUpperCase())) return setErr("Ese código ya lo tiene otro cliente");
-    if(codeChanged&&activated&&!window.confirm(`${client.name} ya activó su app con el código ${client.code}. Si lo cambias, tendrá que volver a activar su cuenta con el código nuevo. ¿Continuar?`)) return;
+    if(codeChanged&&activated&&!window.confirm(`${client.name} entrará desde ahora con el código nuevo (${f.code}). El anterior deja de valer. ¿Continuar?`)) return;
     onSave(f,{codeChanged,activated});
   };
   const sec=(t)=><div style={{fontSize:11,fontWeight:800,color:"#0284c7",margin:"14px 0 6px",letterSpacing:.3}}>{t}</div>;
@@ -7863,7 +7923,7 @@ function EditClientModal({client,clients,saving,lead,onValoracion,onSave,onClose
           <div style={{gridColumn:"1 / -1"}}>{inp("name","NOMBRE COMPLETO *","María García")}</div>
           {inp("phone","TELÉFONO (WhatsApp)","34600000000","tel")}
           {inp("email","EMAIL","cliente@email.com","email")}
-          <div>{inp("code","CÓDIGO DE ACCESO","AB12CD")}{codeChanged&&activated&&<div style={{fontSize:10,color:"#b45309",marginTop:3}}>Tendrá que volver a activar su app.</div>}</div>
+          <div>{inp("code","CÓDIGO DE ACCESO","AB12CD")}{codeChanged&&activated&&<div style={{fontSize:10,color:"#b45309",marginTop:3}}>Entrará con el código nuevo (el anterior deja de valer).</div>}</div>
           <div><span className="lbl">COLOR</span><div style={{display:"flex",gap:5,flexWrap:"wrap",paddingTop:4}}>{COLORS.map(c=><button key={c} type="button" onClick={()=>set("color",c)} title={c} style={{width:26,height:26,borderRadius:"50%",background:c,cursor:"pointer",border:f.color===c?"3px solid #0f172a":"2px solid #fff",boxShadow:"0 0 0 1px #dbe2ec"}}/>)}</div></div>
         </div>
         {sec("ENTRENAMIENTO")}
@@ -8178,7 +8238,7 @@ function BulkWAModal({clients,sessions,onClose,notify}) {
   const [selected,setSelected]=React.useState("pay");
   const [msg,setMsg]=React.useState(WA_TEMPLATES.pay);
   // Sesiones de mañana por cliente (para el recordatorio de sesión).
-  const TOMORROW=(()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return x.toISOString().split("T")[0];})();
+  const TOMORROW=(()=>{const x=new Date(TODAY+"T12:00:00");x.setDate(x.getDate()+1);return isoLocal(x);})();
   const tomorrowMap={};
   (sessions||[]).filter(s=>s.date===TOMORROW&&s.status!=="completed"&&!s.requested).forEach(s=>{
     if(!tomorrowMap[s.client_id]||s.time<tomorrowMap[s.client_id]) tomorrowMap[s.client_id]=s.time;
@@ -8605,7 +8665,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
   const streak=calcStreak(myHistory);
   const nextSess=mySessions.find(s=>!s.requested);
   const nextCountdown=nextSess?daysUntil(nextSess.date):null;
-  const thisMonthSessions=myHistory.filter(h=>h.date&&h.date.startsWith(new Date().toISOString().slice(0,7))).length;
+  const thisMonthSessions=myHistory.filter(h=>h.date&&h.date.startsWith(TODAY.slice(0,7))).length;
 
   // Lista de espera: detecta si se ha liberado un hueco en una clase que el
   // cliente esperaba, para avisarle y dejar que lo reserve.
@@ -8660,10 +8720,10 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
       <ExPhotoHost notify={notify}/>
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#ff7a45,#f2441d)",zIndex:500}}/>}
       {/* Cabecera del resto de pestañas: título grande, marca y bono, en el mismo estilo que Inicio */}
-      {tab!=="inicio"&&<div style={{display:"flex",alignItems:"center",gap:11,marginBottom:18}}>
+      {tab!=="inicio"&&<div className="pt-head" style={{display:"flex",alignItems:"center",gap:11,marginBottom:18}}>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:11,fontWeight:800,letterSpacing:1.4,color:DK.ac2}}>{GYM_NAME.toUpperCase()}{streak>0?<span style={{color:DK.mu,letterSpacing:0}}> · 🔥 {streak} sem.</span>:""}</div>
-          <div style={{fontWeight:800,fontSize:26,color:DK.tx,letterSpacing:-.4,lineHeight:1.15}}>{(NAV.find(n=>n[0]===tab)||[])[2]}</div>
+          <div className="pt-title" style={{fontWeight:800,fontSize:26,color:DK.tx,letterSpacing:-.4,lineHeight:1.15}}>{(NAV.find(n=>n[0]===tab)||[])[2]}</div>
         </div>
         <button onClick={()=>go("reservar")} title={`Sesiones libres para reservar (${nBooked} ya reservadas)`} style={{border:`1px solid ${client.sessions_left<=0?"rgba(248,113,113,.45)":nFree===0?"rgba(251,191,36,.4)":"rgba(255,122,69,.35)"}`,background:DK.card,borderRadius:14,padding:"5px 11px",textAlign:"center",cursor:"pointer",fontFamily:"inherit"}}>
           <div key={nFree} className="mono count-pop" style={{fontSize:18,fontWeight:800,color:client.sessions_left<=0?DK.red:nFree===0?DK.gold:DK.ac2,lineHeight:1.1}}>{nFree}</div>
@@ -9160,7 +9220,7 @@ function AthleteStats({client,history,assignedSessions,assignedExercises}){
   const range=(p,back)=>{ // [desde, hasta) del periodo (back=1 → el anterior)
     const d=new Date(TODAY+"T12:00:00");
     if(p==="semana"){ const m=addDays(mondayOfDate(TODAY),-7*back); return [m,addDays(m,7)]; }
-    if(p==="mes"){ const a=new Date(d.getFullYear(),d.getMonth()-back,1,12), b=new Date(d.getFullYear(),d.getMonth()-back+1,1,12); return [a.toISOString().slice(0,10),b.toISOString().slice(0,10)]; }
+    if(p==="mes"){ const a=new Date(d.getFullYear(),d.getMonth()-back,1,12), b=new Date(d.getFullYear(),d.getMonth()-back+1,1,12); return [isoLocal(a),isoLocal(b)]; }
     if(p==="año"){ const y=d.getFullYear()-back; return [`${y}-01-01`,`${y+1}-01-01`]; }
     return back?null:[first,addDays(TODAY,1)]; };
   const calc=(r)=>{ if(!r) return null; const [a,b]=r, inR=(x)=>x>=a&&x<b;
@@ -9452,7 +9512,11 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
 // Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
 // En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
 function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, allOpens, hybrid, loadAll, notify, saving, setSaving, streak}) {
-  const [wk,setWk] = React.useState(()=>mondayOfDate(TODAY));
+  // Semana que se ve al abrir: la actual; si ya no queda ninguna hora por reservar
+  // esta semana (p. ej. sábado tarde o domingo), directamente la siguiente.
+  const [wk,setWk] = React.useState(()=>{ const m=mondayOfDate(TODAY), now=new Date().toTimeString().slice(0,5);
+    const left=Array.from({length:7},(_,i)=>addDays(m,i)).filter(d=>d>=TODAY).some(d=>pubHoursOf(config,d).some(t=>d>TODAY||t>now));
+    return left?m:addDays(m,7); });
   const [celebrate,setCelebrate] = React.useState(null); // pantalla «¡Reservado!» tras confirmar
   const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN|hora"
   const [openPick,setOpenPick] = React.useState(null); // día open al que se le está eligiendo la hora
@@ -9536,8 +9600,8 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
   const cellBase={borderRadius:12,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:0,transition:"background .15s, transform .1s, box-shadow .2s"};
   const fire="linear-gradient(135deg,#ff7a45,#f2441d)";
   return(
-    <div className="ember-panel" style={{position:"relative",overflow:"hidden",margin:"-4px -6px 0",borderRadius:26,background:"radial-gradient(120% 60% at 50% -5%,rgba(242,68,29,.38),rgba(10,10,12,0) 60%),#0b0b0e",color:"#fff",
-      display:"flex",flexDirection:"column",height:"calc(100dvh - 196px - env(safe-area-inset-bottom))",minHeight:460,padding:"12px 12px 12px",boxShadow:"0 20px 40px rgba(15,23,42,.25)"}}>
+    <div className="ember-panel book-panel" style={{position:"relative",overflow:"hidden",margin:"-4px -6px 0",borderRadius:26,background:"radial-gradient(120% 60% at 50% -5%,rgba(242,68,29,.38),rgba(10,10,12,0) 60%),#0b0b0e",color:"#fff",
+      display:"flex",flexDirection:"column",minHeight:460,padding:"12px 12px 12px",boxShadow:"0 20px 40px rgba(15,23,42,.25)"}}>
       <Embers/>
       {/* Llama + número grande */}
       <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
@@ -9560,7 +9624,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
         <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800}}>{lbl}</div>
         <button type="button" aria-label="Semana siguiente" onClick={()=>setWk(addDays(wk,7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,cursor:"pointer",fontFamily:"inherit"}}>›</button>
       </div>
-      <div style={{position:"relative",flex:1,minHeight:0,background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`40px repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:`auto repeat(${nRows},minmax(0,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
+      <div className="book-grid" style={{position:"relative",flex:1,minHeight:0,background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`minmax(30px,40px) repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:`auto repeat(${nRows},minmax(36px,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
         <div/>
         {/* Cabecera de días con «pista» de los días con clase (como una racha) */}
         {days.map((d,i)=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY, on=hasMine(d), prev=i>0&&hasMine(days[i-1]), next=i<days.length-1&&hasMine(days[i+1]); return(
@@ -9573,7 +9637,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
             </div>
           </div>); })}
         {rows.map(t=>(<React.Fragment key={t}>
-          <div className="mono" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"rgba(255,255,255,.55)"}}>{t}</div>
+          <div className="mono bk-time" style={{display:"flex",alignItems:"center",justifyContent:"center",fontSize:11,fontWeight:800,color:"rgba(255,255,255,.55)"}}>{t}</div>
           {days.map(d=>{ const k=d+"|"+t, m=mine(d,t), sel=picked.includes(k), closed=slotClosed(d,t), past=isPast(d,t), free=freeAt(d,t), w=myWait(d,t);
             const st=m?"mine":sel?"sel":closed||past?"off":free<=0?"full":"free";
             const sty={mine:{background:m&&m.status==="completed"?"linear-gradient(135deg,#22c55e,#15803d)":fire,color:"#fff",border:"none",boxShadow:"0 0 16px rgba(242,68,29,.45)"},
@@ -9585,7 +9649,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
               {st==="mine"&&<span style={{fontSize:17}}>✓</span>}
               {st==="sel"&&<span style={{fontSize:20,fontWeight:900}}>＋</span>}
-              {st==="free"&&<><span style={{fontSize:15}}>{free}</span><span style={{fontSize:8,fontWeight:700,color:"rgba(255,255,255,.45)"}}>libre{free>1?"s":""}</span></>}
+              {st==="free"&&<><span style={{fontSize:15,lineHeight:1}}>{free}</span><span className="bk-lbl" style={{fontSize:8,fontWeight:700,color:"rgba(255,255,255,.45)",lineHeight:1.1}}>libre{free>1?"s":""}</span></>}
               {st==="full"&&<span style={{fontSize:9}}>{w?"⏳ espera":"lleno"}</span>}
             </button>; })}
         </React.Fragment>))}
@@ -9700,14 +9764,14 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
       <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:14}}>
         <button className="btn ghost" style={{padding:"7px 12px",fontSize:13}} onClick={()=>{
           const d=new Date(calWeek+"T12:00:00"); d.setDate(d.getDate()-7);
-          setCalWeek(d.toISOString().split("T")[0]);
+          setCalWeek(isoLocal(d));
         }}>‹ Ant.</button>
         <span style={{fontSize:13,fontWeight:600,color:"#64748b"}}>
           {new Date(workDays[0]+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})} – {new Date(workDays[4]+"T12:00:00").toLocaleDateString("es-ES",{day:"numeric",month:"short"})}
         </span>
         <button className="btn ghost" style={{padding:"7px 12px",fontSize:13}} onClick={()=>{
           const d=new Date(calWeek+"T12:00:00"); d.setDate(d.getDate()+7);
-          setCalWeek(d.toISOString().split("T")[0]);
+          setCalWeek(isoLocal(d));
         }}>Sig. ›</button>
       </div>
 
@@ -10726,7 +10790,7 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
     const startOfYear = new Date(d.getFullYear(), 0, 1);
     return Math.ceil(((d - startOfYear) / 86400000 + startOfYear.getDay() + 1) / 7);
   };
-  const currentWeek = getWeekNumber(new Date().toISOString().split("T")[0]);
+  const currentWeek = getWeekNumber(isoLocal());
   const currentBlock = annualBlocks.find(b => currentWeek >= b.start_week && currentWeek <= b.end_week);
 
   const w = async(fn) => { setSaving(true); await fn(); await loadAll(); setSaving(false); };
@@ -10734,7 +10798,7 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
   // Get next 14 days for session assignment
   const next14Days = Array.from({length:14},(_,i) => {
     const d = new Date(); d.setDate(d.getDate()+i);
-    return d.toISOString().split("T")[0];
+    return isoLocal(d);
   });
 
   const BLOCK_COLORS = {
@@ -12670,7 +12734,7 @@ function TemplateEditorModal({template, exercises, onClose, loadAll, notify}) {
 
 // ── TODAY SESSION (client view) ────────────────────────────────────────────
 function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWeights, annualBlocks, loadAll, notify, changed}) {
-  const TODAY_STR = new Date().toISOString().split("T")[0];
+  const TODAY_STR = isoLocal();
   const [saving,setSaving] = React.useState(false);
 
   // Get week number
