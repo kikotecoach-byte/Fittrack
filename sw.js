@@ -1,4 +1,4 @@
-const CACHE = "kikote-gym-v2";
+const CACHE = "kikote-gym-v3";
 const ASSETS = ["/", "/index.html"];
 
 self.addEventListener("install", e => {
@@ -29,4 +29,28 @@ self.addEventListener("fetch", e => {
       })
       .catch(() => caches.match(req))
   );
+});
+
+// ── Avisos push (p. ej. «Luis ha terminado su entreno») ──
+// Llegan aunque la app esté cerrada. Si está abierta, además se le pasa el
+// aviso para que se actualice al momento.
+self.addEventListener("push", e => {
+  let d = {};
+  try { d = e.data ? e.data.json() : {}; } catch (_) { d = { title: "Kikote Gym", body: e.data ? e.data.text() : "" }; }
+  const opts = { body: d.body || "", icon: "/icon-192.png", badge: "/favicon-32.png", vibrate: [120, 60, 120], data: { url: d.url || "/" } };
+  if (d.tag) { opts.tag = d.tag; opts.renotify = true; }
+  e.waitUntil((async () => {
+    await self.registration.showNotification(d.title || "Kikote Gym", opts);
+    const cs = await self.clients.matchAll({ type: "window", includeUncontrolled: true });
+    cs.forEach(c => c.postMessage({ type: "kk-push", data: d }));
+  })());
+});
+
+self.addEventListener("notificationclick", e => {
+  e.notification.close();
+  const url = (e.notification.data && e.notification.data.url) || "/";
+  e.waitUntil(self.clients.matchAll({ type: "window", includeUncontrolled: true }).then(cs => {
+    for (const c of cs) if ("focus" in c) return c.focus();
+    return self.clients.openWindow(url);
+  }));
 });
