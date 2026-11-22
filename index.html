@@ -8379,7 +8379,7 @@ const sysNotify = async (title, body, tag) => {
     else new Notification(title,{body,tag,icon:"/icon-192.png"});
   }catch(e){} };
 // ── AVISOS PUSH AL MÓVIL DEL COACH ─────────────────────────────────────────
-// Cuando un cliente termina su entreno (clase u open) te llega un aviso al móvil
+// Cuando un cliente reserva una clase te llega un aviso al móvil
 // aunque tengas la app cerrada. Lo envía la función de Supabase «avisar-coach»
 // (docs/avisos-push.md). Aquí se activa en cada móvil u ordenador.
 const PUSH_FN = "avisar-coach";
@@ -8416,7 +8416,7 @@ function PushSetup({notify,compact}){
   const iosTip=isIOS()&&!isStandalone();
   if(compact){ // en Inicio: solo si falta activarlo en este móvil
     if(!(st==="off"||(st==="unsupported"&&iosTip))) return null;
-    return <button data-push="cta" className="btn ghost" style={{width:"100%",marginBottom:12,fontSize:12,padding:"9px",justifyContent:"center"}} onClick={st==="off"?activar:()=>notify("En iPhone: Compartir → «Añadir a pantalla de inicio» y abre la app desde el icono")}>📲 Recibir en el móvil cuando un cliente termine su entreno</button>; }
+    return <button data-push="cta" className="btn ghost" style={{width:"100%",marginBottom:12,fontSize:12,padding:"9px",justifyContent:"center"}} onClick={st==="off"?activar:()=>notify("En iPhone: Compartir → «Añadir a pantalla de inicio» y abre la app desde el icono")}>📲 Recibir en el móvil cuando un cliente reserve una clase</button>; }
   const txt={checking:"Comprobando…",busy:"Un momento…",off:"Desactivados en este dispositivo",on:"✅ Activados en este dispositivo",denied:"Bloqueados en el navegador",nofn:"Falta un paso en Supabase",unsupported:"Este navegador no los admite"}[st];
   return(
     <div data-push="card" className="card" style={{marginBottom:14,padding:14,border:"1px solid #bcd3ee",background:"#f5f9ff"}}>
@@ -8424,12 +8424,12 @@ function PushSetup({notify,compact}){
         <span style={{fontSize:24}}>📲</span>
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Avisos en tu móvil</div>
-          <div style={{fontSize:12,color:"#475569",marginTop:2,lineHeight:1.45}}>Te llega un aviso cuando un cliente termina su entreno (clase u open), con lo que ha hecho: ejercicios, kg movidos y RPE. Aunque tengas la app cerrada.</div>
+          <div style={{fontSize:12,color:"#475569",marginTop:2,lineHeight:1.45}}>Te llega un aviso cuando un cliente reserva una clase, con el día y la hora. Aunque tengas la app cerrada.</div>
           <div data-push-state={st} style={{fontSize:12,fontWeight:800,color:st==="on"?"#15803d":st==="denied"||st==="nofn"?"#b45309":"#64748b",marginTop:6}}>{txt}{st==="on"&&devices>1?` · ${devices} dispositivos`:""}</div>
         </div>
       </div>
       {st==="denied"&&<div style={{fontSize:11.5,color:"#78350f",marginTop:8}}>Has bloqueado las notificaciones para esta app. Actívalas en los ajustes del navegador (🔒 junto a la dirección → Notificaciones → Permitir) y vuelve aquí.</div>}
-      {st==="nofn"&&<div style={{fontSize:11.5,color:"#78350f",marginTop:8}}>Despliega la función <b>avisar-coach</b> y ejecuta <b>docs/avisos-push.sql</b> en Supabase (pasos en docs/avisos-push.md).</div>}
+      {st==="nofn"&&<div style={{fontSize:11.5,color:"#78350f",marginTop:8}}>Despliega la función <b>avisar-coach</b> y ejecuta <b>docs/avisos-push.sql</b> y <b>docs/avisos-reservas.sql</b> en Supabase (pasos en docs/avisos-push.md).</div>}
       {iosTip&&<div style={{fontSize:11.5,color:"#334155",marginTop:8}}>📱 En iPhone/iPad: pulsa <b>Compartir → «Añadir a pantalla de inicio»</b>, abre la app desde ese icono y actívalos desde ahí (iOS 16.4 o posterior).</div>}
       <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
         {(st==="off"||st==="nofn")&&<button className="btn sky" style={{flex:1,padding:10,justifyContent:"center"}} onClick={activar}>🔔 Activar en este dispositivo</button>}

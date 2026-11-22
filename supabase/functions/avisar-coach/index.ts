@@ -1,7 +1,7 @@
 // ─────────────────────────────────────────────────────────────────────────
 // Kikote Gym — avisar-coach (Supabase Edge Function)
-// Envía notificaciones push al móvil del coach cuando un cliente termina su
-// entreno (clase u open), aunque la app esté cerrada.
+// Envía notificaciones push al móvil del coach cuando un cliente reserva una
+// clase (y, si se activa, cuando termina su entreno), aunque la app esté cerrada.
 //
 // Despliegue (una vez): Supabase → Edge Functions → Deploy a new function →
 // Via Editor → nombre «avisar-coach» → pega este archivo → Deploy.
@@ -14,6 +14,8 @@
 //   {action:"unsubscribe", endpoint}       → lo quita (solo coach)
 //   {action:"status", endpoint}            → {on, devices} (solo coach)
 //   {action:"test"}                        → aviso de prueba (solo coach)
+//   {action:"booking", ids}                → lo llama la base de datos cuando un
+//                                            cliente reserva clase(s); manda el aviso
 //   {action:"event", table, id}            → lo llama la base de datos al
 //                                            terminar un entreno; manda el aviso
 // Sin dependencias: Web Push (RFC 8291 + VAPID) hecho con Web Crypto.
@@ -164,6 +166,27 @@ export async function buildMessage(table: string, id: string) {
   };
 }
 
+// Aviso de reserva: un aviso por cliente con todas las clases que acaba de reservar.
+export async function bookingMessages(ids: string[]) {
+  const r = await rest(`sessions?id=in.(${ids.join(",")})&select=*`);
+  const byClient = new Map<string, any[]>();
+  for (const s of (r.data || [])) { if (!byClient.has(s.client_id)) byClient.set(s.client_id, []); byClient.get(s.client_id)!.push(s); }
+  const out = [];
+  for (const [cid, list] of byClient) {
+    list.sort((a, b) => (String(a.date) + String(a.time)).localeCompare(String(b.date) + String(b.time)));
+    const c = await rest(`clients?id=eq.${cid}&select=name`); const name = (c.data && c.data[0] && c.data[0].name) || "Un cliente";
+    const first = String(name).split(" ")[0];
+    const when = list.map((s) => `${fmtDay(String(s.date || "").slice(0, 10))}${s.time ? " · " + String(s.time).slice(0, 5) : ""}`);
+    const pend = list.some((s) => s.status === "pending" || s.requested);
+    out.push({
+      title: list.length > 1 ? `📅 ${first} ha reservado ${list.length} clases` : `📅 ${first} ha reservado clase`,
+      body: when.join(", ") + (pend ? " · pendiente de confirmar" : ""),
+      tag: `kk-book-${list[0].id}`, url: "/?aviso=reserva",
+    });
+  }
+  return out;
+}
+
 const CORS = { "Access-Control-Allow-Origin": "*", "Access-Control-Allow-Headers": "authorization, x-client-info, apikey, content-type", "Access-Control-Allow-Methods": "POST, OPTIONS" };
 const json = (o: unknown, status = 200) => new Response(JSON.stringify(o), { status, headers: { ...CORS, "Content-Type": "application/json" } });
 
@@ -173,6 +196,16 @@ export async function handle(req: Request): Promise<Response> {
   try {
     switch (b.action) {
       case "key": return json({ publicKey: (await getVapid()).publicKey });
+      case "booking": {
+        const ids = (Array.isArray(b.ids) ? b.ids : []).map(String).filter((x: string) => /^[0-9a-f-]+$/i.test(x)).slice(0, 50);
+        if (!ids.length) return json({ error: "bad" }, 400);
+        // Solo las reservas que aún no se han avisado (por si la llamada llega dos veces).
+        const d = await rest("push_sent?on_conflict=key", { method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=representation" }, body: JSON.stringify(ids.map((id: string) => ({ key: `book:${id}` }))) });
+        const fresh = (d.data || []).map((x: any) => String(x.key).slice(5));
+        if (!fresh.length) return json({ skipped: "ya avisado" });
+        let sent = 0; for (const msg of await bookingMessages(fresh)) sent += await sendAll(msg);
+        return json({ sent });
+      }
       case "event": {
         if (!["assigned_sessions", "open_sessions"].includes(b.table) || !/^[0-9a-f-]{8,}$/i.test(String(b.id || ""))) return json({ error: "bad" }, 400);
         const msg = await buildMessage(b.table, b.id); if (!msg) return json({ skipped: "no hecho" });
@@ -195,7 +228,7 @@ export async function handle(req: Request): Promise<Response> {
           const all = await rest(`push_subs?user_id=eq.${uid}&select=endpoint`);
           return json({ on: !!(all.data || []).some((x: any) => x.endpoint === b.endpoint), devices: (all.data || []).length });
         }
-        if (b.action === "test") return json({ sent: await sendAll({ title: "🔔 Avisos activados", body: "Así te llegará cuando un cliente termine su entreno 💪", tag: "kk-test", url: "/" }, uid) });
+        if (b.action === "test") return json({ sent: await sendAll({ title: "🔔 Avisos activados", body: "Así te llegará cuando un cliente reserve una clase 📅", tag: "kk-test", url: "/" }, uid) });
         return json({ error: "acción desconocida" }, 400);
       }
     }
