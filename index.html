@@ -1365,6 +1365,10 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     const when=nw.map(x=>`${fmtDate(x.date)} ${x.time}`).slice(0,3).join(" · ");
     notify(`📥 ${names} ha reservado · ${when} · apruébala en Inicio`);
     sysNotify(`📥 Nueva reserva · ${names}`,`${when} · toca para aprobarla`,"kk-reserva"); });
+  // Aviso push con la app abierta («Luis ha terminado su entreno»): también aquí y se actualiza todo.
+  React.useEffect(()=>{ if(!("serviceWorker" in navigator)) return;
+    const h=(e)=>{ const m=e&&e.data; if(!m||m.type!=="kk-push"||!m.data||m.data.tag==="kk-test") return; notify(`${m.data.title}${m.data.body?` · ${m.data.body}`:""}`); loadAll(); };
+    navigator.serviceWorker.addEventListener("message",h); return ()=>navigator.serviceWorker.removeEventListener("message",h); },[]);
 
   // Income stats
   const thisMonth = new Date().toISOString().slice(0,7);
@@ -2081,6 +2085,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
             </div>
             <BookingRequests compact sessions={sessions} clients={clients} loadAll={loadAll} notify={notify}/>
+            <PushSetup compact notify={notify}/>
             {/* ── Aviso de seguridad pendiente ── */}
             {(!secure||dbOpenNow)&&(()=>{ const act=clients.filter(c=>c.auth_user_id).length; const hasCol=clients.some(c=>"auth_user_id" in c); return(
               <div className="card" style={{marginBottom:14,padding:"12px 14px",border:"1px solid #fde68a",background:"#fffbeb"}}>
@@ -3041,6 +3046,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
         {view==="reminders"&&(
           <div>
             <BookingRequests compact sessions={sessions} clients={clients} loadAll={loadAll} notify={notify}/>
+            <PushSetup notify={notify}/>
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:22}}>
               <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="bell" size={32}/>Alertas</h1>
               <button className="btn wa" onClick={()=>setShowBulkWA(true)}>📱 WA masivo</button>
@@ -8372,6 +8378,66 @@ const sysNotify = async (title, body, tag) => {
     if(reg&&reg.showNotification) reg.showNotification(title,{body,tag,icon:"/icon-192.png",badge:"/favicon-32.png",vibrate:[120,60,120]});
     else new Notification(title,{body,tag,icon:"/icon-192.png"});
   }catch(e){} };
+// ── AVISOS PUSH AL MÓVIL DEL COACH ─────────────────────────────────────────
+// Cuando un cliente termina su entreno (clase u open) te llega un aviso al móvil
+// aunque tengas la app cerrada. Lo envía la función de Supabase «avisar-coach»
+// (docs/avisos-push.md). Aquí se activa en cada móvil u ordenador.
+const PUSH_FN = "avisar-coach";
+const pushFn = async (body) => { try{ const r=await sb.functions.invoke(PUSH_FN,{body}); if(r.error) return {error:r.error}; return {data:r.data||{}}; }catch(e){ return {error:e}; } };
+const pushKeyBytes = (s) => { s=String(s).replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="="; return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); };
+const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent||"")||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
+const isStandalone = () => { try{ return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true; }catch(e){ return false; } };
+function PushSetup({notify,compact}){
+  const supported=typeof window!=="undefined"&&"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
+  const [st,setSt]=React.useState(supported?"checking":"unsupported"); // checking|off|on|denied|nofn|unsupported|busy
+  const [devices,setDevices]=React.useState(0);
+  const regP=()=>Promise.race([navigator.serviceWorker.ready,new Promise((_,rej)=>setTimeout(()=>rej(new Error("sw")),6000))]);
+  const check=async()=>{ if(!supported) return;
+    try{ if(Notification.permission==="denied"){ setSt("denied"); return; }
+      const reg=await regP(); const sub=await reg.pushManager.getSubscription();
+      if(!sub){ setSt("off"); return; }
+      const r=await pushFn({action:"status",endpoint:sub.endpoint}); if(r.error){ setSt("nofn"); return; }
+      setDevices(r.data.devices||0); setSt(r.data.on?"on":"off");
+    }catch(e){ setSt("off"); } };
+  React.useEffect(()=>{ check(); },[]);
+  const activar=async()=>{ setSt("busy");
+    try{ const perm=await Notification.requestPermission(); if(perm!=="granted"){ setSt(perm==="denied"?"denied":"off"); return; }
+      const k=await pushFn({action:"key"}); if(k.error||!k.data.publicKey){ setSt("nofn"); notify("Falta desplegar la función de avisos (docs/avisos-push.md)","err"); return; }
+      const reg=await regP(); let sub=await reg.pushManager.getSubscription();
+      if(sub){ try{ const cur=sub.options&&sub.options.applicationServerKey; if(cur){ const a=new Uint8Array(cur), b=pushKeyBytes(k.data.publicKey); if(a.length!==b.length||a.some((x,i)=>x!==b[i])){ await sub.unsubscribe(); sub=null; } } }catch(e){} }
+      if(!sub) sub=await reg.pushManager.subscribe({userVisibleOnly:true,applicationServerKey:pushKeyBytes(k.data.publicKey)});
+      const r=await pushFn({action:"subscribe",sub:sub.toJSON(),ua:navigator.userAgent});
+      if(r.error||!r.data.ok){ setSt("off"); notify("No se pudo activar en este dispositivo","err"); return; }
+      setSt("on"); notify("🔔 Avisos activados en este dispositivo"); pushFn({action:"test"}); check();
+    }catch(e){ setSt("off"); notify("Este navegador no deja activar los avisos","err"); } };
+  const probar=async()=>{ const r=await pushFn({action:"test"}); notify(r.error?"No se pudo enviar la prueba":"Prueba enviada: te llegará en unos segundos",r.error?"err":undefined); };
+  const desactivar=async()=>{ setSt("busy"); try{ const reg=await regP(); const sub=await reg.pushManager.getSubscription();
+    if(sub){ await pushFn({action:"unsubscribe",endpoint:sub.endpoint}); await sub.unsubscribe(); } }catch(e){} setSt("off"); notify("Avisos desactivados en este dispositivo"); };
+  const iosTip=isIOS()&&!isStandalone();
+  if(compact){ // en Inicio: solo si falta activarlo en este móvil
+    if(!(st==="off"||(st==="unsupported"&&iosTip))) return null;
+    return <button data-push="cta" className="btn ghost" style={{width:"100%",marginBottom:12,fontSize:12,padding:"9px",justifyContent:"center"}} onClick={st==="off"?activar:()=>notify("En iPhone: Compartir → «Añadir a pantalla de inicio» y abre la app desde el icono")}>📲 Recibir en el móvil cuando un cliente termine su entreno</button>; }
+  const txt={checking:"Comprobando…",busy:"Un momento…",off:"Desactivados en este dispositivo",on:"✅ Activados en este dispositivo",denied:"Bloqueados en el navegador",nofn:"Falta un paso en Supabase",unsupported:"Este navegador no los admite"}[st];
+  return(
+    <div data-push="card" className="card" style={{marginBottom:14,padding:14,border:"1px solid #bcd3ee",background:"#f5f9ff"}}>
+      <div style={{display:"flex",alignItems:"center",gap:10}}>
+        <span style={{fontSize:24}}>📲</span>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Avisos en tu móvil</div>
+          <div style={{fontSize:12,color:"#475569",marginTop:2,lineHeight:1.45}}>Te llega un aviso cuando un cliente termina su entreno (clase u open), con lo que ha hecho: ejercicios, kg movidos y RPE. Aunque tengas la app cerrada.</div>
+          <div data-push-state={st} style={{fontSize:12,fontWeight:800,color:st==="on"?"#15803d":st==="denied"||st==="nofn"?"#b45309":"#64748b",marginTop:6}}>{txt}{st==="on"&&devices>1?` · ${devices} dispositivos`:""}</div>
+        </div>
+      </div>
+      {st==="denied"&&<div style={{fontSize:11.5,color:"#78350f",marginTop:8}}>Has bloqueado las notificaciones para esta app. Actívalas en los ajustes del navegador (🔒 junto a la dirección → Notificaciones → Permitir) y vuelve aquí.</div>}
+      {st==="nofn"&&<div style={{fontSize:11.5,color:"#78350f",marginTop:8}}>Despliega la función <b>avisar-coach</b> y ejecuta <b>docs/avisos-push.sql</b> en Supabase (pasos en docs/avisos-push.md).</div>}
+      {iosTip&&<div style={{fontSize:11.5,color:"#334155",marginTop:8}}>📱 En iPhone/iPad: pulsa <b>Compartir → «Añadir a pantalla de inicio»</b>, abre la app desde ese icono y actívalos desde ahí (iOS 16.4 o posterior).</div>}
+      <div style={{display:"flex",gap:8,marginTop:10,flexWrap:"wrap"}}>
+        {(st==="off"||st==="nofn")&&<button className="btn sky" style={{flex:1,padding:10,justifyContent:"center"}} onClick={activar}>🔔 Activar en este dispositivo</button>}
+        {st==="on"&&<><button className="btn ghost" style={{flex:1,padding:10,justifyContent:"center"}} onClick={probar}>Enviar prueba</button>
+          <button className="btn ghost" style={{padding:"10px 14px"}} onClick={desactivar}>Desactivar</button></>}
+      </div>
+    </div>);
+}
 // Escucha nuevas reservas (Supabase Realtime) y, por si no está activado, revisa cada 45 s.
 function useBookingWatch(active, onNew){
   const known=React.useRef(null), cb=React.useRef(onNew); cb.current=onNew;
