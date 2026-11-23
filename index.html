@@ -303,8 +303,9 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
 @keyframes dragtarget{0%,100%{box-shadow:0 0 0 0 hsla(15,98%,50%,0.35)}50%{box-shadow:0 0 0 4px hsla(15,98%,50%,0.35)}}
 
 /* ── Reservar: alto del panel con respaldo para móviles sin «dvh» (Android/iOS antiguos) ── */
-.book-panel{height:calc(100vh - 196px);height:calc(100vh - 196px - env(safe-area-inset-bottom));}
-@supports (height:100dvh){.book-panel{height:calc(100dvh - 196px - env(safe-area-inset-bottom));}}
+.book-panel{min-height:calc(100vh - 150px);}
+.book-grid{height:76vh;min-height:420px;}
+@supports (height:100dvh){.book-grid{height:76dvh;}}
 .book-grid{overflow-y:auto;overscroll-behavior:contain;}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 .pt-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -8880,7 +8881,6 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-coach" aria-label="Escribir a tu coach por WhatsApp"><span className="dk-dot"/>Tu coach</a>
         </div>); })()}
 
-        <GameHero g={game} onOpen={openLogros}/>
         {/* Avisos */}
         {client.welcome_msg&&<div className="dk-note" style={{borderColor:"rgba(96,165,250,.3)"}}>💬 {client.welcome_msg}</div>}
         {myHistory.length===0 && allSessions.some(s=>s.client_id===client.id) && <div className="dk-note" style={{borderColor:"rgba(167,139,250,.35)",color:"#c4b5fd",fontWeight:700}}>🎉 ¡Tu primera sesión! Bienvenido/a a {GYM_NAME}. ¡A por ello! 💪</div>}
@@ -9021,6 +9021,8 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
             <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:DK.dim,marginTop:6,fontWeight:700}}><span>hace 8 semanas</span><span style={{color:DK.ac2}}>esta semana</span></div>
           </div>
 
+          {/* 3b · Tu nivel (gamificación): más abajo, junto a la constancia */}
+          <GameHero g={game} onOpen={openLogros}/>
           {/* 4 · Tus próximas sesiones */}
           {ups.length>0&&<div className="dk-card" style={{marginBottom:14}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
@@ -9385,9 +9387,10 @@ function GameCelebrate({ev,onClose}){
   React.useEffect(()=>{ try{ if(navigator.vibrate&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate([30,50,30,50,100]); }catch(e){} },[]);
   const b=ev.badges&&ev.badges[0];
   return ReactDOM.createPortal(
-    <div role="dialog" aria-modal="true" aria-label="¡Logro desbloqueado!" data-celebrate="1" onClick={onClose} style={{position:"fixed",inset:0,zIndex:1900,background:"radial-gradient(80% 60% at 50% 40%,rgba(120,30,10,.97),rgba(5,5,8,.98))",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+    <div role="dialog" aria-modal="true" aria-label="¡Logro desbloqueado!" data-celebrate="1" onClick={onClose} style={{position:"fixed",inset:0,zIndex:1900,background:"radial-gradient(70% 50% at 50% 42%,rgba(150,40,12,.55),rgba(6,5,8,.82))",backdropFilter:"blur(28px) saturate(.6) brightness(.55)",WebkitBackdropFilter:"blur(28px) saturate(.6) brightness(.55)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
       <Embers/>
-      <div onClick={e=>e.stopPropagation()} className="ember-pop" style={{position:"relative",maxWidth:360,width:"100%",textAlign:"center",color:"#fff"}}>
+      <div onClick={e=>e.stopPropagation()} className="ember-pop" style={{position:"relative",maxWidth:360,width:"100%",textAlign:"center",color:"#fff",textShadow:"0 2px 14px rgba(0,0,0,.75)",
+        background:"rgba(10,8,12,.55)",border:"1px solid rgba(255,255,255,.12)",borderRadius:26,padding:"26px 20px 20px",boxShadow:"0 30px 80px rgba(0,0,0,.6)"}}>
         {ev.levelUp&&<>
           <div style={{fontSize:13,fontWeight:800,letterSpacing:1.5,color:"#fdba74"}}>¡SUBES DE NIVEL!</div>
           <div style={{width:110,height:110,margin:"12px auto",borderRadius:"50%",border:`4px solid ${ev.levelUp.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:52,fontWeight:900,color:ev.levelUp.color,boxShadow:`0 0 40px ${ev.levelUp.color}88`}}>{ev.levelUp.level}</div>
@@ -9912,6 +9915,19 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
 // ── RESERVAR: semana fija a pantalla completa ─────────────────────────────
 // Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
 // En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
+// Plazas de una hora: una línea por persona (nombre corto) y una vacía por hueco libre.
+function Seats({ppl,cap,st,wait}){
+  const n=Math.max(cap||0,ppl.length), many=n>5, shown=many?ppl.slice(0,4):ppl, free=Math.max(0,(cap||0)-ppl.length);
+  const dark=st==="sel", col=st==="mine"?"#fff":dark?"#c2410c":st==="full"?"rgba(255,255,255,.45)":"#fff";
+  const line={fontSize:10,lineHeight:"13px",height:13,borderRadius:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textAlign:"center",fontWeight:800};
+  return <span aria-hidden="true" style={{display:"flex",flexDirection:"column",gap:2,width:"100%"}}>
+    {shown.map(pp=><span key={pp.id} data-seat={pp.me?"tu":"p"} style={{...line,color:pp.me?(st==="mine"?"#fff":"#ff7a45"):col,background:pp.me?(st==="mine"?"rgba(0,0,0,.18)":"rgba(255,122,69,.18)"):(dark?"rgba(194,65,12,.1)":"rgba(255,255,255,.08)")}}>{pp.me?"Tú":String(pp.name).split(" ")[0].slice(0,6)}</span>)}
+    {many&&ppl.length>4&&<span style={{...line,color:col,opacity:.8}}>+{ppl.length-4}</span>}
+    {many?(free>0&&<span data-seat="libre" style={{...line,color:"rgba(255,255,255,.55)",border:"1px dashed rgba(255,255,255,.25)",height:12,lineHeight:"11px"}}>{free} libre{free>1?"s":""}</span>)
+      :Array.from({length:free}).map((_,i)=><span key={"f"+i} data-seat="libre" style={{...line,height:12,border:`1px dashed ${dark?"rgba(194,65,12,.45)":st==="mine"?"rgba(255,255,255,.6)":"rgba(255,255,255,.22)"}`,color:dark?"#c2410c":"rgba(255,255,255,.35)",fontSize:9,lineHeight:"10px"}}>{dark&&i===0?"＋ tú":""}</span>)}
+    {st==="full"&&<span style={{...line,fontSize:8.5,color:"rgba(255,255,255,.5)"}}>{wait?"⏳ en espera":"completa"}</span>}
+  </span>;
+}
 function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist, config, opens, allOpens, hybrid, loadAll, notify, saving, setSaving, streak}) {
   // Semana que se ve al abrir: la actual; si ya no queda ninguna hora por reservar
   // esta semana (p. ej. sábado tarde o domingo), directamente la siguiente.
@@ -10005,34 +10021,29 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
   const leftC=Math.max(0,nFree-pc.length), leftO=oLeft!==null?Math.max(0,oLeft-po.length):null;
   const DL=["L","M","X","J","V","S","D"];
   const hasMine=(d)=>allSessions.some(s=>s.client_id===client.id&&s.date===d)||!!myOpen(d)||picked.some(k=>k.startsWith(d));
-  const cellBase={borderRadius:12,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:0,transition:"background .15s, transform .1s, box-shadow .2s"};
+  const cellBase={borderRadius:12,display:"flex",flexDirection:"column",alignItems:"stretch",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:"4px 3px",overflow:"hidden",transition:"background .15s, transform .1s, box-shadow .2s"};
   const fire="linear-gradient(135deg,#ff7a45,#f2441d)";
   return(
     <div className="ember-panel book-panel" style={{position:"relative",overflow:"hidden",margin:"-4px -6px 0",borderRadius:26,background:"radial-gradient(120% 60% at 50% -5%,rgba(242,68,29,.38),rgba(10,10,12,0) 60%),#0b0b0e",color:"#fff",
       display:"flex",flexDirection:"column",minHeight:460,padding:"12px 12px 12px",boxShadow:"0 20px 40px rgba(15,23,42,.25)"}}>
       <Embers/>
-      {/* Llama + número grande */}
-      <div style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",flexShrink:0}}>
-        <span className="ember-flame" style={{fontSize:34,lineHeight:1}}>🔥</span>
-        <div style={{display:"flex",alignItems:"center",gap:12,width:"100%",marginTop:2}}>
-          <span style={{flex:1,height:1,background:"linear-gradient(90deg,transparent,rgba(255,255,255,.25))"}}/>
-          <span style={{fontSize:54,fontWeight:900,lineHeight:1,background:fire,WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent",letterSpacing:-1}}>{leftC}</span>
-          <span style={{flex:1,height:1,background:"linear-gradient(90deg,rgba(255,255,255,.25),transparent)"}}/>
-        </div>
-        <div style={{fontSize:15,fontWeight:800,color:"#ff7a45",marginTop:2}}>{leftC===1?"Clase por reservar":"Clases por reservar"}</div>
-        <div style={{display:"flex",gap:6,marginTop:6,flexWrap:"wrap",justifyContent:"center"}}>
-          {streak>0&&<span style={{fontSize:11,fontWeight:800,color:"#fdba74",background:"rgba(255,122,69,.12)",border:"1px solid rgba(255,122,69,.3)",borderRadius:20,padding:"3px 10px"}}>🔥 {streak} sem. seguidas</span>}
+      {/* Cabecera compacta: clases por reservar (el horario ocupa casi toda la pantalla) */}
+      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flexShrink:0}}>
+        <span className="ember-flame" style={{fontSize:22,lineHeight:1}}>🔥</span>
+        <span style={{fontSize:30,fontWeight:900,lineHeight:1,background:fire,WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>{leftC}</span>
+        <span style={{fontSize:13,fontWeight:800,color:"#ff7a45"}}>{leftC===1?"clase por reservar":"clases por reservar"}</span>
+        <span style={{flex:1}}/>
+        {streak>0&&<span style={{fontSize:11,fontWeight:800,color:"#fdba74",background:"rgba(255,122,69,.12)",border:"1px solid rgba(255,122,69,.3)",borderRadius:20,padding:"3px 10px"}}>🔥 {streak} sem. seguidas</span>}
           {hybrid&&<span style={{fontSize:11,fontWeight:800,color:"#fcd34d",background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.3)",borderRadius:20,padding:"3px 10px"}}>🔓 {leftO!==null?`${leftO} open`:"open sin tope"}</span>}
           {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:800,color:"#86efac",textDecoration:"none",border:"1px solid rgba(134,239,172,.35)",borderRadius:20,padding:"3px 10px"}}>Renovar bono ›</a>}
-        </div>
       </div>
       {/* Semana */}
-      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,margin:"10px 0 8px",flexShrink:0}}>
+      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,margin:"8px 0 6px",flexShrink:0}}>
         <button type="button" aria-label="Semana anterior" disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:wk<=cur?"rgba(255,255,255,.25)":"#fff",fontSize:18,cursor:wk<=cur?"default":"pointer",fontFamily:"inherit"}}>‹</button>
         <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800}}>{lbl}</div>
         <button type="button" aria-label="Semana siguiente" onClick={()=>setWk(addDays(wk,7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,cursor:"pointer",fontFamily:"inherit"}}>›</button>
       </div>
-      <div className="book-grid" style={{position:"relative",flex:1,minHeight:0,background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`minmax(30px,40px) repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:`auto repeat(${nRows},minmax(36px,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
+      <div className="book-grid" style={{position:"relative",flex:"none",background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`minmax(30px,40px) repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:`auto repeat(${nRows},minmax(${Math.max(40,18+15*Math.min(5,Math.max(...rows.map(capOf),3)))}px,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
         <div/>
         {/* Cabecera de días con «pista» de los días con clase (como una racha) */}
         {days.map((d,i)=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY, on=hasMine(d), prev=i>0&&hasMine(days[i-1]), next=i<days.length-1&&hasMine(days[i+1]); return(
@@ -10055,10 +10066,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
               free:{background:"rgba(255,255,255,.07)",color:"#fff",border:"1px solid rgba(255,255,255,.1)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapClass(d,t)} aria-label={`${fmtDate(d)} ${t}: ${st==="mine"?"tu clase":st==="sel"?"elegida":st==="full"?"completa":st==="free"?`${free} libres`:"no disponible"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
-              {st==="mine"&&<span style={{fontSize:17}}>✓</span>}
-              {st==="sel"&&<span style={{fontSize:20,fontWeight:900}}>＋</span>}
-              {st==="free"&&<><span style={{fontSize:15,lineHeight:1}}>{free}</span><span className="bk-lbl" style={{fontSize:8,fontWeight:700,color:"rgba(255,255,255,.45)",lineHeight:1.1}}>libre{free>1?"s":""}</span></>}
-              {st==="full"&&<span style={{fontSize:9}}>{w?"⏳ espera":"lleno"}</span>}
+              {st!=="off"&&<Seats ppl={peopleAt(d,t)} cap={capOf(t)} st={st} wait={!!w}/>}
             </button>; })}
         </React.Fragment>))}
         {hybrid&&<>
@@ -10077,8 +10085,9 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
             </button>; })}
         </>}
       </div>
+      <div className="book-dock" style={{position:(who||picked.length)?"fixed":"relative",left:0,right:0,bottom:(who||picked.length)?"calc(86px + env(safe-area-inset-bottom))":"auto",zIndex:90,padding:(who||picked.length)?"0 14px":0,maxWidth:480,margin:"0 auto",display:"flex",flexDirection:"column",gap:8,pointerEvents:"none"}}>
       {who&&(()=>{ const ppl=peopleAt(who.d,who.t), m=mine(who.d,who.t), free=freeAt(who.d,who.t), x=new Date(who.d+"T12:00:00");
-        return <div data-who="1" role="status" style={{position:"relative",marginTop:10,flexShrink:0,background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:"9px 11px"}}>
+        return <div data-who="1" role="status" style={{position:"relative",pointerEvents:"auto",background:"rgba(22,22,28,.96)",backdropFilter:"blur(10px)",WebkitBackdropFilter:"blur(10px)",boxShadow:"0 10px 30px rgba(0,0,0,.5)",border:"1px solid rgba(255,255,255,.14)",borderRadius:16,padding:"9px 11px"}}>
           <div style={{display:"flex",alignItems:"center",gap:8}}>
             <div style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:800,color:"#fff"}}>👥 {capFirst(x.toLocaleDateString("es-ES",{weekday:"short",day:"numeric"}))} · {who.t}
               <span style={{fontWeight:700,color:"rgba(255,255,255,.55)"}}> · {m?(m.status==="completed"?"clase hecha ✓":"tu clase"):free<=0?"completa":`${free} libre${free>1?"s":""}`}</span></div>
@@ -10094,7 +10103,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
           {m&&m.status!=="completed"&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.45)",marginTop:6}}>Para cambiar tu clase, escribe a tu trainer.</div>}
         </div>; })()}
       {/* Confirmar: botón tipo píldora */}
-      <div style={{position:"relative",marginTop:10,flexShrink:0}}>
+      <div style={{position:"relative",marginTop:(who||picked.length)?0:10,flexShrink:0,pointerEvents:"auto"}}>
         {picked.length
           ?<div style={{display:"flex",gap:8}}>
             <button type="button" aria-label="Quitar selección" onClick={()=>setPicked([])} style={{width:50,borderRadius:26,border:"1px solid rgba(255,255,255,.18)",background:"transparent",color:"#fff",fontSize:16,cursor:"pointer"}}>✕</button>
@@ -10105,6 +10114,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
             <span>▢ libre</span><span style={{color:"#ff7a45"}}>● tu clase</span><span>▫ lleno</span>{hybrid&&<span style={{color:"#fcd34d"}}>● open</span>}
             {!who&&<span style={{flexBasis:"100%",textAlign:"center",fontWeight:600,color:"rgba(255,255,255,.45)"}}>Toca una clase para ver quién va 👥</span>}
           </div>}
+      </div>
       </div>
       {openPick&&<OpenHourSheet d={openPick} hours={openHours(config,openPick)} cur={(myOpen(openPick)||{}).time||((pickedOpen(openPick)||"").split("|")[2])||null} hasMine={!!myOpen(openPick)}
         classAt={(t)=>allSessions.filter(s=>s.date===openPick&&s.time===t).length} openAt={(t)=>opensAt(openPick,t,allOpens||opens).filter(o=>o.client_id!==client.id).length} cap={oCap}
@@ -10787,6 +10797,7 @@ function ProgressTab({client, history, myProgress, myRecords, myAchievements, ex
 
   return(
     <div>
+      {game&&view!=="badges"&&<GameHero g={game} onOpen={()=>{ setView("badges"); setTimeout(()=>{ try{ segRef.current&&segRef.current.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){} },80); }}/>}
       <AthleteStats client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
       <div ref={segRef} className="seg" style={{marginBottom:14,scrollMarginTop:12}}>
         {[["fuerza","💪","Fuerza"],["volumen","📊","Volumen"],["stats","📏","Medidas"],["photos","📸","Fotos"],["badges","🏆","Logros"]].map(([id,ic,label])=>(
@@ -13390,7 +13401,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 }
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
-ClientPortal=noTheme(ClientPortal); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
+ClientPortal=noTheme(ClientPortal); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
