@@ -426,6 +426,10 @@ const sha256Hex = async (t) => { const b=await crypto.subtle.digest("SHA-256", n
 // La sesión recordada de Admin va ligada a la contraseña actual: si se cambia, hay que volver a entrar.
 const ADMIN_KEY = ADMIN_HASH.slice(0,16);
 
+// Enlaces que vienen de datos (fotos, vídeos): solo http(s). Evita que un enlace
+// «javascript:…» guardado por alguien ejecute código al tocarlo.
+const safeUrl = (u) => { const t=String(u||"").trim(); return /^https?:\/\//i.test(t)?t:undefined; };
+
 // ── REMEMBER ME ────────────────────────────────────────────────────────────
 function saveSession(type, data) {
   try { localStorage.setItem("kg_session", JSON.stringify({type, data, ts: Date.now()})); } catch(e){}
@@ -3786,7 +3790,7 @@ function PhotoCompare({photos,size=220}){
     </select>
   </label>;
   const Img=({p,label})=><div style={{flex:1,minWidth:0}}>
-    {p?<a href={p.url} target="_blank" rel="noreferrer" style={{display:"block",position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
+    {p?<a href={safeUrl(p.url)} target="_blank" rel="noreferrer" style={{display:"block",position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
         <img src={p.url} alt={label} style={{width:"100%",height:size,objectFit:"cover",display:"block"}}/>
         <span style={{position:"absolute",top:6,left:6,fontSize:10,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.65)",borderRadius:20,padding:"2px 9px"}}>{label}</span>
       </a>
@@ -3854,7 +3858,7 @@ function PhotosPanel({client,notify,canDelete}){
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8}}>
             {photos.filter(p=>(p.taken_on||"")===d).map(p=><div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
               <div style={{position:"relative"}}>
-                <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
+                <a href={safeUrl(p.url)} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
                 <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{POSE_LABEL[poseOf(p)]}</span>
                 {canDelete&&<button onClick={()=>del(p)} title="Eliminar" style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>}
               </div>
@@ -7225,7 +7229,7 @@ function ExerciseMedia({name,coach,notify}){
               {m.kind==="image"&&<img src={m.url} alt={m.caption||name} onClick={()=>setZoom(m)} style={{width:"100%",maxHeight:320,objectFit:"contain",display:"block",cursor:"zoom-in",background:"#0f172a"}}/>}
               {m.kind==="video"&&<video src={m.url} controls playsInline preload="metadata" style={{width:"100%",maxHeight:360,display:"block",background:"#000"}}/>}
               {yt&&<div style={{position:"relative",paddingTop:"56.25%"}}><iframe src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&playsinline=1`} title={m.caption||name} allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowFullScreen style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/></div>}
-              {m.kind==="link"&&!yt&&<a href={m.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:10,padding:"14px 14px",color:"#fff",textDecoration:"none",fontWeight:800,fontSize:14}}>▶️ Ver el vídeo <span style={{fontSize:11,fontWeight:600,opacity:.7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0]}</span></a>}
+              {m.kind==="link"&&!yt&&<a href={safeUrl(m.url)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:10,padding:"14px 14px",color:"#fff",textDecoration:"none",fontWeight:800,fontSize:14}}>▶️ Ver el vídeo <span style={{fontSize:11,fontWeight:600,opacity:.7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0]}</span></a>}
               {coach&&<button type="button" onClick={()=>del(m)} aria-label="Quitar" style={{position:"absolute",top:6,right:6,width:28,height:28,borderRadius:"50%",border:"none",background:"rgba(15,23,42,.7)",color:"#fff",fontSize:13,cursor:"pointer"}}>✕</button>}
             </div>
             {m.caption&&<div style={{fontSize:12,color:"#475569",marginTop:4,lineHeight:1.4}}>💬 {m.caption}</div>}
