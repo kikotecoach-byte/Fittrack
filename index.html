@@ -426,6 +426,10 @@ const sha256Hex = async (t) => { const b=await crypto.subtle.digest("SHA-256", n
 // La sesión recordada de Admin va ligada a la contraseña actual: si se cambia, hay que volver a entrar.
 const ADMIN_KEY = ADMIN_HASH.slice(0,16);
 
+// Enlaces que vienen de datos (fotos, vídeos): solo http(s). Evita que un enlace
+// «javascript:…» guardado por alguien ejecute código al tocarlo.
+const safeUrl = (u) => { const t=String(u||"").trim(); return /^https?:\/\//i.test(t)?t:undefined; };
+
 // ── REMEMBER ME ────────────────────────────────────────────────────────────
 function saveSession(type, data) {
   try { localStorage.setItem("kg_session", JSON.stringify({type, data, ts: Date.now()})); } catch(e){}
@@ -3786,7 +3790,7 @@ function PhotoCompare({photos,size=220}){
     </select>
   </label>;
   const Img=({p,label})=><div style={{flex:1,minWidth:0}}>
-    {p?<a href={p.url} target="_blank" rel="noreferrer" style={{display:"block",position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
+    {p?<a href={safeUrl(p.url)} target="_blank" rel="noreferrer" style={{display:"block",position:"relative",borderRadius:12,overflow:"hidden",background:"#0f172a"}}>
         <img src={p.url} alt={label} style={{width:"100%",height:size,objectFit:"cover",display:"block"}}/>
         <span style={{position:"absolute",top:6,left:6,fontSize:10,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.65)",borderRadius:20,padding:"2px 9px"}}>{label}</span>
       </a>
@@ -3854,7 +3858,7 @@ function PhotosPanel({client,notify,canDelete}){
           <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(140px,1fr))",gap:8}}>
             {photos.filter(p=>(p.taken_on||"")===d).map(p=><div key={p.id} style={{border:"1px solid #e6ebf3",borderRadius:12,overflow:"hidden",background:"#f8fafc"}}>
               <div style={{position:"relative"}}>
-                <a href={p.url} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
+                <a href={safeUrl(p.url)} target="_blank" rel="noreferrer"><img src={p.url} style={{width:"100%",height:150,objectFit:"cover",display:"block"}}/></a>
                 <span style={{position:"absolute",top:6,left:6,fontSize:9,fontWeight:800,color:"#fff",background:"rgba(15,23,42,.6)",borderRadius:20,padding:"2px 8px"}}>{POSE_LABEL[poseOf(p)]}</span>
                 {canDelete&&<button onClick={()=>del(p)} title="Eliminar" style={{position:"absolute",top:6,right:6,background:"rgba(220,38,38,.9)",color:"#fff",border:"none",borderRadius:"50%",width:24,height:24,cursor:"pointer",fontSize:12,fontWeight:700}}>✕</button>}
               </div>
@@ -7042,24 +7046,24 @@ function ExPhotoHost({coach,notify}){
 }
 // Material que necesita un ejercicio: lo ve todo el mundo; el coach lo cambia
 // (varios materiales a la vez o «sin material») y vale para todo el gimnasio.
-function ExEquipEditor({name,coach,notify}){
+function ExEquipEditor({name,coach,notify,startOpen,onDone,bare}){
   useExEquip();
-  const cur=roomNeeds(name), custom=exEquipCustom(name)||!!(CUSTOM_EX[String(name||"").toLowerCase()]||{}).equip;
-  const [edit,setEdit]=React.useState(null); const [busy,setBusy]=React.useState(false);
+  const cur=roomNeeds(name), own=!!CUSTOM_EX[String(name||"").toLowerCase()], custom=exEquipCustom(name)||!!(CUSTOM_EX[String(name||"").toLowerCase()]||{}).equip;
+  const [edit,setEdit]=React.useState(()=>startOpen?roomNeeds(name).slice():null); const [busy,setBusy]=React.useState(false);
   const none=(l)=>l.length===1&&l[0]==="pesocorporal";
   const tog=(k)=>setEdit(l=>k==="pesocorporal"?["pesocorporal"]:(l.includes(k)?l.filter(x=>x!==k):[...l.filter(x=>x!=="pesocorporal"),k]));
   const save=async(list)=>{ setBusy(true); const r=await saveExEquip(name,list); setBusy(false);
-    if(r.error) return notify&&notify("No se pudo guardar el material","err"); setEdit(null);
+    if(r.error) return notify&&notify("No se pudo guardar el material","err"); setEdit(null); onDone&&onDone();
     notify&&notify(list==null?"Material automático ✓":none(list)||!list.length?`${name}: sin material ✓`:`${name}: ${list.length} material${list.length>1?"es":""} ✓`); };
   const pill=(k,on,onClick)=><button key={k} type="button" data-eq={k} aria-pressed={on} onClick={onClick} disabled={!onClick}
     style={{fontSize:12,fontWeight:700,padding:"5px 10px",borderRadius:20,cursor:onClick?"pointer":"default",fontFamily:"inherit",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#334155"}}>
     {k==="pesocorporal"?"🚫 Sin material":EQUIP_LABEL[k]||k}</button>;
   return(
-    <div data-exequip="1" style={{marginTop:12}}>
-      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+    <div data-exequip="1" style={{marginTop:bare?0:12}}>
+      {!bare&&<div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
         <div style={{flex:1,fontSize:12,fontWeight:800,color:"#64748b",letterSpacing:.4}}>🧰 MATERIAL{coach&&!edit&&<span style={{fontWeight:700,letterSpacing:0,color:custom?"#7c3aed":"#94a3b8"}}> · {custom?"elegido por ti":"automático"}</span>}</div>
         {coach&&!edit&&<button type="button" className="btn ghost" style={{fontSize:12,padding:"5px 10px"}} onClick={()=>setEdit(cur.slice())}>✏️ Cambiar</button>}
-      </div>
+      </div>}
       {!edit?<div style={{display:"flex",flexWrap:"wrap",gap:5}}>{none(cur)?pill("pesocorporal",false):cur.map(k=>pill(k,false))}</div>
       :<div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:12,padding:10}}>
         <div style={{fontSize:11.5,color:"#475569",marginBottom:8}}>Marca todo lo que necesita (puedes elegir varios) o «Sin material». Cuenta para la ocupación de la sala y para «Solo mi material».</div>
@@ -7070,11 +7074,57 @@ function ExEquipEditor({name,coach,notify}){
         <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginTop:8}}>{edit.length?(none(edit)?"Sin material":edit.map(k=>EQUIP_LABEL[k]||k).join(" + ")):"Elige al menos uno"}</div>
         <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
           <button type="button" className="btn grn" style={{flex:1,padding:9,justifyContent:"center"}} disabled={busy||!edit.length} onClick={()=>save(edit)}>{busy?"Guardando…":"Guardar"}</button>
-          {exEquipCustom(name)&&<button type="button" className="btn ghost" style={{padding:"9px 11px",fontSize:12}} disabled={busy} title={"Automático: "+equipNeedsAuto(name).map(k=>EQUIP_LABEL[k]||k).join(" + ")} onClick={()=>save(null)}>↺ Automático</button>}
-          <button type="button" className="btn ghost" style={{padding:"9px 11px",fontSize:12}} onClick={()=>setEdit(null)}>Cancelar</button>
+          {exEquipCustom(name)&&!own&&<button type="button" className="btn ghost" style={{padding:"9px 11px",fontSize:12}} disabled={busy} title={"Automático: "+equipNeedsAuto(name).map(k=>EQUIP_LABEL[k]||k).join(" + ")} onClick={()=>save(null)}>↺ Automático</button>}
+          <button type="button" className="btn ghost" style={{padding:"9px 11px",fontSize:12}} onClick={()=>{ setEdit(null); onDone&&onDone(); }}>Cancelar</button>
         </div>
       </div>}
     </div>);
+}
+// Programa → 🧰 Material: el material de cada ejercicio (tuyos primero), editable.
+function EquipManager({notify}){
+  useExEquip();
+  const [q,setQ]=React.useState(""), [f,setF]=React.useState("own"), [eqF,setEqF]=React.useState(""), [open,setOpen]=React.useState(null), [n,setN]=React.useState(60);
+  const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[\u0300-\u036f]/g,"");
+  const all=exerciseCatalog().filter(x=>x.custom||!/^(AMRAP|EMOM|Tabata|Circuito)/i.test(x.name));
+  const nOwn=all.filter(x=>x.custom).length;
+  const fil=f==="own"&&!nOwn?"all":f;
+  const isNone=(x)=>{ const l=roomNeeds(x.name); return l.length===1&&l[0]==="pesocorporal"; };
+  const list=all.filter(x=>(!q||norm(x.name).includes(norm(q)))&&(fil==="all"||(fil==="own"?x.custom:fil==="set"?exEquipCustom(x.name)||(x.custom&&!!(CUSTOM_EX[x.name.toLowerCase()]||{}).equip):fil==="none"?isNone(x):true))
+    &&(!eqF||roomNeeds(x.name).includes(eqF))).sort((a,b)=>(b.custom-a.custom)||a.name.localeCompare(b.name));
+  const chip=(on,txt,onClick,key)=><button key={key||txt} type="button" aria-pressed={on} onClick={onClick} style={{flexShrink:0,fontSize:12,fontWeight:700,padding:"6px 11px",borderRadius:20,cursor:"pointer",fontFamily:"inherit",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#475569"}}>{txt}</button>;
+  return(<div data-equipmgr="1">
+    <div className="card" style={{padding:"12px 14px",marginBottom:12,background:"#f8fbff",border:"1px solid #bcd3ee"}}>
+      <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>🧰 Material de cada ejercicio</div>
+      <div style={{fontSize:12,color:"#475569",marginTop:3,lineHeight:1.45}}>Pulsa ✏️ y marca todo lo que necesita (varios a la vez) o «Sin material». Se usa para la ocupación de la sala, «Solo mi material» y las rutinas automáticas.</div>
+    </div>
+    <input className="inp" placeholder="🔎 Buscar ejercicio…" value={q} onChange={e=>setQ(e.target.value)} style={{marginBottom:8}} aria-label="Buscar ejercicio por material"/>
+    <div style={{display:"flex",gap:5,overflowX:"auto",paddingBottom:6,alignItems:"center"}}>
+      {nOwn>0&&chip(fil==="own",`⭐ Tus ejercicios (${nOwn})`,()=>setF("own"),"own")}
+      {chip(fil==="all","Todos",()=>setF("all"),"all")}
+      {chip(fil==="set","✏️ Elegido por ti",()=>setF("set"),"set")}
+      {chip(fil==="none","🚫 Sin material",()=>setF("none"),"none")}
+      <select value={eqF} onChange={e=>setEqF(e.target.value)} aria-label="Filtrar por material" style={{flexShrink:0,fontSize:12,fontWeight:700,border:"1px solid #dbe2ec",borderRadius:20,padding:"6px 8px",background:"#fff",color:"#475569"}}>
+        <option value="">Cualquier material</option>
+        {EQUIP_KEYS.concat(["otros"]).map(k=><option key={k} value={k}>{EQUIP_LABEL[k]||k}</option>)}
+      </select>
+    </div>
+    <div style={{fontSize:11,color:"#94a3b8",margin:"2px 2px 8px"}}>{list.length} ejercicio{list.length!==1?"s":""}</div>
+    <div style={{display:"flex",flexDirection:"column",gap:6}}>
+      {list.slice(0,n).map(x=>{ const l=roomNeeds(x.name), mine=exEquipCustom(x.name)||(x.custom&&!!(CUSTOM_EX[x.name.toLowerCase()]||{}).equip), on=open===x.name; return(
+        <div key={x.name} data-eqrow={x.name} className="card" style={{padding:"10px 12px",border:on?"1px solid #0284c7":undefined}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{flex:1,minWidth:0}}>
+              <div style={{fontSize:13.5,fontWeight:700,color:"#0f172a"}}>{x.name}{x.custom&&<span style={{fontSize:9,fontWeight:800,color:"#7c3aed",marginLeft:6}}>PROPIO</span>}{mine&&<span style={{fontSize:9,fontWeight:800,color:"#0284c7",marginLeft:6}}>✏️ ELEGIDO</span>}</div>
+              {!on&&<div style={{fontSize:11.5,color:"#475569",marginTop:2}}>{l.length===1&&l[0]==="pesocorporal"?"🚫 Sin material":l.map(k=>EQUIP_LABEL[k]||k).join(" + ")}</div>}
+            </div>
+            {!on&&<button type="button" className="btn ghost" aria-label={`Editar material de ${x.name}`} style={{fontSize:12,padding:"6px 10px",flexShrink:0}} onClick={()=>setOpen(x.name)}>✏️</button>}
+          </div>
+          {on&&<div style={{marginTop:8}}><ExEquipEditor key={x.name} name={x.name} coach notify={notify} startOpen bare onDone={()=>setOpen(null)}/></div>}
+        </div>); })}
+      {list.length>n&&<button type="button" className="btn ghost" style={{padding:10,justifyContent:"center"}} onClick={()=>setN(n+60)}>Mostrar más ({list.length-n})</button>}
+      {!list.length&&<div className="card" style={{textAlign:"center",padding:24,color:"#94a3b8",fontSize:13}}>No hay ejercicios con esos filtros.</div>}
+    </div>
+  </div>);
 }
 function ExPhotoViewer({name,ex,coach,notify,onClose}){
   const p=exPhotoOf(name);
@@ -7179,7 +7229,7 @@ function ExerciseMedia({name,coach,notify}){
               {m.kind==="image"&&<img src={m.url} alt={m.caption||name} onClick={()=>setZoom(m)} style={{width:"100%",maxHeight:320,objectFit:"contain",display:"block",cursor:"zoom-in",background:"#0f172a"}}/>}
               {m.kind==="video"&&<video src={m.url} controls playsInline preload="metadata" style={{width:"100%",maxHeight:360,display:"block",background:"#000"}}/>}
               {yt&&<div style={{position:"relative",paddingTop:"56.25%"}}><iframe src={`https://www.youtube-nocookie.com/embed/${yt}?rel=0&playsinline=1`} title={m.caption||name} allow="accelerometer; encrypted-media; gyroscope; picture-in-picture; fullscreen" allowFullScreen style={{position:"absolute",inset:0,width:"100%",height:"100%",border:0}}/></div>}
-              {m.kind==="link"&&!yt&&<a href={m.url} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:10,padding:"14px 14px",color:"#fff",textDecoration:"none",fontWeight:800,fontSize:14}}>▶️ Ver el vídeo <span style={{fontSize:11,fontWeight:600,opacity:.7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0]}</span></a>}
+              {m.kind==="link"&&!yt&&<a href={safeUrl(m.url)} target="_blank" rel="noreferrer" style={{display:"flex",alignItems:"center",gap:10,padding:"14px 14px",color:"#fff",textDecoration:"none",fontWeight:800,fontSize:14}}>▶️ Ver el vídeo <span style={{fontSize:11,fontWeight:600,opacity:.7,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{m.url.replace(/^https?:\/\/(www\.)?/,"").split("/")[0]}</span></a>}
               {coach&&<button type="button" onClick={()=>del(m)} aria-label="Quitar" style={{position:"absolute",top:6,right:6,width:28,height:28,borderRadius:"50%",border:"none",background:"rgba(15,23,42,.7)",color:"#fff",fontSize:13,cursor:"pointer"}}>✕</button>}
             </div>
             {m.caption&&<div style={{fontSize:12,color:"#475569",marginTop:4,lineHeight:1.4}}>💬 {m.caption}</div>}
@@ -10954,12 +11004,13 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
       </div>
 
       <div style={{display:"flex",gap:4,overflowX:"auto",marginBottom:12,paddingBottom:4}}>
-        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"],["media","📷 Fotos"]].map(([id,label])=>(
+        {[["macrocycle","🗓 Macrociclo"],["assign","📅 Asignar"],["weights","⚖️ Pesos"],["progress_view","📈 Progresión"],["media","📷 Fotos"],["equip","🧰 Material"]].map(([id,label])=>(
           <button key={id} className={"tab"+(tab===id?" on":"")} onClick={()=>setTab(id)} style={{flexShrink:0,fontSize:11}}>{label}</button>
         ))}
       </div>
 
       {tab==="media"&&<ExerciseMediaLibrary notify={notify}/>}
+      {tab==="equip"&&<EquipManager notify={notify}/>}
 
       {/* ── MACROCICLO TAB ── */}
       {tab==="macrocycle"&&(
@@ -11482,7 +11533,11 @@ function AddWeightModal({clientId, clientWeights, onSave, onClose}) {
 // Cada ejercicio: [nombre, series, reps, descanso(s), principal]. Al tocarlo
 // se añade a la plantilla con estos valores por defecto (editables después).
 // ── EJERCICIOS PROPIOS, MÚSCULOS Y SUSTITUTOS (para individualizar) ───────
-const setCustomExercises = (list) => { const m={}; (list||[]).forEach(e=>{ if(!e||!e.name) return; m[e.name.toLowerCase()]={name:e.name,equip:e.equipment||null,muscles:String(e.muscle_group||"").split(",").map(x=>x.trim()).filter(Boolean),cat:e.category||"",cx:({principiante:1,intermedio:2,avanzado:3})[String(e.difficulty||"").toLowerCase()]||null,sets:e.default_sets||null,reps:e.default_reps||null,rest:e.rest_seconds||null,id:e.id,desc:e.description||""}; }); CUSTOM_EX=m; };
+// Material recién cambiado de un ejercicio propio, hasta que la lista recargada lo traiga.
+const OWN_EQ_PATCH = {};
+const setCustomExercises = (list) => { const m={}; (list||[]).forEach(e=>{ if(!e||!e.name) return;
+  if(OWN_EQ_PATCH[e.id]!==undefined&&(e.equipment||null)===OWN_EQ_PATCH[e.id]) delete OWN_EQ_PATCH[e.id];
+  m[e.name.toLowerCase()]={name:e.name,equip:OWN_EQ_PATCH[e.id]!==undefined?OWN_EQ_PATCH[e.id]:(e.equipment||null),muscles:String(e.muscle_group||"").split(",").map(x=>x.trim()).filter(Boolean),cat:e.category||"",cx:({principiante:1,intermedio:2,avanzado:3})[String(e.difficulty||"").toLowerCase()]||null,sets:e.default_sets||null,reps:e.default_reps||null,rest:e.rest_seconds||null,id:e.id,desc:e.description||""}; }); CUSTOM_EX=m; };
 const MUSCLES=["Pecho","Espalda","Hombro","Bíceps","Tríceps","Antebrazo","Cuádriceps","Isquios","Glúteo","Aductores","Gemelo","Core","Lumbar","Cuerpo completo","Cardio","Movilidad"];
 // Músculos por nombre (el primero que coincide gana; el primer músculo es el principal).
 const MUSCLE_RULES=[
@@ -12108,6 +12163,11 @@ const exEquipCustom = (name) => Object.prototype.hasOwnProperty.call(EX_EQUIP,St
 // Guarda el material de un ejercicio para todo el gimnasio (null = volver a automático).
 async function saveExEquip(name, list){
   const k=String(name||"").toLowerCase().trim(); if(!k) return {error:"sin nombre"};
+  const own=CUSTOM_EX[k];
+  if(own&&own.id&&list!=null){ // ejercicio propio: se guarda en su ficha
+    const u=await sb.from("exercises").update({equipment:[...new Set(list)].join(",")}).eq("id",own.id);
+    if(!u.error){ own.equip=[...new Set(list)].join(","); OWN_EQ_PATCH[own.id]=own.equip; if(Object.prototype.hasOwnProperty.call(EX_EQUIP,k)) list=null; else { EX_EQUIP_L.forEach(f=>{ try{ f(); }catch(e){} }); return {ok:true}; } }
+  }
   const r=await sb.from("app_settings").select("config").eq("id",1); const cfg=(r.data&&r.data[0]&&r.data[0].config)||{};
   const m={...(cfg.exEquip||{})}; if(list==null) delete m[k]; else m[k]=[...new Set(list)];
   const w=await sb.from("app_settings").upsert({id:1,config:{...cfg,exEquip:m}});

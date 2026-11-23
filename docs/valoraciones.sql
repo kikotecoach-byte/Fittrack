@@ -1,3 +1,5 @@
+-- ⚠️ SEGURIDAD: si ya ejecutaste docs/seguridad-2.sql, NO vuelvas a ejecutar este archivo
+--    (reabre la tabla a cualquiera). Si lo haces, ejecuta después docs/seguridad-3.sql.
 -- ─────────────────────────────────────────────────────────────────────────
 -- Kikote Gym — Valoraciones / Leads
 -- Ejecuta una vez en Supabase → SQL Editor (proyecto Fittrack).

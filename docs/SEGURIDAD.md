@@ -50,6 +50,14 @@ después igual (Clientes → atleta → «📲 Enviar acceso»).
 
 Al final de `seguridad-2.sql` hay una **vuelta atrás** por si algo fallara.
 
+### Paso 3 — refuerzos (prueba de seguridad)
+SQL Editor: ejecuta `docs/seguridad-3.sql` (se puede repetir):
+- Cada atleta solo puede subir o cambiar **sus** fotos (antes uno con cuenta podía sobrescribir la foto de otro).
+- Las reservas que no hace el coach las revisa el servidor: quedan pendientes de aprobación (si está activada), no pueden ser en el pasado ni pasar del aforo.
+- Cierra de nuevo cualquier tabla que un SQL antiguo hubiera reabierto.
+
+En la app: los enlaces de fotos y vídeos solo abren direcciones `https://` (un enlace `javascript:` guardado por alguien ya no ejecuta nada).
+
 ## Lo que queda por mejorar (opcional)
 - Las fotos ya subidas se abren con su enlace directo (largo e imposible de adivinar). Para que ni con el enlace se vean, habría que pasar el almacenamiento a privado con enlaces temporales.
 - Las reglas de aforo y de bono se comprueban en la app. Un atleta con conocimientos técnicos podría reservarse a sí mismo por encima del aforo, aunque nunca para otra persona.
