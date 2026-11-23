@@ -18,6 +18,7 @@
 //                                            cliente reserva clase(s); manda el aviso
 //   {action:"forum", id}                   → nueva publicación en la comunidad:
 //                                            avisa a los atletas (y al coach)
+//   {action:"comment", id}                 → comentario nuevo: avisa a quien publicó
 //   {action:"event", table, id}            → lo llama la base de datos al
 //                                            terminar un entreno; manda el aviso
 // Sin dependencias: Web Push (RFC 8291 + VAPID) hecho con Web Crypto.
@@ -118,7 +119,8 @@ async function caller(req: Request): Promise<{ uid: string; admin: boolean; clie
 // to: "coach" (móviles del coach) · "athletes" (de los atletas, salvo `except`) · user_id concreto
 async function sendAll(data: Record<string, unknown>, to: string = "coach", except?: string | null) {
   const v = await getVapid();
-  const f = to === "coach" ? "&client_id=is.null" : to === "athletes" ? `&client_id=not.is.null${except ? `&client_id=neq.${except}` : ""}` : `&user_id=eq.${to}`;
+  const f = to === "coach" ? "&client_id=is.null" : to === "athletes" ? `&client_id=not.is.null${except ? `&client_id=neq.${except}` : ""}`
+    : to.startsWith("client:") ? `&client_id=eq.${to.slice(7)}` : `&user_id=eq.${to}`;
   const r = await rest(`push_subs?select=id,endpoint,p256dh,auth${f}`);
   let sent = 0;
   for (const s of (r.data || [])) {
@@ -236,6 +238,21 @@ export async function handle(req: Request): Promise<Response> {
         let sent = await sendAll(msg, "athletes", post.client_id || null);
         if (post.client_id) sent += await sendAll(msg, "coach");
         return json({ sent });
+      }
+      case "comment": {
+        // Comentario nuevo: aviso a quien publicó (si no es quien comenta).
+        if (!/^[0-9a-f-]{1,40}$/i.test(String(b.id || ""))) return json({ error: "bad" }, 400);
+        const r = await rest(`forum_comments?id=eq.${b.id}&select=*`); const c = r.data && r.data[0];
+        if (!c) return json({ skipped: "no existe" });
+        const pr = await rest(`forum_posts?id=eq.${c.post_id}&select=id,client_id`); const post = pr.data && pr.data[0];
+        if (!post) return json({ skipped: "sin publicación" });
+        if ((post.client_id || null) === (c.client_id || null)) return json({ skipped: "comenta su propia publicación" });
+        const d = await rest("push_sent?on_conflict=key", { method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=representation" }, body: JSON.stringify({ key: `comment:${b.id}` }) });
+        if (!d.ok || !d.data || !d.data.length) return json({ skipped: "ya avisado" });
+        const who = c.client_id ? String(c.author_name || "Alguien").split(" ")[0] : "Tu coach";
+        const txt = String(c.content || "").replace(/\s+/g, " ").trim();
+        const msg = { title: `💬 ${who} ha comentado tu publicación`, body: txt.length > 110 ? txt.slice(0, 107) + "…" : txt, tag: `kk-forum-c-${b.id}`, url: "/?aviso=comunidad" };
+        return json({ sent: await sendAll(msg, post.client_id ? `client:${post.client_id}` : "coach") });
       }
       default: {
         const me = await caller(req); if (!me) return json({ error: "sin acceso" }, 401);

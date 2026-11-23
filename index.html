@@ -797,6 +797,7 @@ function App() {
   const [blocked, setBlocked] = React.useState([]);
   const [waitlist, setWaitlist] = React.useState([]);
   const [forum, setForum] = React.useState([]);
+  const [forumComments, setForumComments] = React.useState([]); // comentarios de la comunidad (docs/comentarios-comunidad.sql)
   const [exercises, setExercises] = React.useState([]);
   const [plans, setPlans] = React.useState([]);
   const [clientPlans, setClientPlans] = React.useState([]);
@@ -859,6 +860,7 @@ function App() {
       ASG.list=as_.data||[]; ASG.ex=ae.data||[];
       setWeightHistory(wh.data||[]);
       setWaitlist(wl.data||[]);
+      try { const fc=await sb.from("forum_comments").select("*").order("created_at"); FORUM_C.missing=!!fc.error; setForumComments(fc.error?[]:(fc.data||[])); } catch(e){ FORUM_C.missing=true; }
       // Leads/valoraciones: fetch aparte para no romper si aún no existe la tabla.
       try { const lq=await sb.from("leads").select("*").order("created_at",{ascending:false}); if(!lq.error) setLeads(lq.data||[]); } catch(e){}
       try { const oq=await sb.from("open_sessions").select("*").order("date"); OPEN.missing=!!oq.error; OPEN.list=oq.error?[]:(oq.data||[]); setOpenSessions(OPEN.list); } catch(e){ OPEN.missing=true; }
@@ -879,7 +881,7 @@ function App() {
       setOpenRoster(o.error?null:(o.data||[]).map(x=>({...x,time:x.time?String(x.time).slice(0,5):null,date:String(x.date||"").slice(0,10)})));
     }catch(e){}
   };
-  const clearData = () => { [setClients,setSessions,setHistory,setPayments,setForum,setProgress,setRecords,setAchievements,setClientWeights,setAssignedSessions,setAssignedExercises,setWeightHistory,setWaitlist,setLeads,setClientPlans].forEach(f=>f([])); setRoster(null); setMembers(null); setOpenRoster(null); };
+  const clearData = () => { [setClients,setSessions,setHistory,setPayments,setForum,setProgress,setRecords,setAchievements,setClientWeights,setAssignedSessions,setAssignedExercises,setWeightHistory,setWaitlist,setLeads,setClientPlans,setForumComments].forEach(f=>f([])); setRoster(null); setMembers(null); setOpenRoster(null); };
   // Entra con la sesión segura: decide si es coach o atleta (lo dice el servidor).
   const enterWithAuth = async () => {
     const a=await sb.rpc("is_admin");
@@ -1030,10 +1032,10 @@ function App() {
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleAthleteEnter,handleCoachLogin}}/>}
-      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights:clientWeightsEff,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
+      {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,forumComments,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights:clientWeightsEff,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
       {mode==="client"&&loggedClient&&isBaja(loggedClient)&&<BajaScreen client={loggedClient} onLogout={doLogout}/>}
-      {mode==="client"&&loggedClient&&!isBaja(loggedClient)&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeightsEff.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
+      {mode==="client"&&loggedClient&&!isBaja(loggedClient)&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} forumComments={forumComments} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeightsEff.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
     </div>
   );
 }
@@ -1158,7 +1160,7 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
 }
 
 // ── ADMIN ──────────────────────────────────────────────────────────────────
-function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitlist,forum,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify,onLogout,secure}) {
+function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitlist,forum,forumComments,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify,onLogout,secure}) {
   setCustomExercises(exercises); // ejercicios propios (músculos y material) para buscador y generador
   // Activos (todo el panel) y de baja (se conservan para el futuro; búsquedas por id sobre todos).
   const clients = React.useMemo(()=>(allClients||[]).filter(c=>!isBaja(c)),[allClients]);
@@ -1430,7 +1432,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
   // Comunidad: lo nuevo de los atletas desde la última vez que la abriste + al momento.
   React.useEffect(()=>{ try{ if(!localStorage.getItem(forumSeenKey("coach"))) forumMarkSeen("coach"); }catch(e){} },[]);
   useForumLive(loadAll);
-  const forumNew = view==="forum"?0:forumUnread(forum,"coach",null);
+  const forumNew = view==="forum"?0:forumUnread(forum,"coach",null,forumComments);
   useBookingWatch(true, async(nw)=>{ const r=await loadAll(); const cl=(r&&r.clients&&r.clients.length)?r.clients:clients;
     const names=[...new Set(nw.map(x=>{ const c=cl.find(cc=>cc.id===x.client_id); return c?c.name.split(" ")[0]:"Un cliente"; }))].join(", ");
     const when=nw.map(x=>`${fmtDate(x.date)} ${x.time}`).slice(0,3).join(" · ");
@@ -3033,7 +3035,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               <h1 className="mono" style={{fontSize:18,fontWeight:700}}>💬 Comunidad</h1>
               <span style={{fontSize:12,color:"#94a3b8"}}>{forum.length} publicaciones</span>
             </div>
-            <ForumTab coach forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>
+            <ForumTab coach forum={forum} comments={forumComments} allClients={allClients} loadAll={loadAll} notify={notify}/>
           </div>
         )}
 
@@ -8676,7 +8678,7 @@ function AthleteTutorial({client,config,hybrid,approve,onClose,onGo}){
   </div>;
 }
 
-function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll:loadAllRaw,notify,onLogout,preview}) {
+function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,allClients,blocked,waitlist,forum,forumComments,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll:loadAllRaw,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
   const [progView,setProgView]=React.useState(null); // sub-vista de Progreso al entrar (p. ej. «badges»)
@@ -8760,7 +8762,13 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
   // Comunidad: marca de lo nuevo (de otros) y aviso al momento si llega con la app abierta.
   React.useEffect(()=>{ try{ if(!localStorage.getItem(forumSeenKey(client.id))) forumMarkSeen(client.id); }catch(e){} },[]);
   useForumLive(loadAll);
-  const forumNewA = tab==="comunidad"?0:forumUnread(forum,client.id,client.id);
+  const forumNewA = tab==="comunidad"?0:forumUnread(forum,client.id,client.id,forumComments);
+  // Aviso en pantalla cuando alguien comenta una publicación tuya
+  const lastCom=React.useRef(null);
+  React.useEffect(()=>{ const mine=new Set((forum||[]).filter(p=>p.client_id===client.id).map(p=>p.id));
+    const cs=(forumComments||[]).filter(c=>c.client_id!==client.id&&mine.has(c.post_id)&&c.created_at).sort((a,b)=>b.created_at.localeCompare(a.created_at)), top=cs[0];
+    if(lastCom.current&&top&&top.created_at>lastCom.current&&tab!=="comunidad"&&!preview) notify(`💬 ${top.client_id?String(top.author_name||"Alguien").split(" ")[0]:"Tu coach"} ha comentado tu publicación`);
+    if(top) lastCom.current=top.created_at; else if(!lastCom.current) lastCom.current="0"; },[(forumComments||[]).length]);
   const lastPost=React.useRef(null);
   React.useEffect(()=>{ const others=(forum||[]).filter(p=>p.client_id!==client.id&&p.created_at).sort((a,b)=>b.created_at.localeCompare(a.created_at)), top=others[0];
     if(lastPost.current&&top&&top.created_at>lastPost.current&&tab!=="comunidad"&&!preview){ const who=top.client_id?String(top.client_name||"").split(" ")[0]:"Tu coach";
@@ -9057,7 +9065,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
       {gameEv&&<GameCelebrate ev={gameEv} onClose={()=>setGameEv(null)}/>}
       {tab==="progreso"&&<ProgressTab key={progView||"p"} game={game} initialView={progView} client={client} history={allHistory} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
 
-      {tab==="comunidad"&&<ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>}
+      {tab==="comunidad"&&<ForumTab client={client} forum={forum} comments={forumComments} allClients={allClients} loadAll={loadAll} notify={notify}/>}
     </div>
     {showTut&&<AthleteTutorial client={client} config={config} hybrid={hyb} approve={needsApproval(config)} onClose={closeTut} onGo={go}/>}
     {/* Navegación inferior: 5 secciones, siempre a mano */}
@@ -10265,19 +10273,52 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
 // ── FORUM TAB ──────────────────────────────────────────────────────────────
 // Comunidad: publicaciones nuevas no vistas (para la marca roja del menú).
 const forumSeenKey = (who) => "kk_forum_seen_"+who;
-const forumUnread = (forum, who, myId) => { let t=""; try{ t=localStorage.getItem(forumSeenKey(who))||""; }catch(e){}
-  if(!t) return 0; return (forum||[]).filter(p=>p.created_at&&p.created_at>t&&(myId?p.client_id!==myId:!!p.client_id)).length; };
+const FORUM_C = {missing:false};
+const forumUnread = (forum, who, myId, comments) => { let t=""; try{ t=localStorage.getItem(forumSeenKey(who))||""; }catch(e){}
+  if(!t) return 0; const posts=(forum||[]).filter(p=>p.created_at&&p.created_at>t&&(myId?p.client_id!==myId:!!p.client_id)).length;
+  const mine=new Set((forum||[]).filter(p=>myId?p.client_id===myId:!p.client_id).map(p=>p.id));
+  const coms=(comments||[]).filter(c=>c.created_at&&c.created_at>t&&(myId?(c.client_id!==myId&&mine.has(c.post_id)):!!c.client_id)).length;
+  return posts+coms; };
 const forumMarkSeen = (who) => { try{ localStorage.setItem(forumSeenKey(who),new Date().toISOString()); }catch(e){} };
 // Refresca la comunidad al momento cuando alguien publica (Supabase Realtime).
 function useForumLive(onChange){
   const cb=React.useRef(onChange); cb.current=onChange;
-  React.useEffect(()=>{ let ch=null, t=null; try{ if(sb.channel) ch=sb.channel("comunidad-"+Math.random().toString(36).slice(2,7)).on("postgres_changes",{event:"*",schema:"public",table:"forum_posts"},()=>{ clearTimeout(t); t=setTimeout(()=>cb.current&&cb.current(),400); }).subscribe(); }catch(e){}
+  React.useEffect(()=>{ let ch=null, t=null; try{ const go=()=>{ clearTimeout(t); t=setTimeout(()=>cb.current&&cb.current(),400); };
+      if(sb.channel) ch=sb.channel("comunidad-"+Math.random().toString(36).slice(2,7)).on("postgres_changes",{event:"*",schema:"public",table:"forum_posts"},go).on("postgres_changes",{event:"*",schema:"public",table:"forum_comments"},go).subscribe(); }catch(e){}
     return ()=>{ clearTimeout(t); try{ ch&&sb.removeChannel&&sb.removeChannel(ch); }catch(e){} }; },[]);
 }
-function ForumTab({client, forum, allClients, loadAll, notify, coach}) {
+// Comentarios de una publicación: el coach (marca COACH) y los atletas.
+function ForumComments({post, comments, me, coach, likeKey, loadAll, notify}){
+  const list=(comments||[]).filter(c=>c.post_id===post.id).sort((a,b)=>String(a.created_at).localeCompare(String(b.created_at)));
+  const [all,setAll]=React.useState(false), [txt,setTxt]=React.useState(""), [busy,setBusy]=React.useState(false);
+  const shown=all?list:list.slice(-2);
+  const send=async()=>{ const t=txt.trim(); if(!t||busy) return; setBusy(true);
+    const {error}=await sb.from("forum_comments").insert({post_id:post.id,client_id:coach?null:me.id,author_name:coach?`Coach · ${GYM_NAME}`:me.name,content:t.slice(0,1000)});
+    setBusy(false); if(error) return notify(FORUM_C.missing?"Falta activar los comentarios en Supabase (docs/comentarios-comunidad.sql)":"No se pudo comentar","err");
+    setTxt(""); setAll(true); await loadAll(); };
+  const del=async(c)=>{ if(!window.confirm("¿Borrar este comentario?")) return; const {error}=await sb.from("forum_comments").delete().eq("id",c.id); if(error) return notify("No se pudo borrar","err"); await loadAll(); };
+  return(
+    <div data-comments={post.id} style={{marginTop:8,borderTop:"1px solid var(--border, #e6ebf3)",paddingTop:8}}>
+      {list.length>2&&!all&&<button type="button" onClick={()=>setAll(true)} style={{background:"none",border:"none",color:"#64748b",fontSize:12,fontWeight:700,cursor:"pointer",padding:"0 0 6px",fontFamily:"inherit"}}>Ver los {list.length} comentarios</button>}
+      {shown.map(c=>{ const byCoach=!c.client_id, mine=coach?byCoach:c.client_id===me.id; return(
+        <div key={c.id} data-comment={c.id} style={{display:"flex",gap:7,alignItems:"flex-start",marginBottom:6}}>
+          <div style={{flex:1,minWidth:0,background:byCoach?"rgba(242,68,29,.08)":"rgba(148,163,184,.1)",border:byCoach?"1px solid rgba(242,68,29,.3)":"1px solid transparent",borderRadius:12,padding:"6px 10px"}}>
+            <div style={{fontSize:11.5,fontWeight:800,color:"#0f172a"}}>{byCoach?"Coach":String(c.author_name||"").split(" ")[0]}{byCoach&&<span style={{fontSize:8.5,fontWeight:800,color:"#fff",background:"#f2441d",borderRadius:20,padding:"0 6px",marginLeft:5}}>COACH</span>}
+              <span style={{fontWeight:600,color:"#94a3b8",marginLeft:6}}>{c.created_at?new Date(c.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"}):""}</span></div>
+            <div style={{fontSize:13,color:"#334155",lineHeight:1.45,whiteSpace:"pre-wrap",wordBreak:"break-word"}}>{c.content}</div>
+          </div>
+          {(coach||mine)&&<button type="button" aria-label="Borrar comentario" onClick={()=>del(c)} style={{background:"none",border:"none",color:"#94a3b8",cursor:"pointer",fontSize:12,padding:"6px 2px"}}>✕</button>}
+        </div>); })}
+      <form onSubmit={e=>{e.preventDefault();send();}} style={{display:"flex",gap:6,alignItems:"center"}}>
+        <input className="inp" value={txt} onChange={e=>setTxt(e.target.value)} placeholder={coach?"Comenta como coach…":"Escribe un comentario…"} aria-label={`Comentar la publicación de ${post.client_id?post.client_name:"Coach"}`} style={{flex:1,fontSize:13,padding:"8px 11px",borderRadius:20}}/>
+        <button type="submit" className="btn sky" disabled={busy||!txt.trim()} aria-label="Enviar comentario" style={{padding:"8px 13px",borderRadius:20,fontSize:13}}>{busy?"…":"➤"}</button>
+      </form>
+    </div>);
+}
+function ForumTab({client, forum, comments, allClients, loadAll, notify, coach}) {
   const me = coach ? {id:null,name:"Coach",color:"#f2441d",avatar_url:null} : client;
   const likeKey = coach ? "coach" : client.id;
-  React.useEffect(()=>{ forumMarkSeen(coach?"coach":client.id); },[(forum||[]).length]);
+  React.useEffect(()=>{ forumMarkSeen(coach?"coach":client.id); },[(forum||[]).length,(comments||[]).length]);
   const [text, setText] = React.useState("");
   const [imgFile, setImgFile] = React.useState(null);
   const [imgPreview, setImgPreview] = React.useState(null);
@@ -10390,6 +10431,7 @@ function ForumTab({client, forum, allClients, loadAll, notify, coach}) {
                     {liked?"❤️":"🤍"} <span style={{fontWeight:600}}>{post.likes||0}</span>
                   </button>
                 </div>
+                <ForumComments post={post} comments={comments} me={me} coach={coach} likeKey={likeKey} loadAll={loadAll} notify={notify}/>
               </div>
             );
           })
