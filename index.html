@@ -1427,6 +1427,10 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
   const alertCount = reminders.filter(r=>r.urgent).length+freedWaitlist.length;
   // Reservas de clientes pendientes de aprobar + aviso al momento cuando llega una nueva.
   const pendingReq = sessions.filter(s=>s.requested&&s.date>=TODAY);
+  // Comunidad: lo nuevo de los atletas desde la última vez que la abriste + al momento.
+  React.useEffect(()=>{ try{ if(!localStorage.getItem(forumSeenKey("coach"))) forumMarkSeen("coach"); }catch(e){} },[]);
+  useForumLive(loadAll);
+  const forumNew = view==="forum"?0:forumUnread(forum,"coach",null);
   useBookingWatch(true, async(nw)=>{ const r=await loadAll(); const cl=(r&&r.clients&&r.clients.length)?r.clients:clients;
     const names=[...new Set(nw.map(x=>{ const c=cl.find(cc=>cc.id===x.client_id); return c?c.name.split(" ")[0]:"Un cliente"; }))].join(", ");
     const when=nw.map(x=>`${fmtDate(x.date)} ${x.time}`).slice(0,3).join(" · ");
@@ -1902,7 +1906,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
           <Ico k="logo" size={30}/>
           <span className="brand-title" style={{fontSize:15,fontWeight:700,color:"#f4f4f6",letterSpacing:1.2,textTransform:"uppercase"}}>{GYM_NAME}</span>
         </div>
-        {[["dashboard","home","Inicio",pendingReq.length],["schedule","agenda","Agenda"],["clients","clients","Clientes"],["programming","program","Programa"],["income","money","Finanzas"],["reminders","bell","Alertas",reminders.length],["forum","forum","Foro"]].map(([id,ic,l,n])=>(
+        {[["dashboard","home","Inicio",pendingReq.length],["schedule","agenda","Agenda"],["clients","clients","Clientes"],["programming","program","Programa"],["income","money","Finanzas"],["reminders","bell","Alertas",reminders.length],["forum","forum","Comunidad",forumNew]].map(([id,ic,l,n])=>(
           <button key={id} className={"nav"+(view===id?" on":"")} onClick={()=>setView(id)} style={{marginBottom:3}}>
             <Ico k={ic} size={26}/><span>{l}</span>{n>0&&<span className="cnt">{n}</span>}
           </button>
@@ -1937,7 +1941,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
       {/* Secondary nav tabs */}
       {["forum","reminders","income"].includes(view)&&(
         <div className="admin-sub" style={{display:"flex",gap:6,padding:"8px 14px 0",overflowX:"auto"}}>
-          {[["forum","💬 Foro"],["reminders","🔔 Alertas"],["income","💶 Finanzas"]].map(([id,label])=>(
+          {[["forum","💬 Comunidad"],["reminders","🔔 Alertas"],["income","💶 Finanzas"]].map(([id,label])=>(
             <button key={id} className={"tab"+(view===id?" on":"")} onClick={()=>setView(id)} style={{flexShrink:0,fontSize:12}}>{label}</button>
           ))}
           <button className={"tab"} onClick={()=>setView("dashboard")} style={{flexShrink:0,fontSize:12,color:"#64748b"}}>← Volver</button>
@@ -2227,7 +2231,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 ["money","Finanzas",go("income")],
                 ["bell","Alertas",go("reminders"),reminders.length],
                 ["check","Pasar lista",go("feed")],
-                ["forum","Foro",go("forum")],
+                ["forum","Comunidad",go("forum"),forumNew],
                 ["gear","Horario",()=>{ setView("schedule"); setShowSched(true); }],
                 ["phone","WhatsApp a todos",()=>setShowBulkWA(true)],
               ];
@@ -3025,40 +3029,11 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
         {/* FORUM ADMIN */}
         {view==="forum"&&(
           <div>
-            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:16}}>
+            <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <h1 className="mono" style={{fontSize:18,fontWeight:700}}>💬 Comunidad</h1>
               <span style={{fontSize:12,color:"#94a3b8"}}>{forum.length} publicaciones</span>
             </div>
-            {forum.length===0
-              ? <div className="card" style={{textAlign:"center",padding:40}}>
-                  <div style={{fontSize:28,marginBottom:8}}>💬</div>
-                  <div style={{color:"#64748b",fontSize:13}}>Sin publicaciones aún</div>
-                </div>
-              : forum.map(post=>{
-                  const c=allClients.find(x=>x.id===post.client_id);
-                  return(
-                    <div key={post.id} className="card" style={{marginBottom:10}}>
-                      <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                        {c?.avatar_url
-                          ? <img src={c.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c?.color||"#0284c7"}`}}/>
-                          : <div className="ring" style={{width:36,height:36,background:(c?.color||"#0284c7")+"20",color:c?.color||"#0284c7",fontSize:12,border:`1.5px solid ${c?.color||"#0284c7"}35`}}>{ini(post.client_name)}</div>
-                        }
-                        <div style={{flex:1}}>
-                          <div style={{fontWeight:700,fontSize:13}}>{post.client_name}</div>
-                          <div style={{fontSize:11,color:"#94a3b8"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
-                        </div>
-                        <button className="btn danger" style={{fontSize:10,padding:"4px 8px"}} onClick={async()=>{
-                          await sb.from("forum_posts").delete().eq("id",post.id);
-                          await loadAll();
-                        }}>🗑</button>
-                      </div>
-                      <p style={{fontSize:13,color:"#64748b",lineHeight:1.5,marginBottom:post.image_url?10:0}}>{post.content}</p>
-                      {post.image_url&&<img src={post.image_url} style={{width:"100%",borderRadius:10,maxHeight:240,objectFit:"cover",marginTop:8}}/>}
-                      <div style={{marginTop:8,fontSize:11,color:"#94a3b8"}}>❤️ {post.likes} likes</div>
-                    </div>
-                  );
-                })
-            }
+            <ForumTab coach forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>
           </div>
         )}
 
@@ -8546,7 +8521,7 @@ const pushFn = async (body) => { try{ const r=await sb.functions.invoke(PUSH_FN,
 const pushKeyBytes = (s) => { s=String(s).replace(/-/g,"+").replace(/_/g,"/"); while(s.length%4) s+="="; return Uint8Array.from(atob(s),c=>c.charCodeAt(0)); };
 const isIOS = () => /iphone|ipad|ipod/i.test(navigator.userAgent||"")||(navigator.platform==="MacIntel"&&navigator.maxTouchPoints>1);
 const isStandalone = () => { try{ return window.matchMedia("(display-mode: standalone)").matches||navigator.standalone===true; }catch(e){ return false; } };
-function PushSetup({notify,compact}){
+function PushSetup({notify,compact,athlete}){
   const supported=typeof window!=="undefined"&&"serviceWorker" in navigator&&"PushManager" in window&&"Notification" in window;
   const [st,setSt]=React.useState(supported?"checking":"unsupported"); // checking|off|on|denied|nofn|unsupported|busy
   const [devices,setDevices]=React.useState(0);
@@ -8575,7 +8550,7 @@ function PushSetup({notify,compact}){
   const iosTip=isIOS()&&!isStandalone();
   if(compact){ // en Inicio: solo si falta activarlo en este móvil
     if(!(st==="off"||(st==="unsupported"&&iosTip))) return null;
-    return <button data-push="cta" className="btn ghost" style={{width:"100%",marginBottom:12,fontSize:12,padding:"9px",justifyContent:"center"}} onClick={st==="off"?activar:()=>notify("En iPhone: Compartir → «Añadir a pantalla de inicio» y abre la app desde el icono")}>📲 Recibir en el móvil cuando un cliente reserve una clase</button>; }
+    return <button data-push="cta" className="btn ghost" style={{width:"100%",marginBottom:12,fontSize:12,padding:"9px",justifyContent:"center"}} onClick={st==="off"?activar:()=>notify("En iPhone: Compartir → «Añadir a pantalla de inicio» y abre la app desde el icono")}>{athlete?"🔔 Recibir en el móvil los avisos de la comunidad":"📲 Recibir en el móvil cuando un cliente reserve una clase"}</button>; }
   const txt={checking:"Comprobando…",busy:"Un momento…",off:"Desactivados en este dispositivo",on:"✅ Activados en este dispositivo",denied:"Bloqueados en el navegador",nofn:"Falta un paso en Supabase",unsupported:"Este navegador no los admite"}[st];
   return(
     <div data-push="card" className="card" style={{marginBottom:14,padding:14,border:"1px solid #bcd3ee",background:"#f5f9ff"}}>
@@ -8782,6 +8757,18 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
     if(nw.length||levelUp) setGameEv({badges:nw,levelUp,first});
   },[game.level,nUnlocked,(myAchievements||[]).length]);
   const openLogros=()=>{ setProgView("badges"); go("progreso"); };
+  // Comunidad: marca de lo nuevo (de otros) y aviso al momento si llega con la app abierta.
+  React.useEffect(()=>{ try{ if(!localStorage.getItem(forumSeenKey(client.id))) forumMarkSeen(client.id); }catch(e){} },[]);
+  useForumLive(loadAll);
+  const forumNewA = tab==="comunidad"?0:forumUnread(forum,client.id,client.id);
+  const lastPost=React.useRef(null);
+  React.useEffect(()=>{ const others=(forum||[]).filter(p=>p.client_id!==client.id&&p.created_at).sort((a,b)=>b.created_at.localeCompare(a.created_at)), top=others[0];
+    if(lastPost.current&&top&&top.created_at>lastPost.current&&tab!=="comunidad"&&!preview){ const who=top.client_id?String(top.client_name||"").split(" ")[0]:"Tu coach";
+      notify(`${top.client_id?"💬":"📣"} ${who} ha publicado en la comunidad`); }
+    if(top) lastPost.current=top.created_at; else if(!lastPost.current) lastPost.current="0"; },[(forum||[]).length]);
+  React.useEffect(()=>{ if(!("serviceWorker" in navigator)) return;
+    const h=(e)=>{ const m=e&&e.data; if(m&&m.type==="kk-push"&&m.data&&/kk-forum/.test(m.data.tag||"")) loadAll(); };
+    navigator.serviceWorker.addEventListener("message",h); return ()=>navigator.serviceWorker.removeEventListener("message",h); },[]);
   const nextSess=mySessions.find(s=>!s.requested);
   const nextCountdown=nextSess?daysUntil(nextSess.date):null;
   const thisMonthSessions=myHistory.filter(h=>h.date&&h.date.startsWith(TODAY.slice(0,7))).length;
@@ -9082,7 +9069,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
             <span>{label}</span>
           </button>
           :<button key={id} className={"bnav-btn"+(tab===id?" on":"")} onClick={()=>go(id)} aria-current={tab===id?"page":undefined}>
-            <span className="bnav-icon"><Ico k={ic} size={28}/>{id==="inicio"&&freedWaits.length>0&&<span className="bnav-badge">{freedWaits.length}</span>}</span>
+            <span className="bnav-icon"><Ico k={ic} size={28}/>{id==="inicio"&&freedWaits.length>0&&<span className="bnav-badge">{freedWaits.length}</span>}{id==="comunidad"&&forumNewA>0&&<span className="bnav-badge" data-forumbadge="1">{forumNewA}</span>}</span>
             <span>{label}</span>
           </button>
         )}
@@ -10276,7 +10263,21 @@ function ClientCalendar({client, allSessions, allClients, blocked}) {
 }
 
 // ── FORUM TAB ──────────────────────────────────────────────────────────────
-function ForumTab({client, forum, allClients, loadAll, notify}) {
+// Comunidad: publicaciones nuevas no vistas (para la marca roja del menú).
+const forumSeenKey = (who) => "kk_forum_seen_"+who;
+const forumUnread = (forum, who, myId) => { let t=""; try{ t=localStorage.getItem(forumSeenKey(who))||""; }catch(e){}
+  if(!t) return 0; return (forum||[]).filter(p=>p.created_at&&p.created_at>t&&(myId?p.client_id!==myId:!!p.client_id)).length; };
+const forumMarkSeen = (who) => { try{ localStorage.setItem(forumSeenKey(who),new Date().toISOString()); }catch(e){} };
+// Refresca la comunidad al momento cuando alguien publica (Supabase Realtime).
+function useForumLive(onChange){
+  const cb=React.useRef(onChange); cb.current=onChange;
+  React.useEffect(()=>{ let ch=null, t=null; try{ if(sb.channel) ch=sb.channel("comunidad-"+Math.random().toString(36).slice(2,7)).on("postgres_changes",{event:"*",schema:"public",table:"forum_posts"},()=>{ clearTimeout(t); t=setTimeout(()=>cb.current&&cb.current(),400); }).subscribe(); }catch(e){}
+    return ()=>{ clearTimeout(t); try{ ch&&sb.removeChannel&&sb.removeChannel(ch); }catch(e){} }; },[]);
+}
+function ForumTab({client, forum, allClients, loadAll, notify, coach}) {
+  const me = coach ? {id:null,name:"Coach",color:"#f2441d",avatar_url:null} : client;
+  const likeKey = coach ? "coach" : client.id;
+  React.useEffect(()=>{ forumMarkSeen(coach?"coach":client.id); },[(forum||[]).length]);
   const [text, setText] = React.useState("");
   const [imgFile, setImgFile] = React.useState(null);
   const [imgPreview, setImgPreview] = React.useState(null);
@@ -10296,29 +10297,30 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
     setPosting(true);
     let image_url = null;
     if(imgFile) {
-      image_url = await uploadImage("forum", `${client.id}_${Date.now()}`, imgFile, notify);
+      image_url = await uploadImage("forum", `${coach?"coach":client.id}_${Date.now()}`, imgFile, notify);
       if(!image_url){ setPosting(false); return; }
     }
-    await sb.from("forum_posts").insert({
-      client_id: client.id,
-      client_name: client.name,
+    const {error} = await sb.from("forum_posts").insert({
+      client_id: me.id,
+      client_name: coach ? `Coach · ${GYM_NAME}` : client.name,
       content: text.trim(),
       image_url,
     });
+    if(error){ setPosting(false); return notify(coach?"No se pudo publicar: ejecuta docs/avisos-comunidad.sql en Supabase":"No se pudo publicar","err"); }
     setText(""); setImgFile(null); setImgPreview(null);
     await loadAll();
     setPosting(false);
-    notify("Publicado ✓");
+    notify(coach?"Publicado ✓ · les llega a tus atletas":"Publicado ✓");
   };
 
   const toggleLike = async(post) => {
     // Función segura: permite dar «me gusta» sin poder editar publicaciones ajenas.
     const r = await sb.rpc("toggle_like",{p_post:post.id});
     if(!r.error){ await loadAll(); return; }
-    const liked = (post.liked_by||[]).includes(client.id);
+    const liked = (post.liked_by||[]).includes(likeKey);
     const newLikedBy = liked
-      ? post.liked_by.filter(id=>id!==client.id)
-      : [...(post.liked_by||[]), client.id];
+      ? post.liked_by.filter(id=>id!==likeKey)
+      : [...(post.liked_by||[]), likeKey];
     await sb.from("forum_posts").update({
       likes: newLikedBy.length,
       liked_by: newLikedBy,
@@ -10326,17 +10328,21 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
     await loadAll();
   };
 
+  const delPost = async(post) => { if(!window.confirm("¿Borrar esta publicación?")) return;
+    const {error}=await sb.from("forum_posts").delete().eq("id",post.id); if(error) return notify("No se pudo borrar","err"); await loadAll(); notify("Publicación borrada"); };
+  const coachAv = <div className="ring" style={{width:38,height:38,flexShrink:0,background:"linear-gradient(135deg,#ff7a45,#f2441d)",color:"#fff",fontSize:17,border:"2px solid #ff7a45"}}>🏋️</div>;
   return(
-    <div>
+    <div data-forum={coach?"coach":"atleta"}>
+      {!coach&&<PushSetup athlete compact notify={notify}/>}
       {/* Post composer */}
       <div className="card" style={{marginBottom:14}}>
         <div style={{display:"flex",gap:10,alignItems:"flex-start",marginBottom:10}}>
-          {client.avatar_url
+          {coach?coachAv:client.avatar_url
             ? <img src={client.avatar_url} style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${client.color}`,flexShrink:0}}/>
             : <div className="ring" style={{width:36,height:36,background:client.color+"20",color:client.color,fontSize:12,border:`1.5px solid ${client.color}40`,flexShrink:0}}>{ini(client.name)}</div>
           }
-          <textarea className="inp" rows={3} style={{resize:"none",fontSize:13}} 
-            placeholder="Comparte tu progreso, pregunta algo, motiva al equipo... 💪"
+          <textarea className="inp" rows={3} style={{resize:"none",fontSize:13}} aria-label="Escribe una publicación"
+            placeholder={coach?"Escribe a tu comunidad: avisos, retos, felicitaciones… 📣 (les llega un aviso)":"Comparte tu progreso, pregunta algo, motiva al equipo... 💪"}
             value={text} onChange={e=>setText(e.target.value)}/>
         </div>
         {imgPreview&&(
@@ -10361,20 +10367,21 @@ function ForumTab({client, forum, allClients, loadAll, notify}) {
             <div style={{color:"#64748b",fontSize:13}}>Sé el primero en publicar algo 💪</div>
           </div>
         : forum.map(post=>{
-            const c=allClients.find(x=>x.id===post.client_id);
-            const liked=(post.liked_by||[]).includes(client.id);
-            const isMe=post.client_id===client.id;
+            const c=allClients.find(x=>x.id===post.client_id), byCoach=!post.client_id;
+            const liked=(post.liked_by||[]).includes(likeKey);
+            const isMe=coach?byCoach:post.client_id===client.id;
             return(
-              <div key={post.id} className="card" style={{marginBottom:10}}>
+              <div key={post.id} data-post={post.id} className="card" style={{marginBottom:10,...(byCoach?{border:"1px solid rgba(255,122,69,.45)"}:{})}}>
                 <div style={{display:"flex",alignItems:"center",gap:10,marginBottom:10}}>
-                  {c?.avatar_url
+                  {byCoach?coachAv:c?.avatar_url
                     ? <img src={c.avatar_url} style={{width:38,height:38,borderRadius:"50%",objectFit:"cover",border:`2px solid ${c.color||"#0284c7"}`}}/>
                     : <div className="ring" style={{width:38,height:38,background:(c?.color||"#0284c7")+"20",color:c?.color||"#0284c7",fontSize:12,border:`1.5px solid ${c?.color||"#0284c7"}35`}}>{ini(post.client_name)}</div>
                   }
                   <div style={{flex:1}}>
-                    <div style={{fontWeight:700,fontSize:13}}>{post.client_name} {isMe&&<span style={{fontSize:10,color:"#0284c7"}}>· tú</span>}</div>
+                    <div style={{fontWeight:700,fontSize:13}}>{byCoach?"Coach":post.client_name}{byCoach&&<span style={{fontSize:9,fontWeight:800,color:"#fff",background:"#f2441d",borderRadius:20,padding:"1px 7px",marginLeft:6}}>COACH</span>} {isMe&&<span style={{fontSize:10,color:"#0284c7"}}>· tú</span>}</div>
                     <div style={{fontSize:11,color:"#94a3b8"}}>{new Date(post.created_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",hour:"2-digit",minute:"2-digit"})}</div>
                   </div>
+                  {(coach||isMe)&&<button type="button" className="btn danger" aria-label="Borrar publicación" style={{fontSize:10,padding:"4px 8px"}} onClick={()=>delPost(post)}>🗑</button>}
                 </div>
                 {post.content&&<p style={{fontSize:13,color:"#64748b",lineHeight:1.55,marginBottom:post.image_url?10:8}}>{post.content}</p>}
                 {post.image_url&&<img src={post.image_url} style={{width:"100%",borderRadius:10,maxHeight:260,objectFit:"cover",marginBottom:8}}/>}

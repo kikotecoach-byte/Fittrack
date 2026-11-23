@@ -10,12 +10,14 @@
 //
 // Acciones (POST JSON):
 //   {action:"key"}                         → {publicKey}
-//   {action:"subscribe", sub, ua}          → guarda este móvil (solo coach)
-//   {action:"unsubscribe", endpoint}       → lo quita (solo coach)
-//   {action:"status", endpoint}            → {on, devices} (solo coach)
-//   {action:"test"}                        → aviso de prueba (solo coach)
+//   {action:"subscribe", sub, ua}          → guarda este móvil (coach o atleta)
+//   {action:"unsubscribe", endpoint}       → lo quita (el suyo)
+//   {action:"status", endpoint}            → {on, devices}
+//   {action:"test"}                        → aviso de prueba a sus móviles
 //   {action:"booking", ids}                → lo llama la base de datos cuando un
 //                                            cliente reserva clase(s); manda el aviso
+//   {action:"forum", id}                   → nueva publicación en la comunidad:
+//                                            avisa a los atletas (y al coach)
 //   {action:"event", table, id}            → lo llama la base de datos al
 //                                            terminar un entreno; manda el aviso
 // Sin dependencias: Web Push (RFC 8291 + VAPID) hecho con Web Crypto.
@@ -102,18 +104,22 @@ async function getVapid(): Promise<Vapid> {
   return { publicKey: r.data[0].public_key, privateJwk: r.data[0].private_jwk };
 }
 
-// ¿Quien llama es el coach? (comprueba su sesión y la tabla admins)
-async function coachId(req: Request): Promise<string | null> {
+// ¿Quién llama? Coach (tabla admins) o atleta (su ficha en clients).
+async function caller(req: Request): Promise<{ uid: string; admin: boolean; clientId: string | null } | null> {
   const auth = req.headers.get("Authorization") || ""; if (!auth) return null;
   const u = await fetch(`${SB()}/auth/v1/user`, { headers: { apikey: SRK(), Authorization: auth } });
   if (!u.ok) return null; const user = await u.json().catch(() => null); if (!user || !user.id) return null;
   const a = await rest(`admins?user_id=eq.${user.id}&select=user_id`);
-  return a.ok && a.data && a.data.length ? user.id : null;
+  if (a.ok && a.data && a.data.length) return { uid: user.id, admin: true, clientId: null };
+  const c = await rest(`clients?auth_user_id=eq.${user.id}&select=id`);
+  return c.ok && c.data && c.data[0] ? { uid: user.id, admin: false, clientId: c.data[0].id } : null;
 }
 
-async function sendAll(data: Record<string, unknown>, onlyUser?: string) {
+// to: "coach" (móviles del coach) · "athletes" (de los atletas, salvo `except`) · user_id concreto
+async function sendAll(data: Record<string, unknown>, to: string = "coach", except?: string | null) {
   const v = await getVapid();
-  const r = await rest(`push_subs?select=id,endpoint,p256dh,auth${onlyUser ? `&user_id=eq.${onlyUser}` : ""}`);
+  const f = to === "coach" ? "&client_id=is.null" : to === "athletes" ? `&client_id=not.is.null${except ? `&client_id=neq.${except}` : ""}` : `&user_id=eq.${to}`;
+  const r = await rest(`push_subs?select=id,endpoint,p256dh,auth${f}`);
   let sent = 0;
   for (const s of (r.data || [])) {
     try {
@@ -215,20 +221,39 @@ export async function handle(req: Request): Promise<Response> {
         if (!d.ok || !d.data || !d.data.length) return json({ skipped: "ya avisado" });
         return json({ sent: await sendAll(msg) });
       }
+      case "forum": {
+        // Nueva publicación en la comunidad: aviso a los atletas (no a quien publica) y,
+        // si la escribe un atleta, también al coach.
+        if (!/^[0-9a-f-]{1,40}$/i.test(String(b.id || ""))) return json({ error: "bad" }, 400);
+        const r = await rest(`forum_posts?id=eq.${b.id}&select=*`); const post = r.data && r.data[0];
+        if (!post) return json({ skipped: "no existe" });
+        const d = await rest("push_sent?on_conflict=key", { method: "POST", headers: { Prefer: "resolution=ignore-duplicates,return=representation" }, body: JSON.stringify({ key: `forum:${b.id}` }) });
+        if (!d.ok || !d.data || !d.data.length) return json({ skipped: "ya avisado" });
+        const who = post.client_id ? String(post.client_name || "Alguien").split(" ")[0] : "Tu coach";
+        const txt = String(post.content || "").replace(/\s+/g, " ").trim();
+        const msg = { title: post.client_id ? `💬 ${who} ha publicado en la comunidad` : `📣 ${who} ha publicado en la comunidad`,
+          body: (txt ? (txt.length > 110 ? txt.slice(0, 107) + "…" : txt) : "📷 Ha compartido una foto"), tag: `kk-forum-${b.id}`, url: "/?aviso=comunidad" };
+        let sent = await sendAll(msg, "athletes", post.client_id || null);
+        if (post.client_id) sent += await sendAll(msg, "coach");
+        return json({ sent });
+      }
       default: {
-        const uid = await coachId(req); if (!uid) return json({ error: "solo el coach" }, 401);
+        const me = await caller(req); if (!me) return json({ error: "sin acceso" }, 401);
+        const uid = me.uid;
         if (b.action === "subscribe") {
           const s = b.sub || {}; if (!s.endpoint || !s.keys || !s.keys.p256dh || !s.keys.auth) return json({ error: "bad" }, 400);
           const r = await rest("push_subs?on_conflict=endpoint", { method: "POST", headers: { Prefer: "resolution=merge-duplicates,return=representation" },
-            body: JSON.stringify({ user_id: uid, endpoint: s.endpoint, p256dh: s.keys.p256dh, auth: s.keys.auth, ua: String(b.ua || "").slice(0, 200) }) });
+            body: JSON.stringify({ user_id: uid, client_id: me.clientId, endpoint: s.endpoint, p256dh: s.keys.p256dh, auth: s.keys.auth, ua: String(b.ua || "").slice(0, 200) }) });
           return json({ ok: r.ok });
         }
-        if (b.action === "unsubscribe") { await rest(`push_subs?endpoint=eq.${encodeURIComponent(b.endpoint || "")}`, { method: "DELETE" }); return json({ ok: true }); }
+        if (b.action === "unsubscribe") { await rest(`push_subs?endpoint=eq.${encodeURIComponent(b.endpoint || "")}&user_id=eq.${uid}`, { method: "DELETE" }); return json({ ok: true }); }
         if (b.action === "status") {
           const all = await rest(`push_subs?user_id=eq.${uid}&select=endpoint`);
           return json({ on: !!(all.data || []).some((x: any) => x.endpoint === b.endpoint), devices: (all.data || []).length });
         }
-        if (b.action === "test") return json({ sent: await sendAll({ title: "🔔 Avisos activados", body: "Así te llegará cuando un cliente reserve una clase 📅", tag: "kk-test", url: "/" }, uid) });
+        if (b.action === "test") return json({ sent: await sendAll(me.admin
+          ? { title: "🔔 Avisos activados", body: "Así te llegará cuando un cliente reserve una clase 📅", tag: "kk-test", url: "/" }
+          : { title: "🔔 Avisos activados", body: "Te avisaremos de lo nuevo en la comunidad 💬", tag: "kk-test", url: "/" }, uid) });
         return json({ error: "acción desconocida" }, 400);
       }
     }
