@@ -1009,7 +1009,7 @@ function App() {
   const portalSessions = React.useMemo(()=>{
     if(mode!=="client"||!loggedClient||!roster) return sessions;
     const mine=sessions.filter(s=>s.client_id===loggedClient.id);
-    const others=roster.filter(r=>r.client_id!==loggedClient.id).map((r,i)=>({id:"r"+i,client_id:r.client_id,date:r.date,time:r.time,status:"confirmed"}));
+    const others=roster.filter(r=>r.client_id!==loggedClient.id).map((r,i)=>({id:"r"+i,client_id:r.client_id,date:r.date,time:r.time,status:"confirmed",first_name:r.first_name||null,color:r.color||null,avatar_url:r.avatar_url||null}));
     return [...mine,...others];
   },[mode,loggedClient,roster,sessions]);
   const portalClients = React.useMemo(()=>{
@@ -9020,7 +9020,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
         <ClientSummary dark noHello noPhase noConstancy onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
       </>}
 
-      {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
+      {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
 
       {tab==="entreno"&&<div>
         <div className="seg" style={{marginBottom:14}}>
@@ -9603,7 +9603,7 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
 // ── RESERVAR: semana fija a pantalla completa ─────────────────────────────
 // Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
 // En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
-function MultiSessionRequest({client, allSessions, blocked, waitlist, config, opens, allOpens, hybrid, loadAll, notify, saving, setSaving, streak}) {
+function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist, config, opens, allOpens, hybrid, loadAll, notify, saving, setSaving, streak}) {
   // Semana que se ve al abrir: la actual; si ya no queda ninguna hora por reservar
   // esta semana (p. ej. sábado tarde o domingo), directamente la siguiente.
   const [wk,setWk] = React.useState(()=>{ const m=mondayOfDate(TODAY), now=new Date().toTimeString().slice(0,5);
@@ -9612,6 +9612,12 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
   const [celebrate,setCelebrate] = React.useState(null); // pantalla «¡Reservado!» tras confirmar
   const [picked,setPicked] = React.useState([]); // "fecha|hora" (clase) o "fecha|OPEN|hora"
   const [openPick,setOpenPick] = React.useState(null); // día open al que se le está eligiendo la hora
+  const [who,setWho] = React.useState(null); // {d,t}: clase tocada → quién va
+  // Quién va a una clase: nombre de pila + inicial y foto (lo mismo que se ve en la comunidad).
+  const peopleAt=(d,t)=>allSessions.filter(s=>s.date===d&&s.time===t).map(s=>{ const me=s.client_id===client.id, c=(allClients||[]).find(x=>x.id===s.client_id)||{};
+    const nm=me?"Tú":(c.name?(String(c.name).split(" ")[0]+(String(c.name).split(" ")[1]?" "+String(c.name).split(" ")[1][0]+".":"")):(s.first_name||"Alguien"));
+    return {id:s.client_id,me,name:nm,color:c.color||s.color||"#94a3b8",avatar:c.avatar_url||s.avatar_url||null,pending:!!s.requested}; })
+    .sort((a,b)=>(b.me-a.me)||a.name.localeCompare(b.name));
   // Horas que ve el atleta cada día: horario semanal + horas extra, sin las privadas del coach.
   const pubOf=(d)=>pubHoursOf(config,d);
   // L-V y, si el coach abre el sábado o el domingo con horas generales, también esos días.
@@ -9636,7 +9642,8 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
 
   const tapClass=async(d,t)=>{
     const k=d+"|"+t, m=mine(d,t);
-    if(m) return notify(m.status==="completed"?"Clase hecha ✓":`Ya tienes esta clase · para cambiarla escribe a tu trainer`);
+    setWho({d,t});
+    if(m) return;
     if(picked.includes(k)) return setPicked(p=>p.filter(x=>x!==k));
     if(slotClosed(d,t)||isPast(d,t)) return;
     if(freeAt(d,t)<=0){ const w=myWait(d,t);
@@ -9761,6 +9768,22 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
             </button>; })}
         </>}
       </div>
+      {who&&(()=>{ const ppl=peopleAt(who.d,who.t), m=mine(who.d,who.t), free=freeAt(who.d,who.t), x=new Date(who.d+"T12:00:00");
+        return <div data-who="1" role="status" style={{position:"relative",marginTop:10,flexShrink:0,background:"rgba(255,255,255,.07)",border:"1px solid rgba(255,255,255,.12)",borderRadius:16,padding:"9px 11px"}}>
+          <div style={{display:"flex",alignItems:"center",gap:8}}>
+            <div style={{flex:1,minWidth:0,fontSize:12.5,fontWeight:800,color:"#fff"}}>👥 {capFirst(x.toLocaleDateString("es-ES",{weekday:"short",day:"numeric"}))} · {who.t}
+              <span style={{fontWeight:700,color:"rgba(255,255,255,.55)"}}> · {m?(m.status==="completed"?"clase hecha ✓":"tu clase"):free<=0?"completa":`${free} libre${free>1?"s":""}`}</span></div>
+            <button type="button" aria-label="Cerrar quién va" onClick={()=>setWho(null)} style={{border:"none",background:"transparent",color:"rgba(255,255,255,.6)",fontSize:15,cursor:"pointer",padding:"0 2px"}}>✕</button>
+          </div>
+          {ppl.length?<div style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:7}}>
+            {ppl.map(pp=><span key={pp.id} data-person={pp.name} style={{display:"inline-flex",alignItems:"center",gap:5,padding:"3px 9px 3px 3px",borderRadius:20,background:pp.me?"rgba(242,68,29,.22)":"rgba(255,255,255,.08)",border:`1px solid ${pp.me?"rgba(255,122,69,.55)":"rgba(255,255,255,.12)"}`,fontSize:12,fontWeight:700,color:"#fff"}}>
+              {pp.avatar?<img src={pp.avatar} alt="" style={{width:22,height:22,borderRadius:"50%",objectFit:"cover"}}/>
+                :<span style={{width:22,height:22,borderRadius:"50%",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:10,fontWeight:800,background:pp.color+"33",color:pp.color,border:`1px solid ${pp.color}66`}}>{pp.me?"✓":pp.name[0]}</span>}
+              {pp.name}{pp.pending&&pp.me&&<span style={{fontSize:10,color:"#fdba74"}}> · pendiente</span>}</span>)}
+          </div>
+          :<div style={{fontSize:12,color:"rgba(255,255,255,.6)",marginTop:5}}>Aún no hay nadie apuntado. ¡Sé el primero! 💪</div>}
+          {m&&m.status!=="completed"&&<div style={{fontSize:10.5,color:"rgba(255,255,255,.45)",marginTop:6}}>Para cambiar tu clase, escribe a tu trainer.</div>}
+        </div>; })()}
       {/* Confirmar: botón tipo píldora */}
       <div style={{position:"relative",marginTop:10,flexShrink:0}}>
         {picked.length
@@ -9771,6 +9794,7 @@ function MultiSessionRequest({client, allSessions, blocked, waitlist, config, op
           </div>
           :<div style={{display:"flex",justifyContent:"center",gap:14,flexWrap:"wrap",fontSize:11,color:"rgba(255,255,255,.55)",fontWeight:700,padding:"8px 0"}}>
             <span>▢ libre</span><span style={{color:"#ff7a45"}}>● tu clase</span><span>▫ lleno</span>{hybrid&&<span style={{color:"#fcd34d"}}>● open</span>}
+            {!who&&<span style={{flexBasis:"100%",textAlign:"center",fontWeight:600,color:"rgba(255,255,255,.45)"}}>Toca una clase para ver quién va 👥</span>}
           </div>}
       </div>
       {openPick&&<OpenHourSheet d={openPick} hours={openHours(config,openPick)} cur={(myOpen(openPick)||{}).time||((pickedOpen(openPick)||"").split("|")[2])||null} hasMine={!!myOpen(openPick)}
