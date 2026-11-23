@@ -1323,6 +1323,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     });
   },[]);
   const saveConfig = (cfg, silent) => w(async()=>{
+    cfg={...cfg,exEquip:EX_EQUIP}; // el material por ejercicio se guarda aparte (saveExEquip)
     setConfig(cfg); setGymEquip(cfg);
     const {error}=await sb.from("app_settings").upsert({id:1,config:cfg});
     if(error) return notify("Guarda la tabla app_settings (ver docs)","err");
@@ -4674,7 +4675,7 @@ const rackOf = (name) => { const n=String(name||""), eq=equipmentOf(n);
 const pulleySlots = (name) => /unilateral|una mano|a una/i.test(String(name||""))?1
   :/cruce|crossover|aperturas (en|con) polea|p[áa]jaros en polea|doble polea|dos poleas|polea doble/i.test(String(name||""))?2:1;
 // Material que ocupa en la sala (principal + banco + rack si lo necesita).
-const roomNeeds = (name) => { const a=equipNeeds(name), r=rackOf(name); if(r&&!a.includes(r)) a.push(r); return a; };
+const roomNeeds = (name) => { const a=equipNeeds(name); if(equipList(name)) return a; const r=rackOf(name); if(r&&!a.includes(r)) a.push(r); return a; };
 // ¿La multipower comparte espacio con una de las jaulas? (⚙️ Horario · por defecto sí)
 let ROOM_SHARE = true;
 // people = [{client, exs:[nombres]}] → puestos ordenados por gravedad
@@ -4705,6 +4706,7 @@ function roomStations(people, units){
 const ROOM_COL = {red:{fg:"#dc2626",bg:"#fef2f2",bd:"#fecaca",lbl:"Cuello de botella"},amber:{fg:"#b45309",bg:"#fffbeb",bd:"#fde68a",lbl:"Justo"},ok:{fg:"#16a34a",bg:"#f0fdf4",bd:"#bbf7d0",lbl:"Fluye"}};
 // Mini-tira para la agenda: icono de cada material con su color.
 function RoomStrip({people,units,onOpen}){
+  useExEquip();
   const st=roomStations(people,units).filter(x=>!x.unl); if(!st.length) return null;
   const red=st.filter(x=>x.status==="red").length;
   return <button type="button" onClick={e=>{ e.stopPropagation(); onOpen&&onOpen(); }} title="Material de la sala (toca para ver el mapa)"
@@ -4716,7 +4718,7 @@ function RoomStrip({people,units,onOpen}){
 }
 // Mapa completo (vista de la clase): una tarjeta por puesto con barra de ocupación.
 function RoomMap({people,units}){
-  const all=roomStations(people,units); const [open,setOpen]=React.useState(null);
+  useExEquip(); const all=roomStations(people,units); const [open,setOpen]=React.useState(null);
   if(!all.length) return null;
   const st=all.filter(x=>!x.unl), free=all.filter(x=>x.unl);
   const red=st.filter(x=>x.status==="red"), amb=st.filter(x=>x.status==="amber");
@@ -4953,12 +4955,13 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
   const [onlyMine,setOnlyMine]=React.useState(true);
   const [onlyIso,setOnlyIso]=React.useState(false);
   const [eqF,setEqF]=React.useState("");
+  useExEquip();
   const [creating,setCreating]=React.useState(false);
-  const [nw,setNw]=React.useState({name:"",muscles:[],equip:"",sets:3,reps:"10-12",rest:60,notes:"",cx:0});
+  const [nw,setNw]=React.useState({name:"",muscles:[],equip:[],sets:3,reps:"10-12",rest:60,notes:"",cx:0});
   const [busy,setBusy]=React.useState(false);
   const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const subs=current?substitutesFor(current,10):[];
-  const list=exerciseCatalog().filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!mus||musclesOf(x.name).includes(mus))&&(!onlyMine||equipOk(x.name))&&(!eqF||equipmentOf(x.name)===eqF)&&(!onlyIso||isIsoRow({exercise_name:x.name,reps:x.reps})))
+  const list=exerciseCatalog().filter(x=>(!q||norm(x.name).includes(norm(q)))&&(!mus||musclesOf(x.name).includes(mus))&&(!onlyMine||equipOk(x.name))&&(!eqF||equipNeeds(x.name).includes(eqF))&&(!onlyIso||isIsoRow({exercise_name:x.name,reps:x.reps})))
     .sort((a,b)=>(b.custom-a.custom)||a.name.localeCompare(b.name)).slice(0,80);
   const Row=({x,hint})=>(
     <button onClick={()=>onPick(x)} style={{display:"flex",alignItems:"center",gap:8,width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:"#fff",border:"1px solid #e6ebf3",borderRadius:10,padding:"8px 10px"}}>
@@ -4976,12 +4979,13 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
     const cat=MUSCLE_CAT[nw.muscles[0]]||"Fuerza";
     const cx=nw.cx||complexityOf(name);
     const base={name,category:cat,muscle_group:nw.muscles.join(", "),description:nw.notes||"",difficulty:["","Principiante","Intermedio","Avanzado"][cx]};
-    let r=await sb.from("exercises").insert({...base,equipment:nw.equip||null,default_sets:parseInt(nw.sets)||3,default_reps:nw.reps||"10-12",rest_seconds:parseInt(nw.rest)||60});
+    const eqs=(nw.equip||[]).join(",")||null;
+    let r=await sb.from("exercises").insert({...base,equipment:eqs,default_sets:parseInt(nw.sets)||3,default_reps:nw.reps||"10-12",rest_seconds:parseInt(nw.rest)||60});
     if(r.error) r=await sb.from("exercises").insert(base); // sin las columnas nuevas (docs/ejercicios.sql)
     setBusy(false);
     if(r.error){ notify("No se pudo guardar: "+r.error.message,"err"); return; }
     // Disponible al momento (aunque falten columnas en la tabla).
-    CUSTOM_EX[name.toLowerCase()]={name,equip:nw.equip||null,muscles:nw.muscles,cat,cx,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,desc:nw.notes||""};
+    CUSTOM_EX[name.toLowerCase()]={name,equip:eqs,muscles:nw.muscles,cat,cx,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,desc:nw.notes||""};
     if(loadAll) loadAll();
     notify("Ejercicio creado ✓");
     onPick({name,sets:parseInt(nw.sets)||3,reps:nw.reps||"10-12",rest:parseInt(nw.rest)||60,custom:true,notes:nw.notes||""});
@@ -5016,7 +5020,7 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
             {list.length===0&&<div style={{fontSize:12,color:"#94a3b8",padding:"8px 2px"}}>No hay ejercicios con esos filtros.</div>}
           </div>
           <div style={{display:"flex",gap:8,marginTop:10,flexShrink:0}}>
-            <button className="btn sky" style={{flex:1,padding:10,justifyContent:"center"}} onClick={()=>{ setNw(n=>({...n,name:q.trim(),muscles:mus?[mus]:(current?musclesOf(current).slice(0,2):[]),equip:eqF||""})); setCreating(true); }}>＋ Crear ejercicio nuevo{q.trim()?` "${q.trim()}"`:""}</button>
+            <button className="btn sky" style={{flex:1,padding:10,justifyContent:"center"}} onClick={()=>{ setNw(n=>({...n,name:q.trim(),muscles:mus?[mus]:(current?musclesOf(current).slice(0,2):[]),equip:eqF?[eqF]:[]})); setCreating(true); }}>＋ Crear ejercicio nuevo{q.trim()?` "${q.trim()}"`:""}</button>
             <button className="btn ghost" style={{padding:"10px 14px"}} onClick={onClose}>Cerrar</button>
           </div>
         </>:<div style={{overflowY:"auto"}}>
@@ -5027,9 +5031,10 @@ function ExercisePicker({title,current,loadAll,notify,onPick,onClose}) {
           <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
             {MUSCLES.map(m=>{ const i=nw.muscles.indexOf(m); return chip(i>=0,i===0?`★ ${m}`:m,()=>setNw(n=>({...n,muscles:i>=0?n.muscles.filter(x=>x!==m):[...n.muscles,m]})),m); })}
           </div>
-          <span className="lbl">MATERIAL</span>
+          <span className="lbl">MATERIAL (puedes marcar varios)</span>
           <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
-            {EQUIP_KEYS.concat(["otros"]).map(k=>chip(nw.equip===k,EQUIP_LABEL[k]||k,()=>setNw(n=>({...n,equip:n.equip===k?"":k})),k))}
+            {chip(nw.equip.length===1&&nw.equip[0]==="pesocorporal","🚫 Sin material",()=>setNw(n=>({...n,equip:n.equip.length===1&&n.equip[0]==="pesocorporal"?[]:["pesocorporal"]})),"_none")}
+            {EQUIP_KEYS.filter(k=>k!=="pesocorporal").concat(["otros"]).map(k=>chip(nw.equip.includes(k),EQUIP_LABEL[k]||k,()=>setNw(n=>({...n,equip:n.equip.includes(k)?n.equip.filter(x=>x!==k):[...n.equip.filter(x=>x!=="pesocorporal"),k]})),k))}
           </div>
           <span className="lbl">COMPLEJIDAD TÉCNICA (para adaptar al nivel)</span>
           <div style={{display:"flex",flexWrap:"wrap",gap:5,marginBottom:10}}>
@@ -7035,6 +7040,42 @@ function ExPhotoHost({coach,notify}){
   if(!EXV.cur||EXV.hosts[EXV.hosts.length-1]!==me.current) return null;
   return <ExPhotoViewer key={EXV.cur.name} name={EXV.cur.name} ex={EXV.cur.ex} coach={coach} notify={notify} onClose={()=>{ EXV.cur=null; f(); }}/>;
 }
+// Material que necesita un ejercicio: lo ve todo el mundo; el coach lo cambia
+// (varios materiales a la vez o «sin material») y vale para todo el gimnasio.
+function ExEquipEditor({name,coach,notify}){
+  useExEquip();
+  const cur=roomNeeds(name), custom=exEquipCustom(name)||!!(CUSTOM_EX[String(name||"").toLowerCase()]||{}).equip;
+  const [edit,setEdit]=React.useState(null); const [busy,setBusy]=React.useState(false);
+  const none=(l)=>l.length===1&&l[0]==="pesocorporal";
+  const tog=(k)=>setEdit(l=>k==="pesocorporal"?["pesocorporal"]:(l.includes(k)?l.filter(x=>x!==k):[...l.filter(x=>x!=="pesocorporal"),k]));
+  const save=async(list)=>{ setBusy(true); const r=await saveExEquip(name,list); setBusy(false);
+    if(r.error) return notify&&notify("No se pudo guardar el material","err"); setEdit(null);
+    notify&&notify(list==null?"Material automático ✓":none(list)||!list.length?`${name}: sin material ✓`:`${name}: ${list.length} material${list.length>1?"es":""} ✓`); };
+  const pill=(k,on,onClick)=><button key={k} type="button" data-eq={k} aria-pressed={on} onClick={onClick} disabled={!onClick}
+    style={{fontSize:12,fontWeight:700,padding:"5px 10px",borderRadius:20,cursor:onClick?"pointer":"default",fontFamily:"inherit",border:`1px solid ${on?"#0284c7":"#dbe2ec"}`,background:on?"#0284c7":"#fff",color:on?"#fff":"#334155"}}>
+    {k==="pesocorporal"?"🚫 Sin material":EQUIP_LABEL[k]||k}</button>;
+  return(
+    <div data-exequip="1" style={{marginTop:12}}>
+      <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:6}}>
+        <div style={{flex:1,fontSize:12,fontWeight:800,color:"#64748b",letterSpacing:.4}}>🧰 MATERIAL{coach&&!edit&&<span style={{fontWeight:700,letterSpacing:0,color:custom?"#7c3aed":"#94a3b8"}}> · {custom?"elegido por ti":"automático"}</span>}</div>
+        {coach&&!edit&&<button type="button" className="btn ghost" style={{fontSize:12,padding:"5px 10px"}} onClick={()=>setEdit(cur.slice())}>✏️ Cambiar</button>}
+      </div>
+      {!edit?<div style={{display:"flex",flexWrap:"wrap",gap:5}}>{none(cur)?pill("pesocorporal",false):cur.map(k=>pill(k,false))}</div>
+      :<div style={{background:"#f8fafc",border:"1px solid #e6ebf3",borderRadius:12,padding:10}}>
+        <div style={{fontSize:11.5,color:"#475569",marginBottom:8}}>Marca todo lo que necesita (puedes elegir varios) o «Sin material». Cuenta para la ocupación de la sala y para «Solo mi material».</div>
+        <div style={{display:"flex",flexWrap:"wrap",gap:5}}>
+          {pill("pesocorporal",none(edit),()=>tog("pesocorporal"))}
+          {EQUIP_KEYS.filter(k=>k!=="pesocorporal").concat(["otros"]).map(k=>pill(k,edit.includes(k),()=>tog(k)))}
+        </div>
+        <div style={{fontSize:11,fontWeight:800,color:"#0f172a",marginTop:8}}>{edit.length?(none(edit)?"Sin material":edit.map(k=>EQUIP_LABEL[k]||k).join(" + ")):"Elige al menos uno"}</div>
+        <div style={{display:"flex",gap:6,marginTop:10,flexWrap:"wrap"}}>
+          <button type="button" className="btn grn" style={{flex:1,padding:9,justifyContent:"center"}} disabled={busy||!edit.length} onClick={()=>save(edit)}>{busy?"Guardando…":"Guardar"}</button>
+          {exEquipCustom(name)&&<button type="button" className="btn ghost" style={{padding:"9px 11px",fontSize:12}} disabled={busy} title={"Automático: "+equipNeedsAuto(name).map(k=>EQUIP_LABEL[k]||k).join(" + ")} onClick={()=>save(null)}>↺ Automático</button>}
+          <button type="button" className="btn ghost" style={{padding:"9px 11px",fontSize:12}} onClick={()=>setEdit(null)}>Cancelar</button>
+        </div>
+      </div>}
+    </div>);
+}
 function ExPhotoViewer({name,ex,coach,notify,onClose}){
   const p=exPhotoOf(name);
   const [fr,setFr]=React.useState(null); // null = alterna
@@ -7072,6 +7113,7 @@ function ExPhotoViewer({name,ex,coach,notify,onClose}){
             </div>
             {notes&&<div style={{marginTop:6,fontSize:14,color:"#334155",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:11,padding:"8px 10px",lineHeight:1.45}}>📝 {notes}</div>}
           </div>}
+          <ExEquipEditor name={name} coach={coach} notify={notify}/>
           <div style={{marginTop:14}}><ExerciseMedia name={name} coach={coach} notify={notify}/></div>
           {p&&<div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Fotos: Free Exercise DB (dominio público).</div>}
         </div>
@@ -7172,7 +7214,7 @@ function ExerciseMediaModal({name,coach,notify,onClose}){
 }
 // Coach: banco de fotos de todos los ejercicios (y sus fotos/vídeos propios).
 function ExerciseMediaLibrary({notify}){
-  const M=useExMedia();
+  const M=useExMedia(); useExEquip();
   const [q,setQ]=React.useState(""), [cat,setCat]=React.useState(""), [only,setOnly]=React.useState("");
   const norm=(t)=>String(t||"").toLowerCase().normalize("NFD").replace(/[̀-ͯ]/g,"");
   const count=(n)=>exMediaOf(n).length;
@@ -12033,7 +12075,14 @@ const EQUIP_LABEL = {
 const EQUIP_KEYS = ["barra","barraz","safetybar","bancoplano","bancoinclinable","multipower","rackpines","mancuernas","legmachine","legpress","machine","poleas","jalon","dominadas","fondos","pesocorporal","remo","kettlebell","cajon","banda","comba","cardio","cuerdas","trineo","balon","rueda","antebrazo","movilidad"];
 // Ejercicios creados por el entrenador (tabla "exercises"): nombre en minúsculas → {name, equip, muscles, cat, sets, reps, rest}.
 let CUSTOM_EX = {};
-const equipmentOf = (name) => { const c=CUSTOM_EX[String(name||"").toLowerCase()]; if(c&&c.equip) return c.equip; for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
+// Material elegido a mano para un ejercicio (varios a la vez, o «sin material»):
+// lo que marca el coach (⚙️ app_settings.exEquip) y, si no, el de su ejercicio propio.
+let EX_EQUIP = {}; const EX_EQUIP_L = new Set();
+const eqKeyList = (v) => (Array.isArray(v)?v:String(v||"").split(",")).map(x=>String(x).trim()).filter(k=>k&&(EQUIP_LABEL[k]||k==="otros"));
+const equipList = (name) => { const k=String(name||"").toLowerCase().trim(); if(Object.prototype.hasOwnProperty.call(EX_EQUIP,k)){ const l=eqKeyList(EX_EQUIP[k]); return l.length?l:["pesocorporal"]; }
+  const c=CUSTOM_EX[k]; if(c&&c.equip){ const l=eqKeyList(c.equip); if(l.length) return l; } return null; };
+const equipAuto = (name) => { for(const [re,k] of EQUIP){ if(re.test(name)) return k; } return "otros"; };
+const equipmentOf = (name) => { const l=equipList(name); return l?l[0]:equipAuto(name); };
 const equipmentLabel = (name) => equipTxt(name) || EQUIP_LABEL.otros;
 // Prioridad de material: barra/rack/multipower PRIMERO (es el cuello de botella),
 // luego máquinas de pierna, mancuernas, poleas y por último peso corporal/cardio.
@@ -12042,7 +12091,8 @@ const equipRank = (name) => { const i=EQUIP_ORDER.indexOf(equipmentOf(name)); re
 
 // Disponibilidad de material del gimnasio (null = todo). Filtra el generador.
 let GYM_EQUIP = null;
-const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; ROOM_SHARE = !(cfg && cfg.smithShare===false); SCHED = cfg || null; };
+const setGymEquip = (cfg) => { GYM_EQUIP = (cfg && cfg.equip && typeof cfg.equip==="object") ? cfg.equip : null; ROOM_SHARE = !(cfg && cfg.smithShare===false); SCHED = cfg || null;
+  const nx=(cfg && cfg.exEquip && typeof cfg.exEquip==="object") ? cfg.exEquip : {}; if(JSON.stringify(nx)!==JSON.stringify(EX_EQUIP)){ EX_EQUIP=nx; EX_EQUIP_L.forEach(f=>{ try{ f(); }catch(e){} }); } };
 // Banco que necesita (además de su material principal): reclinable para inclinados,
 // sentados con respaldo o apoyo de pecho; plano para press banca, hip thrust, press francés…
 const benchOf = (name) => { const n=String(name||"");
@@ -12051,7 +12101,20 @@ const benchOf = (name) => { const n=String(name||"");
   if(/press banca|press mancuernas (plano|neutro)|press desde pines|aperturas con mancuernas|hip thrust|press franc[ée]s|pullover con mancuerna|remo mancuerna unilateral \(banco\)|fondos de tr[íi]ceps \(banco\)|elevaci[óo]n de piernas en banco|talones en banco|curl concentrado|\(banco\)|en banco/i.test(n)) return "bancoplano";
   return null; };
 // Todo el material que necesita un ejercicio (principal + banco).
-const equipNeeds = (name) => { const a=[equipmentOf(name)], b=benchOf(name); if(b&&!a.includes(b)) a.push(b); return a; };
+const equipNeeds = (name) => { const l=equipList(name); if(l) return [...new Set(l)]; const a=[equipmentOf(name)], b=benchOf(name); if(b&&!a.includes(b)) a.push(b); return a; };
+// Lo que pondría la app sola (sin lo marcado a mano), para «↺ Automático».
+const equipNeedsAuto = (name) => { const a=[equipAuto(name)], b=benchOf(name); if(b&&!a.includes(b)) a.push(b); const r=(["barra","safetybar"].includes(a[0])&&!/mancuern|goblet|kettlebell|trap bar|b[úu]lgara|al aire|multipower|smith/i.test(name)&&/sentadilla|squat|press banca|press militar de pie|peso muerto|buenos d[ií]as|good morning|push press|push jerk|zancada con barra|encogimientos \(trapecio\)|encogimientos con barra/i.test(name))?"rackpines":null; if(r&&!a.includes(r)) a.push(r); return a; };
+const exEquipCustom = (name) => Object.prototype.hasOwnProperty.call(EX_EQUIP,String(name||"").toLowerCase().trim());
+// Guarda el material de un ejercicio para todo el gimnasio (null = volver a automático).
+async function saveExEquip(name, list){
+  const k=String(name||"").toLowerCase().trim(); if(!k) return {error:"sin nombre"};
+  const r=await sb.from("app_settings").select("config").eq("id",1); const cfg=(r.data&&r.data[0]&&r.data[0].config)||{};
+  const m={...(cfg.exEquip||{})}; if(list==null) delete m[k]; else m[k]=[...new Set(list)];
+  const w=await sb.from("app_settings").upsert({id:1,config:{...cfg,exEquip:m}});
+  if(w.error) return {error:w.error.message};
+  EX_EQUIP=m; if(SCHED) SCHED={...SCHED,exEquip:m}; EX_EQUIP_L.forEach(f=>{ try{ f(); }catch(e){} }); return {ok:true};
+}
+const useExEquip = () => { const [,f]=React.useReducer(x=>x+1,0); React.useEffect(()=>{ EX_EQUIP_L.add(f); return ()=>EX_EQUIP_L.delete(f); },[]); return EX_EQUIP; };
 const equipTxt = (name) => equipNeeds(name).map(k=>EQUIP_LABEL[k]||"").filter(Boolean).join(" + ");
 const equipOk = (name) => { if(!GYM_EQUIP) return true; return equipNeeds(name).every(k=>{ const v=GYM_EQUIP[k]; return v===undefined?true:!!v; }); };
 
