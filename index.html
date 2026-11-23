@@ -3252,7 +3252,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
       {copySess&&<MoveSessionModal mode="copy" sess={copySess} sessions={sessions} clients={clients} config={config} hasTraining={assignedSessions.some(a=>a.client_id===copySess.client_id&&a.date===copySess.date)}
         onCopy={(d,t,wt)=>{copyBooking(copySess,d,t,wt);setCopySess(null);}} onClose={()=>setCopySess(null)}/>}
       {moveSess&&<MoveSessionModal sess={moveSess} sessions={sessions} clients={clients} config={config} onMove={(d,t)=>{rescheduleSession(moveSess,d,t);setMoveSess(null);}} onDelete={()=>{deleteSession(moveSess.id);setMoveSess(null);}} onClose={()=>setMoveSess(null)}/>}
-      {quickView&&<ClientQuickView loadAll={loadAll} notify={notify} docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} onValoracion={leadOf(quickView)?()=>openValoracion(quickView):null} client={quickView} date={activeDay} sessions={sessions} history={history} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{openExec(quickView,activeDay);setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
+      {quickView&&<ClientQuickView loadAll={loadAll} notify={notify} docked={canDock} onSummary={()=>setShowSummary(quickView)} onMeasures={()=>setShowMeasures(quickView)} onPhotos={()=>setShowPhotos(quickView)} onViewAs={()=>{setViewAs(quickView);setQuickView(null);}} onProfile={()=>goToProfile(quickView)} onEditData={()=>setEditData(quickView)} onValoracion={leadOf(quickView)?()=>openValoracion(quickView):null} client={quickView} date={activeDay} sessions={sessions} history={history} progress={progress} records={records} payments={payments} clientWeights={clientWeights} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks} onUseAuto={()=>materializeRoutine(quickView,activeDay)} onSetType={(d,dt)=>materializeRoutine(quickView,d,dt)} onPlanWeek={(pairs)=>planWeek(quickView,pairs)} onCopyWeek={(pairs)=>copyWeek(quickView,pairs)} onAdjust={(dates)=>adjustToLevel(quickView,dates)} onSetLevel={setLevel} onOpenHistory={(h)=>setHistView({client:quickView,date:h.date,type:h.type,time:h.time})} onExec={()=>{openExec(quickView,activeDay);setQuickView(null);}} onAssign={()=>{setAssignData({client:quickView,date:activeDay});setQuickView(null);}} onProgress={()=>{setProgData(quickView);setQuickView(null);}} onEditSession={(d)=>{setSessionEdit({client:quickView,date:d||activeDay});setQuickView(null);}} onMove={()=>{const bk=sessions.find(s=>s.client_id===quickView.id&&s.date===activeDay); if(bk){setMoveSess(bk);setQuickView(null);} else notify("Sin reserva ese día para mover","err");}} onClose={()=>setQuickView(null)}/>}
       {sessionEdit&&<SessionEditModal client={sessionEdit.client} date={sessionEdit.date} assignedSessions={assignedSessions} assignedExercises={assignedExercises} clientWeights={clientWeights} sessions={sessions} annualBlocks={annualBlocks} onGenerate={(dayType)=>materializeRoutine(sessionEdit.client,sessionEdit.date,dayType)} onAdjust={(lv)=>adjustToLevel(sessionEdit.client,[sessionEdit.date],lv)} onSetLevel={setLevel} loadAll={loadAll} notify={notify} onClose={()=>setSessionEdit(null)}/>}
       {openAdd&&<OpenAddModal date={openAdd.date} time={openAdd.time} clients={hybClients} openSessions={openSessions||[]} sessions={sessions}
         onAdd={(cid)=>addOpenFor(cid,openAdd.date,openAdd.time)} onRemove={removeOpen} onClose={()=>setOpenAdd(null)}/>}
@@ -5403,7 +5403,7 @@ function HybridBox({client,date,loadAll,notify,athlete}){
       <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Sus días open aparecen en la planificación semanal para que le prepares el entreno.</div>
     </div>);
 }
-function ClientQuickView({loadAll,notify,client,date,sessions,history,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,records,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -5422,6 +5422,12 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,payments,c
           <div style={{flex:1,minWidth:0}}>
             <h2 className="mono" style={{fontSize:16,fontWeight:700}}>{client.name}</h2>
             <div style={{fontSize:11,color:"#64748b",marginTop:2}}>Bono {bonoTxt(client)} · {fmtDate(date)}</div>
+            {(()=>{ const g=gameStats(client,{history,assignedSessions,assignedExercises,progress:(progress||[]).filter(p=>p.client_id===client.id),records:(records||[]).filter(r=>r.client_id===client.id)}); return(
+              <div data-coachgame="1" title={`${gNum(g.xp)} XP · ${g.badges.filter(b=>b.unlocked).length} logros`} style={{display:"flex",gap:6,flexWrap:"wrap",marginTop:4,fontSize:10.5,fontWeight:800}}>
+                <span style={{padding:"2px 8px",borderRadius:20,background:g.levelColor+"22",color:"#334155",border:`1px solid ${g.levelColor}`}}>🏅 Nv {g.level} · {g.levelName}</span>
+                <span style={{padding:"2px 8px",borderRadius:20,background:"#fff7ed",color:"#c2410c",border:"1px solid #fed7aa"}}>🔥 {g.currentStreak} sem.</span>
+                <span style={{padding:"2px 8px",borderRadius:20,background:"#ecfdf5",color:"#047857",border:"1px solid #a7f3d0"}}>✅ {g.perfectWeeks} sem. cumplidas</span>
+              </div>); })()}
             <div style={{marginTop:4}}>
               <span style={{fontSize:10,fontWeight:700,padding:"2px 8px",borderRadius:20,background:client.goal==="estetica"?"#f3ecfb":"#e2f4e8",color:client.goal==="estetica"?"#7c3aed":"#059669",border:`1px solid ${client.goal==="estetica"?"#e0d2f5":"#c9e6d1"}`}}>
                 {client.goal==="estetica"?"💪 Estética/Masa":"🩺 Salud"}
@@ -8697,6 +8703,7 @@ function AthleteTutorial({client,config,hybrid,approve,onClose,onGo}){
 function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,allClients,blocked,waitlist,forum,exercises,plans,clientPlans,myProgress,myRecords,myAchievements,myAssignedSessions,myAssignedExercises,clientWeights,annualBlocks,loadAll:loadAllRaw,notify,onLogout,preview}) {
   const [tab,setTab]=React.useState("inicio"); // inicio | reservar | entreno | progreso | comunidad
   const [ppView,setPpView]=React.useState("hoy"); // sub-vista de "Entreno": hoy | next | hist
+  const [progView,setProgView]=React.useState(null); // sub-vista de Progreso al entrar (p. ej. «badges»)
   const [saving,setSaving]=React.useState(false);
   const [config,setConfig]=React.useState(DEFAULT_SCHEDULE);
 
@@ -8755,6 +8762,25 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
   const tot=parseInt(client.total_sessions)||0, nDone=Math.max(0,Math.min(tot,tot-(parseInt(client.sessions_left)||0)));
   const pd=daysUntil(client.next_payment);
   const streak=calcStreak(myHistory);
+  // Gamificación: nivel, XP, rachas y logros (como KikoteLab).
+  const game=React.useMemo(()=>gameStats(client,{history:allHistory,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,progress:myProgress,records:myRecords}),
+    [client,allHistory,myAssignedSessions,myAssignedExercises,myProgress,myRecords]);
+  const [gameEv,setGameEv]=React.useState(null);
+  const gameBusy=React.useRef(false), gameSent=React.useRef(new Set());
+  const nUnlocked=game.badges.filter(b=>b.unlocked).length;
+  React.useEffect(()=>{ if(preview||gameBusy.current) return;
+    const lsK="kk_ach_"+client.id; let local=[]; try{ local=JSON.parse(localStorage.getItem(lsK)||"[]"); }catch(e){}
+    const have=new Set([...(myAchievements||[]).filter(a=>String(a.type||"").startsWith("g_")).map(a=>a.type.slice(2)),...local,...gameSent.current]);
+    const first=have.size===0, nw=game.badges.filter(b=>b.unlocked&&!have.has(b.code)).sort((a,b)=>b.xp-a.xp);
+    let lv=null; try{ lv=parseInt(localStorage.getItem("kk_lvl_"+client.id),10); }catch(e){}
+    const levelUp=(!first&&lv&&game.level>lv)?{level:game.level,name:game.levelName,color:game.levelColor}:null;
+    try{ localStorage.setItem("kk_lvl_"+client.id,String(game.level)); }catch(e){}
+    if(nw.length){ nw.forEach(b=>gameSent.current.add(b.code)); try{ localStorage.setItem(lsK,JSON.stringify([...new Set([...local,...nw.map(b=>b.code)])])); }catch(e){}
+      gameBusy.current=true;
+      sb.from("achievements").insert(nw.map(b=>({client_id:client.id,type:"g_"+b.code,title:b.name,description:b.desc,emoji:b.emoji}))).then(()=>{ gameBusy.current=false; if(loadAll) loadAll(); },()=>{ gameBusy.current=false; }); }
+    if(nw.length||levelUp) setGameEv({badges:nw,levelUp,first});
+  },[game.level,nUnlocked,(myAchievements||[]).length]);
+  const openLogros=()=>{ setProgView("badges"); go("progreso"); };
   const nextSess=mySessions.find(s=>!s.requested);
   const nextCountdown=nextSess?daysUntil(nextSess.date):null;
   const thisMonthSessions=myHistory.filter(h=>h.date&&h.date.startsWith(TODAY.slice(0,7))).length;
@@ -8785,7 +8811,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
   const todayDone=todayExs.filter(exDone).length;
   const nTrained=athleteSessions(client,allHistory,myAssignedSessions,myAssignedExercises).length;
   const nextPlan=nextSess&&nextSess.date!==TODAY?planForDate(client,nextSess.date,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights}):null;
-  const go=(t)=>{ setTab(t); try{ window.scrollTo({top:0}); }catch(e){} };
+  const go=(t)=>{ if(t!=="progreso") setProgView(null); setTab(t); try{ window.scrollTo({top:0}); }catch(e){} };
   // Tutorial la primera vez que entra (recordado en este dispositivo).
   const tutKey=`kk_tutorial_${client.id}`;
   const [showTut,setShowTut]=React.useState(()=>{ if(preview) return false; try{ return !localStorage.getItem(tutKey); }catch(e){ return false; } });
@@ -8854,6 +8880,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-coach" aria-label="Escribir a tu coach por WhatsApp"><span className="dk-dot"/>Tu coach</a>
         </div>); })()}
 
+        <GameHero g={game} onOpen={openLogros}/>
         {/* Avisos */}
         {client.welcome_msg&&<div className="dk-note" style={{borderColor:"rgba(96,165,250,.3)"}}>💬 {client.welcome_msg}</div>}
         {myHistory.length===0 && allSessions.some(s=>s.client_id===client.id) && <div className="dk-note" style={{borderColor:"rgba(167,139,250,.35)",color:"#c4b5fd",fontWeight:700}}>🎉 ¡Tu primera sesión! Bienvenido/a a {GYM_NAME}. ¡A por ello! 💪</div>}
@@ -9038,7 +9065,8 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           :ppView==="hist"&&<AthleteHistory client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
       </div>}
 
-      {tab==="progreso"&&<ProgressTab client={client} history={allHistory} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
+      {gameEv&&<GameCelebrate ev={gameEv} onClose={()=>setGameEv(null)}/>}
+      {tab==="progreso"&&<ProgressTab key={progView||"p"} game={game} initialView={progView} client={client} history={allHistory} myProgress={myProgress} myRecords={myRecords} myAchievements={myAchievements} exercises={exercises} loadAll={loadAll} notify={notify} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises}/>}
 
       {tab==="comunidad"&&<ForumTab client={client} forum={forum} allClients={allClients} loadAll={loadAll} notify={notify}/>}
     </div>
@@ -9094,6 +9122,287 @@ function athleteSessions(client,history,assignedSessions,assignedExercises){
     const vol=exs.filter(exDone).reduce((t,e)=>{ const kg=exKg(e), r=parseInt(e.actual_reps||e.reps)||0, st=parseInt(e.sets)||0; return t+(kg&&r&&st&&!isIsoRow(e)?kg*r*st:0); },0);
     return {...x,label:((x.asig&&DAY_LABEL[x.asig.day_type])||(x.open?"🔓 Open · por tu cuenta":x.type)||"Entreno")+(x.open&&x.asig?" · 🔓 open":""),vol:Math.round(vol)}; })
     .sort((a,b)=>b.date.localeCompare(a.date));
+}
+// ── GAMIFICACIÓN (como KikoteLab): XP, niveles 1-30, rachas y logros ─────────
+// Premia sobre todo la CONSTANCIA y el TIEMPO: rachas de semanas, semanas en las
+// que cumple su plan, meses con nosotros y horas entrenadas. Todo se calcula con
+// lo que ya registra la app (clases, opens y ejercicios hechos).
+const GAME_BADGES = [
+  // — Constancia y rachas —
+  {code:"streak_2", name:"2 semanas seguidas", emoji:"⚡", desc:"2 semanas consecutivas entrenando", group:"constancia", metric:"streak", threshold:2, xp:100, unit:"semanas"},
+  {code:"streak_4", name:"Mes completo", emoji:"📅", desc:"4 semanas consecutivas", group:"constancia", metric:"streak", threshold:4, xp:250, unit:"semanas"},
+  {code:"streak_8", name:"Dos meses sin fallar", emoji:"🔗", desc:"8 semanas seguidas", group:"constancia", metric:"streak", threshold:8, xp:500, unit:"semanas"},
+  {code:"streak_12", name:"Trimestre", emoji:"🌟", desc:"3 meses sin saltarte una semana", group:"constancia", metric:"streak", threshold:12, xp:800, unit:"semanas"},
+  {code:"streak_26", name:"Medio año", emoji:"👑", desc:"26 semanas — atleta consagrado", group:"constancia", metric:"streak", threshold:26, xp:1800, unit:"semanas"},
+  {code:"streak_52", name:"Año imparable", emoji:"🗓️", desc:"52 semanas seguidas", group:"constancia", metric:"streak", threshold:52, xp:4500, unit:"semanas"},
+  {code:"plan_1", name:"Semana cumplida", emoji:"✅", desc:"Una semana con todos los entrenos de tu plan", group:"constancia", metric:"perfectWeeks", threshold:1, xp:120, unit:"semanas cumplidas"},
+  {code:"plan_4", name:"4 semanas cumplidas", emoji:"🎯", desc:"4 semanas cumpliendo tu plan", group:"constancia", metric:"perfectWeeks", threshold:4, xp:350, unit:"semanas cumplidas"},
+  {code:"plan_12", name:"Cumplidor", emoji:"🏹", desc:"12 semanas cumpliendo tu plan", group:"constancia", metric:"perfectWeeks", threshold:12, xp:900, unit:"semanas cumplidas"},
+  {code:"plan_26", name:"Palabra de atleta", emoji:"🤝", desc:"26 semanas cumpliendo tu plan", group:"constancia", metric:"perfectWeeks", threshold:26, xp:2000, unit:"semanas cumplidas"},
+  {code:"plan_52", name:"Un año cumpliendo", emoji:"💎", desc:"52 semanas cumpliendo tu plan", group:"constancia", metric:"perfectWeeks", threshold:52, xp:5000, unit:"semanas cumplidas"},
+  {code:"week_3plus", name:"Triplete semanal", emoji:"📆", desc:"3 entrenos en una misma semana", group:"constancia", metric:"maxWeekSessions", threshold:3, xp:150, unit:"entrenos en una semana"},
+  {code:"week_5plus", name:"Semana de hierro", emoji:"🗜️", desc:"5 entrenos en una misma semana", group:"constancia", metric:"maxWeekSessions", threshold:5, xp:400, unit:"entrenos en una semana"},
+  // — Tiempo con nosotros —
+  {code:"member_1", name:"Primer mes", emoji:"🌱", desc:"1 mes entrenando con nosotros", group:"tiempo", metric:"memberMonths", threshold:1, xp:150, unit:"meses"},
+  {code:"member_3", name:"Tres meses", emoji:"🌿", desc:"3 meses entrenando con nosotros", group:"tiempo", metric:"memberMonths", threshold:3, xp:400, unit:"meses"},
+  {code:"member_6", name:"Medio año en casa", emoji:"🌳", desc:"6 meses con nosotros", group:"tiempo", metric:"memberMonths", threshold:6, xp:900, unit:"meses"},
+  {code:"member_12", name:"Un año juntos", emoji:"🎂", desc:"1 año entrenando con nosotros", group:"tiempo", metric:"memberMonths", threshold:12, xp:2000, unit:"meses"},
+  {code:"member_24", name:"Dos años", emoji:"🏰", desc:"2 años con nosotros", group:"tiempo", metric:"memberMonths", threshold:24, xp:4000, unit:"meses"},
+  {code:"member_36", name:"De la casa", emoji:"🏛️", desc:"3 años con nosotros", group:"tiempo", metric:"memberMonths", threshold:36, xp:6000, unit:"meses"},
+  {code:"active_months_3", name:"3 meses activos", emoji:"📗", desc:"3 meses con 4 o más entrenos", group:"tiempo", metric:"activeMonths", threshold:3, xp:300, unit:"meses activos"},
+  {code:"active_months_6", name:"6 meses activos", emoji:"📘", desc:"6 meses con 4 o más entrenos", group:"tiempo", metric:"activeMonths", threshold:6, xp:700, unit:"meses activos"},
+  {code:"active_months_12", name:"Año activo", emoji:"📙", desc:"12 meses con 4 o más entrenos", group:"tiempo", metric:"activeMonths", threshold:12, xp:1600, unit:"meses activos"},
+  {code:"hours_10", name:"10 horas", emoji:"⏱️", desc:"10 horas entrenando", group:"tiempo", metric:"hours", threshold:10, xp:150, unit:"horas"},
+  {code:"hours_50", name:"50 horas", emoji:"⏳", desc:"50 horas entrenando", group:"tiempo", metric:"hours", threshold:50, xp:500, unit:"horas"},
+  {code:"hours_100", name:"100 horas", emoji:"🕰️", desc:"100 horas — más de 4 días enteros", group:"tiempo", metric:"hours", threshold:100, xp:1100, unit:"horas"},
+  {code:"hours_250", name:"250 horas", emoji:"🌗", desc:"250 horas entrenando", group:"tiempo", metric:"hours", threshold:250, xp:2600, unit:"horas"},
+  {code:"hours_500", name:"500 horas", emoji:"🌕", desc:"500 horas — media vida en la sala", group:"tiempo", metric:"hours", threshold:500, xp:5500, unit:"horas"},
+  // — Sesiones —
+  {code:"first_session", name:"Primera sesión", emoji:"🎯", desc:"Tu primer entreno registrado", group:"sesiones", metric:"sessions", threshold:1, xp:50, unit:"entrenos"},
+  {code:"sessions_10", name:"10 entrenos", emoji:"🔥", desc:"10 entrenos completados", group:"sesiones", metric:"sessions", threshold:10, xp:120, unit:"entrenos"},
+  {code:"sessions_25", name:"25 entrenos", emoji:"💪", desc:"Ya entrenas con constancia", group:"sesiones", metric:"sessions", threshold:25, xp:250, unit:"entrenos"},
+  {code:"sessions_50", name:"Medio centenar", emoji:"🏆", desc:"50 entrenos — disciplina pura", group:"sesiones", metric:"sessions", threshold:50, xp:450, unit:"entrenos"},
+  {code:"sessions_100", name:"Centenario", emoji:"💯", desc:"100 entrenos", group:"sesiones", metric:"sessions", threshold:100, xp:800, unit:"entrenos"},
+  {code:"sessions_200", name:"Veterano", emoji:"🎖️", desc:"200 entrenos — pocos llegan aquí", group:"sesiones", metric:"sessions", threshold:200, xp:1500, unit:"entrenos"},
+  {code:"sessions_365", name:"Leyenda de la sala", emoji:"🏛️", desc:"365 entrenos", group:"sesiones", metric:"sessions", threshold:365, xp:3000, unit:"entrenos"},
+  // — Volumen —
+  {code:"sets_100", name:"100 series", emoji:"🎚️", desc:"100 series hechas", group:"volumen", metric:"sets", threshold:100, xp:150, unit:"series"},
+  {code:"sets_500", name:"500 series", emoji:"🚀", desc:"500 series acumuladas", group:"volumen", metric:"sets", threshold:500, xp:400, unit:"series"},
+  {code:"sets_1000", name:"Millar de series", emoji:"⚜️", desc:"1.000 series", group:"volumen", metric:"sets", threshold:1000, xp:900, unit:"series"},
+  {code:"sets_2500", name:"Máquina de trabajar", emoji:"🛠️", desc:"2.500 series", group:"volumen", metric:"sets", threshold:2500, xp:2000, unit:"series"},
+  {code:"sets_5000", name:"5.000 series", emoji:"🧱", desc:"5.000 series", group:"volumen", metric:"sets", threshold:5000, xp:3500, unit:"series"},
+  {code:"reps_5000", name:"5.000 repeticiones", emoji:"🔁", desc:"5.000 repeticiones en total", group:"volumen", metric:"totalReps", threshold:5000, xp:300, unit:"repeticiones"},
+  {code:"reps_25000", name:"25.000 repeticiones", emoji:"♾️", desc:"25.000 repeticiones", group:"volumen", metric:"totalReps", threshold:25000, xp:1200, unit:"repeticiones"},
+  // — Tonelaje —
+  {code:"ton_5000", name:"5 toneladas", emoji:"🏋️", desc:"5.000 kg levantados en total", group:"tonelaje", metric:"tonnage", threshold:5000, xp:200, unit:"kg"},
+  {code:"ton_25000", name:"25 toneladas", emoji:"🐘", desc:"25.000 kg — 6 elefantes", group:"tonelaje", metric:"tonnage", threshold:25000, xp:500, unit:"kg"},
+  {code:"ton_100000", name:"100 toneladas", emoji:"✈️", desc:"100.000 kg — un avión", group:"tonelaje", metric:"tonnage", threshold:100000, xp:1200, unit:"kg"},
+  {code:"ton_250000", name:"250 toneladas", emoji:"🚢", desc:"250.000 kg movidos", group:"tonelaje", metric:"tonnage", threshold:250000, xp:2200, unit:"kg"},
+  {code:"ton_1000000", name:"Un millón de kg", emoji:"🌍", desc:"1.000.000 kg — fuerza descomunal", group:"tonelaje", metric:"tonnage", threshold:1000000, xp:5000, unit:"kg"},
+  {code:"day_ton_5000", name:"Día demoledor", emoji:"💥", desc:"5.000 kg en un solo entreno", group:"tonelaje", metric:"maxDayTonnage", threshold:5000, xp:300, unit:"kg en un día"},
+  {code:"day_ton_10000", name:"Día titánico", emoji:"🌋", desc:"10.000 kg en un solo entreno", group:"tonelaje", metric:"maxDayTonnage", threshold:10000, xp:700, unit:"kg en un día"},
+  // — Fuerza y récords —
+  {code:"pr_1", name:"Primer récord", emoji:"📈", desc:"Tu primer récord personal", group:"fuerza", metric:"prCount", threshold:1, xp:100, unit:"récords"},
+  {code:"pr_10", name:"Cazador de récords", emoji:"🎯", desc:"10 récords personales", group:"fuerza", metric:"prCount", threshold:10, xp:400, unit:"récords"},
+  {code:"pr_25", name:"Rompemarcas", emoji:"🏅", desc:"25 récords personales", group:"fuerza", metric:"prCount", threshold:25, xp:900, unit:"récords"},
+  {code:"pr_50", name:"Imparable en PRs", emoji:"🥇", desc:"50 récords personales", group:"fuerza", metric:"prCount", threshold:50, xp:1800, unit:"récords"},
+  {code:"squat_100", name:"Club de los 100", emoji:"🦵", desc:"Sentadilla estimada de 100 kg", group:"fuerza", metric:"e1rmSquat", threshold:100, xp:500, unit:"kg"},
+  {code:"bench_80", name:"Press banca 80 kg", emoji:"🛋️", desc:"Banca estimada de 80 kg", group:"fuerza", metric:"e1rmBench", threshold:80, xp:500, unit:"kg"},
+  {code:"bench_100", name:"Banca de tres dígitos", emoji:"💢", desc:"Banca estimada de 100 kg", group:"fuerza", metric:"e1rmBench", threshold:100, xp:1000, unit:"kg"},
+  {code:"dead_140", name:"Peso muerto 140 kg", emoji:"🪨", desc:"Peso muerto estimado de 140 kg", group:"fuerza", metric:"e1rmDeadlift", threshold:140, xp:600, unit:"kg"},
+  {code:"ohp_60", name:"Press militar 60 kg", emoji:"🪖", desc:"Press militar estimado de 60 kg", group:"fuerza", metric:"e1rmOhp", threshold:60, xp:600, unit:"kg"},
+  {code:"sbd_300", name:"Total SBD 300", emoji:"🔺", desc:"Sentadilla + banca + peso muerto ≥ 300 kg", group:"fuerza", metric:"sbdTotal", threshold:300, xp:700, unit:"kg"},
+  {code:"sbd_400", name:"Total SBD 400", emoji:"🔱", desc:"Los 3 grandes ≥ 400 kg", group:"fuerza", metric:"sbdTotal", threshold:400, xp:1300, unit:"kg"},
+  {code:"rel_dead_2x", name:"Doble de tu peso", emoji:"🧲", desc:"Peso muerto = 2× tu peso corporal", group:"fuerza", metric:"relDeadliftX100", threshold:200, xp:1500, unit:"% de tu peso"},
+  {code:"rel_bench_1x", name:"Tu propio peso", emoji:"⚖️", desc:"Banca = tu peso corporal", group:"fuerza", metric:"relBenchX100", threshold:100, xp:1000, unit:"% de tu peso"},
+  // — Hitos —
+  {code:"bw_logs_1", name:"Primera medición", emoji:"📊", desc:"Tu primer registro de medidas", group:"hitos", metric:"bodyweightLogs", threshold:1, xp:80, unit:"registros"},
+  {code:"bw_logs_10", name:"En la báscula", emoji:"⚖️", desc:"10 registros de medidas", group:"hitos", metric:"bodyweightLogs", threshold:10, xp:250, unit:"registros"},
+  {code:"avatar_set", name:"Tu cara al frente", emoji:"📸", desc:"Foto de perfil añadida", group:"hitos", metric:"hasAvatar", threshold:1, xp:100, unit:""},
+  {code:"open_10", name:"Por tu cuenta", emoji:"🔓", desc:"10 entrenos open hechos", group:"hitos", metric:"opens", threshold:10, xp:300, unit:"opens"},
+  // — Secretos —
+  {code:"hard_sets_50", name:"50 series al límite", emoji:"🥵", desc:"50 series a RPE 9 o más", group:"secretos", metric:"hardSets", threshold:50, xp:400, unit:"series", secret:true},
+  {code:"hard_sets_200", name:"Adicto al RPE 9", emoji:"😈", desc:"200 series a RPE 9 o más", group:"secretos", metric:"hardSets", threshold:200, xp:1000, unit:"series", secret:true},
+  {code:"early_10", name:"Madrugador", emoji:"🌅", desc:"10 entrenos antes de las 9:00", group:"secretos", metric:"early", threshold:10, xp:300, unit:"entrenos", secret:true},
+  {code:"night_10", name:"Búho de hierro", emoji:"🦉", desc:"10 entrenos a partir de las 20:00", group:"secretos", metric:"late", threshold:10, xp:300, unit:"entrenos", secret:true},
+  {code:"comeback", name:"El regreso", emoji:"🔙", desc:"Volviste tras 3+ semanas de parón", group:"secretos", metric:"comebackReturns", threshold:1, xp:250, unit:"", secret:true},
+];
+const GAME_GROUPS = [["constancia","🔥 Constancia y rachas"],["tiempo","⏳ Tiempo con nosotros"],["sesiones","🗓️ Entrenos"],["volumen","💪 Volumen de trabajo"],["tonelaje","🏋️ Tonelaje"],["fuerza","📈 Fuerza y récords"],["hitos","🎯 Hitos"],["secretos","🕵️ Secretos"]];
+// Niveles: minXp = 125·(nivel−1)² (igual que KikoteLab).
+const GAME_LEVELS = [["Novato","#9aa0b5"],["Aprendiz","#8fb0c0"],["Iniciado","#7fc0b8"],["Constante","#50e8d8"],["Disciplinado","#5ad0a0"],["Atleta","#a0e060"],["Forjado","#c8f050"],["Veterano","#e8d050"],["Fuerte","#f0b840"],["Imparable","#ff9a40"],
+  ["Bestia","#ff8050"],["Élite","#ff6a6a"],["Maestro","#e86ac0"],["Titán","#c080ff"],["Coloso","#a080ff"],["Leyenda","#ffd060"],["Indomable","#ffb84d"],["Invicto","#ff9f6a"],["Mito","#ff7fa0"],["Inmortal","#e86ae8"],
+  ["Gigante","#b478ff"],["Monolito","#8a8cff"],["Cíclope","#66a6ff"],["Kraken","#4fd0ff"],["Olímpico","#4fe8d0"],["Semidiós","#6ef0a0"],["Prometeo","#b8f060"],["Atlas","#ffe066"],["Hércules","#ffd0a0"],["Eterno","#ffffff"]]
+  .map(([name,color],i)=>({level:i+1,name,color,minXp:125*i*i}));
+const gameLevel = (xp) => { let cur=GAME_LEVELS[0]; for(const l of GAME_LEVELS){ if(xp>=l.minXp) cur=l; else break; }
+  const next=GAME_LEVELS[cur.level]||null, span=next?next.minXp-cur.minXp:0, into=xp-cur.minXp;
+  return {level:cur.level,levelName:cur.name,levelColor:cur.color,xp,xpIntoLevel:into,xpSpan:span,xpToNext:next?next.minXp-xp:0,isMaxLevel:!next,nextLevelName:next?next.name:null,progressPct:next?Math.min(100,Math.round(into/(span||1)*100)):100}; };
+const TONNAGE_REFS = [[4,"🐈","un gato","gatos"],[25,"🎒","una maleta cargada","maletas cargadas"],[75,"🧑","una persona","personas"],[180,"🏍️","una moto","motos"],[270,"🦁","un león","leones"],[450,"🐎","un caballo","caballos"],
+  [600,"🐂","un toro","toros"],[1300,"🚗","un coche","coches"],[4000,"🐘","un elefante","elefantes"],[12000,"🚌","un autobús","autobuses"],[30000,"🚚","un camión","camiones"],[150000,"🐋","una ballena azul","ballenas azules"],[400000,"🚀","un cohete","cohetes"]];
+const tonnageComparison = (kg) => { if(!kg||kg<4) return null; let b=TONNAGE_REFS[0]; for(const r of TONNAGE_REFS){ if(kg/r[0]>=1) b=r; else break; } const n=Math.max(1,Math.round(kg/b[0])); return {emoji:b[1],text:n===1?`≈ ${b[2]}`:`≈ ${n} ${b[3]}`}; };
+const gNum = (n) => String(Math.round(n||0)).replace(/\B(?=(\d{3})+(?!\d))/g,".");
+const GAME_MAIN = [["squat",/sentadilla|squat/i,/hack|b[úu]lgara|pistol|sissy|goblet|isom|wall|profunda|aire|air/i],["bench",/press de banca|press banca|bench/i,/militar|incl|isom/i],["deadlift",/peso muerto|deadlift/i,/rumano|rdl|piernas? r[íi]gidas?|isom/i],["ohp",/press militar|overhead|\bohp\b/i,/banca/i]];
+function gameStats(client, {history, assignedSessions, assignedExercises, progress, records}){
+  const days=athleteSessions(client,history,assignedSessions,assignedExercises).filter(x=>x.date<=TODAY).sort((a,b)=>a.date.localeCompare(b.date));
+  const sessions=days.length;
+  // Semanas (lunes) con entreno, rachas y semanas en las que cumple su plan
+  const wk={}; days.forEach(d=>{ const m=mondayOfDate(d.date); wk[m]=(wk[m]||0)+1; });
+  const curMon=mondayOfDate(TODAY); let w=curMon; if(!wk[w]) w=addDays(w,-7); let currentStreak=0; while(wk[w]){ currentStreak++; w=addDays(w,-7); }
+  const mons=Object.keys(wk).sort(); let longestStreak=0, run=0, prev=null; mons.forEach(m=>{ run=(prev&&addDays(prev,7)===m)?run+1:1; longestStreak=Math.max(longestStreak,run); prev=m; });
+  const target=Math.max(1,Math.min(6,String(client.train_days||"").split(",").filter(Boolean).length||parseInt(client.days_week)||2));
+  const perfectWeeks=Object.entries(wk).filter(([m,n])=>m<curMon&&n>=target).length+((wk[curMon]||0)>=target?1:0);
+  const maxWeekSessions=Math.max(0,...Object.values(wk)), thisWeekSessions=wk[curMon]||0;
+  // Tiempo: meses desde el primer entreno, meses activos (≥4) y horas
+  const first=days[0]?days[0].date:null;
+  const memberMonths=first?Math.max(0,Math.floor((new Date(TODAY+"T12:00:00")-new Date(first+"T12:00:00"))/(30.44*864e5))):0;
+  const mo={}; days.forEach(d=>{ const k=d.date.slice(0,7); mo[k]=(mo[k]||0)+1; }); const activeMonths=Object.values(mo).filter(n=>n>=4).length;
+  const hours=sessions; // cada entreno ≈ 1 hora
+  // Volumen, tonelaje, series duras y franjas horarias
+  let sets=0,totalReps=0,tonnage=0,maxDayTonnage=0,hardSets=0,early=0,late=0,opens=0;
+  days.forEach(d=>{ const exs=(d.exs||[]).filter(e=>exDone(e)&&!isWodHeader(e)); let dt=0;
+    exs.forEach(e=>{ const st=parseInt(e.sets)||1, r=repsLow(e.actual_reps!=null?e.actual_reps:e.reps)||0, kg=e.load_band?0:(exKg(e)||0);
+      sets+=st; if(!isIsoRow(e)) totalReps+=st*r; if(!isIsoRow(e)&&kg&&r) dt+=kg*r*st;
+      const rpe=e.rpe_felt!=null?Number(e.rpe_felt):null; if(rpe!=null&&rpe>=9) hardSets+=st; });
+    tonnage+=dt; maxDayTonnage=Math.max(maxDayTonnage,dt);
+    const t=String(d.time||"").slice(0,5); if(t&&t<"09:00") early++; if(t&&t>="20:00") late++; if(d.open) opens++; });
+  let comebackReturns=0; for(let i=1;i<days.length;i++){ if((new Date(days[i].date)-new Date(days[i-1].date))/864e5>=21){ comebackReturns=1; break; } }
+  // Fuerza: e1RM de los básicos y récords (cada vez que supera su mejor e1RM)
+  const hist=rmHistory(client.id,assignedSessions,assignedExercises,[]); const best={}; let prCount=(records||[]).length;
+  Object.values(hist).forEach(h=>{ let top=0; (h.pts||[]).slice().sort((a,b)=>a.date.localeCompare(b.date)).forEach(p=>{ if(p.e1rm>top+0.01){ if(top>0) prCount++; top=p.e1rm; } });
+    const g=GAME_MAIN.find(([,re,ex])=>re.test(h.name)&&!ex.test(h.name)); if(g) best[g[0]]=Math.max(best[g[0]]||0,top); });
+  const e1rmSquat=Math.floor(best.squat||0), e1rmBench=Math.floor(best.bench||0), e1rmDeadlift=Math.floor(best.deadlift||0), e1rmOhp=Math.floor(best.ohp||0);
+  const pw=(progress||[]).filter(p=>p.weight!=null&&p.weight!=="");
+  const bw=parseFloat((pw[0]||{}).weight)||parseFloat((profileOf(client)||{}).weight)||0;
+  const rel=(x)=>bw>0&&x>0?Math.round(x/bw*100):0;
+  const vals={sessions,streak:Math.max(currentStreak,longestStreak),perfectWeeks,maxWeekSessions,memberMonths,activeMonths,hours,sets,totalReps,tonnage:Math.round(tonnage),maxDayTonnage:Math.round(maxDayTonnage),
+    prCount,e1rmSquat,e1rmBench,e1rmDeadlift,e1rmOhp,sbdTotal:e1rmSquat+e1rmBench+e1rmDeadlift,relDeadliftX100:rel(e1rmDeadlift),relBenchX100:rel(e1rmBench),
+    bodyweightLogs:(progress||[]).length,hasAvatar:client.avatar_url?1:0,opens,hardSets,early,late,comebackReturns};
+  const badges=GAME_BADGES.map(b=>{ const v=vals[b.metric]||0; return {...b,unlocked:v>=b.threshold,progress:Math.min(v,b.threshold)}; });
+  // XP: el trabajo de siempre (como KikoteLab) + mucho peso a constancia y tiempo
+  const achXp=badges.filter(b=>b.unlocked).reduce((a,b)=>a+b.xp,0);
+  const grindXp=sessions*40+sets*2+Math.floor(tonnage/1000)*10+prCount*50
+    +Math.max(currentStreak,longestStreak)*80+perfectWeeks*100+Object.keys(wk).length*20+memberMonths*60;
+  return {...vals,currentStreak,longestStreak,thisWeekSessions,target,weeksTrained:Object.keys(wk).length,badges,achXp,grindXp,...gameLevel(Math.round(achXp+grindXp))};
+}
+function AnimatedNumber({value,decimals=0,suffix="",duration=700}){
+  const [v,setV]=React.useState(value), from=React.useRef(value);
+  React.useEffect(()=>{ const a=from.current, b=isFinite(value)?value:0; if(a===b){ setV(b); return; } let raf; const t0=performance.now();
+    const tick=()=>{ const t=Math.min(1,(performance.now()-t0)/duration), e=1-Math.pow(1-t,3); setV(a+(b-a)*e); if(t<1) raf=requestAnimationFrame(tick); else from.current=b; };
+    raf=requestAnimationFrame(tick); return ()=>{ cancelAnimationFrame(raf); from.current=b; }; },[value]);
+  const n=decimals?Number(v).toFixed(decimals).replace(".",","):gNum(v);
+  return <span style={{fontVariantNumeric:"tabular-nums"}}>{n}{suffix}</span>;
+}
+// «te falta 1 récord» / «te faltan 3 récords»
+const gLeft = (n,u) => { const one=n===1, w=String(u||"").split(" "); if(one) w[0]=({meses:"mes",series:"serie",repeticiones:"repetición",récords:"récord"})[w[0]]||w[0].replace(/s$/,""); return `te falta${one?"":"n"} ${gNum(n)} ${w.join(" ")}`.trim(); };
+const nextBadgeOf = (g) => { const locked=g.badges.filter(b=>!b.unlocked&&!b.secret); if(!locked.length) return null;
+  return locked.reduce((best,b)=>(b.progress/b.threshold)>(best.progress/best.threshold)?b:best,locked[0]); };
+// Inicio: nivel, XP, racha y próximo logro (toca para ver todos).
+function GameHero({g,onOpen}){
+  const lc=g.levelColor, nb=nextBadgeOf(g);
+  return(
+    <button type="button" data-gamehero="1" onClick={onOpen} className="ember-pop" style={{display:"block",width:"100%",textAlign:"left",fontFamily:"inherit",cursor:"pointer",color:"#fff",
+      background:`linear-gradient(135deg,${lc}2b,rgba(255,255,255,.02))`,border:`1px solid ${lc}55`,borderRadius:20,padding:"14px 15px",marginBottom:14}}>
+      <div style={{display:"flex",alignItems:"center",gap:13}}>
+        <div style={{flexShrink:0,width:58,height:58,borderRadius:"50%",border:`3px solid ${lc}`,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",background:`${lc}1a`,boxShadow:`0 4px 16px ${lc}55`}}>
+          <span style={{fontSize:9,fontWeight:800,color:lc,letterSpacing:.5,lineHeight:1}}>NIVEL</span>
+          <span style={{fontSize:23,fontWeight:900,color:lc,lineHeight:1}}><AnimatedNumber value={g.level}/></span>
+        </div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"baseline",gap:8,justifyContent:"space-between"}}>
+            <span style={{fontSize:19,fontWeight:900,color:lc,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{g.levelName}</span>
+            <span style={{fontSize:13,fontWeight:900,color:"#ffa050",whiteSpace:"nowrap"}}>🔥 {g.currentStreak} sem.</span>
+          </div>
+          <div style={{height:8,borderRadius:5,background:"rgba(255,255,255,.08)",overflow:"hidden",marginTop:6}}>
+            <div style={{height:"100%",width:`${g.progressPct}%`,borderRadius:5,background:`linear-gradient(90deg,${lc},#ffffffcc)`,transition:"width .8s cubic-bezier(.22,1,.36,1)"}}/>
+          </div>
+          <div style={{display:"flex",justifyContent:"space-between",marginTop:4,fontSize:10.5,color:"rgba(255,255,255,.6)",fontWeight:700}}>
+            <span>{gNum(g.xp)} XP</span><span>{g.isMaxLevel?"Nivel máximo":`Faltan ${gNum(g.xpToNext)} → ${g.nextLevelName}`}</span>
+          </div>
+        </div>
+      </div>
+      {nb&&<div style={{display:"flex",alignItems:"center",gap:8,marginTop:11,paddingTop:10,borderTop:"1px solid rgba(255,255,255,.08)",fontSize:12,color:"rgba(255,255,255,.75)"}}>
+        <span style={{fontSize:20}}>{nb.emoji}</span>
+        <span style={{flex:1,minWidth:0}}><b style={{color:"#fff"}}>Próximo: {nb.name}</b> · {gLeft(nb.threshold-nb.progress,nb.unit)}</span>
+        <span style={{fontSize:10,fontWeight:800,color:"#c8a0ff",whiteSpace:"nowrap"}}>+{gNum(nb.xp)} XP ›</span>
+      </div>}
+    </button>);
+}
+// Progreso → Logros: todo como en KikoteLab.
+function LogrosView({g,earned}){
+  const lc=g.levelColor, nb=nextBadgeOf(g), cmp=tonnageComparison(g.tonnage), dateOf=(code)=>{ const a=(earned||[]).find(x=>x.type==="g_"+code); return a&&a.earned_at?new Date(a.earned_at).toLocaleDateString("es-ES",{day:"numeric",month:"short",year:"2-digit"}):null; };
+  const box={borderRadius:18,padding:"16px 16px",marginBottom:14};
+  const Stat=({ic,v,l,c})=><div style={{background:`${c}12`,border:`1px solid ${c}33`,borderRadius:14,padding:"10px 6px",textAlign:"center"}}>
+    <div style={{fontSize:16}}>{ic}</div><div style={{fontSize:19,fontWeight:900,color:c,lineHeight:1.15}}><AnimatedNumber value={v}/></div><div style={{fontSize:9.5,fontWeight:800,color:"#94a3b8",textTransform:"uppercase",letterSpacing:.3}}>{l}</div></div>;
+  return(<div data-logros="1" style={{color:"#0f172a"}}>
+    <div style={{...box,background:`linear-gradient(135deg,${lc}30,${lc}08)`,border:`1px solid ${lc}55`,display:"flex",alignItems:"center",gap:15}}>
+      <div style={{flexShrink:0,width:66,height:66,borderRadius:"50%",border:`3px solid ${lc}`,display:"flex",alignItems:"center",justifyContent:"center",background:`${lc}1a`,boxShadow:`0 4px 14px ${lc}55`}}>
+        <span style={{fontSize:28,fontWeight:900,color:lc}}><AnimatedNumber value={g.level}/></span></div>
+      <div style={{flex:1,minWidth:0}}>
+        <div style={{fontSize:22,fontWeight:900,color:lc,lineHeight:1.1}}>{g.levelName}</div>
+        <div style={{fontSize:10,color:"#94a3b8",textTransform:"uppercase",letterSpacing:.6,fontWeight:800,marginBottom:8}}>Nivel {g.level} de 30</div>
+        <div style={{height:9,borderRadius:5,background:"rgba(148,163,184,.25)",overflow:"hidden"}}><div style={{height:"100%",width:`${g.progressPct}%`,borderRadius:5,background:`linear-gradient(90deg,${lc},#ffffffcc)`}}/></div>
+        <div style={{display:"flex",justifyContent:"space-between",marginTop:5,fontSize:10,color:"#64748b",fontWeight:700}}>
+          {g.isMaxLevel?<><span>Nivel máximo</span><span>{gNum(g.xp)} XP</span></>:<><span>{gNum(g.xpIntoLevel)} / {gNum(g.xpSpan)} XP</span><span>Faltan {gNum(g.xpToNext)} → {g.nextLevelName}</span></>}
+        </div>
+      </div>
+    </div>
+    <div style={{...box,background:"linear-gradient(135deg,rgba(255,128,80,.16),rgba(232,80,32,.04))",border:"1px solid rgba(255,128,80,.3)",display:"flex",alignItems:"center",gap:16}}>
+      <div className="ember-flame" style={{fontSize:52,lineHeight:1}}>🔥</div>
+      <div style={{flex:1}}>
+        <div style={{fontSize:38,fontWeight:900,lineHeight:1,color:"#ff7a45"}}><AnimatedNumber value={g.currentStreak}/></div>
+        <div style={{fontSize:13,color:"#475569",fontWeight:700}}>{g.currentStreak===0?"Empieza una racha esta semana":g.currentStreak===1?"semana en racha":"semanas seguidas entrenando"}</div>
+        {g.longestStreak>g.currentStreak&&<div style={{fontSize:11,color:"#94a3b8",marginTop:3}}>Tu récord: <b style={{color:"#ff7a45"}}>{g.longestStreak} semanas</b></div>}
+        <div style={{fontSize:11,color:"#64748b",marginTop:3}}>Esta semana: <b>{g.thisWeekSessions}/{g.target}</b> entrenos de tu plan{g.thisWeekSessions>=g.target?" ✅":""}</div>
+      </div>
+    </div>
+    {g.tonnage>0&&<div style={{...box,display:"flex",alignItems:"center",gap:15,background:"linear-gradient(135deg,rgba(80,232,216,.13),rgba(200,240,80,.04))",border:"1px solid rgba(80,232,216,.3)"}}>
+      <div style={{fontSize:42,lineHeight:1}}>{cmp?cmp.emoji:"🏋️"}</div>
+      <div style={{flex:1}}>
+        <div style={{fontSize:10.5,color:"#64748b",textTransform:"uppercase",letterSpacing:.5,fontWeight:800}}>Has levantado en total</div>
+        <div style={{fontSize:27,fontWeight:900,color:"#0d9488",lineHeight:1.1}}>{g.tonnage>=1000?<AnimatedNumber value={g.tonnage/1000} decimals={1} suffix=" t"/>:<AnimatedNumber value={g.tonnage} suffix=" kg"/>}</div>
+        {cmp&&<div style={{fontSize:13,color:"#65a30d",fontWeight:800}}>{cmp.emoji} {cmp.text}</div>}
+      </div>
+    </div>}
+    <div style={{display:"grid",gridTemplateColumns:"1fr 1fr 1fr",gap:8,marginBottom:14}}>
+      <Stat ic="🗓️" v={g.sessions} l="entrenos" c="#65a30d"/><Stat ic="✅" v={g.perfectWeeks} l="semanas cumplidas" c="#0d9488"/><Stat ic="⏱️" v={g.hours} l="horas" c="#7c3aed"/>
+      <Stat ic="📆" v={g.memberMonths} l="meses contigo" c="#ea580c"/><Stat ic="💪" v={g.sets} l="series" c="#0284c7"/><Stat ic="📈" v={g.prCount} l="récords" c="#ca8a04"/>
+    </div>
+    {nb&&<div style={{...box,background:"linear-gradient(135deg,rgba(160,128,255,.16),rgba(160,128,255,.03))",border:"1px solid rgba(160,128,255,.32)"}}>
+      <div style={{fontSize:10,color:"#7c3aed",textTransform:"uppercase",letterSpacing:.6,fontWeight:800,marginBottom:8}}>🎯 Tu próximo logro</div>
+      <div style={{display:"flex",alignItems:"center",gap:12}}>
+        <div style={{fontSize:38,lineHeight:1}}>{nb.emoji}</div>
+        <div style={{flex:1,minWidth:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:7}}><b style={{fontSize:14}}>{nb.name}</b><span style={{fontSize:9,fontWeight:800,color:"#7c3aed",background:"rgba(160,128,255,.15)",border:"1px solid rgba(160,128,255,.35)",borderRadius:10,padding:"1px 7px"}}>+{gNum(nb.xp)} XP</span></div>
+          <div style={{fontSize:11,color:"#64748b",marginBottom:7}}>{nb.desc}</div>
+          <div style={{height:7,background:"rgba(148,163,184,.25)",borderRadius:4,overflow:"hidden"}}><div style={{height:"100%",width:`${Math.round(nb.progress/nb.threshold*100)}%`,background:"linear-gradient(90deg,#a080ff,#c8a0ff)"}}/></div>
+          <div style={{fontSize:10,color:"#7c3aed",fontWeight:800,marginTop:5}}>{Math.round(nb.progress/nb.threshold*100)}% · {gLeft(nb.threshold-nb.progress,nb.unit)}</div>
+        </div>
+      </div>
+    </div>}
+    <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",margin:"4px 2px 10px"}}>
+      <b style={{fontSize:14}}>Logros</b><span style={{fontSize:11,color:"#94a3b8",fontWeight:700}}>{g.badges.filter(b=>b.unlocked).length} / {g.badges.length}</span>
+    </div>
+    {GAME_GROUPS.map(([grp,label])=>{ const items=g.badges.filter(b=>b.group===grp); if(!items.length) return null; const got=items.filter(b=>b.unlocked).length; return(
+      <div key={grp} data-grp={grp} style={{marginBottom:16}}>
+        <div style={{display:"flex",justifyContent:"space-between",marginBottom:7}}><span style={{fontSize:11,fontWeight:800,color:"#475569",textTransform:"uppercase",letterSpacing:.4}}>{label}</span><span style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>{got}/{items.length}</span></div>
+        <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:9}}>
+          {items.map(b=>{ const hid=b.secret&&!b.unlocked, pct=Math.min(100,Math.round(b.progress/b.threshold*100)), d=b.unlocked&&dateOf(b.code); return(
+            <div key={b.code} data-badge={b.code} data-on={b.unlocked?"1":"0"} style={{position:"relative",padding:"13px 11px",borderRadius:14,border:`1px solid ${b.unlocked?"rgba(132,204,22,.45)":"rgba(148,163,184,.25)"}`,background:b.unlocked?"linear-gradient(135deg,rgba(163,230,53,.14),rgba(163,230,53,.03))":"rgba(148,163,184,.06)",opacity:b.unlocked?1:.7}}>
+              <span style={{position:"absolute",top:9,right:9,fontSize:8.5,fontWeight:800,color:b.unlocked?"#4d7c0f":"#94a3b8",background:b.unlocked?"rgba(163,230,53,.18)":"rgba(148,163,184,.12)",borderRadius:8,padding:"1px 6px"}}>+{gNum(b.xp)}</span>
+              <div style={{fontSize:30,marginBottom:5,filter:b.unlocked?"none":"grayscale(.85)"}}>{hid?"🔒":b.emoji}</div>
+              <div style={{fontSize:12,fontWeight:800,color:b.unlocked?"#3f6212":"#475569"}}>{hid?"???":b.name}</div>
+              <div style={{fontSize:10,color:"#94a3b8",lineHeight:1.35,minHeight:27,marginBottom:6}}>{hid?"Logro secreto":b.desc}</div>
+              {b.unlocked?<div style={{fontSize:9,color:"#16a34a",fontWeight:800,textTransform:"uppercase",letterSpacing:.3}}>✓ Desbloqueado{d?` · ${d}`:""}</div>
+                :hid?null:<><div style={{height:4,background:"rgba(148,163,184,.25)",borderRadius:2,overflow:"hidden",marginBottom:3}}><div style={{height:"100%",width:`${pct}%`,background:"linear-gradient(90deg,#84cc16,#65a30d)"}}/></div>
+                  <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>{gNum(b.progress)} / {gNum(b.threshold)}</div></>}
+            </div>); })}
+        </div>
+      </div>); })}
+    <div style={{fontSize:10.5,color:"#94a3b8",lineHeight:1.5,marginTop:4}}>Cómo se gana XP: cada entreno, serie, tonelada y récord suma; y sobre todo la constancia: cada semana de racha, cada semana que cumples tu plan, cada semana entrenada y cada mes con nosotros. Los logros dan XP extra.</div>
+  </div>);
+}
+// Celebración: logro nuevo o subida de nivel.
+function GameCelebrate({ev,onClose}){
+  React.useEffect(()=>{ try{ if(navigator.vibrate&&navigator.userActivation&&navigator.userActivation.hasBeenActive) navigator.vibrate([30,50,30,50,100]); }catch(e){} },[]);
+  const b=ev.badges&&ev.badges[0];
+  return ReactDOM.createPortal(
+    <div role="dialog" aria-modal="true" aria-label="¡Logro desbloqueado!" data-celebrate="1" onClick={onClose} style={{position:"fixed",inset:0,zIndex:1900,background:"radial-gradient(80% 60% at 50% 40%,rgba(120,30,10,.97),rgba(5,5,8,.98))",backdropFilter:"blur(8px)",WebkitBackdropFilter:"blur(8px)",display:"flex",alignItems:"center",justifyContent:"center",padding:20}}>
+      <Embers/>
+      <div onClick={e=>e.stopPropagation()} className="ember-pop" style={{position:"relative",maxWidth:360,width:"100%",textAlign:"center",color:"#fff"}}>
+        {ev.levelUp&&<>
+          <div style={{fontSize:13,fontWeight:800,letterSpacing:1.5,color:"#fdba74"}}>¡SUBES DE NIVEL!</div>
+          <div style={{width:110,height:110,margin:"12px auto",borderRadius:"50%",border:`4px solid ${ev.levelUp.color}`,display:"flex",alignItems:"center",justifyContent:"center",fontSize:52,fontWeight:900,color:ev.levelUp.color,boxShadow:`0 0 40px ${ev.levelUp.color}88`}}>{ev.levelUp.level}</div>
+          <div style={{fontSize:26,fontWeight:900,color:ev.levelUp.color}}>{ev.levelUp.name}</div>
+        </>}
+        {b&&<div style={{marginTop:ev.levelUp?18:0}}>
+          <div style={{fontSize:13,fontWeight:800,letterSpacing:1.5,color:"#fdba74"}}>{ev.first?"🎮 ¡ESTRENAS LOGROS!":"🏅 ¡LOGRO DESBLOQUEADO!"}</div>
+          <div style={{fontSize:76,lineHeight:1.1,margin:"8px 0"}}>{b.emoji}</div>
+          <div style={{fontSize:22,fontWeight:900}}>{b.name}</div>
+          <div style={{fontSize:13,opacity:.8,marginTop:3}}>{b.desc} · <b style={{color:"#bef264"}}>+{gNum(b.xp)} XP</b></div>
+          {ev.badges.length>1&&<div style={{fontSize:13,fontWeight:700,marginTop:10,color:"#fdba74"}}>y {ev.badges.length-1} logro{ev.badges.length>2?"s":""} más: {ev.badges.slice(1,6).map(x=>x.emoji).join(" ")}{ev.badges.length>6?" …":""}</div>}
+        </div>}
+        <button type="button" onClick={onClose} style={{marginTop:22,width:"100%",height:52,borderRadius:28,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>{ev.first?"¡Vamos! 💪":"¡A por más! 🔥"}</button>
+      </div>
+    </div>, document.body);
 }
 function AthleteHistory({client,history,assignedSessions,assignedExercises}){
   const list=athleteSessions(client,history,assignedSessions,assignedExercises);
@@ -10418,8 +10727,10 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
 }
 
 // ── PROGRESS TAB ──────────────────────────────────────────────────────────
-function ProgressTab({client, history, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises}) {
-  const [view, setView] = React.useState("fuerza");
+function ProgressTab({client, history, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises, game, initialView}) {
+  const [view, setView] = React.useState(initialView||"fuerza");
+  const segRef = React.useRef(null);
+  React.useEffect(()=>{ if(initialView) setTimeout(()=>{ try{ segRef.current&&segRef.current.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){} },150); },[]);
   const [showLog, setShowLog] = React.useState(false);
   const [showPR, setShowPR] = React.useState(false);
   const [log, setLog] = React.useState({date:TODAY,weight:"",body_fat:"",waist:"",notes:""});
@@ -10473,18 +10784,11 @@ function ProgressTab({client, history, myProgress, myRecords, myAchievements, ex
     </div>
   );
 
-  const ACHIEVEMENT_LIST = [
-    {type:"first_log",emoji:"📊",title:"Primera medición"},
-    {type:"first_pr",emoji:"🏆",title:"Primera marca"},
-    {type:"sessions_10",emoji:"💪",title:"10 sesiones"},
-    {type:"sessions_25",emoji:"🔥",title:"25 sesiones"},
-    {type:"streak_4",emoji:"⚡",title:"Racha 4 semanas"},
-  ];
 
   return(
     <div>
       <AthleteStats client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
-      <div className="seg" style={{marginBottom:14}}>
+      <div ref={segRef} className="seg" style={{marginBottom:14,scrollMarginTop:12}}>
         {[["fuerza","💪","Fuerza"],["volumen","📊","Volumen"],["stats","📏","Medidas"],["photos","📸","Fotos"],["badges","🏆","Logros"]].map(([id,ic,label])=>(
           <button key={id} className={"sb"+(view===id?" on":"")} onClick={()=>setView(id)} style={{fontSize:11,padding:"6px 2px",lineHeight:1.15,display:"flex",flexDirection:"column",alignItems:"center",gap:1}}><span style={{fontSize:15}}>{ic}</span>{label}</button>
         ))}
@@ -10537,23 +10841,7 @@ function ProgressTab({client, history, myProgress, myRecords, myAchievements, ex
         </div>
       )}
 
-      {view==="badges"&&(
-        <div>
-          <div style={{display:"grid",gridTemplateColumns:"1fr 1fr",gap:10}}>
-            {ACHIEVEMENT_LIST.map(a=>{
-              const earned = myAchievements.find(x=>x.type===a.type);
-              return(
-                <div key={a.type} className="card" style={{textAlign:"center",padding:16,opacity:earned?1:0.35,border:earned?"1px solid #bcd3ee":"1px solid var(--border)"}}>
-                  <div style={{fontSize:30,marginBottom:6}}>{a.emoji}</div>
-                  <div style={{fontSize:12,fontWeight:700,color:earned?"#0f172a":"#94a3b8"}}>{a.title}</div>
-                  {earned&&<div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>{new Date(earned.earned_at).toLocaleDateString("es-ES",{day:"numeric",month:"short"})}</div>}
-                  {!earned&&<div style={{fontSize:10,color:"#cbd5e1",marginTop:4}}>Por conseguir</div>}
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      )}
+      {view==="badges"&&game&&<LogrosView g={game} earned={myAchievements}/>}
 
       {showLog&&(
         <div className="ovl" onClick={()=>setShowLog(false)}>
@@ -13102,7 +13390,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 }
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
-ClientPortal=noTheme(ClientPortal); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
+ClientPortal=noTheme(ClientPortal); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
