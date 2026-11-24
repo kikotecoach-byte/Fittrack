@@ -1278,6 +1278,8 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
   const [openAdd,setOpenAdd] = React.useState(null); // {date,time} el coach apunta open a clientes híbridos
   const [slotMenu,setSlotMenu] = React.useState(null); // {date,time} elegir qué agendar en esa celda
   const [openHour,setOpenHour] = React.useState(null); // fecha para abrir una hora extra
+  const [selDays,setSelDays] = React.useState([]); // semana/mes: días seleccionados para editar a la vez
+  React.useEffect(()=>{ setSelDays([]); },[schedView,view]);
   const [showValoracion,setShowValoracion] = React.useState(null); // valoración/lead a crear o editar
   const [showLeads,setShowLeads] = React.useState(false); // lista de valoraciones/leads
   const [leadsClient,setLeadsClient] = React.useState(null); // filtra valoraciones de un cliente
@@ -1851,6 +1853,12 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     else notify("La semana anterior no tiene entrenos guardados","err");
   });
 
+  // Bloquear / desbloquear varios días a la vez (semana y mes con días seleccionados).
+  const blockDays = (dates, on) => w(async()=>{
+    if(on){ const ins=dates.filter(d=>!blocked.some(b=>b.date===d&&b.time==="ALL")).map(d=>({date:d,time:"ALL",reason:"Día bloqueado"})); if(ins.length) await sb.from("blocked_slots").insert(ins); }
+    else { const ids=blocked.filter(b=>dates.includes(b.date)&&b.time==="ALL").map(b=>b.id); if(ids.length) await sb.from("blocked_slots").delete().in("id",ids); }
+    setSelDays([]); notify(on?`${dates.length} día${dates.length>1?"s":""} bloqueado${dates.length>1?"s":""} 🚫`:`${dates.length} día${dates.length>1?"s":""} desbloqueado${dates.length>1?"s":""}`);
+  });
   const toggleBlockDay = (date) => w(async()=>{
     const ex=blocked.find(b=>b.date===date&&b.time==="ALL");
     if(ex) await sb.from("blocked_slots").delete().eq("id",ex.id);
@@ -2232,7 +2240,6 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 ["bell","Alertas",go("reminders"),reminders.length],
                 ["forum","Comunidad",go("forum"),forumNew],
                 ["gear","Horario",()=>{ setView("schedule"); setShowSched(true); }],
-                ["phone","WhatsApp a todos",()=>setShowBulkWA(true)],
               ];
               return(
                 <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(78px,1fr))",gap:8,marginBottom:14}}>
@@ -2507,7 +2514,11 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
             <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",marginBottom:14}}>
               <h1 className="mono" style={{fontSize:18,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="agenda" size={30}/>Agenda</h1>
               <div style={{display:"flex",gap:8}}>
-                <button className="btn ghost" style={{fontSize:12,padding:"8px 12px"}} onClick={()=>setShowSched(true)}>⚙️ Horario</button>
+                <ActMenu label="Más opciones de la agenda" btnStyle={{fontSize:13,fontWeight:800,padding:"8px 13px",borderRadius:12,border:"1px solid #dbe2ec",background:"#fff",color:"#334155",cursor:"pointer",fontFamily:"inherit"}} items={[
+                  (schedView==="day"||schedView==="week")&&["⛶","Pantalla completa",enterFit],
+                  ["🏖","Vacaciones / festivos",()=>setShowVacation(true)],
+                  ["⚙️","Horario semanal",()=>setShowSched(true)],
+                ]}>⋯ Más</ActMenu>
                 <button className="btn sky" style={{fontSize:12,padding:"8px 14px"}} onClick={()=>setShowNS(true)}>+ Nueva</button>
               </div>
             </div>
@@ -2535,7 +2546,11 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                       const o={day:"numeric",month:"short"};
                       return `${a.toLocaleDateString("es-ES",o)} — ${b.toLocaleDateString("es-ES",o)}`;
                     })()}</span>
-                  : <span style={{fontSize:14,fontWeight:600,color:"#64748b",flex:1,textAlign:"center"}}>{fmtLong(activeDay)}</span>
+                  : <div style={{flex:1,display:"flex",justifyContent:"center"}}><ActMenu label={`Editar el ${fmtLong(activeDay)}`} title="Toca para editar este día" btnStyle={{fontSize:14,fontWeight:700,color:"#334155",background:"none",border:"1px dashed #cbd5e1",borderRadius:12,padding:"6px 12px",cursor:"pointer",fontFamily:"inherit"}} items={[
+                      ["🔒","Abrir / cerrar horas de este día",()=>setOpenHour({date:activeDay,scope:"day"})],
+                      [blocked.some(b=>b.date===activeDay&&b.time==="ALL")?"✓":"🚫",blocked.some(b=>b.date===activeDay&&b.time==="ALL")?"Desbloquear el día":"Bloquear el día entero",()=>toggleBlockDay(activeDay)],
+                      ["📋","Nueva valoración este día",()=>setShowValoracion({date:activeDay})],
+                    ]}>{capFirst(fmtLong(activeDay))} ✎</ActMenu></div>
                 }
                 <button className="btn ghost" style={{padding:"6px 10px",fontSize:13,flexShrink:0}} onClick={()=>{
                   const d=new Date(activeDay+"T12:00:00");
@@ -2545,19 +2560,8 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               </div>
             )}
 
-            {/* Block day / vacation buttons */}
-            <div style={{display:"flex",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-              {(schedView==="day"||schedView==="week")&&<button className="btn sky" style={{fontSize:11,padding:"7px 12px"}} onClick={enterFit} title="Ver el día o la semana entera sin scroll">⛶ Pantalla completa</button>}
-              <button className="btn ghost" style={{fontSize:11,padding:"7px 12px"}}
-                onClick={()=>toggleBlockDay(activeDay)}>
-                {blocked.some(b=>b.date===activeDay&&b.time==="ALL")?"✓ Día desbloqueado":"🚫 Bloquear día"}
-              </button>
-              <button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#ca8a04"}}
-                onClick={()=>setShowVacation(true)}>🏖 Vacaciones</button>
-              {(schedView==="day"||schedView==="week")&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#0284c7"}}
-                onClick={()=>setOpenHour({date:activeDay,scope:schedView==="week"?"week":"day"})}>🔒 Bloquear / abrir horas{schedView==="week"?" de la semana":""}</button>}
-              {schedView==="day"&&<button className="btn ghost" style={{fontSize:11,padding:"7px 12px",color:"#7c3aed"}}
-                onClick={()=>setShowValoracion({date:activeDay})}>📋 + Valoración</button>}
+            {/* Aviso de valoraciones pendientes (el resto de acciones, en «⋯ Más») */}
+            <div style={{display:"flex",gap:8,marginBottom:10,flexWrap:"wrap"}}>
               {(schedView==="day"||schedView==="week")&&(()=>{
                 const days=schedView==="week"?getWeekDays(activeDay).slice(0,5):[activeDay];
                 const pend=(leads||[]).filter(l=>days.includes(l.date)&&l.status!=="cliente"&&l.status!=="descartado"&&!valDone(l)).length;
@@ -2629,11 +2633,11 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                       const cap=capOf(time), isWork=isWorkSlot(activeDay,time), isExtra=extraOf(activeDay).includes(time)&&!isBaseSlot(activeDay,time), xPriv=isWork&&isPrivExtra(activeDay,time), free=Math.max(0,cap-slots.length), full=slots.length>=cap;
                       return(
                         <div key={time} data-slot="1" data-day={activeDay} data-time={time} data-blocked={slotBlocked?"1":"0"} className={dropKey===(activeDay+"|"+time)?"drag-target":""} style={{minHeight:52,display:"flex",borderBottom:i<daySlots.length-1?"1px solid #e6ebf3":"none",transition:"background .4s, box-shadow .4s",boxShadow:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"inset 0 0 0 2px #0284c7":"none",background:(focusSlot&&focusSlot.date===activeDay&&focusSlot.time===time)?"#e3f0fd":dropKey===(activeDay+"|"+time)?"#eaf1fb":slotBlocked?((blockAt(activeDay,time)||{}).bg||"#fbecec"):isWork?"transparent":"#f1f4fa"}}>
-                          <div className="mono" onClick={()=>{ if(priv){ if(slots.length) setClassView({date:activeDay,time}); return; } if(slotBlocked)return; if(slots.length>0||ops.length>0) setClassView({date:activeDay,time}); else setQuickAdd({date:activeDay,time}); }}
+                          <div className="mono" role="button" aria-label={`Clase de las ${time}`} onClick={()=>{ if(slotBlocked&&!priv){ setSlotMenu({date:activeDay,time}); return; } setClassView({date:activeDay,time}); }}
                             style={{width:48,flexShrink:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:2,borderRight:"1px solid #e6ebf3",color:priv?"#7c3aed":slotBlocked?"#b56b6b":slots.length>0?"#0284c7":"#16a34a",fontSize:11,fontWeight:700,cursor:slotBlocked&&!(priv&&slots.length)?"default":"pointer"}}>
-                            {time}{(!slotBlocked||(priv&&slots.length>0))&&<span style={{fontSize:13}}>{slots.length>0?"👁":"➕"}</span>}
+                            {time}
                           </div>
-                          <div style={{flex:1,minWidth:0,padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"center"}}>
+                          <div onClick={(e)=>{ if(e.target!==e.currentTarget) return; if(slotBlocked&&!priv) setSlotMenu({date:activeDay,time}); else setClassView({date:activeDay,time}); }} style={{flex:1,minWidth:0,padding:"6px 9px",display:"flex",flexDirection:"column",gap:5,justifyContent:"center",cursor:"pointer"}}>
                             {slotBlocked&&!priv
                               ?(()=>{ const bi=blockAt(activeDay,time)||blockInfo(null); return(
                                 <div onClick={()=>setSlotMenu({date:activeDay,time})} style={{display:"flex",alignItems:"center",gap:9,background:bi.bg,border:`1px solid ${bi.bd}`,borderRadius:12,padding:"8px 10px",cursor:"pointer"}}>
@@ -2683,16 +2687,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                                         <span style={{fontSize:11,color:asig?"#0284c7":"#65a30d",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",display:"block"}}>🏋️ {planLbl}</span>
                                       </div>
                                     </div>
-                                    {done
-                                      ?<>
-                                        <span style={{fontSize:12,fontWeight:700,color:"#16a34a",whiteSpace:"nowrap"}}>✓ Vino</span>
-                                        <button title="Deshacer asistencia" style={{background:"none",border:"none",cursor:"pointer",color:"#94a3b8",fontSize:15,padding:"2px 5px"}} onClick={()=>uncompleteSession(s)}>↺</button>
-                                      </>
-                                      :<>
-                                        <button title="Mover a otra hora" style={{background:"none",border:"none",cursor:"pointer",color:"#0284c7",fontSize:16,padding:"2px 5px"}} onClick={()=>setMoveSess(s)}>🕐</button>
-                                        <button className="btn grn" style={{fontSize:12,padding:"7px 14px",whiteSpace:"nowrap"}} onClick={()=>completeSession(s)}>✓ Vino</button>
-                                        <button title="Eliminar sesión: no vino o se anula (no cuenta en el bono)" aria-label={`Eliminar sesión de ${s.client.name.split(" ")[0]}`} style={{background:"#fbe6e6",border:"1px solid #f2cccc",borderRadius:8,cursor:"pointer",color:"#dc2626",fontSize:13,fontWeight:700,padding:"7px 10px"}} onClick={()=>deleteSession(s.id)}>✗</button>
-                                      </>}
+                                    {done&&<span style={{fontSize:12,fontWeight:700,color:"#16a34a",whiteSpace:"nowrap"}}>✓ Vino</span>}
                                   </div>
                                   );
                                 })}
@@ -2721,13 +2716,8 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                                   {(isExtra||xPriv)&&<button type="button" onClick={()=>toggleExtraPriv(activeDay,time)} aria-pressed={xPriv} title={xPriv?"Privada: solo tú la ves. Toca para abrirla a todos":"General: los atletas pueden reservarla. Toca para hacerla privada"}
                                     style={{fontSize:10,fontWeight:800,cursor:"pointer",fontFamily:"inherit",borderRadius:20,padding:"2px 8px",color:xPriv?"#7c3aed":"#4d7c0f",background:xPriv?"#f3ecfb":"#eef8dd",border:`1px solid ${xPriv?"#e0d2f5":"#cbe8a4"}`}}>{xPriv?"🔒 privada · solo tú":"🌍 general"} ⇄</button>}
                                   {isExtra&&slots.length===0&&<button title="Cerrar esta hora extra" onClick={()=>closeExtraHour(activeDay,time)} style={{fontSize:10,fontWeight:700,color:"#dc2626",background:"none",border:"1px solid #f2cccc",borderRadius:20,padding:"1px 8px",cursor:"pointer"}}>✕ cerrar</button>}
-                                  {!slotBlocked&&isWork&&free>0&&<span style={{fontSize:10,color:"#5f9e77",fontWeight:700}}>{free} libre{free>1?"s":""}</span>}
-                                  {!slotBlocked&&!isWork&&slots.length===0&&slotVals.length===0&&ops.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>setSlotMenu({date:activeDay,time})}>Fuera de horario · 🔒</span>}
+                                  {!slotBlocked&&!isWork&&slots.length===0&&slotVals.length===0&&ops.length===0&&<span style={{fontSize:11,color:"#cbd5e1",cursor:"pointer"}} onClick={()=>setClassView({date:activeDay,time})}>Fuera de horario</span>}
                                   <div style={{marginLeft:"auto",display:"flex",alignItems:"center",gap:6,flexWrap:"wrap",justifyContent:"flex-end"}}>
-                                    {!slotBlocked&&<button title="Añadir un cliente a esta hora" onClick={()=>setQuickAdd({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #bcd3ee",background:"#eef4fc",color:"#0284c7",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>➕ Entreno</button>}
-                                    {!slotBlocked&&hybClients.length>0&&<button title="Apuntar a un open a esta hora (clientes híbridos)" onClick={()=>setOpenAdd({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #b5e3da",background:"#f0faf7",color:"#0f766e",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>🔓 Open</button>}
-                                    {!slotBlocked&&<button title="Agendar una valoración a esta hora" onClick={()=>setShowValoracion({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #e0d2f5",background:"#f3ecfb",color:"#7c3aed",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 12px",whiteSpace:"nowrap"}}>📋 Valoración</button>}
-                                    {!slotBlocked&&<button title="Reservar la hora: clase privada, valoración o bloqueo" onClick={()=>setSlotMenu({date:activeDay,time})} style={{borderRadius:20,border:"1px solid #e6ebf3",background:"#fff",color:"#475569",fontSize:12,fontWeight:700,cursor:"pointer",padding:"5px 10px",whiteSpace:"nowrap"}}>🔐</button>}
                                     {!slotBlocked&&isWork&&<span style={{fontSize:10,fontWeight:700,color:full?"#ca8a04":"#16a34a",background:(full?"#ca8a04":"#16a34a")+"14",border:`1px solid ${(full?"#ca8a04":"#16a34a")}30`,borderRadius:20,padding:"2px 8px",whiteSpace:"nowrap"}}>{slots.length}/{cap}</span>}
                                   </div>
                                 </div>
@@ -2739,7 +2729,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                     })}
                   </div>
                   <div style={{flexShrink:0,borderTop:"1px solid #e6ebf3",padding:"6px 10px",fontSize:10,color:"#94a3b8"}}>
-                    <b style={{color:"#16a34a"}}>✓ Vino</b> (queda marcado · ↺ deshacer) · <b style={{color:"#dc2626"}}>✗ No vino</b> · <b style={{color:"#0284c7"}}>🕐 Mover</b> · mantén pulsado el nombre y arrástralo para cambiar de hora
+                    <b style={{color:"#0284c7"}}>Toca una clase</b> para apuntar, marcar asistencia, mover o eliminar · toca la fecha para editar el día · mantén pulsado un nombre y arrástralo para cambiar de hora
                   </div>
                 </div>
               );
@@ -2760,21 +2750,19 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 ...(openSessions||[]).filter(o=>weekDays.includes(o.date)&&o.time).map(o=>String(o.time).slice(0,5))])).sort();
               return(
                 <div className="swipe" style={weekBig?{display:"flex",flexDirection:"column"}:{display:"flex",flexDirection:"column",height:"calc(100dvh - 296px)",minHeight:300,maxHeight:660}}>
-                  <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:6}}>
-                    <button className="btn ghost" style={{fontSize:11,padding:"6px 11px"}} onClick={()=>setWeekBig(v=>!v)}>{weekBig?"🔽 Vista compacta":"⛶ Vista amplia"}</button>
-                    <button className="btn ghost" style={{fontSize:11,padding:"6px 11px",color:"#0284c7"}} onClick={()=>setShowValoracion({date:activeDay})}>📋 + Valoración</button>
-                    {vw<768&&<span style={{fontSize:10,color:"#94a3b8"}}>🔄 Gira el móvil para verla más ancha</span>}
-                  </div>
+                  <div style={{fontSize:10.5,color:"#94a3b8",marginBottom:6,textAlign:"center"}}>Toca uno o varios días (arriba) para editarlos a la vez</div>
                   {/* Header row - days */}
                   <div style={{display:"grid",gridTemplateColumns:cols,gap:2}}>
                     <div/>
                     {weekDays.map(day=>{
                       const isToday=day===TODAY;
                       const isBlkDay=blocked.some(b=>b.date===day&&b.time==="ALL");
+                      const sel=selDays.includes(day);
                       return(
-                        <div key={day} style={{textAlign:"center",padding:"4px 2px",borderRadius:8,
-                          background:isToday?"#dcebfb":isBlkDay?"#fbe6e6":"#f1f4fa",
-                          border:isToday?"1px solid #bcd3ee":isBlkDay?"1px solid #f2cccc":"1px solid #e6ebf3"}}>
+                        <div key={day} role="button" aria-pressed={sel} data-selday={day} onClick={()=>setSelDays(v=>v.includes(day)?v.filter(x=>x!==day):[...v,day])} style={{textAlign:"center",padding:"4px 2px",borderRadius:8,cursor:"pointer",position:"relative",
+                          background:sel?"#dcebfb":isToday?"#eef4fc":isBlkDay?"#fbe6e6":"#f1f4fa",
+                          border:sel?"2px solid #0284c7":isToday?"1px solid #bcd3ee":isBlkDay?"1px solid #f2cccc":"1px solid #e6ebf3"}}>
+                          {sel&&<span style={{position:"absolute",top:0,right:3,fontSize:10,fontWeight:900,color:"#0284c7"}}>✓</span>}
                           <div style={{fontSize:10,color:isBlkDay?"#b56b6b":isToday?"#0284c7":"#64748b",fontWeight:700,textTransform:"capitalize"}}>
                             {new Date(day+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}
                           </div>
@@ -2782,7 +2770,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                             {new Date(day+"T12:00:00").getDate()}
                           </div>
                           {(()=>{ const n=(openSessions||[]).filter(o=>o.date===day&&clients.some(c=>c.id===o.client_id)).length, sinH=(openSessions||[]).filter(o=>o.date===day&&!o.time&&clients.some(c=>c.id===o.client_id)).length;
-                            return n>0&&<button type="button" onClick={()=>{ setActiveDay(day); setSchedView("day"); }} title={`${n} open este día${sinH?` (${sinH} sin hora)`:""} · toca para verlos`} aria-label={`${n} open el ${fmtDate(day)}`}
+                            return n>0&&<button type="button" onClick={(e)=>{ e.stopPropagation(); setActiveDay(day); setSchedView("day"); }} title={`${n} open este día${sinH?` (${sinH} sin hora)`:""} · toca para verlos`} aria-label={`${n} open el ${fmtDate(day)}`}
                               style={{marginTop:2,fontSize:9,fontWeight:800,color:"#0f766e",background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:20,padding:"0 6px",cursor:"pointer",fontFamily:"inherit"}}>🔓{n}</button>; })()}
                         </div>
                       );
@@ -2880,11 +2868,12 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                           border:isToday?"1.5px solid #0284c7":isVac?"1px solid #cbe8a4":isFest?"1px solid #eed7bd":isBlk?"1px solid #f2cccc":"1px solid #eef1f7",
                           opacity:!cell.cur?0.35:1,
                         }}
+                        role={cell.cur?"button":undefined} aria-pressed={cell.cur?selDays.includes(dateStr):undefined} data-selday={cell.cur?dateStr:undefined}
                         onClick={()=>{
                           if(!cell.cur) return;
-                          if(isBlk){toggleBlockDay(dateStr);}
-                          else{setActiveDay(dateStr);setSchedView("day");}
+                          setSelDays(v=>v.includes(dateStr)?v.filter(x=>x!==dateStr):[...v,dateStr]);
                         }}>
+                          {selDays.includes(dateStr)&&<span style={{position:"absolute",inset:0,border:"2.5px solid #0284c7",borderRadius:9,pointerEvents:"none"}}/>}
                           <span style={{fontSize:13,fontWeight:isToday?800:600,color:!cell.cur?"#cbd5e1":isToday?"#0284c7":off?"#94a3b8":"#334155"}}>{cell.day}</span>
                           {cnt>0&&!off&&<span style={{fontSize:10,fontWeight:800,color:"#0284c7",background:"#ffffff",border:"1px solid #bcd3ee",borderRadius:20,padding:"0 5px",lineHeight:"15px"}}>{cnt}</span>}
                           {cnt>0&&(isBlk||isVac||isFest)&&<span style={{fontSize:9,fontWeight:700,color:"#64748b"}}>{cnt}</span>}
@@ -2904,10 +2893,24 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                   <span>🌴 finde</span>
                   <span>🚫 bloqueado</span>
                   <span>🏖 vacaciones</span>
+                  <span style={{flexBasis:"100%",textAlign:"center"}}>Toca uno o varios días para verlos o editarlos a la vez</span>
                 </div>
               </div>
             )}
-            {schedView==="week"&&<p style={{fontSize:11,color:"#94a3b8",marginTop:10}}>💡 Toca una celda para añadir un entreno, una valoración o bloquear la hora</p>}
+            {selDays.length>0&&(schedView==="week"||schedView==="month")&&(()=>{ const ds=[...selDays].sort(), allBlk=ds.every(d=>blocked.some(b=>b.date===d&&b.time==="ALL")), anyBlk=ds.some(d=>blocked.some(b=>b.date===d&&b.time==="ALL")); return(
+              ReactDOM.createPortal(<div data-selbar="1" style={{position:"fixed",left:12,right:12,bottom:"calc(92px + env(safe-area-inset-bottom))",zIndex:150,maxWidth:560,margin:"0 auto",background:"#fff",border:"1px solid #bcd3ee",borderRadius:16,boxShadow:"0 14px 34px rgba(15,23,42,.28)",padding:"10px 12px"}}>
+                <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:8}}>
+                  <b style={{flex:1,minWidth:0,fontSize:13,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{ds.length} día{ds.length>1?"s":""} · {ds.map(d=>new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric"}).replace(".","")).join(", ")}</b>
+                  <button type="button" aria-label="Quitar selección" onClick={()=>setSelDays([])} style={{border:"none",background:"none",fontSize:16,color:"#64748b",cursor:"pointer"}}>✕</button>
+                </div>
+                <div style={{display:"flex",gap:6,flexWrap:"wrap"}}>
+                  <button className="btn sky" style={{fontSize:12,padding:"8px 11px"}} onClick={()=>setOpenHour({date:ds[0],dates:ds})}>🔒 Abrir / cerrar horas</button>
+                  {!allBlk&&<button className="btn ghost" style={{fontSize:12,padding:"8px 11px"}} onClick={()=>blockDays(ds,true)}>🚫 Bloquear</button>}
+                  {anyBlk&&<button className="btn ghost" style={{fontSize:12,padding:"8px 11px"}} onClick={()=>blockDays(ds,false)}>✓ Desbloquear</button>}
+                  {ds.length===1&&<button className="btn ghost" style={{fontSize:12,padding:"8px 11px"}} onClick={()=>{ setActiveDay(ds[0]); setSchedView("day"); setSelDays([]); }}>Ver el día ›</button>}
+                </div>
+              </div>,document.body)); })()}
+            {schedView==="week"&&<p style={{fontSize:11,color:"#94a3b8",marginTop:10}}>💡 Toca una celda para añadir; toca los días de arriba para bloquearlos o abrir/cerrar horas de varios a la vez</p>}
           </div>
         )}
 
@@ -3093,7 +3096,11 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
       {showNC&&<ClientModal nc={nc} setNc={setNc} onSave={addClient} onClose={()=>setShowNC(false)}/>}
       {showPay&&(()=>{ const pc=allClients.find(x=>x.id===showPay.id)||showPay; return <PayModal client={pc} payments={payments} saving={saving} onSave={(amt,d)=>markPayment(pc,amt,d)} onUpdate={updatePayment} onDelete={deletePayment} onClose={()=>setShowPay(null)}/>; })()}
       {showEdit&&<EditBonoModal client={showEdit} saving={saving} onSave={(d)=>saveBono(showEdit,d)} onClose={()=>setShowEdit(null)}/>}
-      {classView&&<ClassViewModal openSessions={openSessions} loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={allClients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{openExec(client,classView.date);setClassView(null);}} onClose={()=>setClassView(null)}/>}
+      {classView&&<ClassViewModal openSessions={openSessions} loadAll={loadAll} notify={notify} units={config.equipUnits} date={classView.date} time={classView.time} sessions={sessions} history={history} clients={allClients} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} clientWeights={clientWeights} annualBlocks={annualBlocks} onSetType={(client,dayType)=>materializeRoutine(client,classView.date,dayType)} onQuick={(client)=>quickRecord(client,classView.date)} onQuickAll={()=>quickRecordClass(classView.date,classView.time)} onExecClass={()=>{setClassExec({date:classView.date,time:classView.time});setClassView(null);}} onEditSession={(client)=>{setSessionEdit({client,date:classView.date});setClassView(null);}} onExec={(client)=>{openExec(client,classView.date);setClassView(null);}}
+        onAdd={()=>{ setQuickAdd({date:classView.date,time:classView.time}); setClassView(null); }} onOpenAdd={hybClients.length?()=>{ setOpenAdd({date:classView.date,time:classView.time}); setClassView(null); }:null}
+        onValoracion={()=>{ setShowValoracion({date:classView.date,time:classView.time}); setClassView(null); }} onSlotMenu={()=>{ setSlotMenu({date:classView.date,time:classView.time}); setClassView(null); }}
+        onVino={(s)=>completeSession(s)} onUndo={(s)=>uncompleteSession(s)} onMove={(s)=>{ setMoveSess(s); setClassView(null); }} onDelete={(s)=>{ if(window.confirm(`¿Eliminar la sesión de ${s.client.name.split(" ")[0]}? No cuenta en el bono.`)) deleteSession(s.id); }}
+        onClose={()=>setClassView(null)}/>}
       {waClient&&<WAModal client={waClient} onClose={()=>setWaClient(null)} notify={notify}/>}
       {showVacation&&<VacationModal onSave={blockVacation} onClose={()=>setShowVacation(false)}/>}
       {showBulkWA&&<BulkWAModal clients={clients} sessions={sessions} onClose={()=>setShowBulkWA(false)} notify={notify}/>}
@@ -3124,7 +3131,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
         onValoracion={()=>{const s=slotMenu;setSlotMenu(null);setShowValoracion({date:s.date,time:s.time});}}
         onBlock={(kind,note,cid,drop)=>{const s=slotMenu;setSlotMenu(null);toggleBlock(s.date,s.time,kind,note,cid,drop);}}
         onClose={()=>setSlotMenu(null)}/>}
-      {openHour&&<HoursModal date={openHour.date} initialScope={openHour.scope} initialVis={openHour.vis} workSlots={weekHoursOf(config,1)} baseOf={baseOf} extraOf={extraOf} privOf={(d)=>extraPrivOf(config,d)} blocked={blocked} sessions={sessions} onApply={applyHours} onClose={()=>setOpenHour(null)}/>}
+      {openHour&&<HoursModal date={openHour.date} dates={openHour.dates} initialScope={openHour.scope} initialVis={openHour.vis} workSlots={weekHoursOf(config,1)} baseOf={baseOf} extraOf={extraOf} privOf={(d)=>extraPrivOf(config,d)} blocked={blocked} sessions={sessions} onApply={(...a)=>{ applyHours(...a); setSelDays([]); }} onClose={()=>setOpenHour(null)}/>}
       {showPhotos&&<PhotosModal client={showPhotos} loadAll={loadAll} notify={notify} onClose={()=>setShowPhotos(null)}/>}
       {showLeads&&<LeadsModal leads={leadsClient?leads.filter(l=>l.converted_client_id===leadsClient.id):leads} client={leadsClient} onOpen={(l)=>{setShowLeads(false);setShowValoracion(l);}} onNew={()=>{setShowLeads(false);setShowValoracion(leadsClient?{date:activeDay,name:leadsClient.name,converted_client_id:leadsClient.id,status:"cliente"}:{date:activeDay});}} onClose={()=>{setShowLeads(false);setLeadsClient(null);}}/>}
       <ExerciseHistoryHost assignedSessions={assignedSessions} assignedExercises={assignedExercises} coach notify={notify}/>
@@ -3840,7 +3847,8 @@ function PhotosModal({client,loadAll,notify,onClose}) {
 // Bloquear / abrir horas de un día, de toda la semana (L-V) o del fin de semana (S-D), y repetirlo varias semanas.
 // Horas de tu horario: abierta ↔ bloqueada (con el motivo elegido). Fuera de horario: — ↔ abierta (extra).
 // Las horas extra que se abren pueden ser generales (los atletas las reservan) o privadas (solo el coach).
-function HoursModal({date,initialScope,initialVis,workSlots,baseOf,extraOf,privOf,blocked,sessions,onApply,onClose}){
+function HoursModal({date,dates:pick,initialScope,initialVis,workSlots,baseOf,extraOf,privOf,blocked,sessions,onApply,onClose}){
+  const custom=Array.isArray(pick)&&pick.length>0;
   const [scope,setScope]=React.useState(initialScope||"day"); // day | week | wknd
   const [weeks,setWeeks]=React.useState(1);
   const [kind,setKind]=React.useState("Cerrada");
@@ -3848,7 +3856,7 @@ function HoursModal({date,initialScope,initialVis,workSlots,baseOf,extraOf,privO
   const [vis,setVis]=React.useState(initialVis||"pub"); // pub | priv (horas extra que se abren)
   const [want,setWant]=React.useState({}); // hora → "open" | "closed" | "off"
   const mon=mondayOfDate(date), all7=getWeekDays(mon);
-  const base=scope==="day"?[date]:scope==="wknd"?all7.slice(5):all7.slice(0,5);
+  const base=custom?[...pick].sort():scope==="day"?[date]:scope==="wknd"?all7.slice(5):all7.slice(0,5);
   const dates=Array.from({length:weeks},(_,i)=>base.map(d=>addDays(d,7*i))).flat().filter(d=>d>=TODAY||d===date);
   const blockOf=(d,t)=>blocked.find(b=>b.date===d&&b.time===t);
   // Hora fija (horario semanal) en todos los días elegidos; los días sin horario abren sus horas como extra.
@@ -3874,7 +3882,7 @@ function HoursModal({date,initialScope,initialVis,workSlots,baseOf,extraOf,privO
   const sameAsWeek=()=>setWant(w=>{ const n={...w}; workSlots.forEach(t=>{ if(now(t)!=="open") n[t]="open"; }); return n; });
   const opening=Object.entries(want).some(([t,v])=>v==="open"&&!isWork(t));
   const sty={open:{bg:"#fff",bd:"#bcd3ee",fg:"#0284c7"},closed:{bg:K.fg,bd:K.fg,fg:"#fff"},off:{bg:"#f1f4fa",bd:"#e6ebf3",fg:"#94a3b8"}};
-  const period=scope==="day"?(weeks>1?`los ${new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} de ${weeks} semanas`:capFirst(fmtLong(date)))
+  const period=custom?`${base.length} día${base.length>1?"s":""}: ${base.map(d=>new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short",day:"numeric",month:"short"}).replace(".","")).join(", ")}${weeks>1?` · ${weeks} semanas`:""}`:scope==="day"?(weeks>1?`los ${new Date(date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"})} de ${weeks} semanas`:capFirst(fmtLong(date)))
     :scope==="wknd"?(weeks>1?`sábados y domingos de ${weeks} semanas (desde el ${fmtDate(base[0])})`:`fin de semana del ${fmtDate(base[0])} y ${fmtDate(base[1])}`)
     :(weeks>1?`L-V de ${weeks} semanas (desde el ${fmtDate(base[0])})`:`semana del ${fmtDate(base[0])} al ${fmtDate(base[4])}`);
   return(
@@ -3882,11 +3890,11 @@ function HoursModal({date,initialScope,initialVis,workSlots,baseOf,extraOf,privO
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:460,maxHeight:"94vh",display:"flex",flexDirection:"column"}}>
         <h2 className="mono" style={{fontSize:16,fontWeight:700,marginBottom:2}}>🔒 Bloquear / abrir horas</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>{period} · toca una hora para cambiarla.</p>
-        <div className="seg" style={{marginBottom:8}}>
+        {!custom&&<div className="seg" style={{marginBottom:8}}>
           <button className={"sb"+(scope==="day"?" on":"")} onClick={()=>pickScope("day")} style={{fontSize:12}}>Solo este día</button>
           <button className={"sb"+(scope==="week"?" on":"")} onClick={()=>pickScope("week")} style={{fontSize:12}}>Semana (L-V)</button>
           <button className={"sb"+(scope==="wknd"?" on":"")} onClick={()=>pickScope("wknd")} style={{fontSize:12}}>Finde (S-D)</button>
-        </div>
+        </div>}
         {wk&&<div style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",background:"#eef8dd",border:"1px solid #cbe8a4",borderRadius:12,padding:"7px 10px",marginBottom:8}}>
           <span style={{flex:1,minWidth:150,fontSize:11,fontWeight:700,color:"#4d7c0f"}}>🌴 Sin horario fijo{scope==="day"?"":" algún día"}: toca las horas que quieras abrir, tantas como quieras.</span>
           <button type="button" className="btn ghost" style={{fontSize:11,padding:"5px 10px"}} onClick={sameAsWeek}>＋ Mismo horario que entre semana</button>
@@ -4671,7 +4679,7 @@ function ClassExList({raw,loadAll,notify,clientId,date,sessions,assignedSessions
       </div>); })}
   </div>;
 }
-function ClassViewModal({openSessions,units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,loadAll,notify,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onClose}) {
+function ClassViewModal({openSessions,units,date,time,sessions,history,clients,assignedSessions,assignedExercises,sessionTemplates,clientWeights,annualBlocks,loadAll,notify,onSetType,onQuick,onQuickAll,onExecClass,onEditSession,onExec,onAdd,onOpenAdd,onValoracion,onSlotMenu,onVino,onUndo,onMove,onDelete,onClose}) {
   const [classTimer,setClassTimer]=React.useState(null);
   const blk=blockForDate(annualBlocks,date);
   const slot=(sessions||[]).filter(s=>s.date===date&&s.time===time).map(s=>({...s,client:clients.find(c=>c.id===s.client_id)})).filter(s=>s.client);
@@ -4695,6 +4703,14 @@ function ClassViewModal({openSessions,units,date,time,sessions,history,clients,a
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
         <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{opn.length?` + ${opn.length} open`:""}{blk?` · ${blk.name}`:""}</p>
 
+        {/* Todo lo de la clase en un sitio: añadir, valoración, privada/bloquear */}
+        {(onAdd||onValoracion||onSlotMenu)&&<div data-classacts="1" style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
+          {onAdd&&<button className="btn sky" style={{fontSize:12,padding:"8px 12px"}} onClick={onAdd}>➕ Apuntar a alguien</button>}
+          {onOpenAdd&&<button className="btn ghost" style={{fontSize:12,padding:"8px 12px",color:"#0f766e"}} onClick={onOpenAdd}>🔓 Open</button>}
+          {onValoracion&&<button className="btn ghost" style={{fontSize:12,padding:"8px 12px",color:"#7c3aed"}} onClick={onValoracion}>📋 Valoración</button>}
+          {onSlotMenu&&<button className="btn ghost" style={{fontSize:12,padding:"8px 12px"}} onClick={onSlotMenu}>🔐 Privada / bloquear</button>}
+        </div>}
+        {slot.length===0&&opn.length===0&&<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"14px 0"}}>Aún no hay nadie en esta clase.</div>}
         {/* Mapa de la sala: material y cuellos de botella */}
         <RoomMap people={[...rutinas.map(({s,r})=>({client:s.client,exs:r.exs.map(e=>e.name)})),...opn.map(x=>({client:x.client,exs:x.r.exs.map(e=>e.name)}))]} units={units}/>
         {opn.length>0&&<div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
@@ -4748,6 +4764,12 @@ function ClassViewModal({openSessions,units,date,time,sessions,history,clients,a
                 {done&&<span style={{fontSize:11,fontWeight:700,color:"#16a34a",whiteSpace:"nowrap"}}>✓ Registrado</span>}
                 {onEditSession&&<button className="btn ghost" style={{fontSize:12,padding:"6px 9px"}} onClick={()=>onEditSession(c)} title="Cambiar/quitar/añadir ejercicios (necesidad o sala)">✏️</button>}
                 {onExec&&<button className="btn ghost" style={{fontSize:12,padding:"6px 9px"}} onClick={()=>onExec(c)} title="Ejecutar con cargas exactas">▶</button>}
+                {(onVino||onMove||onDelete)&&<ActMenu label={`Más de ${c.name.split(" ")[0]}`} btnStyle={{background:"none",border:"1px solid #e6ebf3",borderRadius:10,cursor:"pointer",color:"#64748b",fontSize:16,fontWeight:900,padding:"3px 9px",lineHeight:1,fontFamily:"inherit"}} items={[
+                  onVino&&!done&&["✓","Vino (solo asistencia)",()=>onVino(s)],
+                  onUndo&&done&&["↺","Deshacer asistencia",()=>onUndo(s)],
+                  onMove&&!done&&["🕐","Mover a otra hora",()=>onMove(s)],
+                  onDelete&&["✕","Eliminar sesión (no cuenta en el bono)",()=>onDelete(s),{danger:true,aria:`Eliminar sesión de ${c.name.split(" ")[0]}`}],
+                ]}>⋯</ActMenu>}
               </div>
 
               {/* Ejercicios desglosados (si ya tiene su entreno creado, se ordenan arrastrando) */}
@@ -4989,6 +5011,23 @@ function useDragSort(keys, onDrop, opts){
 }
 // Menú de atajos para mover un ejercicio (o un WOD entero) dentro de la sesión.
 // extra = [{ico,label,sub,run}] acciones añadidas por cada vista (p. ej. pasar a otro día).
+// Menú de acciones compacto: un botón (⋯ o ＋) que despliega las opciones.
+function ActMenu({items,label,children,btnStyle,title}){
+  const [pos,setPos]=React.useState(null);
+  const list=(items||[]).filter(Boolean);
+  const open=(e)=>{ e.stopPropagation(); const r=e.currentTarget.getBoundingClientRect(); setPos({r:Math.max(8,window.innerWidth-r.right),top:r.bottom+6,up:r.bottom+6+list.length*46>window.innerHeight-10,bottom:window.innerHeight-r.top+6}); };
+  React.useLayoutEffect(()=>{ if(!pos) return; const k=(e)=>{ if(e.key==="Escape"){ e.stopPropagation(); setPos(null); } }; window.addEventListener("keydown",k,true); return ()=>window.removeEventListener("keydown",k,true); },[pos]);
+  return(<>
+    <button type="button" aria-haspopup="menu" aria-expanded={!!pos} aria-label={label} title={title||label} onClick={open} style={btnStyle}>{children}</button>
+    {pos&&ReactDOM.createPortal(<div onClick={()=>setPos(null)} style={{position:"fixed",inset:0,zIndex:2000}}>
+      <div role="menu" aria-label={label} onClick={e=>e.stopPropagation()} className="fade"
+        style={{position:"fixed",right:pos.r,...(pos.up?{bottom:pos.bottom}:{top:pos.top}),minWidth:220,maxWidth:"calc(100vw - 16px)",background:"#fff",border:"1px solid #e6ebf3",borderRadius:14,boxShadow:"0 16px 40px rgba(15,23,42,.25)",padding:6}}>
+        {list.map(([ico,txt,run,opt])=><button key={txt} type="button" role="menuitem" aria-label={(opt&&opt.aria)||undefined} onClick={()=>{ setPos(null); run(); }}
+          style={{display:"flex",alignItems:"center",gap:10,width:"100%",textAlign:"left",border:"none",background:"none",borderRadius:10,padding:"10px 11px",cursor:"pointer",fontFamily:"inherit",fontSize:14,fontWeight:700,color:opt&&opt.danger?"#dc2626":"#0f172a"}}>
+          <span style={{width:22,textAlign:"center",fontSize:16}}>{ico}</span>{txt}</button>)}
+      </div></div>,document.body)}
+  </>);
+}
 function ExMoveMenu({x,y,label,idx,n,extra,onMove,onClose}){
   const t0=React.useRef(performance.now()), ref=React.useRef(null);
   const [pos,setPos]=React.useState({left:x,top:y,vis:false});
