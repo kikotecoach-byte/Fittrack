@@ -307,9 +307,9 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
 .book-panel{min-height:calc(100vh - 150px);}
 .book-grid{height:76vh;min-height:420px;}
 @supports (height:100dvh){.book-grid{height:76dvh;}}
-.book-emb{min-height:0 !important;}
-.book-emb .book-grid{height:62vh;min-height:380px;}
-@supports (height:100dvh){.book-emb .book-grid{height:62dvh;}}
+.book-emb{min-height:0 !important;flex:1 1 auto;padding:8px !important;}
+.book-emb .book-grid{height:auto !important;min-height:0 !important;flex:1 1 auto !important;overflow:hidden !important;padding:6px !important;gap:4px !important;}
+.book-emb .book-grid button{padding:2px !important;}
 .book-grid{overflow-y:auto;overscroll-behavior:contain;}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 .pt-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -8794,6 +8794,13 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
     const taken=allSessions.filter(s=>s.date===w.date&&s.time===w.time).length;
     return !blk && taken<capOfC(w.time);
   });
+  // Inicio sin scroll: el bloque ocupa justo lo que queda hasta el menú de abajo.
+  const homeRef=React.useRef(null); const [homeH,setHomeH]=React.useState(null);
+  React.useLayoutEffect(()=>{ if(tab!=="inicio"){ setHomeH(null); return; } const fit=()=>{ const el=homeRef.current; if(!el) return;
+      const nav=document.querySelector(".portal-nav"), navH=nav?nav.getBoundingClientRect().height:84;
+      const top=el.getBoundingClientRect().top+window.scrollY, h=Math.floor(window.innerHeight-top-navH-8);
+      setHomeH(h>=420?h:null); };
+    fit(); const t=setTimeout(fit,250); window.addEventListener("resize",fit); return ()=>{ clearTimeout(t); window.removeEventListener("resize",fit); }; },[tab,client.sessions_left,freedWaits.length,(waitlist||[]).length]);
   const grabWaitlistSpot=async(wtry)=>{
     if(client.sessions_left<=0) return notify("Sin sesiones en tu bono","err");
     const taken=allSessions.filter(s=>s.date===wtry.date&&s.time===wtry.time).length;
@@ -8833,7 +8840,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
     h.style.background=DK.bg; b.style.background=DK.bg; return ()=>{ h.style.background=ph; b.style.background=pb; }; },[tab,preview]);
   const Sec=({children})=><div style={{fontSize:11,color:"#64748b",fontWeight:800,letterSpacing:.3,margin:"20px 2px 9px",textTransform:"uppercase"}}>{children}</div>;
   return(<>
-    <div style={{minHeight:"100vh",maxWidth:480,margin:"0 auto",padding:"18px 16px calc(100px + env(safe-area-inset-bottom))"}} className="fade portal-root">
+    <div style={{minHeight:tab==="inicio"&&homeH?"auto":"100vh",maxWidth:480,margin:"0 auto",padding:tab==="inicio"&&homeH?"12px 14px 0":"18px 16px calc(100px + env(safe-area-inset-bottom))"}} className="fade portal-root">
       <ExerciseHistoryHost assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} notify={notify}/>
       <ExPhotoHost notify={notify}/>
       {saving&&<div style={{position:"fixed",top:0,left:0,right:0,height:2,background:"linear-gradient(90deg,#ff7a45,#f2441d)",zIndex:500}}/>}
@@ -8856,31 +8863,28 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
       {tab==="inicio"&&<>
         {/* Fondo oscuro a pantalla completa solo en Inicio */}
         <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:-1,background:"radial-gradient(90% 40% at 85% -5%,rgba(242,68,29,.20),transparent 70%),#0b0b0e",pointerEvents:"none"}}/>
-        {/* Cabecera: marca, saludo y acceso directo a su coach */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
+        {/* Cabecera en una fila: saludo, coach, ayuda, salir y foto */}
+        {(()=>{ const h=new Date().getHours(), hello=h>=6&&h<14?"Buenos días":h>=14&&h<21?"Buenas tardes":"Buenas noches"; return(
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
           <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
             <span style={{width:32,height:32,borderRadius:10,background:DK.acG,display:"grid",placeItems:"center",fontSize:16,boxShadow:"0 4px 16px rgba(242,68,29,.5)",flexShrink:0}}>🔥</span>
-            <span style={{fontWeight:800,letterSpacing:1.6,fontSize:13,color:DK.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{GYM_NAME.toUpperCase()}</span>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:11,color:DK.mu,fontWeight:700,lineHeight:1.1}}>{hello},</div>
+              <div style={{fontSize:19,fontWeight:800,color:DK.tx,lineHeight:1.15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{client.name.split(" ")[0]} 👋</div>
+            </div>
           </div>
-          <div style={{display:"flex",alignItems:"center",gap:9,flexShrink:0}}>
+          <div style={{display:"flex",alignItems:"center",gap:7,flexShrink:0}}>
+            <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-ghost" aria-label="Escribir a tu coach por WhatsApp" title="Tu coach" style={{padding:"7px 10px",textDecoration:"none"}}>💬</a>
             <button className="dk-ghost" onClick={()=>setShowTut(true)} aria-label="Cómo funciona la app (tutorial)" title="Cómo funciona" style={{padding:"7px 11px",fontWeight:900}}>?</button>
             <button className="dk-ghost" onClick={onLogout}>{preview?"← Panel":"Salir"}</button>
             {client.avatar_url
-              ? <img src={client.avatar_url} alt="" style={{width:40,height:40,borderRadius:"50%",objectFit:"cover",border:`2px solid ${DK.ac2}`,boxShadow:"0 0 12px rgba(255,122,69,.45)"}}/>
-              : <div className="ring" style={{width:40,height:40,background:DK.card2,color:DK.tx,fontSize:14,border:`2px solid ${DK.ac2}`,boxShadow:"0 0 12px rgba(255,122,69,.45)"}}>{ini(client.name)}</div>}
+              ? <img src={client.avatar_url} alt="" style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${DK.ac2}`}}/>
+              : <div className="ring" style={{width:36,height:36,background:DK.card2,color:DK.tx,fontSize:13,border:`2px solid ${DK.ac2}`}}>{ini(client.name)}</div>}
           </div>
-        </div>
-        {(()=>{ const h=new Date().getHours(), hello=h>=6&&h<14?"Buenos días":h>=14&&h<21?"Buenas tardes":"Buenas noches"; return(
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
-          <div style={{minWidth:0}}>
-            <div style={{fontSize:24,fontWeight:800,color:DK.tx,lineHeight:1.15,letterSpacing:-.4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{fontSize:14,color:DK.mu,fontWeight:600,letterSpacing:0}}>{hello}, </span>{client.name.split(" ")[0]} 👋</div>
-            {streak>0&&<div style={{fontSize:12,color:DK.mu,marginTop:2}}>🔥 <b style={{color:DK.ac2}}>{streak} {streak===1?"semana":"semanas"}</b> seguidas entrenando</div>}
-          </div>
-          <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-coach" aria-label="Escribir a tu coach por WhatsApp"><span className="dk-dot"/>Tu coach</a>
         </div>); })()}
 
-        {/* Inicio sencillo: 1) tus reservas · 2) calendario para reservar · 3) tu bono. */}
-        <div data-homefit="1" style={{display:"flex",flexDirection:"column",gap:12}}>
+        {/* Inicio sin scroll: 1) tus reservas · 2) calendario para reservar · 3) tu bono, en una pantalla. */}
+        <div ref={homeRef} data-homefit="1" style={{display:"flex",flexDirection:"column",gap:8,...(homeH?{height:homeH}:{})}}>
         {client.sessions_left<=1 && (
           <div className="dk-note" style={{borderColor:client.sessions_left<=0?"rgba(248,113,113,.45)":"rgba(251,191,36,.4)"}}>
             <div style={{fontSize:13,fontWeight:800,color:client.sessions_left<=0?DK.red:DK.gold,marginBottom:9}}>
@@ -8912,62 +8916,53 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           const tm=(x)=>x.open?(x.time||"Libre"):x.time;
           const wd=(d)=>new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"});
           const left=parseInt(client.sessions_left)||0, owed=Math.max(0,-left), resN=Math.min(nBooked,Math.max(0,left));
-          const R1=50, C1=2*Math.PI*R1, R2=37, C2=2*Math.PI*R2;
           const tile=(x)=>{ const d=new Date(x.date+"T12:00:00"); return <span style={{width:52,height:52,borderRadius:14,flexShrink:0,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
             <span style={{fontSize:10,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase",letterSpacing:.4}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
             <span style={{fontSize:20,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>; };
           return(<>
-          {/* 1 · Tus reservas (las próximas 3) */}
-          <div className="dk-card" data-home="reservas" style={{flex:"none",display:"flex",flexDirection:"column",marginBottom:0,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.26),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:all.length?4:0}}>
-              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>📅 Tus reservas</span>
-              {all.length>0&&<span style={{fontSize:12,fontWeight:800,color:DK.ac2}}>{all.length} {all.length===1?"clase":"clases"}</span>}
-            </div>
-            <div>
-            {!all.length?<div style={{padding:"10px 0 2px",display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:26}}>🗓️</span><span style={{fontSize:14,color:DK.mu,fontWeight:700}}>Aún no tienes clases reservadas. Elige una abajo 👇</span></div>
-            :all.slice(0,3).map((x,i)=>{ const dd=daysUntil(x.date), pl=x.date!==TODAY&&!x.requested?pf(x.date):null, today=x.date===TODAY; return(
-              <button key={x.id} type="button" data-reserva={x.date} onClick={()=>{ setPpView(today?"hoy":"next"); go("entreno"); }} className="dk-row" style={{background:"none",padding:"10px 0",borderRadius:0,borderTop:i?`1px solid ${DK.line}`:"none"}}>
-                {tile(x)}
-                <span style={{flex:1,minWidth:0}}>
-                  <span style={{display:"block",fontSize:16,fontWeight:800,color:DK.tx}}>{dd===0?"Hoy":dd===1?"Mañana":capFirst(wd(x.date))} · <span style={{color:x.open?DK.teal:x.requested?DK.gold:DK.ac2}}>{tm(x)}</span></span>
-                  <span style={{display:"block",fontSize:12,fontWeight:700,color:x.requested?DK.gold:DK.mu,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
-                    {x.requested?"⏳ Pendiente de confirmar":x.open?"🔓 Open · por tu cuenta":x.type===PRIV_TYPE?"🔒 Clase privada":today&&todayAsig?"⚡ Toca para ver tu entreno de hoy":pl?`🏋️ ${pl.label}`:"✓ Confirmada"}</span>
-                </span>
-                <span style={{color:DK.dim,fontSize:18}}>›</span>
-              </button>); })}
-            {all.length>3&&<button type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{border:"none",background:"none",color:DK.ac2,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",padding:"6px 0 0"}}>Ver las {all.length} reservas ›</button>}
+          {/* 1 · Tus reservas: fichas en una fila (se deslizan de lado) */}
+          <div data-home="reservas" style={{flex:"none",display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+            <span style={{flexShrink:0,fontSize:11,fontWeight:800,color:DK.mu,lineHeight:1.15,textAlign:"center",width:58}}>📅 TUS<br/>RESERVAS{all.length?<><br/><b style={{color:DK.ac2,fontSize:13}}>{all.length}</b></>:null}</span>
+            <div style={{flex:1,minWidth:0,display:"flex",gap:7,overflowX:"auto",scrollbarWidth:"none",padding:"2px 0"}}>
+              {!all.length?<span style={{fontSize:13,color:DK.mu,fontWeight:700,padding:"10px 4px"}}>Aún no tienes clases. Elige una abajo 👇</span>
+              :all.map(x=>{ const dd=daysUntil(x.date), d=new Date(x.date+"T12:00:00"), today=x.date===TODAY; return(
+                <button key={x.id} type="button" data-reserva={x.date} onClick={()=>{ setPpView(today?"hoy":"next"); go("entreno"); }}
+                  title={x.requested?"Pendiente de confirmar":x.open?"Open · por tu cuenta":"Confirmada"}
+                  style={{flexShrink:0,display:"flex",alignItems:"center",gap:8,padding:"6px 11px 6px 6px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                    background:today?"rgba(242,68,29,.2)":"#15151a",border:`1px solid ${x.requested?"rgba(251,191,36,.45)":x.open?"rgba(45,212,191,.4)":today?"rgba(255,122,69,.6)":DK.line}`}}>
+                  <span style={{width:36,height:36,borderRadius:10,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                    <span style={{fontSize:8.5,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase"}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
+                    <span style={{fontSize:15,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>
+                  <span>
+                    <span style={{display:"block",fontSize:13.5,fontWeight:800,color:DK.tx,whiteSpace:"nowrap"}}>{dd===0?"Hoy":dd===1?"Mañana":capFirst(d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".",""))} · <span style={{color:x.open?DK.teal:x.requested?DK.gold:DK.ac2}}>{tm(x)}</span></span>
+                    <span style={{display:"block",fontSize:10.5,fontWeight:700,color:x.requested?DK.gold:DK.mu,whiteSpace:"nowrap"}}>{x.requested?"⏳ pendiente":x.open?"🔓 open":x.type===PRIV_TYPE?"🔒 privada":today&&todayAsig?"⚡ ver entreno":"✓ confirmada"}</span>
+                  </span>
+                </button>); })}
             </div>
           </div>
 
           {/* 2 · Calendario para reservar (el mismo de la pestaña Reservar) */}
-          <div data-home="reservar"><MultiSessionRequest embedded streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/></div>
+          <div data-home="reservar" style={homeH?{flex:"1 1 auto",minHeight:0,display:"flex",flexDirection:"column"}:{height:"64vh",display:"flex",flexDirection:"column"}}><MultiSessionRequest embedded streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/></div>
 
-          {/* 3 · Estado del bono */}
-          <div className="dk-card" data-home="bono" style={{marginBottom:0,flex:"none"}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
-              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>🎟️ Tu bono</span>
-              <span style={{fontSize:11,fontWeight:700,color:DK.mu}}>{tot} sesiones</span>
-            </div>
-            <div style={{display:"flex",alignItems:"center",gap:16}}>
-              <div style={{position:"relative",width:122,height:122,flexShrink:0}} role="img" aria-label={`Te quedan ${Math.max(0,left)} de ${tot}: ${resN} reservadas y ${nFree} libres para reservar`}>
-                <svg width="122" height="122" viewBox="0 0 122 122" aria-hidden="true"><defs><linearGradient id="dkBonoG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff9a5a"/><stop offset="1" stopColor="#f2441d"/></linearGradient></defs>
-                  <circle cx="61" cy="61" r={R1} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="10"/>
-                  <circle cx="61" cy="61" r={R1} fill="none" stroke="url(#dkBonoG)" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${tot?Math.max(0,left)/tot*C1:0} ${C1}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s"}}/>
-                  <circle cx="61" cy="61" r={R2} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="8"/>
-                  <circle cx="61" cy="61" r={R2} fill="none" stroke={DK.gold} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${tot?resN/tot*C2:0} ${C2}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s"}}/>
-                </svg>
-                <span style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-                  <span key={left} className="count-pop" style={{fontSize:32,fontWeight:800,color:owed?DK.red:DK.tx,lineHeight:1}}>{owed?owed:Math.max(0,left)}</span>
-                  <span style={{fontSize:10,fontWeight:800,color:owed?DK.red:DK.mu}}>{owed?"DEBES":`DE ${tot}`}</span>
-                </span>
-              </div>
-              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:7,fontSize:13,fontWeight:700,color:DK.sub}}>
-                <span><span className="dk-lg" style={{background:DK.ac}}/>Te quedan <b style={{color:DK.tx}}>{Math.max(0,left)}</b></span>
-                <span><span className="dk-lg" style={{background:DK.gold}}/>Reservadas <b style={{color:DK.tx}}>{resN}</b></span>
-                <span><span className="dk-lg" style={{background:"rgba(255,255,255,.25)"}}/>Libres para reservar <b key={nFree} className="count-pop" style={{color:DK.tx}}>{nFree}</b></span>
+          {/* 3 · Tu bono: barra compacta */}
+          <div className="dk-card" data-home="bono" style={{flex:"none",marginBottom:0,padding:"10px 13px"}}>
+            <div style={{display:"flex",alignItems:"center",gap:10}}>
+              <span style={{fontSize:20}}>🎟️</span>
+              <div style={{flex:1,minWidth:0}}>
+                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8}}>
+                  <span style={{fontSize:14,fontWeight:800,color:DK.tx,whiteSpace:"nowrap"}}>Tu bono · <span key={left} className="count-pop" style={{color:owed?DK.red:DK.ac2}}>{owed?`debes ${owed}`:`te quedan ${Math.max(0,left)}`}</span><span style={{color:DK.mu,fontWeight:700}}> de {tot}</span></span>
+                  {client.next_payment&&isFinite(pd)&&<span style={{fontSize:11,fontWeight:700,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu,whiteSpace:"nowrap"}}>💳 {pd<0?`vencido ${Math.abs(pd)}d`:pd===0?"pago hoy":`pago en ${pd}d`}</span>}
+                </div>
+                <div style={{position:"relative",height:7,borderRadius:5,background:"rgba(255,255,255,.07)",overflow:"hidden",margin:"6px 0 5px"}} aria-hidden="true">
+                  <div style={{position:"absolute",inset:0,width:`${tot?Math.max(0,left)/tot*100:0}%`,background:"linear-gradient(90deg,#ff9a5a,#f2441d)",borderRadius:5}}/>
+                  <div style={{position:"absolute",inset:0,width:`${tot?resN/tot*100:0}%`,background:DK.gold,borderRadius:5,opacity:.9}}/>
+                </div>
+                <div style={{display:"flex",gap:12,fontSize:11,fontWeight:700,color:DK.mu}}>
+                  <span><span className="dk-lg" style={{background:DK.gold}}/>Reservadas {resN}</span>
+                  <span><span className="dk-lg" style={{background:DK.ac}}/>Libres para reservar <b key={nFree} className="count-pop" style={{color:DK.tx}}>{nFree}</b></span>
+                </div>
               </div>
             </div>
-            {client.next_payment&&isFinite(pd)&&<div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${DK.line}`,fontSize:12,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu}}>💳 Próximo pago: {client.payment_amount?<b style={{color:DK.tx}}>{client.payment_amount}€</b>:null}{client.payment_amount?" · ":""}{pd<0?`vencido hace ${Math.abs(pd)} días`:pd===0?"¡hoy!":pd===1?"mañana":`en ${pd} días`}</div>}
           </div>
           </>); })()}
         </div>
@@ -9841,10 +9836,10 @@ function OpenTodayCard({open,client,hasAsig,plan,loadAll,notify}){
 // Columnas = días (L-V), filas = horas de clase. Toca para elegir y confirma abajo.
 // En híbrido, una última fila «🔓 Open» para los días que entrena por su cuenta.
 // Plazas de una hora: una línea por persona (nombre corto) y una vacía por hueco libre.
-function Seats({ppl,cap,st,wait}){
+function Seats({ppl,cap,st,wait,small}){
   const n=Math.max(cap||0,ppl.length), many=n>5, shown=many?ppl.slice(0,4):ppl, free=Math.max(0,(cap||0)-ppl.length);
   const dark=st==="sel", col=st==="mine"?"#fff":dark?"#c2410c":st==="full"?"rgba(255,255,255,.45)":"#fff";
-  const line={fontSize:10,lineHeight:"13px",height:13,borderRadius:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textAlign:"center",fontWeight:800};
+  const line={fontSize:small?9:10,lineHeight:small?"11px":"13px",height:small?11:13,borderRadius:6,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",textAlign:"center",fontWeight:800};
   return <span aria-hidden="true" style={{display:"flex",flexDirection:"column",gap:2,width:"100%"}}>
     {shown.map(pp=><span key={pp.id} data-seat={pp.me?"tu":"p"} style={{...line,color:pp.me?(st==="mine"?"#fff":"#ff7a45"):col,background:pp.me?(st==="mine"?"rgba(0,0,0,.18)":"rgba(255,122,69,.18)"):(dark?"rgba(194,65,12,.1)":"rgba(255,255,255,.08)")}}>{pp.me?"Tú":String(pp.name).split(" ")[0].slice(0,6)}</span>)}
     {many&&ppl.length>4&&<span style={{...line,color:col,opacity:.8}}>+{ppl.length-4}</span>}
@@ -9953,7 +9948,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
       display:"flex",flexDirection:"column",minHeight:460,padding:"12px 12px 12px",boxShadow:"0 20px 40px rgba(15,23,42,.25)"}}>
       <Embers/>
       {/* Cabecera compacta: clases por reservar (el horario ocupa casi toda la pantalla) */}
-      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flexShrink:0}}>
+      {!embedded&&<div style={{position:"relative",display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",flexShrink:0}}>
         <span className="ember-flame" style={{fontSize:22,lineHeight:1}}>🔥</span>
         <span style={{fontSize:30,fontWeight:900,lineHeight:1,background:fire,WebkitBackgroundClip:"text",backgroundClip:"text",color:"transparent"}}>{leftC}</span>
         <span style={{fontSize:13,fontWeight:800,color:"#ff7a45"}}>{leftC===1?"clase por reservar":"clases por reservar"}</span>
@@ -9961,14 +9956,14 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
         {streak>0&&<span style={{fontSize:11,fontWeight:800,color:"#fdba74",background:"rgba(255,122,69,.12)",border:"1px solid rgba(255,122,69,.3)",borderRadius:20,padding:"3px 10px"}}>🔥 {streak} sem. seguidas</span>}
           {hybrid&&<span style={{fontSize:11,fontWeight:800,color:"#fcd34d",background:"rgba(251,191,36,.1)",border:"1px solid rgba(251,191,36,.3)",borderRadius:20,padding:"3px 10px"}}>🔓 {leftO!==null?`${leftO} open`:"open sin tope"}</span>}
           {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:800,color:"#86efac",textDecoration:"none",border:"1px solid rgba(134,239,172,.35)",borderRadius:20,padding:"3px 10px"}}>Renovar bono ›</a>}
-      </div>
+      </div>}
       {/* Semana */}
       <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,margin:"8px 0 6px",flexShrink:0}}>
         <button type="button" aria-label="Semana anterior" disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:wk<=cur?"rgba(255,255,255,.25)":"#fff",fontSize:18,cursor:wk<=cur?"default":"pointer",fontFamily:"inherit"}}>‹</button>
         <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800}}>{lbl}</div>
         <button type="button" aria-label="Semana siguiente" onClick={()=>setWk(addDays(wk,7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,cursor:"pointer",fontFamily:"inherit"}}>›</button>
       </div>
-      <div className="book-grid" style={{position:"relative",flex:"none",background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`minmax(30px,40px) repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:`auto repeat(${nRows},minmax(${Math.max(40,18+15*Math.min(5,Math.max(...rows.map(capOf),3)))}px,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
+      <div className="book-grid" style={{position:"relative",flex:"none",background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`minmax(30px,40px) repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:embedded?`auto repeat(${nRows},minmax(0,1fr))`:`auto repeat(${nRows},minmax(${Math.max(40,18+15*Math.min(5,Math.max(...rows.map(capOf),3)))}px,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
         <div/>
         {/* Cabecera de días con «pista» de los días con clase (como una racha) */}
         {days.map((d,i)=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY, on=hasMine(d), prev=i>0&&hasMine(days[i-1]), next=i<days.length-1&&hasMine(days[i+1]); return(
@@ -9991,7 +9986,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
               free:{background:"rgba(255,255,255,.07)",color:"#fff",border:"1px solid rgba(255,255,255,.1)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapClass(d,t)} aria-label={`${fmtDate(d)} ${t}: ${st==="mine"?"tu clase":st==="sel"?"elegida":st==="full"?"completa":st==="free"?`${free} libres`:"no disponible"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
-              {st!=="off"&&<Seats ppl={peopleAt(d,t)} cap={capOf(t)} st={st} wait={!!w}/>}
+              {st!=="off"&&<Seats ppl={peopleAt(d,t)} cap={capOf(t)} st={st} wait={!!w} small={embedded}/>}
             </button>; })}
         </React.Fragment>))}
         {hybrid&&<>
@@ -10035,7 +10030,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
             <button type="button" disabled={saving} onClick={submit} style={{flex:1,height:50,borderRadius:26,border:"1.5px solid rgba(255,255,255,.85)",background:"#000",color:"#fff",fontSize:16,fontWeight:800,cursor:"pointer",fontFamily:"inherit",boxShadow:"0 0 24px rgba(242,68,29,.35)"}}>
               {saving?"Reservando…":`Reservar ${[pc.length?`${pc.length} clase${pc.length>1?"s":""}`:"",po.length?`${po.length} open`:""].filter(Boolean).join(" + ")}  ›`}</button>
           </div>
-          :<div style={{display:"flex",justifyContent:"center",gap:14,flexWrap:"wrap",fontSize:11,color:"rgba(255,255,255,.55)",fontWeight:700,padding:"8px 0"}}>
+          :embedded?null:<div style={{display:"flex",justifyContent:"center",gap:14,flexWrap:"wrap",fontSize:11,color:"rgba(255,255,255,.55)",fontWeight:700,padding:"8px 0"}}>
             <span>▢ libre</span><span style={{color:"#ff7a45"}}>● tu clase</span><span>▫ lleno</span>{hybrid&&<span style={{color:"#fcd34d"}}>● open</span>}
             {!who&&<span style={{flexBasis:"100%",textAlign:"center",fontWeight:600,color:"rgba(255,255,255,.45)"}}>Toca una clase para ver quién va 👥</span>}
           </div>}
