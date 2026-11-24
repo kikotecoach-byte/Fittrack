@@ -302,6 +302,7 @@ body.dragging{cursor:grabbing;}
 body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:none!important;}
 @keyframes dragtarget{0%,100%{box-shadow:0 0 0 0 hsla(15,98%,50%,0.35)}50%{box-shadow:0 0 0 4px hsla(15,98%,50%,0.35)}}
 
+[data-homefit]>.dk-note{flex:none;margin-bottom:0;}
 /* ── Reservar: alto del panel con respaldo para móviles sin «dvh» (Android/iOS antiguos) ── */
 .book-panel{min-height:calc(100vh - 150px);}
 .book-grid{height:76vh;min-height:420px;}
@@ -8790,6 +8791,13 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
     const taken=allSessions.filter(s=>s.date===w.date&&s.time===w.time).length;
     return !blk && taken<capOfC(w.time);
   });
+  // Inicio a pantalla completa: el bloque ocupa justo lo que queda hasta el menú de abajo.
+  const homeRef=React.useRef(null); const [homeH,setHomeH]=React.useState(null);
+  React.useLayoutEffect(()=>{ if(tab!=="inicio") return; const fit=()=>{ const el=homeRef.current; if(!el) return;
+      const nav=document.querySelector(".portal-nav"), navH=nav?nav.getBoundingClientRect().height:90;
+      const top=el.getBoundingClientRect().top+window.scrollY, h=Math.floor(window.innerHeight-top-navH-14);
+      setHomeH(h>=430?h:null); };
+    fit(); const t=setTimeout(fit,300); window.addEventListener("resize",fit); return ()=>{ clearTimeout(t); window.removeEventListener("resize",fit); }; },[tab,client.sessions_left,freedWaits.length,(waitlist||[]).length]);
   const grabWaitlistSpot=async(wtry)=>{
     if(client.sessions_left<=0) return notify("Sin sesiones en tu bono","err");
     const taken=allSessions.filter(s=>s.date===wtry.date&&s.time===wtry.time).length;
@@ -8853,7 +8861,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
         {/* Fondo oscuro a pantalla completa solo en Inicio */}
         <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:-1,background:"radial-gradient(90% 40% at 85% -5%,rgba(242,68,29,.20),transparent 70%),#0b0b0e",pointerEvents:"none"}}/>
         {/* Cabecera: marca, saludo y acceso directo a su coach */}
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:18}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:10,marginBottom:12}}>
           <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
             <span style={{width:32,height:32,borderRadius:10,background:DK.acG,display:"grid",placeItems:"center",fontSize:16,boxShadow:"0 4px 16px rgba(242,68,29,.5)",flexShrink:0}}>🔥</span>
             <span style={{fontWeight:800,letterSpacing:1.6,fontSize:13,color:DK.tx,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{GYM_NAME.toUpperCase()}</span>
@@ -8867,16 +8875,16 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           </div>
         </div>
         {(()=>{ const h=new Date().getHours(), hello=h>=6&&h<14?"Buenos días":h>=14&&h<21?"Buenas tardes":"Buenas noches"; return(
-        <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:12,marginBottom:20}}>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:12,marginBottom:12}}>
           <div style={{minWidth:0}}>
-            <div style={{fontSize:14,color:DK.mu,fontWeight:600}}>{hello},</div>
-            <div style={{fontSize:30,fontWeight:800,color:DK.tx,lineHeight:1.1,letterSpacing:-.5,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{client.name.split(" ")[0]} 👋</div>
-            <div style={{fontSize:13,color:DK.mu,marginTop:5}}>{streak>0?<>🔥 <b style={{color:DK.ac2}}>{streak} {streak===1?"semana":"semanas"}</b> seguidas entrenando</>:"Vamos a por la semana 💪"}</div>
+            <div style={{fontSize:24,fontWeight:800,color:DK.tx,lineHeight:1.15,letterSpacing:-.4,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}><span style={{fontSize:14,color:DK.mu,fontWeight:600,letterSpacing:0}}>{hello}, </span>{client.name.split(" ")[0]} 👋</div>
+            {streak>0&&<div style={{fontSize:12,color:DK.mu,marginTop:2}}>🔥 <b style={{color:DK.ac2}}>{streak} {streak===1?"semana":"semanas"}</b> seguidas entrenando</div>}
           </div>
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-coach" aria-label="Escribir a tu coach por WhatsApp"><span className="dk-dot"/>Tu coach</a>
         </div>); })()}
 
-        {/* Inicio sencillo: 1) tus reservas · 2) reservar · 3) tu bono. Lo demás, en las otras pestañas. */}
+        {/* Inicio sencillo: 1) tus reservas · 2) reservar · 3) tu bono. Ocupa justo la pantalla. */}
+        <div ref={homeRef} data-homefit="1" style={{display:"flex",flexDirection:"column",gap:10,...(homeH?{height:homeH}:{})}}>
         {client.sessions_left<=1 && (
           <div className="dk-note" style={{borderColor:client.sessions_left<=0?"rgba(248,113,113,.45)":"rgba(251,191,36,.4)"}}>
             <div style={{fontSize:13,fontWeight:800,color:client.sessions_left<=0?DK.red:DK.gold,marginBottom:9}}>
@@ -8912,16 +8920,16 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           const tile=(x)=>{ const d=new Date(x.date+"T12:00:00"); return <span style={{width:52,height:52,borderRadius:14,flexShrink:0,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
             <span style={{fontSize:10,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase",letterSpacing:.4}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
             <span style={{fontSize:20,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>; };
-          const shown=all.slice(0,6);
           return(<>
-          {/* 1 · Tus reservas */}
-          <div className="dk-card" data-home="reservas" style={{marginBottom:12,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.26),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
+          {/* 1 · Tus reservas (se estira; si hay muchas, se desliza por dentro) */}
+          <div className="dk-card" data-home="reservas" style={{flex:"1 1 auto",minHeight:150,display:"flex",flexDirection:"column",marginBottom:0,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.26),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:all.length?4:0}}>
               <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>📅 Tus reservas</span>
               {all.length>0&&<span style={{fontSize:12,fontWeight:800,color:DK.ac2}}>{all.length} {all.length===1?"clase":"clases"}</span>}
             </div>
-            {!all.length?<div style={{fontSize:14,color:DK.mu,fontWeight:600,marginTop:8}}>Aún no tienes clases reservadas.</div>
-            :shown.map((x,i)=>{ const dd=daysUntil(x.date), pl=x.date!==TODAY&&!x.requested?pf(x.date):null, today=x.date===TODAY; return(
+            <div style={{flex:"1 1 auto",minHeight:0,overflowY:"auto",overscrollBehavior:"contain",margin:"0 -4px",padding:"0 4px"}}>
+            {!all.length?<div style={{height:"100%",minHeight:90,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,textAlign:"center"}}><span style={{fontSize:34}}>🗓️</span><span style={{fontSize:15,color:DK.mu,fontWeight:700}}>Aún no tienes clases reservadas</span></div>
+            :all.map((x,i)=>{ const dd=daysUntil(x.date), pl=x.date!==TODAY&&!x.requested?pf(x.date):null, today=x.date===TODAY; return(
               <button key={x.id} type="button" data-reserva={x.date} onClick={()=>{ setPpView(today?"hoy":"next"); go("entreno"); }} className="dk-row" style={{background:"none",padding:"10px 0",borderRadius:0,borderTop:i?`1px solid ${DK.line}`:"none"}}>
                 {tile(x)}
                 <span style={{flex:1,minWidth:0}}>
@@ -8931,17 +8939,17 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
                 </span>
                 <span style={{color:DK.dim,fontSize:18}}>›</span>
               </button>); })}
-            {all.length>shown.length&&<button type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{border:"none",background:"none",color:DK.ac2,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",padding:"6px 0 0"}}>Ver las {all.length} reservas ›</button>}
+            </div>
           </div>
 
           {/* 2 · Reservar una clase nueva */}
-          <button type="button" data-home="reservar" className="dk-pill" onClick={()=>go("reservar")} style={{width:"100%",justifyContent:"center",marginBottom:12,padding:"16px",border:"none",cursor:"pointer",fontSize:17,flexDirection:"column",gap:2,borderRadius:18}}>
+          <button type="button" data-home="reservar" className="dk-pill" onClick={()=>go("reservar")} style={{width:"100%",flex:"none",justifyContent:"center",marginBottom:0,padding:"16px",border:"none",cursor:"pointer",fontSize:17,flexDirection:"column",gap:2,borderRadius:18}}>
             <span>📅 Reservar una clase</span>
             <span style={{fontSize:12,fontWeight:700,opacity:.85}}>{nFree>0?`Te ${nFree===1?"queda":"quedan"} ${nFree} para reservar`:client.sessions_left<=0?"Renueva tu bono para reservar":"Ya tienes reservadas todas tus sesiones"}</span>
           </button>
 
           {/* 3 · Estado del bono */}
-          <div className="dk-card" data-home="bono" style={{marginBottom:14}}>
+          <div className="dk-card" data-home="bono" style={{marginBottom:0,flex:"none"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
               <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>🎟️ Tu bono</span>
               <span style={{fontSize:11,fontWeight:700,color:DK.mu}}>{tot} sesiones</span>
@@ -8968,7 +8976,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
             {client.next_payment&&isFinite(pd)&&<div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${DK.line}`,fontSize:12,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu}}>💳 Próximo pago: {client.payment_amount?<b style={{color:DK.tx}}>{client.payment_amount}€</b>:null}{client.payment_amount?" · ":""}{pd<0?`vencido hace ${Math.abs(pd)} días`:pd===0?"¡hoy!":pd===1?"mañana":`en ${pd} días`}</div>}
           </div>
           </>); })()}
-        <div style={{fontSize:11.5,color:DK.dim,textAlign:"center",margin:"4px 0 8px"}}>Tu entreno, tu progreso, tus logros y la comunidad están en las pestañas de abajo 👇</div>
+        </div>
       </>}
 
       {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
