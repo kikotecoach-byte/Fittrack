@@ -307,6 +307,9 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
 .book-panel{min-height:calc(100vh - 150px);}
 .book-grid{height:76vh;min-height:420px;}
 @supports (height:100dvh){.book-grid{height:76dvh;}}
+.book-emb{min-height:0 !important;}
+.book-emb .book-grid{height:62vh;min-height:380px;}
+@supports (height:100dvh){.book-emb .book-grid{height:62dvh;}}
 .book-grid{overflow-y:auto;overscroll-behavior:contain;}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
 .pt-title{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;}
@@ -8791,13 +8794,6 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
     const taken=allSessions.filter(s=>s.date===w.date&&s.time===w.time).length;
     return !blk && taken<capOfC(w.time);
   });
-  // Inicio a pantalla completa: el bloque ocupa justo lo que queda hasta el menú de abajo.
-  const homeRef=React.useRef(null); const [homeH,setHomeH]=React.useState(null);
-  React.useLayoutEffect(()=>{ if(tab!=="inicio") return; const fit=()=>{ const el=homeRef.current; if(!el) return;
-      const nav=document.querySelector(".portal-nav"), navH=nav?nav.getBoundingClientRect().height:90;
-      const top=el.getBoundingClientRect().top+window.scrollY, h=Math.floor(window.innerHeight-top-navH-14);
-      setHomeH(h>=430?h:null); };
-    fit(); const t=setTimeout(fit,300); window.addEventListener("resize",fit); return ()=>{ clearTimeout(t); window.removeEventListener("resize",fit); }; },[tab,client.sessions_left,freedWaits.length,(waitlist||[]).length]);
   const grabWaitlistSpot=async(wtry)=>{
     if(client.sessions_left<=0) return notify("Sin sesiones en tu bono","err");
     const taken=allSessions.filter(s=>s.date===wtry.date&&s.time===wtry.time).length;
@@ -8883,8 +8879,8 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-coach" aria-label="Escribir a tu coach por WhatsApp"><span className="dk-dot"/>Tu coach</a>
         </div>); })()}
 
-        {/* Inicio sencillo: 1) tus reservas · 2) reservar · 3) tu bono. Ocupa justo la pantalla. */}
-        <div ref={homeRef} data-homefit="1" style={{display:"flex",flexDirection:"column",gap:10,...(homeH?{height:homeH}:{})}}>
+        {/* Inicio sencillo: 1) tus reservas · 2) calendario para reservar · 3) tu bono. */}
+        <div data-homefit="1" style={{display:"flex",flexDirection:"column",gap:12}}>
         {client.sessions_left<=1 && (
           <div className="dk-note" style={{borderColor:client.sessions_left<=0?"rgba(248,113,113,.45)":"rgba(251,191,36,.4)"}}>
             <div style={{fontSize:13,fontWeight:800,color:client.sessions_left<=0?DK.red:DK.gold,marginBottom:9}}>
@@ -8921,15 +8917,15 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
             <span style={{fontSize:10,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase",letterSpacing:.4}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
             <span style={{fontSize:20,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>; };
           return(<>
-          {/* 1 · Tus reservas (se estira; si hay muchas, se desliza por dentro) */}
-          <div className="dk-card" data-home="reservas" style={{flex:"1 1 auto",minHeight:150,display:"flex",flexDirection:"column",marginBottom:0,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.26),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
+          {/* 1 · Tus reservas (las próximas 3) */}
+          <div className="dk-card" data-home="reservas" style={{flex:"none",display:"flex",flexDirection:"column",marginBottom:0,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.26),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:all.length?4:0}}>
               <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>📅 Tus reservas</span>
               {all.length>0&&<span style={{fontSize:12,fontWeight:800,color:DK.ac2}}>{all.length} {all.length===1?"clase":"clases"}</span>}
             </div>
-            <div style={{flex:"1 1 auto",minHeight:0,overflowY:"auto",overscrollBehavior:"contain",margin:"0 -4px",padding:"0 4px"}}>
-            {!all.length?<div style={{height:"100%",minHeight:90,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,textAlign:"center"}}><span style={{fontSize:34}}>🗓️</span><span style={{fontSize:15,color:DK.mu,fontWeight:700}}>Aún no tienes clases reservadas</span></div>
-            :all.map((x,i)=>{ const dd=daysUntil(x.date), pl=x.date!==TODAY&&!x.requested?pf(x.date):null, today=x.date===TODAY; return(
+            <div>
+            {!all.length?<div style={{padding:"10px 0 2px",display:"flex",alignItems:"center",gap:10}}><span style={{fontSize:26}}>🗓️</span><span style={{fontSize:14,color:DK.mu,fontWeight:700}}>Aún no tienes clases reservadas. Elige una abajo 👇</span></div>
+            :all.slice(0,3).map((x,i)=>{ const dd=daysUntil(x.date), pl=x.date!==TODAY&&!x.requested?pf(x.date):null, today=x.date===TODAY; return(
               <button key={x.id} type="button" data-reserva={x.date} onClick={()=>{ setPpView(today?"hoy":"next"); go("entreno"); }} className="dk-row" style={{background:"none",padding:"10px 0",borderRadius:0,borderTop:i?`1px solid ${DK.line}`:"none"}}>
                 {tile(x)}
                 <span style={{flex:1,minWidth:0}}>
@@ -8939,14 +8935,12 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
                 </span>
                 <span style={{color:DK.dim,fontSize:18}}>›</span>
               </button>); })}
+            {all.length>3&&<button type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{border:"none",background:"none",color:DK.ac2,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",padding:"6px 0 0"}}>Ver las {all.length} reservas ›</button>}
             </div>
           </div>
 
-          {/* 2 · Reservar una clase nueva */}
-          <button type="button" data-home="reservar" className="dk-pill" onClick={()=>go("reservar")} style={{width:"100%",flex:"none",justifyContent:"center",marginBottom:0,padding:"16px",border:"none",cursor:"pointer",fontSize:17,flexDirection:"column",gap:2,borderRadius:18}}>
-            <span>📅 Reservar una clase</span>
-            <span style={{fontSize:12,fontWeight:700,opacity:.85}}>{nFree>0?`Te ${nFree===1?"queda":"quedan"} ${nFree} para reservar`:client.sessions_left<=0?"Renueva tu bono para reservar":"Ya tienes reservadas todas tus sesiones"}</span>
-          </button>
+          {/* 2 · Calendario para reservar (el mismo de la pestaña Reservar) */}
+          <div data-home="reservar"><MultiSessionRequest embedded streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/></div>
 
           {/* 3 · Estado del bono */}
           <div className="dk-card" data-home="bono" style={{marginBottom:0,flex:"none"}}>
@@ -9859,7 +9853,7 @@ function Seats({ppl,cap,st,wait}){
     {st==="full"&&<span style={{...line,fontSize:8.5,color:"rgba(255,255,255,.5)"}}>{wait?"⏳ en espera":"completa"}</span>}
   </span>;
 }
-function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist, config, opens, allOpens, hybrid, loadAll, notify, saving, setSaving, streak}) {
+function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist, config, opens, allOpens, hybrid, loadAll, notify, saving, setSaving, streak, embedded}) {
   // Semana que se ve al abrir: la actual; si ya no queda ninguna hora por reservar
   // esta semana (p. ej. sábado tarde o domingo), directamente la siguiente.
   const [wk,setWk] = React.useState(()=>{ const m=mondayOfDate(TODAY), now=new Date().toTimeString().slice(0,5);
@@ -9955,7 +9949,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
   const cellBase={borderRadius:12,display:"flex",flexDirection:"column",alignItems:"stretch",justifyContent:"center",gap:1,fontFamily:"inherit",fontWeight:800,minWidth:0,padding:"4px 3px",overflow:"hidden",transition:"background .15s, transform .1s, box-shadow .2s"};
   const fire="linear-gradient(135deg,#ff7a45,#f2441d)";
   return(
-    <div className="ember-panel book-panel" style={{position:"relative",overflow:"hidden",margin:"-4px -6px 0",borderRadius:26,background:"radial-gradient(120% 60% at 50% -5%,rgba(242,68,29,.38),rgba(10,10,12,0) 60%),#0b0b0e",color:"#fff",
+    <div className={"ember-panel book-panel"+(embedded?" book-emb":"")} style={{position:"relative",overflow:"hidden",margin:embedded?0:"-4px -6px 0",borderRadius:26,background:"radial-gradient(120% 60% at 50% -5%,rgba(242,68,29,.38),rgba(10,10,12,0) 60%),#0b0b0e",color:"#fff",
       display:"flex",flexDirection:"column",minHeight:460,padding:"12px 12px 12px",boxShadow:"0 20px 40px rgba(15,23,42,.25)"}}>
       <Embers/>
       {/* Cabecera compacta: clases por reservar (el horario ocupa casi toda la pantalla) */}
