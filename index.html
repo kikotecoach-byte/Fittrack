@@ -307,8 +307,8 @@ body.dragging,body.dragging *{user-select:none!important;-webkit-user-select:non
 .book-panel{min-height:calc(100vh - 150px);}
 .book-grid{height:76vh;min-height:420px;}
 @supports (height:100dvh){.book-grid{height:76dvh;}}
-.book-emb{min-height:0 !important;flex:1 1 auto;padding:8px !important;}
-.book-emb .book-grid{height:auto !important;min-height:0 !important;flex:1 1 auto !important;overflow:hidden !important;padding:6px !important;gap:4px !important;}
+.book-emb{min-height:0 !important;flex:1 1 auto;padding:6px 6px 6px !important;border-radius:20px !important;}
+.book-emb .book-grid{height:auto !important;min-height:0 !important;flex:1 1 auto !important;overflow:hidden !important;padding:5px !important;gap:3px !important;grid-template-columns:30px repeat(var(--nd,5),minmax(0,1fr)) !important;border-radius:16px !important;}
 .book-emb .book-grid button{padding:2px !important;}
 .book-grid{overflow-y:auto;overscroll-behavior:contain;}
 html{-webkit-text-size-adjust:100%;text-size-adjust:100%;}
@@ -8795,7 +8795,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
     return !blk && taken<capOfC(w.time);
   });
   // Inicio sin scroll: el bloque ocupa justo lo que queda hasta el menú de abajo.
-  const homeRef=React.useRef(null); const [homeH,setHomeH]=React.useState(null);
+  const homeRef=React.useRef(null); const [homeH,setHomeH]=React.useState(null); const [bonoInfo,setBonoInfo]=React.useState(false);
   React.useLayoutEffect(()=>{ if(tab!=="inicio"){ setHomeH(null); return; } const fit=()=>{ const el=homeRef.current; if(!el) return;
       const nav=document.querySelector(".portal-nav"), navH=nav?nav.getBoundingClientRect().height:84;
       const top=el.getBoundingClientRect().top+window.scrollY, h=Math.floor(window.innerHeight-top-navH-8);
@@ -8865,26 +8865,23 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
         <div aria-hidden="true" style={{position:"fixed",inset:0,zIndex:-1,background:"radial-gradient(90% 40% at 85% -5%,rgba(242,68,29,.20),transparent 70%),#0b0b0e",pointerEvents:"none"}}/>
         {/* Cabecera en una fila: saludo, coach, ayuda, salir y foto */}
         {(()=>{ const h=new Date().getHours(), hello=h>=6&&h<14?"Buenos días":h>=14&&h<21?"Buenas tardes":"Buenas noches"; return(
-        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:10}}>
-          <div style={{display:"flex",alignItems:"center",gap:9,minWidth:0}}>
-            <span style={{width:32,height:32,borderRadius:10,background:DK.acG,display:"grid",placeItems:"center",fontSize:16,boxShadow:"0 4px 16px rgba(242,68,29,.5)",flexShrink:0}}>🔥</span>
-            <div style={{minWidth:0}}>
-              <div style={{fontSize:11,color:DK.mu,fontWeight:700,lineHeight:1.1}}>{hello},</div>
-              <div style={{fontSize:19,fontWeight:800,color:DK.tx,lineHeight:1.15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{client.name.split(" ")[0]} 👋</div>
-            </div>
+        <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
+          <div style={{display:"flex",alignItems:"center",gap:8,minWidth:0}}>
+            <span style={{width:28,height:28,borderRadius:9,background:DK.acG,display:"grid",placeItems:"center",fontSize:14,boxShadow:"0 4px 14px rgba(242,68,29,.45)",flexShrink:0}}>🔥</span>
+            <div style={{fontSize:17,fontWeight:800,color:DK.tx,lineHeight:1.15,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap",minWidth:0}}><span style={{fontSize:12,color:DK.mu,fontWeight:700}}>{hello}, </span>{client.name.split(" ")[0]} 👋</div>
           </div>
           <div style={{display:"flex",alignItems:"center",gap:7,flexShrink:0}}>
             <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-ghost" aria-label="Escribir a tu coach por WhatsApp" title="Tu coach" style={{padding:"7px 10px",textDecoration:"none"}}>💬</a>
             <button className="dk-ghost" onClick={()=>setShowTut(true)} aria-label="Cómo funciona la app (tutorial)" title="Cómo funciona" style={{padding:"7px 11px",fontWeight:900}}>?</button>
             <button className="dk-ghost" onClick={onLogout}>{preview?"← Panel":"Salir"}</button>
             {client.avatar_url
-              ? <img src={client.avatar_url} alt="" style={{width:36,height:36,borderRadius:"50%",objectFit:"cover",border:`2px solid ${DK.ac2}`}}/>
-              : <div className="ring" style={{width:36,height:36,background:DK.card2,color:DK.tx,fontSize:13,border:`2px solid ${DK.ac2}`}}>{ini(client.name)}</div>}
+              ? <img src={client.avatar_url} alt="" style={{width:32,height:32,borderRadius:"50%",objectFit:"cover",border:`2px solid ${DK.ac2}`}}/>
+              : <div className="ring" style={{width:32,height:32,background:DK.card2,color:DK.tx,fontSize:12,border:`2px solid ${DK.ac2}`}}>{ini(client.name)}</div>}
           </div>
         </div>); })()}
 
         {/* Inicio sin scroll: 1) tus reservas · 2) calendario para reservar · 3) tu bono, en una pantalla. */}
-        <div ref={homeRef} data-homefit="1" style={{display:"flex",flexDirection:"column",gap:8,...(homeH?{height:homeH}:{})}}>
+        <div ref={homeRef} data-homefit="1" style={{display:"flex",flexDirection:"column",gap:6,...(homeH?{height:homeH}:{})}}>
         {client.sessions_left<=1 && (
           <div className="dk-note" style={{borderColor:client.sessions_left<=0?"rgba(248,113,113,.45)":"rgba(251,191,36,.4)"}}>
             <div style={{fontSize:13,fontWeight:800,color:client.sessions_left<=0?DK.red:DK.gold,marginBottom:9}}>
@@ -8922,20 +8919,20 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           return(<>
           {/* 1 · Tus reservas: fichas en una fila (se deslizan de lado) */}
           <div data-home="reservas" style={{flex:"none",display:"flex",alignItems:"center",gap:8,minWidth:0}}>
-            <span style={{flexShrink:0,fontSize:11,fontWeight:800,color:DK.mu,lineHeight:1.15,textAlign:"center",width:58}}>📅 TUS<br/>RESERVAS{all.length?<><br/><b style={{color:DK.ac2,fontSize:13}}>{all.length}</b></>:null}</span>
+            <span style={{flexShrink:0,fontSize:10,fontWeight:800,color:DK.mu,lineHeight:1.15,textAlign:"center",width:52}}>📅 TUS<br/>RESERVAS{all.length?<b style={{color:DK.ac2,fontSize:12}}> {all.length}</b>:null}</span>
             <div style={{flex:1,minWidth:0,display:"flex",gap:7,overflowX:"auto",scrollbarWidth:"none",padding:"2px 0"}}>
               {!all.length?<span style={{fontSize:13,color:DK.mu,fontWeight:700,padding:"10px 4px"}}>Aún no tienes clases. Elige una abajo 👇</span>
               :all.map(x=>{ const dd=daysUntil(x.date), d=new Date(x.date+"T12:00:00"), today=x.date===TODAY; return(
                 <button key={x.id} type="button" data-reserva={x.date} onClick={()=>{ setPpView(today?"hoy":"next"); go("entreno"); }}
                   title={x.requested?"Pendiente de confirmar":x.open?"Open · por tu cuenta":"Confirmada"}
-                  style={{flexShrink:0,display:"flex",alignItems:"center",gap:8,padding:"6px 11px 6px 6px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
+                  style={{flexShrink:0,display:"flex",alignItems:"center",gap:7,padding:"4px 10px 4px 4px",borderRadius:12,cursor:"pointer",fontFamily:"inherit",textAlign:"left",
                     background:today?"rgba(242,68,29,.2)":"#15151a",border:`1px solid ${x.requested?"rgba(251,191,36,.45)":x.open?"rgba(45,212,191,.4)":today?"rgba(255,122,69,.6)":DK.line}`}}>
-                  <span style={{width:36,height:36,borderRadius:10,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+                  <span style={{width:30,height:30,borderRadius:8,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
                     <span style={{fontSize:8.5,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase"}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
-                    <span style={{fontSize:15,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>
+                    <span style={{fontSize:13,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>
                   <span>
-                    <span style={{display:"block",fontSize:13.5,fontWeight:800,color:DK.tx,whiteSpace:"nowrap"}}>{dd===0?"Hoy":dd===1?"Mañana":capFirst(d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".",""))} · <span style={{color:x.open?DK.teal:x.requested?DK.gold:DK.ac2}}>{tm(x)}</span></span>
-                    <span style={{display:"block",fontSize:10.5,fontWeight:700,color:x.requested?DK.gold:DK.mu,whiteSpace:"nowrap"}}>{x.requested?"⏳ pendiente":x.open?"🔓 open":x.type===PRIV_TYPE?"🔒 privada":today&&todayAsig?"⚡ ver entreno":"✓ confirmada"}</span>
+                    <span style={{display:"block",fontSize:12.5,fontWeight:800,color:DK.tx,whiteSpace:"nowrap"}}>{dd===0?"Hoy":dd===1?"Mañana":capFirst(d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".",""))} · <span style={{color:x.open?DK.teal:x.requested?DK.gold:DK.ac2}}>{tm(x)}</span></span>
+                    <span style={{display:"block",fontSize:9.5,fontWeight:700,color:x.requested?DK.gold:DK.mu,whiteSpace:"nowrap"}}>{x.requested?"⏳ pendiente":x.open?"🔓 open":x.type===PRIV_TYPE?"🔒 privada":today&&todayAsig?"⚡ ver entreno":"✓ confirmada"}</span>
                   </span>
                 </button>); })}
             </div>
@@ -8944,26 +8941,21 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           {/* 2 · Calendario para reservar (el mismo de la pestaña Reservar) */}
           <div data-home="reservar" style={homeH?{flex:"1 1 auto",minHeight:0,display:"flex",flexDirection:"column"}:{height:"64vh",display:"flex",flexDirection:"column"}}><MultiSessionRequest embedded streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/></div>
 
-          {/* 3 · Tu bono: barra compacta */}
-          <div className="dk-card" data-home="bono" style={{flex:"none",marginBottom:0,padding:"10px 13px"}}>
-            <div style={{display:"flex",alignItems:"center",gap:10}}>
-              <span style={{fontSize:20}}>🎟️</span>
-              <div style={{flex:1,minWidth:0}}>
-                <div style={{display:"flex",alignItems:"baseline",justifyContent:"space-between",gap:8}}>
-                  <span style={{fontSize:14,fontWeight:800,color:DK.tx,whiteSpace:"nowrap"}}>Tu bono · <span key={left} className="count-pop" style={{color:owed?DK.red:DK.ac2}}>{owed?`debes ${owed}`:`te quedan ${Math.max(0,left)}`}</span><span style={{color:DK.mu,fontWeight:700}}> de {tot}</span></span>
-                  {client.next_payment&&isFinite(pd)&&<span style={{fontSize:11,fontWeight:700,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu,whiteSpace:"nowrap"}}>💳 {pd<0?`vencido ${Math.abs(pd)}d`:pd===0?"pago hoy":`pago en ${pd}d`}</span>}
-                </div>
-                <div style={{position:"relative",height:7,borderRadius:5,background:"rgba(255,255,255,.07)",overflow:"hidden",margin:"6px 0 5px"}} aria-hidden="true">
-                  <div style={{position:"absolute",inset:0,width:`${tot?Math.max(0,left)/tot*100:0}%`,background:"linear-gradient(90deg,#ff9a5a,#f2441d)",borderRadius:5}}/>
-                  <div style={{position:"absolute",inset:0,width:`${tot?resN/tot*100:0}%`,background:DK.gold,borderRadius:5,opacity:.9}}/>
-                </div>
-                <div style={{display:"flex",gap:12,fontSize:11,fontWeight:700,color:DK.mu}}>
-                  <span><span className="dk-lg" style={{background:DK.gold}}/>Reservadas {resN}</span>
-                  <span><span className="dk-lg" style={{background:DK.ac}}/>Libres para reservar <b key={nFree} className="count-pop" style={{color:DK.tx}}>{nFree}</b></span>
-                </div>
-              </div>
-            </div>
-          </div>
+          {/* 3 · Tu bono: resumen en una línea (toca para ver el detalle) */}
+          <button type="button" data-home="bono" onClick={()=>setBonoInfo(v=>!v)} aria-expanded={bonoInfo} style={{flex:"none",display:"flex",alignItems:"center",gap:8,width:"100%",padding:"7px 11px",borderRadius:14,cursor:"pointer",fontFamily:"inherit",textAlign:"left",background:"#15151a",border:`1px solid ${owed||left<=1?"rgba(248,113,113,.45)":DK.line}`,color:DK.tx}}>
+            <span style={{fontSize:15}}>🎟️</span>
+            <span style={{fontSize:12.5,fontWeight:800,whiteSpace:"nowrap"}}><span key={left} className="count-pop" style={{color:owed?DK.red:DK.ac2}}>{owed?`Debes ${owed}`:Math.max(0,left)}</span><span style={{color:DK.mu}}>{owed?"":`/${tot}`}</span></span>
+            <span style={{flex:1,minWidth:24,position:"relative",height:5,borderRadius:4,background:"rgba(255,255,255,.08)",overflow:"hidden"}} aria-hidden="true">
+              <span style={{position:"absolute",inset:0,width:`${tot?Math.max(0,left)/tot*100:0}%`,background:"linear-gradient(90deg,#ff9a5a,#f2441d)"}}/>
+              <span style={{position:"absolute",inset:0,width:`${tot?resN/tot*100:0}%`,background:DK.gold}}/>
+            </span>
+            <span style={{fontSize:11,fontWeight:700,color:DK.mu,whiteSpace:"nowrap"}}><b style={{color:DK.gold}}>{resN}</b> res. · <b key={nFree} className="count-pop" style={{color:DK.tx}}>{nFree}</b> libres</span>
+            {client.next_payment&&isFinite(pd)&&<span style={{fontSize:10.5,fontWeight:800,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu,whiteSpace:"nowrap"}}>💳{pd<0?` -${Math.abs(pd)}d`:pd===0?" hoy":` ${pd}d`}</span>}
+          </button>
+          {bonoInfo&&<div className="dk-note" data-bonoinfo="1" style={{flex:"none",margin:0,fontSize:12,color:DK.sub,lineHeight:1.5}}>
+            🎟️ Bono de <b>{tot}</b> sesiones: te quedan <b style={{color:DK.ac2}}>{Math.max(0,left)}</b>{owed?<> (debes <b style={{color:DK.red}}>{owed}</b>)</>:null} · reservadas <b style={{color:DK.gold}}>{resN}</b> · libres para reservar <b>{nFree}</b>
+            {client.next_payment&&isFinite(pd)?<> · 💳 próximo pago {client.payment_amount?<b>{client.payment_amount}€</b>:null} {pd<0?`vencido hace ${Math.abs(pd)} días`:pd===0?"hoy":pd===1?"mañana":`en ${pd} días`}</>:null}
+          </div>}
           </>); })()}
         </div>
       </>}
@@ -9958,12 +9950,12 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
           {client.sessions_left<=0&&<a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name}, quiero renovar mi bono 💪`)} target="_blank" rel="noreferrer" style={{fontSize:11,fontWeight:800,color:"#86efac",textDecoration:"none",border:"1px solid rgba(134,239,172,.35)",borderRadius:20,padding:"3px 10px"}}>Renovar bono ›</a>}
       </div>}
       {/* Semana */}
-      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,margin:"8px 0 6px",flexShrink:0}}>
+      <div style={{position:"relative",display:"flex",alignItems:"center",gap:8,margin:embedded?"0 0 5px":"8px 0 6px",flexShrink:0}}>
         <button type="button" aria-label="Semana anterior" disabled={wk<=cur} onClick={()=>setWk(addDays(wk,-7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:wk<=cur?"rgba(255,255,255,.25)":"#fff",fontSize:18,cursor:wk<=cur?"default":"pointer",fontFamily:"inherit"}}>‹</button>
         <div style={{flex:1,textAlign:"center",fontSize:15,fontWeight:800}}>{lbl}</div>
         <button type="button" aria-label="Semana siguiente" onClick={()=>setWk(addDays(wk,7))} style={{width:34,height:34,borderRadius:"50%",border:"1px solid rgba(255,255,255,.12)",background:"rgba(255,255,255,.06)",color:"#fff",fontSize:18,cursor:"pointer",fontFamily:"inherit"}}>›</button>
       </div>
-      <div className="book-grid" style={{position:"relative",flex:"none",background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`minmax(30px,40px) repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:embedded?`auto repeat(${nRows},minmax(0,1fr))`:`auto repeat(${nRows},minmax(${Math.max(40,18+15*Math.min(5,Math.max(...rows.map(capOf),3)))}px,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
+      <div className="book-grid" style={{"--nd":days.length,position:"relative",flex:"none",background:"rgba(255,255,255,.035)",border:"1px solid rgba(255,255,255,.08)",borderRadius:22,padding:8,display:"grid",gridTemplateColumns:`minmax(30px,40px) repeat(${days.length},minmax(0,1fr))`,gridTemplateRows:embedded?`auto repeat(${nRows},minmax(0,1fr))`:`auto repeat(${nRows},minmax(${Math.max(40,18+15*Math.min(5,Math.max(...rows.map(capOf),3)))}px,1fr))`,gap:5,backdropFilter:"blur(6px)"}}>
         <div/>
         {/* Cabecera de días con «pista» de los días con clase (como una racha) */}
         {days.map((d,i)=>{ const x=new Date(d+"T12:00:00"), t=d===TODAY, on=hasMine(d), prev=i>0&&hasMine(days[i-1]), next=i<days.length-1&&hasMine(days[i+1]); return(
@@ -9986,7 +9978,7 @@ function MultiSessionRequest({client, allClients, allSessions, blocked, waitlist
               free:{background:"rgba(255,255,255,.07)",color:"#fff",border:"1px solid rgba(255,255,255,.1)"}}[st];
             return <button key={k} type="button" disabled={st==="off"} onClick={()=>tapClass(d,t)} aria-label={`${fmtDate(d)} ${t}: ${st==="mine"?"tu clase":st==="sel"?"elegida":st==="full"?"completa":st==="free"?`${free} libres`:"no disponible"}`}
               style={{...cellBase,...sty,cursor:st==="off"?"default":"pointer"}}>
-              {st!=="off"&&<Seats ppl={peopleAt(d,t)} cap={capOf(t)} st={st} wait={!!w} small={embedded}/>}
+              {st!=="off"&&<Seats ppl={peopleAt(d,t)} cap={capOf(t)} st={st} wait={!!w} small={embedded&&typeof window!=="undefined"&&window.innerHeight<760}/>}
             </button>; })}
         </React.Fragment>))}
         {hybrid&&<>
