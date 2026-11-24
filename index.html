@@ -8876,9 +8876,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
           <a href={waLink(TRAINER_PHONE,`Hola! Soy ${client.name} 💪`)} target="_blank" rel="noreferrer" className="dk-coach" aria-label="Escribir a tu coach por WhatsApp"><span className="dk-dot"/>Tu coach</a>
         </div>); })()}
 
-        {/* Avisos */}
-        {client.welcome_msg&&<div className="dk-note" style={{borderColor:"rgba(96,165,250,.3)"}}>💬 {client.welcome_msg}</div>}
-        {myHistory.length===0 && allSessions.some(s=>s.client_id===client.id) && <div className="dk-note" style={{borderColor:"rgba(167,139,250,.35)",color:"#c4b5fd",fontWeight:700}}>🎉 ¡Tu primera sesión! Bienvenido/a a {GYM_NAME}. ¡A por ello! 💪</div>}
+        {/* Inicio sencillo: 1) tus reservas · 2) reservar · 3) tu bono. Lo demás, en las otras pestañas. */}
         {client.sessions_left<=1 && (
           <div className="dk-note" style={{borderColor:client.sessions_left<=0?"rgba(248,113,113,.45)":"rgba(251,191,36,.4)"}}>
             <div style={{fontSize:13,fontWeight:800,color:client.sessions_left<=0?DK.red:DK.gold,marginBottom:9}}>
@@ -8906,147 +8904,77 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
 
         {(()=>{ // Clases reservadas y, en híbrido, también sus días open (por su cuenta)
           const all=[...mySessions,...myOpensUp].sort((x,y)=>(x.date+(x.time||"99")).localeCompare(y.date+(y.time||"99")));
-          const hero=all.find(x=>!x.requested)||null, ups=all.filter(x=>x!==hero), hc=hero?daysUntil(hero.date):null;
           const pf=(d)=>planForDate(client,d,{sessions:allSessions,assignedSessions:myAssignedSessions,assignedExercises:myAssignedExercises,annualBlocks,clientWeights});
-          const hp=hero&&hero.date!==TODAY?pf(hero.date):null;
           const tm=(x)=>x.open?(x.time||"Libre"):x.time;
           const wd=(d)=>new Date(d+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long"});
           const left=parseInt(client.sessions_left)||0, owed=Math.max(0,-left), resN=Math.min(nBooked,Math.max(0,left));
-          // Constancia y marcas para la columna de datos
-          const sess=athleteSessions(client,allHistory,myAssignedSessions,myAssignedExercises), days=[...new Set(sess.map(x=>x.date))];
-          const month=days.filter(d=>d.startsWith(TODAY.slice(0,7))).length;
-          const mon=mondayOfDate(TODAY), weeks=Array.from({length:8},(_,i)=>addDays(mon,-7*(7-i)));
-          const perWeek=weeks.map(w=>days.filter(d=>d>=w&&d<addDays(w,7)).length), maxW=Math.max(1,...perWeek);
-          const avgW=Math.round(perWeek.slice(0,7).reduce((a,b)=>a+b,0)/7*10)/10;
-          const marks=strengthByExercise(strengthLog(client,myAssignedSessions,myAssignedExercises)).filter(x=>x.best).length;
           const R1=50, C1=2*Math.PI*R1, R2=37, C2=2*Math.PI*R2;
-          const stat=(ic,l,v,onClick,col)=><button type="button" onClick={onClick} className="dk-stat">
-            <span style={{width:34,height:34,borderRadius:"50%",background:DK.card2,display:"grid",placeItems:"center",fontSize:16,flexShrink:0}}>{ic}</span>
-            <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:11,color:DK.mu,fontWeight:700}}>{l}</span><span style={{display:"block",fontSize:16,fontWeight:800,color:col||DK.ac2,lineHeight:1.2,whiteSpace:"nowrap"}}>{v}</span></span>
-            <span style={{color:DK.dim,fontSize:16}}>›</span></button>;
-          const tile=(x)=>{ const d=new Date(x.date+"T12:00:00"); return <span style={{width:48,height:48,borderRadius:14,flexShrink:0,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
-            <span style={{fontSize:9,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase",letterSpacing:.4}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
-            <span style={{fontSize:19,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>; };
+          const tile=(x)=>{ const d=new Date(x.date+"T12:00:00"); return <span style={{width:52,height:52,borderRadius:14,flexShrink:0,background:x.open?"rgba(45,212,191,.14)":x.requested?"rgba(251,191,36,.12)":"rgba(255,122,69,.13)",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
+            <span style={{fontSize:10,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,textTransform:"uppercase",letterSpacing:.4}}>{d.toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</span>
+            <span style={{fontSize:20,fontWeight:800,color:DK.tx,lineHeight:1}}>{d.getDate()}</span></span>; };
+          const shown=all.slice(0,6);
           return(<>
-          {/* 1 · Su próxima sesión, lo primero */}
-          <div className="dk-card" style={{marginBottom:14,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.34),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
-            <div style={{fontSize:11,fontWeight:800,color:DK.ac2,letterSpacing:.8}}>TU PRÓXIMA SESIÓN</div>
-            {hero?<>
-              <div style={{display:"flex",alignItems:"center",gap:14,marginTop:10}}>
-                <div style={{width:64,flexShrink:0,textAlign:"center",background:DK.card2,borderRadius:16,padding:"8px 0",border:`1px solid ${DK.line}`}}>
-                  <div style={{fontSize:11,fontWeight:800,color:hero.open?DK.teal:DK.ac2,textTransform:"uppercase"}}>{new Date(hero.date+"T12:00:00").toLocaleDateString("es-ES",{weekday:"short"}).replace(".","")}</div>
-                  <div style={{fontSize:28,fontWeight:800,color:DK.tx,lineHeight:1.05}}>{new Date(hero.date+"T12:00:00").getDate()}</div>
-                  <div style={{fontSize:10,fontWeight:700,color:DK.mu,textTransform:"uppercase"}}>{new Date(hero.date+"T12:00:00").toLocaleDateString("es-ES",{month:"short"}).replace(".","")}</div>
-                </div>
-                <div style={{minWidth:0}}>
-                  <div style={{fontSize:24,fontWeight:800,color:DK.tx,lineHeight:1.1}}>{hc===0?"Hoy":hc===1?"Mañana":capFirst(wd(hero.date))} · <span style={{color:DK.ac2}}>{tm(hero)}</span></div>
-                  {hero.open&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,color:DK.teal,background:"rgba(45,212,191,.13)",borderRadius:20,padding:"2px 9px",marginTop:5}}>🔓 Open · vas por tu cuenta</div>}
-                  {hero.type===PRIV_TYPE&&<div style={{display:"inline-block",fontSize:11,fontWeight:800,color:"#c4b5fd",background:"rgba(167,139,250,.15)",borderRadius:20,padding:"2px 9px",marginTop:5}}>🔒 Clase privada · solo tú y tu coach</div>}
-                  <div style={{fontSize:13,fontWeight:700,color:DK.mu,marginTop:3}}>{hc===0?"¡Es hoy! 💪":hc===1?"Mañana toca 💪":`Dentro de ${hc} días`}</div>
-                  {hp&&<div style={{fontSize:13,fontWeight:800,color:DK.sub,marginTop:3}}>🏋️ Te toca: {hp.label}</div>}
-                </div>
-              </div>
-              {(hp||hc===0)&&<button type="button" className="dk-pill" style={{width:"100%",justifyContent:"center",marginTop:14,padding:"12px",border:"none",cursor:"pointer",fontSize:14}} onClick={()=>{ setPpView(hc===0?"hoy":"next"); go("entreno"); }}>{hc===0?"⚡ Ver mi entreno de hoy ›":"Ver qué me toca ›"}</button>}
-            </>:<>
-              <div style={{fontSize:18,fontWeight:800,color:DK.tx,marginTop:8}}>Aún no tienes clases reservadas</div>
-              <button type="button" className="dk-pill" style={{width:"100%",justifyContent:"center",marginTop:12,padding:"12px",border:"none",cursor:"pointer",fontSize:14}} onClick={()=>go("reservar")}>📅 Reservar clase ›</button>
-            </>}
+          {/* 1 · Tus reservas */}
+          <div className="dk-card" data-home="reservas" style={{marginBottom:12,background:"radial-gradient(110% 120% at 100% 0%,rgba(242,68,29,.26),transparent 60%),#15151a",borderColor:"rgba(255,122,69,.22)"}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:all.length?4:0}}>
+              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>📅 Tus reservas</span>
+              {all.length>0&&<span style={{fontSize:12,fontWeight:800,color:DK.ac2}}>{all.length} {all.length===1?"clase":"clases"}</span>}
+            </div>
+            {!all.length?<div style={{fontSize:14,color:DK.mu,fontWeight:600,marginTop:8}}>Aún no tienes clases reservadas.</div>
+            :shown.map((x,i)=>{ const dd=daysUntil(x.date), pl=x.date!==TODAY&&!x.requested?pf(x.date):null, today=x.date===TODAY; return(
+              <button key={x.id} type="button" data-reserva={x.date} onClick={()=>{ setPpView(today?"hoy":"next"); go("entreno"); }} className="dk-row" style={{background:"none",padding:"10px 0",borderRadius:0,borderTop:i?`1px solid ${DK.line}`:"none"}}>
+                {tile(x)}
+                <span style={{flex:1,minWidth:0}}>
+                  <span style={{display:"block",fontSize:16,fontWeight:800,color:DK.tx}}>{dd===0?"Hoy":dd===1?"Mañana":capFirst(wd(x.date))} · <span style={{color:x.open?DK.teal:x.requested?DK.gold:DK.ac2}}>{tm(x)}</span></span>
+                  <span style={{display:"block",fontSize:12,fontWeight:700,color:x.requested?DK.gold:DK.mu,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>
+                    {x.requested?"⏳ Pendiente de confirmar":x.open?"🔓 Open · por tu cuenta":x.type===PRIV_TYPE?"🔒 Clase privada":today&&todayAsig?"⚡ Toca para ver tu entreno de hoy":pl?`🏋️ ${pl.label}`:"✓ Confirmada"}</span>
+                </span>
+                <span style={{color:DK.dim,fontSize:18}}>›</span>
+              </button>); })}
+            {all.length>shown.length&&<button type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{border:"none",background:"none",color:DK.ac2,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit",padding:"6px 0 0"}}>Ver las {all.length} reservas ›</button>}
           </div>
 
-          {todayAsig&&nextCountdown!==0&&<button type="button" onClick={()=>{ setPpView("hoy"); go("entreno"); }} className="dk-card dk-press" style={{width:"100%",display:"flex",alignItems:"center",gap:12,marginBottom:14,cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
-            <span style={{width:46,height:46,borderRadius:14,background:"rgba(255,122,69,.13)",display:"grid",placeItems:"center",fontSize:22,flexShrink:0}}>⚡</span>
-            <span style={{flex:1,minWidth:0}}>
-              <span style={{display:"block",fontSize:11,fontWeight:800,color:DK.mu,letterSpacing:.5}}>ENTRENO DE HOY</span>
-              <span style={{display:"block",fontSize:15,fontWeight:800,color:DK.tx}}>{DAY_LABEL[todayAsig.day_type]||"Tu sesión"}</span>
-              <span style={{display:"block",fontSize:12,color:todayDone===todayExs.length&&todayExs.length?DK.grn:DK.mu,fontWeight:700}}>{todayExs.length?(todayDone===todayExs.length?"✓ ¡Completado!":`${todayDone}/${todayExs.length} ejercicios hechos`):"Preparado por tu trainer"}</span>
-            </span>
-            <span style={{fontSize:20,color:DK.dim}}>›</span>
-          </button>}
+          {/* 2 · Reservar una clase nueva */}
+          <button type="button" data-home="reservar" className="dk-pill" onClick={()=>go("reservar")} style={{width:"100%",justifyContent:"center",marginBottom:12,padding:"16px",border:"none",cursor:"pointer",fontSize:17,flexDirection:"column",gap:2,borderRadius:18}}>
+            <span>📅 Reservar una clase</span>
+            <span style={{fontSize:12,fontWeight:700,opacity:.85}}>{nFree>0?`Te ${nFree===1?"queda":"quedan"} ${nFree} para reservar`:client.sessions_left<=0?"Renueva tu bono para reservar":"Ya tienes reservadas todas tus sesiones"}</span>
+          </button>
 
-          {/* 2 · Tu bono (anillo doble) + tus datos */}
-          <div className="dk-card" style={{marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:12}}>
-              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>Tu bono</span>
+          {/* 3 · Estado del bono */}
+          <div className="dk-card" data-home="bono" style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:10}}>
+              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>🎟️ Tu bono</span>
               <span style={{fontSize:11,fontWeight:700,color:DK.mu}}>{tot} sesiones</span>
             </div>
-            <div style={{display:"flex",alignItems:"center",gap:14}}>
-              <button type="button" onClick={()=>go("reservar")} style={{position:"relative",width:122,height:122,flexShrink:0,border:"none",background:"none",padding:0,cursor:"pointer"}} aria-label={`Te quedan ${Math.max(0,left)} de ${tot}: ${resN} reservadas y ${nFree} libres para reservar`}>
+            <div style={{display:"flex",alignItems:"center",gap:16}}>
+              <div style={{position:"relative",width:122,height:122,flexShrink:0}} role="img" aria-label={`Te quedan ${Math.max(0,left)} de ${tot}: ${resN} reservadas y ${nFree} libres para reservar`}>
                 <svg width="122" height="122" viewBox="0 0 122 122" aria-hidden="true"><defs><linearGradient id="dkBonoG" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stopColor="#ff9a5a"/><stop offset="1" stopColor="#f2441d"/></linearGradient></defs>
                   <circle cx="61" cy="61" r={R1} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="10"/>
-                  <circle cx="61" cy="61" r={R1} fill="none" stroke="url(#dkBonoG)" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${tot?Math.max(0,left)/tot*C1:0} ${C1}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s",filter:"drop-shadow(0 0 7px rgba(255,106,61,.6))"}}/>
+                  <circle cx="61" cy="61" r={R1} fill="none" stroke="url(#dkBonoG)" strokeWidth="10" strokeLinecap="round" strokeDasharray={`${tot?Math.max(0,left)/tot*C1:0} ${C1}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s"}}/>
                   <circle cx="61" cy="61" r={R2} fill="none" stroke="rgba(255,255,255,.06)" strokeWidth="8"/>
-                  <circle cx="61" cy="61" r={R2} fill="none" stroke={DK.gold} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${tot?resN/tot*C2:0} ${C2}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s",filter:"drop-shadow(0 0 5px rgba(251,191,36,.5))"}}/>
+                  <circle cx="61" cy="61" r={R2} fill="none" stroke={DK.gold} strokeWidth="8" strokeLinecap="round" strokeDasharray={`${tot?resN/tot*C2:0} ${C2}`} transform="rotate(-90 61 61)" style={{transition:"stroke-dasharray .6s"}}/>
                 </svg>
                 <span style={{position:"absolute",inset:0,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center"}}>
                   <span key={left} className="count-pop" style={{fontSize:32,fontWeight:800,color:owed?DK.red:DK.tx,lineHeight:1}}>{owed?owed:Math.max(0,left)}</span>
                   <span style={{fontSize:10,fontWeight:800,color:owed?DK.red:DK.mu}}>{owed?"DEBES":`DE ${tot}`}</span>
                 </span>
-              </button>
-              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:2}}>
-                {stat("🔥","Racha",`${streak} ${streak===1?"semana":"semanas"}`,()=>go("progreso"))}
-                {stat("📅","Este mes",`${month} ${month===1?"entreno":"entrenos"}`,()=>{ setPpView("hist"); go("entreno"); })}
-                {hyb?stat("🔓",openTotal(client)?"Open por reservar":"Open esta semana",openTotal(client)?`${openLeft(client,myOpens)} de ${openTotal(client)}`:`${opensInWeek(client,TODAY,myOpens).length}${openLim?` de ${openLim}`:""}`,()=>go("reservar"),DK.teal)
-                  :stat("🏆","Mejores marcas",`${marks} ${marks===1?"ejercicio":"ejercicios"}`,()=>go("progreso"))}
+              </div>
+              <div style={{flex:1,minWidth:0,display:"flex",flexDirection:"column",gap:7,fontSize:13,fontWeight:700,color:DK.sub}}>
+                <span><span className="dk-lg" style={{background:DK.ac}}/>Te quedan <b style={{color:DK.tx}}>{Math.max(0,left)}</b></span>
+                <span><span className="dk-lg" style={{background:DK.gold}}/>Reservadas <b style={{color:DK.tx}}>{resN}</b></span>
+                <span><span className="dk-lg" style={{background:"rgba(255,255,255,.25)"}}/>Libres para reservar <b key={nFree} className="count-pop" style={{color:DK.tx}}>{nFree}</b></span>
               </div>
             </div>
-            <div style={{display:"flex",flexWrap:"wrap",gap:"6px 14px",marginTop:12,fontSize:11,fontWeight:700,color:DK.mu}}>
-              <span><span className="dk-lg" style={{background:DK.ac}}/>Te quedan {Math.max(0,left)}</span>
-              <span><span className="dk-lg" style={{background:DK.gold}}/>Reservadas {resN}</span>
-              <span style={{color:nFree>0?DK.tx:DK.mu}}><span className="dk-lg" style={{background:"rgba(255,255,255,.25)"}}/>Libres para reservar <b key={nFree} className="count-pop">{nFree}</b></span>
-            </div>
-            <div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${DK.line}`,fontSize:12,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu}}>💳 Próximo pago: <b style={{color:DK.tx}}>{client.payment_amount}€</b> · {pd<0?`vencido hace ${Math.abs(pd)}d`:pd===0?"¡hoy!":`en ${pd} días`}</div>
+            {client.next_payment&&isFinite(pd)&&<div style={{marginTop:12,paddingTop:11,borderTop:`1px solid ${DK.line}`,fontSize:12,color:pd<=3?DK.red:pd<=7?DK.gold:DK.mu}}>💳 Próximo pago: {client.payment_amount?<b style={{color:DK.tx}}>{client.payment_amount}€</b>:null}{client.payment_amount?" · ":""}{pd<0?`vencido hace ${Math.abs(pd)} días`:pd===0?"¡hoy!":pd===1?"mañana":`en ${pd} días`}</div>}
           </div>
-
-          {/* 3 · Tu constancia: entrenos por semana */}
-          <div className="dk-card" style={{marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
-              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>Tu constancia</span>
-              <span style={{fontSize:11,fontWeight:700,color:DK.mu,background:DK.card2,borderRadius:20,padding:"4px 10px"}}>8 semanas</span>
-            </div>
-            <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:6}}>
-              <span style={{fontSize:30,fontWeight:800,color:DK.tx,lineHeight:1}}>{perWeek[7]}</span>
-              <span style={{fontSize:13,color:DK.mu,fontWeight:700}}>{perWeek[7]===1?"entreno":"entrenos"} esta semana · media {String(avgW).replace(".",",")}/sem</span>
-            </div>
-            <div style={{display:"flex",alignItems:"flex-end",gap:7,height:96,marginTop:14}} aria-label="Entrenos por semana, últimas 8 semanas">
-              {perWeek.map((n,i)=>{ const cur=i===7; return <div key={i} title={`Semana del ${fmtD(weeks[i])}: ${n}`} style={{flex:1,height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:4}}>
-                {cur?<span style={{fontSize:11,fontWeight:800,color:"#fff",background:DK.acG,borderRadius:8,padding:"1px 7px",boxShadow:"0 0 12px rgba(242,68,29,.6)"}}>{n}</span>:<span style={{fontSize:10,fontWeight:700,color:n?DK.sub:DK.dim}}>{n}</span>}
-                <div style={{width:"100%",maxWidth:26,height:Math.max(4,n/maxW*62),borderRadius:7,background:cur?DK.acG:n?"rgba(255,122,69,.28)":"rgba(255,255,255,.06)",boxShadow:cur?"0 0 16px rgba(242,68,29,.65)":"none"}}/>
-              </div>; })}
-            </div>
-            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:DK.dim,marginTop:6,fontWeight:700}}><span>hace 8 semanas</span><span style={{color:DK.ac2}}>esta semana</span></div>
-          </div>
-
-          {/* 3b · Tu nivel (gamificación): más abajo, junto a la constancia */}
-          <GameHero g={game} onOpen={openLogros}/>
-          {/* 4 · Tus próximas sesiones */}
-          {ups.length>0&&<div className="dk-card" style={{marginBottom:14}}>
-            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:6}}>
-              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>Tus próximas sesiones</span>
-              <button type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} style={{border:"none",background:"none",color:DK.ac2,fontSize:12,fontWeight:800,cursor:"pointer",fontFamily:"inherit"}}>Ver todo ›</button>
-            </div>
-            {ups.slice(0,5).map(x=>{ const pl=x.date!==TODAY?pf(x.date):null; return(
-              <button key={x.id} type="button" onClick={()=>{ setPpView("next"); go("entreno"); }} className="dk-row" style={{background:"none",padding:"9px 0",borderRadius:0,borderTop:`1px solid ${DK.line}`}}>
-                {tile(x)}
-                <span style={{flex:1,minWidth:0}}>
-                  <span style={{display:"block",fontSize:14,fontWeight:800,color:DK.tx}}>{x.requested?"Pendiente de confirmar":x.open?"Open · por tu cuenta":x.type===PRIV_TYPE?"🔒 Clase privada"+(pl?" · "+pl.label:""):pl?pl.label:"Clase reservada"}</span>
-                  <span style={{display:"block",fontSize:12,color:DK.mu,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{capFirst(wd(x.date))}{x.open&&pl?` · ${pl.label}`:""}</span>
-                </span>
-                <span style={{fontSize:14,fontWeight:800,color:x.open?DK.teal:x.requested?DK.gold:DK.ac2,whiteSpace:"nowrap"}}>{tm(x)}</span>
-                <span style={{color:DK.dim,fontSize:16}}>›</span>
-              </button>); })}
-            {ups.length>5&&<div style={{fontSize:11,color:DK.dim,padding:"4px 0 0"}}>y {ups.length-5} más…</div>}
-          </div>}
           </>); })()}
-
-        {/* 5 · Dieta */}
-        <DietCard client={client}/>
-
-        <ClientSummary dark noHello noPhase noConstancy onSeeAllStrength={()=>go("progreso")} client={client} history={allHistory} assignedSessions={myAssignedSessions} assignedExercises={myAssignedExercises} progress={myProgress} annualBlocks={annualBlocks} sessions={allSessions}/>
+        <div style={{fontSize:11.5,color:DK.dim,textAlign:"center",margin:"4px 0 8px"}}>Tu entreno, tu progreso, tus logros y la comunidad están en las pestañas de abajo 👇</div>
       </>}
 
       {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
 
       {tab==="entreno"&&<div>
+        {client.welcome_msg&&<div className="dk-note" style={{borderColor:"rgba(96,165,250,.3)"}}>💬 {client.welcome_msg}</div>}
         <div className="seg" style={{marginBottom:14}}>
           <button className={"sb"+(ppView==="hoy"?" on":"")} onClick={()=>setPpView("hoy")} style={{fontSize:13}}>⚡ Hoy</button>
           <button className={"sb"+(ppView==="next"?" on":"")} onClick={()=>setPpView("next")} style={{fontSize:13}}>🔜 Próximas</button>
@@ -10786,6 +10714,32 @@ function PlansAdmin({plans, exercises, clients, clientPlans, loadAll, notify}) {
 }
 
 // ── PROGRESS TAB ──────────────────────────────────────────────────────────
+// Tu constancia (entrenos por semana, 8 semanas): vive en Progreso.
+function ConstanciaCard({client,history,assignedSessions,assignedExercises}){
+  const sess=athleteSessions(client,history,assignedSessions,assignedExercises), days=[...new Set(sess.map(x=>x.date))];
+  const mon=mondayOfDate(TODAY), weeks=Array.from({length:8},(_,i)=>addDays(mon,-7*(7-i)));
+  const perWeek=weeks.map(w=>days.filter(d=>d>=w&&d<addDays(w,7)).length), maxW=Math.max(1,...perWeek);
+  const avgW=Math.round(perWeek.slice(0,7).reduce((a,b)=>a+b,0)/7*10)/10;
+  return(<div data-constancia="1">
+          <div className="dk-card" style={{marginBottom:14}}>
+            <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8}}>
+              <span style={{fontSize:16,fontWeight:800,color:DK.tx}}>Tu constancia</span>
+              <span style={{fontSize:11,fontWeight:700,color:DK.mu,background:DK.card2,borderRadius:20,padding:"4px 10px"}}>8 semanas</span>
+            </div>
+            <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:6}}>
+              <span style={{fontSize:30,fontWeight:800,color:DK.tx,lineHeight:1}}>{perWeek[7]}</span>
+              <span style={{fontSize:13,color:DK.mu,fontWeight:700}}>{perWeek[7]===1?"entreno":"entrenos"} esta semana · media {String(avgW).replace(".",",")}/sem</span>
+            </div>
+            <div style={{display:"flex",alignItems:"flex-end",gap:7,height:96,marginTop:14}} aria-label="Entrenos por semana, últimas 8 semanas">
+              {perWeek.map((n,i)=>{ const cur=i===7; return <div key={i} title={`Semana del ${fmtD(weeks[i])}: ${n}`} style={{flex:1,height:"100%",display:"flex",flexDirection:"column",justifyContent:"flex-end",alignItems:"center",gap:4}}>
+                {cur?<span style={{fontSize:11,fontWeight:800,color:"#fff",background:DK.acG,borderRadius:8,padding:"1px 7px",boxShadow:"0 0 12px rgba(242,68,29,.6)"}}>{n}</span>:<span style={{fontSize:10,fontWeight:700,color:n?DK.sub:DK.dim}}>{n}</span>}
+                <div style={{width:"100%",maxWidth:26,height:Math.max(4,n/maxW*62),borderRadius:7,background:cur?DK.acG:n?"rgba(255,122,69,.28)":"rgba(255,255,255,.06)",boxShadow:cur?"0 0 16px rgba(242,68,29,.65)":"none"}}/>
+              </div>; })}
+            </div>
+            <div style={{display:"flex",justifyContent:"space-between",fontSize:10,color:DK.dim,marginTop:6,fontWeight:700}}><span>hace 8 semanas</span><span style={{color:DK.ac2}}>esta semana</span></div>
+          </div>
+  </div>);
+}
 function ProgressTab({client, history, myProgress, myRecords, myAchievements, exercises, loadAll, notify, assignedSessions, assignedExercises, game, initialView}) {
   const [view, setView] = React.useState(initialView||"fuerza");
   const segRef = React.useRef(null);
@@ -10847,6 +10801,7 @@ function ProgressTab({client, history, myProgress, myRecords, myAchievements, ex
   return(
     <div>
       {game&&view!=="badges"&&<GameHero g={game} onOpen={()=>{ setView("badges"); setTimeout(()=>{ try{ segRef.current&&segRef.current.scrollIntoView({behavior:"smooth",block:"start"}); }catch(e){} },80); }}/>}
+      {view!=="badges"&&<><ConstanciaCard client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/><DietCard client={client}/></>}
       <AthleteStats client={client} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises}/>
       <div ref={segRef} className="seg" style={{marginBottom:14,scrollMarginTop:12}}>
         {[["fuerza","💪","Fuerza"],["volumen","📊","Volumen"],["stats","📏","Medidas"],["photos","📸","Fotos"],["badges","🏆","Logros"]].map(([id,ic,label])=>(
@@ -13450,7 +13405,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 }
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
-ClientPortal=noTheme(ClientPortal); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
+ClientPortal=noTheme(ClientPortal); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
