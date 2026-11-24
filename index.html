@@ -2228,8 +2228,6 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
             {/* ── ATAJOS: un toque y estás en cada sección ── */}
             {(()=>{ const go=(v)=>()=>setView(v);
               const items=[
-                ["agenda","Agenda",go("schedule")],
-                ["calendar","Nueva sesión",()=>{ setView("schedule"); setShowNS(true); }],
                 ["program","Programa",()=>{ setProgTab({t:null,k:Date.now()}); setView("programming"); }],
                 ["bell","Alertas",go("reminders"),reminders.length],
                 ["forum","Comunidad",go("forum"),forumNew],
@@ -2268,21 +2266,6 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 </div>
               );
             })()}
-            </div>
-            <div className="stats-grid" style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14,marginTop:4}}>
-              {[
-                {label:"Clientes",val:clients.length,ico:"clients",go:"clients"},
-                {label:"Activos",val:clients.filter(c=>statusOf(c)==="active").length,ico:"check",go:"clients"},
-                {label:"Alertas",val:reminders.length,ico:"bell",go:"reminders"},
-                {label:"Sesiones hoy",val:todaySessions.length,ico:"stopwatch",go:"schedule"},
-                {label:"Este mes",val:`${monthIncome}€`,ico:"moneybag",go:"income"},
-              ].map(s=>(
-                <div key={s.label} className={"card"+(s.go?" tilt":"")} onClick={s.go?()=>setView(s.go):undefined} style={{padding:"12px 14px",...(s.go?{cursor:"pointer"}:{})}}>
-                  <Ico k={s.ico} size={30}/>
-                  <div style={{fontSize:22,fontWeight:800,color:"#0f172a",marginTop:6,lineHeight:1.1}}>{s.val}</div>
-                  <div style={{fontSize:11,color:"#64748b",marginTop:2,fontWeight:600}}>{s.label}</div>
-                </div>
-              ))}
             </div>
           </div>
         )}
@@ -2359,6 +2342,11 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 <button className="btn sky" onClick={()=>setShowNC(true)}>+ Nuevo</button>
               </div>
             </div>
+            {(()=>{ const act=clients.filter(c=>statusOf(c)==="active").length; return(
+              <div data-clistats="1" style={{display:"grid",gridTemplateColumns:"repeat(2,minmax(0,1fr))",gap:8,marginBottom:14,maxWidth:420}}>
+                {[["clients","Clientes",clients.length],["check","Activos",act]].map(([ic,l,v])=><div key={l} className="card" style={{padding:"11px 13px",display:"flex",alignItems:"center",gap:10}}>
+                  <Ico k={ic} size={28}/><div><div style={{fontSize:22,fontWeight:800,color:"#0f172a",lineHeight:1.1}}>{v}</div><div style={{fontSize:11,color:"#64748b",fontWeight:600}}>{l}</div></div></div>)}
+              </div>); })()}
             {bajaClients.length>0&&<div className="seg" role="tablist" aria-label="Clientes" style={{marginBottom:14,maxWidth:360}}>
               {[["act",`✅ Activos · ${clients.length}`],["baja",`🗄 De baja · ${bajaClients.length}`]].map(([k,l])=><button key={k} role="tab" aria-selected={cliTab===k} className={"sb"+(cliTab===k?" on":"")} onClick={()=>setCliTab(k)} style={{fontSize:13}}>{l}</button>)}
             </div>}
@@ -2419,7 +2407,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center"}}>
                       <div>
                         <div style={{fontSize:10,color:"#94a3b8",fontWeight:700}}>PRÓXIMO PAGO</div>
-                        <div style={{fontSize:12,color:pd<=3?"#dc2626":"#64748b"}}>{pd<0?"Vencido":pd===0?"Hoy":`${pd}d`} · {c.payment_amount}€</div>
+                        <div style={{fontSize:12,color:isFinite(pd)&&pd<=3?"#dc2626":"#64748b"}}>{isFinite(pd)?(pd<0?"Vencido":pd===0?"Hoy":`${pd}d`):"Sin fecha"}{c.payment_amount?` · ${c.payment_amount}€`:""}</div>
                       </div>
                       <button className="btn wa" style={{fontSize:11}} onClick={e=>{e.stopPropagation();setWaClient(c);}}>📱 WA</button>
                     </div>
