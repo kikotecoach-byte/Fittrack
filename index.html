@@ -4701,7 +4701,7 @@ function ClassViewModal({openSessions,units,date,time,sessions,history,clients,a
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{opn.length?` + ${opn.length} open`:""}{blk?` · ${blk.name}`:""}</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>{capFirst(fmtLong(date))} · {slot.length} persona{slot.length===1?"":"s"}{opn.length?` + ${opn.length} open`:""}{blk?` · ${blk.name}`:""}</p>
 
         {/* Todo lo de la clase en un sitio: añadir, valoración, privada/bloquear */}
         {(onAdd||onValoracion||onSlotMenu)&&<div data-classacts="1" style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
@@ -4712,6 +4712,20 @@ function ClassViewModal({openSessions,units,date,time,sessions,history,clients,a
         </div>}
         {slot.length===0&&opn.length===0&&<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"14px 0"}}>Aún no hay nadie en esta clase.</div>}
         {/* Mapa de la sala: material y cuellos de botella */}
+        {(()=>{ const rows=[...rutinas.map(({s,r})=>({c:s.client,exs:r.exs})),...opn.map(x=>({c:x.client,exs:x.r.exs}))]
+            .map(x=>({...x,exs:x.exs.filter(e=>barKgOf(e.name)!=null&&parseFloat(e.w)>0)})).filter(x=>x.exs.length);
+          if(!rows.length) return null; return(
+          <details data-discos="1" style={{border:"1px solid #e6ebf3",borderRadius:12,padding:"9px 11px",marginBottom:12,background:"#fbfcfe"}}>
+            <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#334155"}}>🏋️ Discos para preparar (por lado) · {rows.reduce((n,x)=>n+x.exs.length,0)} ejercicios con barra</summary>
+            {rows.map(({c,exs})=><div key={c.id} style={{marginTop:8}}>
+              <div style={{fontSize:12,fontWeight:800,color:c.color||"#0f172a",marginBottom:3}}>{c.name.split(" ")[0]}</div>
+              {exs.map((e,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"4px 0",borderTop:i?"1px solid #eef1f6":"none"}}>
+                <span style={{flex:"1 1 130px",minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{e.name} <span className="mono" style={{color:"#ca8a04"}}>{e.w} kg</span></span>
+                <PlatesRow name={e.name} kg={e.w} small/>
+              </div>)}
+            </div>)}
+            <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Discos de 25 (rojo), 20 (azul), 15 (amarillo), 10 (verde), 5, 2,5 y 1,25. Barra recta 20 kg · Z 10 · SSB 25 · multipower 15.</div>
+          </details>); })()}
         <RoomMap people={[...rutinas.map(({s,r})=>({client:s.client,exs:r.exs.map(e=>e.name)})),...opn.map(x=>({client:x.client,exs:x.r.exs.map(e=>e.name)}))]} units={units}/>
         {opn.length>0&&<div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN A ESTA HORA · {opn.length} · van por su cuenta (cuentan en el mapa)</div>
@@ -5011,6 +5025,26 @@ function useDragSort(keys, onDrop, opts){
 }
 // Menú de atajos para mover un ejercicio (o un WOD entero) dentro de la sesión.
 // extra = [{ico,label,sub,run}] acciones añadidas por cada vista (p. ej. pasar a otro día).
+// ── DISCOS: qué poner en la barra para cada carga (por lado), para preparar la sesión.
+const PLATE_SET=[25,20,15,10,5,2.5,1.25];
+const PLATE_COL={25:["#d8392f","#fff"],20:["#2f63d8","#fff"],15:["#e8c020","#1a1a1a"],10:["#2ca84f","#fff"],5:["#eef0f4","#1a1a1a"],2.5:["#1f2230","#fff"],1.25:["#9aa0b0","#1a1a1a"]};
+// Peso de la barra según el material del ejercicio (null = no lleva discos).
+const barKgOf=(name)=>{ if(/mancuern|kettlebell|goblet|polea|m[áa]quina|jal[óo]n/i.test(String(name||""))) return null;
+  const eq=equipmentOf(name); return eq==="barraz"?10:eq==="safetybar"?25:eq==="multipower"?15:(eq==="barra"||eq==="rackpines")?20:null; };
+const platesFor=(kg,bar)=>{ let side=Math.round(((Number(kg)||0)-bar)/2*100)/100; const out=[]; if(side<=0) return {out,rest:0};
+  for(const p of PLATE_SET){ while(side>=p-1e-9){ out.push(p); side=Math.round((side-p)*100)/100; } } return {out,rest:side}; };
+// Fila compacta: «barra 20 · por lado: [20][10][2.5]»
+function PlatesRow({name,kg,small}){
+  const bar=barKgOf(name), n=parseFloat(String(kg||"").replace(",","."));
+  if(bar==null||!isFinite(n)||n<=0) return null;
+  if(n<bar) return <span data-plates="1" style={{fontSize:small?10:11,color:"#94a3b8",fontWeight:700}}>🏋️ menos que la barra ({bar} kg)</span>;
+  const {out,rest}=platesFor(n,bar), fmt=(x)=>String(x).replace(".",",");
+  return <span data-plates="1" title={`Barra de ${bar} kg + ${out.length?out.map(fmt).join(" + ")+" kg":"nada"} por lado`} style={{display:"inline-flex",alignItems:"center",gap:3,flexWrap:"wrap",fontSize:small?10:11,color:"#64748b",fontWeight:700}}>
+    🏋️ barra {bar}{out.length?" · lado:":" sola"}
+    {out.map((p,i)=><span key={i} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:small?20:23,height:small?15:17,padding:"0 3px",borderRadius:4,background:PLATE_COL[p][0],color:PLATE_COL[p][1],fontSize:small?8.5:9.5,fontWeight:900,border:"1px solid rgba(0,0,0,.18)"}}>{fmt(p)}</span>)}
+    {rest>0&&<span style={{color:"#b45309"}}>+{fmt(rest)} ≈</span>}
+  </span>;
+}
 // Menú de acciones compacto: un botón (⋯ o ＋) que despliega las opciones.
 function ActMenu({items,label,children,btnStyle,title}){
   const [pos,setPos]=React.useState(null);
@@ -5303,6 +5337,18 @@ function HybridBox({client,date,loadAll,notify,athlete}){
       <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Sus días open aparecen en la planificación semanal para que le prepares el entreno.</div>
     </div>);
 }
+// Sección desplegable (ficha rápida del cliente).
+function Fold({id,icon,title,sub,open:o0,children}){
+  const [o,setO]=React.useState(!!o0);
+  return(<div data-fold={id} style={{border:"1px solid #e6ebf3",borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+    <button type="button" aria-expanded={o} onClick={()=>setO(v=>!v)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 13px",background:o?"#f1f4fa":"#f8fafc",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+      <span style={{fontSize:18}}>{icon}</span>
+      <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:14,fontWeight:800,color:"#0f172a"}}>{title}</span>{sub&&<span style={{display:"block",fontSize:11,color:"#64748b",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span>}</span>
+      <span style={{fontSize:14,color:"#64748b",transform:o?"rotate(90deg)":"none",transition:"transform .15s"}}>▸</span>
+    </button>
+    {o&&<div style={{padding:"11px 12px 12px"}}>{children}</div>}
+  </div>);
+}
 function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,records,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
@@ -5335,58 +5381,11 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,r
             </div>
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-          <span className="lbl" style={{marginBottom:0}}>NIVEL</span>
-          <LevelPicker value={levelOf(client)} onChange={onSetLevel?(l)=>onSetLevel(client,l):null}/>
-        </div>
-
-        <ProfileSummary client={client} compact/>
-        {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
-        <DietCoachBox client={client} onEdit={onEditData}/>
-        <div style={{marginBottom:14}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-            <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
-            <span style={{display:"flex",gap:5}}>
-              {onValoracion&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={onValoracion}>📋 Valoración</button>}
-              {onEditData&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onEditData}>✏️ Editar datos</button>}
-            </span>
-          </div>
-          <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#64748b":"#94a3b8",whiteSpace:"pre-wrap",lineHeight:1.45}}>
-            {client.notes||"Sin notas. Toca «✏️ Editar datos» para añadirlas."}
-          </div>
-        </div>
-
-        {blk&&(
-          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"9px 12px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-            <div style={{minWidth:0}}>
-              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO DEL MACROCICLO · SEMANA {macroWeek(date)}{(()=>{const wv=waveOf(blk,macroWeek(date)); return isTestBlock(blk)?" · TEST":` · SEMANA ${wv.ab} · CICLO ${wv.step+1}/${wv.cycles||1}`;})()}</div>
-              <div style={{fontSize:13,fontWeight:700,color:"#0284c7",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{blk.name}</div>
-            </div>
-            <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",whiteSpace:"nowrap"}}>{blk.rep_range} reps</div>
-          </div>
-        )}
-
-        {/* Semana: vista previa por sesión, desplegable con ejercicios y pesos, y organización rápida */}
-        <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
-          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
-
-        {onProfile&&<button className="btn sky" style={{width:"100%",fontSize:13,padding:"9px 6px",marginBottom:8,justifyContent:"center",fontWeight:700}} onClick={onProfile}>👤 Ver perfil completo</button>}
-        {(onSummary||onMeasures||onPhotos)&&<div style={{display:"flex",gap:6,marginBottom:14}}>
-          {onSummary&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onSummary}>⭐ Resumen</button>}
-          {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
-          {onPhotos&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onPhotos}>📸 Fotos</button>}
-        </div>}
-        {onViewAs&&<button className="btn ghost" style={{width:"100%",fontSize:12,padding:"8px 6px",marginTop:-8,marginBottom:14,color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onViewAs}>👁 Ver su app como la ve {client.name.split(" ")[0]}</button>}
-        {/* Notas de gestos (técnica, molestias, ajustes por ejercicio) */}
-        <ClientGestureNotes client={client}/>
-        {/* Historial: sesiones por día/fecha y pagos */}
-        <div style={{marginBottom:14}}>
-          <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
-        </div>
-
+        {/* Todo en desplegables; lo primero, el entrenamiento que le toca */}
+        <Fold id="hoy" icon="🏋️" title={date===TODAY?"Entrenamiento de hoy":"Entrenamiento del día"} sub={sess?(asigName(sess,sessionTemplates)||"Asignado")+(exs.length?` · ${exs.length} ejercicios`:""):auto?`${auto.label} · previsto`:"Sin asignar"} open>
         <div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-            <span className="lbl" style={{marginBottom:0}}>🏋️ ENTRENAMIENTO DE HOY</span>
+            <span style={{fontSize:12,color:"#64748b",fontWeight:700}}>{fmtLong(date)}</span>
             {onAssign&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onAssign}>{sess?"Cambiar":"➕ Asignar"}</button>}
           </div>
           {sess
@@ -5445,6 +5444,60 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,r
           </div>
         )}
 
+        </Fold>
+        <Fold id="semana" icon="📅" title="Su semana" sub={blk?`${blk.name} · semana ${macroWeek(date)}`:"Sesiones de la semana y organización"}>
+        {blk&&(
+          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"9px 12px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO DEL MACROCICLO · SEMANA {macroWeek(date)}{(()=>{const wv=waveOf(blk,macroWeek(date)); return isTestBlock(blk)?" · TEST":` · SEMANA ${wv.ab} · CICLO ${wv.step+1}/${wv.cycles||1}`;})()}</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#0284c7",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{blk.name}</div>
+            </div>
+            <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",whiteSpace:"nowrap"}}>{blk.rep_range} reps</div>
+          </div>
+        )}
+
+        {/* Semana: vista previa por sesión, desplegable con ejercicios y pesos, y organización rápida */}
+        <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
+          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
+
+        </Fold>
+        <Fold id="perfil" icon="👤" title="Perfil, objetivos y notas" sub={`Nivel ${LEVEL_LABEL[levelOf(client)]||levelOf(client)} · ${client.goal==="estetica"?"Estética/Masa":"Salud"}`}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <span className="lbl" style={{marginBottom:0}}>NIVEL</span>
+          <LevelPicker value={levelOf(client)} onChange={onSetLevel?(l)=>onSetLevel(client,l):null}/>
+        </div>
+
+        <ProfileSummary client={client} compact/>
+        {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
+        <DietCoachBox client={client} onEdit={onEditData}/>
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+            <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
+            <span style={{display:"flex",gap:5}}>
+              {onValoracion&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={onValoracion}>📋 Valoración</button>}
+              {onEditData&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onEditData}>✏️ Editar datos</button>}
+            </span>
+          </div>
+          <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#64748b":"#94a3b8",whiteSpace:"pre-wrap",lineHeight:1.45}}>
+            {client.notes||"Sin notas. Toca «✏️ Editar datos» para añadirlas."}
+          </div>
+        </div>
+
+        {onProfile&&<button className="btn sky" style={{width:"100%",fontSize:13,padding:"9px 6px",marginBottom:8,justifyContent:"center",fontWeight:700}} onClick={onProfile}>👤 Ver perfil completo</button>}
+        {(onSummary||onMeasures||onPhotos)&&<div style={{display:"flex",gap:6,marginBottom:14}}>
+          {onSummary&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onSummary}>⭐ Resumen</button>}
+          {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
+          {onPhotos&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onPhotos}>📸 Fotos</button>}
+        </div>}
+        {onViewAs&&<button className="btn ghost" style={{width:"100%",fontSize:12,padding:"8px 6px",marginTop:-8,marginBottom:14,color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onViewAs}>👁 Ver su app como la ve {client.name.split(" ")[0]}</button>}
+        </Fold>
+        <Fold id="historial" icon="📜" title="Historial y pagos">
+        {/* Historial: sesiones por día/fecha y pagos */}
+        <div style={{marginBottom:14}}>
+          <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
+        </div>
+
+        </Fold>
         <div style={{display:"flex",gap:8,marginTop:12}}>
           {sess&&onExec&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onExec}>▶ Ejecutar entreno</button>}
           {!sess&&auto&&onUseAuto&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onUseAuto}>✓ Usar este entreno</button>}
@@ -6210,6 +6263,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                   </div>
                   <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
                 </div>
+                {row.mode!=="goma"&&barKgOf(row.name)!=null&&parseFloat(row.w)>0&&<div style={{marginTop:6}}><PlatesRow name={row.name} kg={row.w}/></div>}
                 {row.mode!=="goma"&&isRmRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})&&<RirBar ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,reps:row.reps}} kg={row.w} reps={row.r} rm={rmFor(rmHist,row.name)} notify={notify}/>}
                 <GestureNotes clientId={client.id} exercise={row.name} notify={notify} sessionNote={(baseExs.find(e=>e.id===row.id)||{}).notes}/>
               </div>
@@ -13312,7 +13366,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 }
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
-ClientPortal=noTheme(ClientPortal); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
+ClientPortal=noTheme(ClientPortal); PlatesRow=noTheme(PlatesRow); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
