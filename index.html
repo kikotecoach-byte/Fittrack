@@ -6099,7 +6099,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
     r:(e.actual_reps!=null?e.actual_reps:(e.protocol==="test_amrap"?"":(e.reps!=null?e.reps:""))),
     band:e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)||{}).band||"",
     mode:((e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)))?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
-    done:!!e.done,
+    done:!!e.done, sd:e.done?0:sdGet(e.id), adj:false,
     rest:e.rest_seconds,
   })));
   const [saving,setSaving]=React.useState(false);
@@ -6135,10 +6135,21 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   const setBand=(row,v)=>{ setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id).then(()=>{}); };
   const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id).then(()=>{}); } };
 
-  const toggleDone=async(row)=>{
+  // Serie tocada: hecha (o desmarcada) y crono de descanso; la última completa el ejercicio.
+  const exOfRow=(row)=>({...(baseExs.find(e=>e.id===row.id)||{}),protocol:row.protocol,sets:row.sets,reps:row.reps,
+    prescribed_weight:row.mode==="goma"?null:(parseFloat(String(row.w).replace(",","."))||row.prescribed),rest_seconds:row.rest});
+  const tapSet=(row,i)=>{
+    const ss=supersetTag(rows,rows.indexOf(row)), N=setsPlan(exOfRow(row),{ss}).list.length;
+    const cur=row.done?N:Math.min(row.sd||0,N), nsd=i<cur?i:i+1;
+    setField(row.id,"sd",nsd); sdSave(row.id,nsd<N?nsd:0);
+    if(nsd>=N&&!row.done) return toggleDone(row,!restAfter(ss));
+    if(nsd<N&&row.done) return toggleDone(row);
+    if(nsd>cur&&restAfter(ss)) startRest(row.rest,row.name);
+  };
+  const toggleDone=async(row,noRest)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
-    if(nowDone) startRest(row.rest,row.name);
+    if(nowDone&&!noRest) startRest(row.rest,row.name);
     const goma=row.mode==="goma";
     const w=goma?null:(row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",",".")));
     const {error}=await sb.from("assigned_exercises").update({
@@ -6253,11 +6264,13 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                     <MuscleTags name={row.name}/>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
-                    <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}{(baseExs.find(e=>e.id===row.id)||{}).rir!=null?` · RIR ${(baseExs.find(e=>e.id===row.id)||{}).rir}`:""}</div>
                     <RestButton secs={row.rest} label={row.name} style={{padding:"3px 9px",fontSize:11,borderRadius:20}}/>
                   </div>
                 </div>
-                <div style={{marginTop:-4,marginBottom:8}}><SetChips ex={{...(baseExs.find(e=>e.id===row.id)||{}),protocol:row.protocol,sets:row.sets,reps:row.reps,prescribed_weight:row.mode==="goma"?null:row.prescribed,rest_seconds:row.rest}} ss={supersetTag(rows,rows.indexOf(row))} big/></div>
+                <SetTapper ex={exOfRow(row)} ss={supersetTag(rows,rows.indexOf(row))} done={row.done} sd={row.sd} band={row.mode==="goma"?row.band:null} onTap={(i)=>tapSet(row,i)}/>
+                {(baseExs.find(e=>e.id===row.id)||{}).notes&&!row.adj&&<div style={{fontSize:11,color:"#94a3b8",fontStyle:"italic",marginTop:5}}>📝 {(baseExs.find(e=>e.id===row.id)||{}).notes}</div>}
+                <button type="button" data-adjust onClick={()=>setField(row.id,"adj",!row.adj)} aria-expanded={row.adj} style={{display:"block",margin:"6px 0 0 auto",border:"none",background:"none",color:"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:"2px 0"}}>{row.adj?"▲ Cerrar":"✎ Ajustar"}</button>
+                {row.adj&&<div data-adjpanel style={{marginTop:4}}>
                 <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
                   <div style={{flex:1.4,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
@@ -6272,11 +6285,11 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                     <span className="lbl" style={{marginBottom:3}}>REPS</span>
                     <input type="text" className="inp" style={{padding:"8px 10px"}} value={row.r} onChange={e=>setField(row.id,"r",e.target.value)} onBlur={()=>{sb.from("assigned_exercises").update({actual_reps:row.r||null}).eq("id",row.id).then(()=>{});}}/>
                   </div>
-                  <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
                 </div>
                 {row.mode!=="goma"&&barKgOf(row.name)!=null&&parseFloat(row.w)>0&&<div style={{marginTop:6}}><PlatesRow name={row.name} kg={row.w}/></div>}
                 {row.mode!=="goma"&&isRmRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})&&<RirBar ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,reps:row.reps}} kg={row.w} reps={row.r} rm={rmFor(rmHist,row.name)} notify={notify}/>}
                 <GestureNotes clientId={client.id} exercise={row.name} notify={notify} sessionNote={(baseExs.find(e=>e.id===row.id)||{}).notes}/>
+                </div>}
               </div>
             ))}
           </div>
@@ -12615,6 +12628,43 @@ function SetChips({ex,ss,big}){
     {s.rir&&<span style={{alignSelf:"center",fontSize:10*fs,fontWeight:700,color:"#94a3b8"}}>RIR {s.rir.join("/")}</span>}
   </div>;
 }
+// ── SERIES PARA MARCAR AL ENTRENAR ─────────────────────────────────────────
+// Cada botón dice lo que toca en esa serie (TOP · 100 kg × 6, back-off · 90 kg × 8…).
+// Al tocarlo queda hecha y arranca el descanso; al hacer la última, el ejercicio se
+// da por completado. Tocar una hecha la desmarca (y las siguientes).
+const sdKey=(id)=>"kk_sd_"+id;
+const sdGet=(id)=>{ try{ return parseInt(localStorage.getItem(sdKey(id)),10)||0; }catch(e){ return 0; } };
+const sdSave=(id,n)=>{ try{ if(n) localStorage.setItem(sdKey(id),String(n)); else localStorage.removeItem(sdKey(id)); }catch(e){} };
+function setsPlan(ex,{ss}={}){
+  const s=protoSets(ex,{ss}), N=Math.max(1,parseInt(ex.sets)||1);
+  const W=ex.prescribed_weight!=null&&ex.prescribed_weight!==""&&Number(ex.prescribed_weight)>0?Number(ex.prescribed_weight):null;
+  const list=s&&s.sets&&s.sets.length?s.sets:Array.from({length:N},()=>({r:ex.reps||"—",kg:W,k:"work"}));
+  return {list,pair:s&&s.pair};
+}
+// ¿Descansar tras esta serie? En la 1ª de una superserie se pasa directo a la pareja.
+const restAfter=(ss)=>!(ss&&ss.partner&&/1$/.test(ss.tag));
+function SetTapper({ex,ss,done,sd,band,onTap}){
+  const {list,pair}=setsPlan(ex,{ss});
+  const n=done?list.length:Math.min(sd||0,list.length);
+  return <div data-sets style={{marginTop:2}}>
+    {pair&&<div data-pair style={{display:"inline-flex",gap:4,alignItems:"center",background:"#db2777",color:"#fff",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:800,marginBottom:5}}>
+      {pair.tag}{pair.partner&&<span style={{fontWeight:600}}>⇄ {pair.partner.name}</span>}</div>}
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(list.length,5)},minmax(0,1fr))`,gap:6}}>
+      {list.map((x,i)=>{ const on=i<n, next=i===n;
+        const kgs=x.kg==null?null:(Array.isArray(x.kg)?x.kg:[x.kg]);
+        const big=band?bandLabel(band):kgs?`${kgs.map(fmtKgN).join("↓")}`:`${x.r}`;
+        const small=band||kgs?`× ${x.r}`:/\d$/.test(String(x.r))?"reps":"";
+        return <button key={i} type="button" data-set={x.k} aria-pressed={on} onClick={e=>{ e.stopPropagation(); onTap(i); }}
+          aria-label={`Serie ${i+1}${x.tag?` (${x.tag})`:""}: ${big}${kgs&&!band?" kg":""} ${small}${on?", hecha":""}`}
+          style={{border:`2px solid ${on?"#16a34a":next?"#fff":"transparent"}`,boxShadow:next?`0 0 0 2px ${SET_COL[x.k]}`:"none",background:on?"#16a34a":SET_COL[x.k],opacity:on||next?1:.72,color:"#fff",
+            borderRadius:12,padding:"6px 3px",minHeight:60,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",lineHeight:1.15,minWidth:0}}>
+          <span style={{fontSize:9,fontWeight:800,letterSpacing:.3,opacity:.92,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{on?"✓ HECHA":(x.tag||({back:"BACK-OFF",ramp:"SUBIDA"})[x.k]||`SERIE ${i+1}`)}</span>
+          <b style={{fontSize:big.length>9?12:16,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{big}{kgs&&!band&&kgs.length===1?<span style={{fontSize:10,fontWeight:700}}> kg</span>:null}</b>
+          {small&&<span style={{fontSize:12,fontWeight:700}}>{small}</span>}
+        </button>; })}
+    </div>
+  </div>;
+}
 // RIR objetivo por defecto según la fase, el nivel y si es un básico.
 const defaultRir = (block,level,main) => {
   const bt=block?block.type:"fuerza";
@@ -13415,7 +13465,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
             </div>
 
             {sessExes.map((ae,i)=>(
-              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving} client={client}/>
+              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving} client={client} ss={supersetTag(sessExes,i,x=>({name:x.exercise_name,protocol:x.protocol}))}/>
             ))}
 
             {sess.notes&&(
@@ -13431,8 +13481,9 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 }
 
 // ── EXERCISE CARD (client registers completion) ────────────────────────────
-function ExerciseCard({ae, index, onComplete, saving, client}) {
+function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
   const [expanded,setExpanded] = React.useState(false);
+  const [sd,setSd] = React.useState(()=>sdGet(ae.id));
   const [howTo,setHowTo] = React.useState(false);
   useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length+(exPhotoOf(ae.exercise_name)?1:0);
   const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); openExPhoto(ae.exercise_name,ae); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
@@ -13454,6 +13505,12 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
   const setBand=(v)=>{ setBandS(v); sb.from("assigned_exercises").update({load_band:v||null}).eq("id",ae.id).then(()=>{}); };
   const switchMode=()=>{ const g=!goma; setGoma(g); if(!g&&band){ setBandS(""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ae.id).then(()=>{}); } };
   const hdrBand=ae.load_band||(goma?band:"");
+  const complete=(noRest)=>{ if(!noRest) startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:(parseFloat(actualWeight)||null),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); };
+  const exNow={...ae,prescribed_weight:goma?null:(parseFloat(actualWeight)||ae.prescribed_weight)};
+  const tapSet=(i)=>{ const N=setsPlan(exNow,{ss}).list.length, cur=Math.min(sd,N), nsd=i<cur?i:i+1;
+    setSd(nsd); sdSave(ae.id,nsd<N?nsd:0);
+    if(nsd>=N) return complete(!restAfter(ss));
+    if(nsd>cur&&restAfter(ss)) startRest(ae.rest_seconds,ae.exercise_name); };
 
   if(ae.completed||ae.done) return(
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3",opacity:0.6}}>
@@ -13480,8 +13537,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
           <div>
             <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
             <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
-              <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
-              {hdrBand?<span data-hdrband="1" style={{fontSize:12,color:"#0f172a",fontWeight:700}}>{bandLabel(hdrBand)}</span>:ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+              {hdrBand&&<span data-hdrband="1" style={{fontSize:12,color:"#0f172a",fontWeight:700}}>{bandLabel(hdrBand)}</span>}
               {ae.rir!=null&&<span style={{fontSize:11,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:20,padding:"0 7px"}}>RIR {ae.rir}</span>}
               {howBtn}
               {ae.rest_seconds?<span onClick={e=>e.stopPropagation()}><RestButton secs={ae.rest_seconds} label={ae.exercise_name} style={{padding:"1px 8px",fontSize:11,borderRadius:20}}/></span>:null}
@@ -13491,8 +13547,8 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
         <span style={{color:"#94a3b8",fontSize:16}}>{expanded?"▲":"▼"}</span>
       </div>
 
+      <div style={{marginTop:8}}><SetTapper ex={exNow} ss={ss} sd={sd} band={goma?band:null} onTap={tapSet}/></div>
       {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
-      {ae.rir!=null&&<div style={{marginTop:4,paddingLeft:32}} onClick={e=>e.stopPropagation()}><RirHelp highlight={Number(ae.rir)} label={`RIR ${ae.rir}: deja ${ae.rir===0?"0 (al fallo)":ae.rir} repetici${Number(ae.rir)===1?"ón":"ones"} en reserva`}/></div>}
 
       {expanded&&(
         <div style={{marginTop:10,paddingLeft:32,display:"flex",flexDirection:"column",gap:10}}>
@@ -13515,7 +13571,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
               <input type="number" className="inp" min="1" max="10" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={rpe} onChange={e=>setRpe(e.target.value)} placeholder="8"/>
             </div>
           </div>
-          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>{ startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:(parseFloat(actualWeight)||null),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); }} disabled={saving}>
+          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>complete()} disabled={saving}>
             ✓ Marcar como completado
           </button>
         </div>
@@ -13525,7 +13581,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 }
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
-ClientPortal=noTheme(ClientPortal); PlatesRow=noTheme(PlatesRow); SetChips=noTheme(SetChips); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
+ClientPortal=noTheme(ClientPortal); PlatesRow=noTheme(PlatesRow); SetChips=noTheme(SetChips); SetTapper=noTheme(SetTapper); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
