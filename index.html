@@ -1010,6 +1010,18 @@ function App() {
   React.useEffect(()=>{ const chk=()=>{ if(document.visibilityState==="visible"&&isoLocal()!==TODAY){ try{ location.reload(); }catch(e){} } };
     document.addEventListener("visibilitychange",chk); window.addEventListener("focus",chk); const iv=setInterval(()=>{ if(!document.querySelector("input:focus,textarea:focus,select:focus")) chk(); },60000);
     return ()=>{ document.removeEventListener("visibilitychange",chk); window.removeEventListener("focus",chk); clearInterval(iv); }; },[]);
+  // ── EN DIRECTO (coach): cualquier cambio hecho en otro dispositivo (iPad, otro móvil,
+  // la app del atleta) se ve aquí al momento. Con Realtime (docs/tiempo-real-2.sql) es
+  // instantáneo; además se repasa al volver a la app, al recuperar la conexión y cada 30 s.
+  React.useEffect(()=>{ if(mode!=="admin") return; let t=null, ch=null;
+    const go=()=>{ clearTimeout(t); t=setTimeout(()=>{ if(document.visibilityState!=="hidden"&&navigator.onLine!==false) loadAll(); },500); };
+    try{ if(sb.channel){ ch=sb.channel("coach-live");
+      LIVE_TABLES.forEach(tb=>ch.on("postgres_changes",{event:"*",schema:"public",table:tb},()=>{ liveTouch(tb); if(LIVE_FULL.has(tb)) go(); }));
+      ch.subscribe(); } }catch(e){}
+    const back=()=>{ if(document.visibilityState==="visible"){ go(); liveTouch("*"); } };
+    document.addEventListener("visibilitychange",back); window.addEventListener("online",back);
+    const iv=setInterval(()=>{ if(document.visibilityState==="visible") go(); },30000);
+    return ()=>{ clearTimeout(t); clearInterval(iv); document.removeEventListener("visibilitychange",back); window.removeEventListener("online",back); try{ ch&&sb.removeChannel&&sb.removeChannel(ch); }catch(e){} }; },[mode]);
   const clientWeightsEff = React.useMemo(()=>effectiveWeights(clientWeights,assignedSessions,assignedExercises),[clientWeights,assignedSessions,assignedExercises]);
   React.useEffect(()=>{ ASG.list=assignedSessions||[]; ASG.ex=assignedExercises||[]; },[assignedSessions,assignedExercises]);
   // Atleta con sesión segura: sus reservas + el aforo de los demás (sin datos privados).
@@ -1334,6 +1346,9 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
       if(data&&data[0]&&data[0].config){ const raw=data[0].config, c={...DEFAULT_SCHEDULE,...withCap3(raw)}; setConfig(c); setGymEquip(c);
         if(!raw.cap3) sb.from("app_settings").upsert({id:1,config:c}).then(()=>{}); }
     });
+    // En directo: horario, aforo, festivos… cambiados en otro dispositivo.
+    const re=()=>sb.from("app_settings").select("config").eq("id",1).then(({data})=>{ if(data&&data[0]&&data[0].config){ const c={...DEFAULT_SCHEDULE,...withCap3(data[0].config)}; setConfig(c); setGymEquip(c); } });
+    window.addEventListener("kk-cfg",re); return ()=>window.removeEventListener("kk-cfg",re);
   },[]);
   const saveConfig = (cfg, silent) => w(async()=>{
     cfg={...cfg,exEquip:EX_EQUIP}; // el material por ejercicio se guarda aparte (saveExEquip)
@@ -3592,7 +3607,7 @@ function useClientPhotos(clientId){
   const [photos,setPhotos]=React.useState([]);
   const [ok,setOk]=React.useState(true);
   const load=React.useCallback(async()=>{ if(!clientId) return; const {data,error}=await sb.from("client_photos").select("*").eq("client_id",clientId).order("taken_on",{ascending:true}); if(error) setOk(false); else setPhotos((data||[]).filter(p=>p.client_id===clientId).sort((a,b)=>String(a.taken_on||"").localeCompare(String(b.taken_on||"")))); },[clientId]);
-  React.useEffect(()=>{ load(); },[load]);
+  React.useEffect(()=>{ load(); window.addEventListener("kk-photos",load); return ()=>window.removeEventListener("kk-photos",load); },[load]);
   return {photos,load,ok};
 }
 // ── SUBIDA DE IMÁGENES ─────────────────────────────────────────────────────
@@ -6097,15 +6112,37 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   const rmTests=useRmTests(client.id).list;
   const rmHist=React.useMemo(()=>rmHistory(client.id,assignedSessions,assignedExercises,rmTests),[client.id,assignedSessions,assignedExercises,rmTests]);
   const [timerWod,setTimerWod]=React.useState(null);
-  const [rows,setRows]=React.useState(()=>baseExs.filter(e=>!isWodHeader(e)).map(e=>({
+  const mkRow=(e)=>({
     id:e.id, name:e.exercise_name, sets:e.sets, reps:e.reps, protocol:e.protocol, prescribed:e.prescribed_weight,
     w:(e.actual_weight!=null?e.actual_weight:(e.prescribed_weight!=null?e.prescribed_weight:"")),
     r:(e.actual_reps!=null?e.actual_reps:(e.protocol==="test_amrap"?"":(e.reps!=null?e.reps:""))),
     band:e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)||{}).band||"",
     mode:((e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)))?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
-    done:!!e.done, sd:e.done?0:sdGet(e.id), ow:owGet(e.id), adj:false,
+    done:!!e.done, sd:e.done?0:(e.sets_done!=null?Number(e.sets_done)||0:sdGet(e.id)), ow:Array.isArray(e.set_weights)?e.set_weights:owGet(e.id), adj:false,
     rest:e.rest_seconds,
-  })));
+  });
+  const [rows,setRows]=React.useState(()=>baseExs.filter(e=>!isWodHeader(e)).map(mkRow));
+  // En directo: si otro dispositivo (iPad, móvil del atleta…) marca series, cambia pesos o
+  // ajusta el entreno, la pantalla se pone al día sola. Lo que se está tocando aquí
+  // (últimos 4 s o con el cursor dentro) no se pisa.
+  const touchedAt=React.useRef({});
+  const liveSig=baseExs.map(e=>[e.id,e.done,e.actual_weight,e.actual_reps,e.load_band,e.sets_done,JSON.stringify(e.set_weights||null),e.exercise_name,e.sets,e.reps,e.protocol,e.prescribed_weight,e.rest_seconds].join("~")).join("|");
+  React.useEffect(()=>{
+    const base=baseExs.filter(e=>!isWodHeader(e)), now=Date.now();
+    const focused=(id)=>{ const a=document.activeElement; return !!(a&&a.closest&&a.closest(`[data-exrow="${id}"]`)); };
+    setRows(rs=>{
+      const byId=Object.fromEntries(base.map(e=>[e.id,e]));
+      const kept=rs.filter(r=>byId[r.id]).map(r=>{
+        if(now-(touchedAt.current[r.id]||0)<4000||focused(r.id)) return r;
+        const e=byId[r.id], f=mkRow(e);
+        return {...r,name:f.name,sets:f.sets,reps:f.reps,protocol:f.protocol,prescribed:f.prescribed,rest:f.rest,done:f.done,
+          w:e.actual_weight!=null||!r.done?f.w:r.w, r:f.r, band:e.load_band||r.band, mode:e.load_band?"goma":r.mode,
+          sd:e.sets_done!=null?f.sd:r.sd, ow:Array.isArray(e.set_weights)?e.set_weights:r.ow};
+      });
+      const have=new Set(kept.map(r=>r.id));
+      return kept.concat(base.filter(e=>!have.has(e.id)).map(mkRow));
+    });
+  },[liveSig]);
   const [saving,setSaving]=React.useState(false);
   // Atajos ⠿: cambiar el orden en mitad del entreno o pasar un ejercicio a otro día.
   const [mvMenu,setMvMenu]=React.useState(null); // {id,x,y}
@@ -6135,7 +6172,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
       style={{...arrow,color:"#64748b",fontSize:17}}>⠿</button>
     <button type="button" aria-label={`Bajar ${row.name}`} title="Bajar" disabled={i>=n-1} onClick={()=>reorderRows(row.id,i+1)} style={{...arrow,opacity:i>=n-1?.3:1,cursor:i>=n-1?"default":"pointer"}}>▼</button>
   </div>; };
-  const setField=(id,k,v)=>setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x));
+  const setField=(id,k,v)=>{ if(k!=="adj") touchedAt.current[id]=Date.now(); setRows(rs=>rs.map(x=>x.id===id?{...x,[k]:v}:x)); };
   const setBand=(row,v)=>{ setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id).then(()=>{}); };
   const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id).then(()=>{}); } };
 
@@ -6145,7 +6182,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   const tapSet=(row,i)=>{
     const ss=supersetTag(rows,rows.indexOf(row)), N=setsPlan(exOfRow(row),{ss}).list.length;
     const cur=row.done?N:Math.min(row.sd||0,N), nsd=i<cur?i:i+1;
-    setField(row.id,"sd",nsd); sdSave(row.id,nsd<N?nsd:0);
+    setField(row.id,"sd",nsd); sdSave(row.id,nsd<N?nsd:0); saveSetsDone(row.id,nsd);
     if(nsd>=N&&!row.done) return toggleDone(row,!restAfter(ss));
     if(nsd<N&&row.done) return toggleDone(row);
     if(nsd>cur&&restAfter(ss)) startRest(row.rest,row.name);
@@ -6154,7 +6191,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   // las demás guardan su peso propio.
   const setKg=(row,i,v,isKey)=>{ if(isKey) return setField(row.id,"w",v); const a=[...(row.ow||[])]; a[i]=v; setField(row.id,"ow",a); };
   const blurKg=(row,i,v,isKey)=>{ if(isKey){ sb.from("assigned_exercises").update({actual_weight:kgNum(v)}).eq("id",row.id).then(()=>{}); return; }
-    const a=[...(row.ow||[])]; a[i]=v; owSave(row.id,a); };
+    const a=[...(row.ow||[])]; a[i]=v; owSave(row.id,a); saveSetWeights(row.id,a); };
   const toggleDone=async(row,noRest)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
@@ -6264,7 +6301,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
               ?<div key={row.id+"|"+row.name} style={{display:"flex",gap:6}}>{grip(row)}<div style={{flex:1,minWidth:0}}><IsoLogger ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,exercise_name:row.name,sets:row.sets,reps:row.reps,protocol:row.protocol}} clientId={client.id} client={client} clientWeights={clientWeights} notify={notify}
                   onDone={(d)=>setField(row.id,"done",d)} onSwap={()=>setPicker({mode:"swap",row})}/></div></div>
               :(
-              <div key={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
+              <div key={row.id} data-exrow={row.id} style={{background:row.done?"#eef8dd":"#f8fafc",border:`1px solid ${row.done?"#cbe8a4":"#e6ebf3"}`,borderRadius:12,padding:"10px 12px"}}>
                 <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:8,marginBottom:8}}>
                   {grip(row)}
                   <ExPhoto name={row.name} size={96} onClick={()=>openExPhoto(row.name,{...(baseExs.find(e=>e.id===row.id)||{}),sets:row.sets,reps:row.reps,protocol:row.protocol,prescribed_weight:row.mode==="goma"?null:row.prescribed,load_band:row.mode==="goma"?row.band:null,rest_seconds:row.rest})}/>
@@ -6821,6 +6858,20 @@ function RirHelp({notify,highlight,label="¿Qué es el RIR?"}){
 // Un único crono flotante para toda la app (coach y atleta). Se lanza con
 // startRest(segundos, ejercicio): al marcar un ejercicio como hecho o con ⏱.
 // Cuenta contra una hora de fin, así no se desfasa si el móvil se bloquea.
+// ── EN DIRECTO: tablas que se escuchan y qué se recarga con cada una ─────────
+const LIVE_TABLES = ["clients","sessions","history","payments","blocked_slots","forum_posts","forum_comments","exercises","training_plans","client_plans",
+  "progress","personal_records","achievements","annual_blocks","session_templates","template_exercises","client_weights","assigned_sessions",
+  "assigned_exercises","weight_history","waitlist","leads","open_sessions","app_settings","rm_tests","exercise_notes","exercise_media","client_photos"];
+// Las que van en la carga general (el resto tienen su propia caché y se refrescan aparte).
+const LIVE_FULL = new Set(LIVE_TABLES.filter(t=>!["app_settings","rm_tests","exercise_notes","exercise_media","client_photos"].includes(t)));
+function liveTouch(tb){
+  const all=tb==="*";
+  if(all||tb==="app_settings") window.dispatchEvent(new Event("kk-cfg"));
+  if(all||tb==="rm_tests") Object.keys(RMT_CACHE).forEach(cid=>{ const st=RMT_CACHE[cid]; if(st.loading) return; st.list=null; if(st.subs.size) loadRmTests(cid); });
+  if(all||tb==="exercise_notes") Object.keys(NOTES_CACHE).forEach(cid=>{ const st=NOTES_CACHE[cid]; if(st.loading) return; st.list=null; if(st.subs.size) loadNotes(cid); });
+  if((all||tb==="exercise_media")&&EXM.list&&!EXM.loading) exmLoad();
+  if(all||tb==="client_photos") window.dispatchEvent(new Event("kk-photos"));
+}
 const REST = {s:null, hosts:[], ac:null};
 const restPing = () => REST.hosts.forEach(h=>h());
 const restBeep = (f=880,d=0.15,v=0.25) => { try{ const ac=REST.ac; if(!ac) return; const o=ac.createOscillator(), g=ac.createGain(); o.frequency.value=f; o.connect(g); g.connect(ac.destination);
@@ -8709,10 +8760,12 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
   React.useEffect(()=>{ if(preview) return; let t=null, ch=null;
     const kick=()=>{ clearTimeout(t); t=setTimeout(()=>{ if(document.visibilityState!=="hidden") refresh(); },700); };
     try{ if(sb.channel){ ch=sb.channel("atleta-"+client.id);
-      ["assigned_sessions","assigned_exercises","sessions","open_sessions","app_settings","blocked_slots"].forEach(tb=>ch.on("postgres_changes",{event:"*",schema:"public",table:tb},kick));
+      LIVE_TABLES.forEach(tb=>ch.on("postgres_changes",{event:"*",schema:"public",table:tb},()=>{ liveTouch(tb); kick(); }));
       ch.subscribe(); } }catch(e){}
-    const iv=setInterval(()=>{ if(document.visibilityState!=="hidden") refresh(); },45000);
-    return ()=>{ clearTimeout(t); clearInterval(iv); try{ ch&&sb.removeChannel&&sb.removeChannel(ch); }catch(e){} }; },[client.id]);
+    const back=()=>{ if(document.visibilityState==="visible"){ kick(); liveTouch("*"); } };
+    document.addEventListener("visibilitychange",back); window.addEventListener("online",back);
+    const iv=setInterval(()=>{ if(document.visibilityState!=="hidden") refresh(); },30000);
+    return ()=>{ clearTimeout(t); clearInterval(iv); document.removeEventListener("visibilitychange",back); window.removeEventListener("online",back); try{ ch&&sb.removeChannel&&sb.removeChannel(ch); }catch(e){} }; },[client.id]);
   // Qué ha cambiado el coach (para avisar y marcar «Actualizado»).
   const [changed,setChanged]=React.useState({}); // fecha → "ex" | "hora"
   const sigRef=React.useRef(null);
@@ -12689,6 +12742,11 @@ const kgNum=(v)=>{ const n=parseFloat(String(v==null?"":v).replace(",",".")); re
 // Pesos cambiados a mano en series que no son la clave (se recuerdan en el móvil).
 const owKey=(id)=>"kk_sw_"+id;
 const owGet=(id)=>{ try{ return JSON.parse(localStorage.getItem(owKey(id))||"null")||[]; }catch(e){ return []; } };
+// Progreso por serie en la base de datos (columnas sets_done y set_weights, docs/tiempo-real-2.sql):
+// así el iPad, el móvil del coach y el del atleta ven lo mismo. Sin las columnas, solo en este móvil.
+let SETS_COL_MISSING=false;
+const saveSetsDone=(id,n)=>{ if(SETS_COL_MISSING||!id) return; sb.from("assigned_exercises").update({sets_done:n}).eq("id",id).then(r=>{ if(r&&r.error) SETS_COL_MISSING=true; }); };
+const saveSetWeights=(id,a)=>{ if(SETS_COL_MISSING||!id) return; const v=(a||[]).map(x=>x==null||x===""?null:String(x)); sb.from("assigned_exercises").update({set_weights:v.some(x=>x!=null)?v:null}).eq("id",id).then(r=>{ if(r&&r.error) SETS_COL_MISSING=true; }); };
 const owSave=(id,a)=>{ try{ if(a&&a.some(x=>x!=null&&x!=="")) localStorage.setItem(owKey(id),JSON.stringify(a)); else localStorage.removeItem(owKey(id)); }catch(e){} };
 // RIR objetivo por defecto según la fase, el nivel y si es un básico.
 const defaultRir = (block,level,main) => {
@@ -13508,8 +13566,12 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 // ── EXERCISE CARD (client registers completion) ────────────────────────────
 function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
   const [expanded,setExpanded] = React.useState(false);
-  const [sd,setSd] = React.useState(()=>sdGet(ae.id));
-  const [ow,setOw] = React.useState(()=>owGet(ae.id));
+  const [sd,setSd] = React.useState(()=>ae.sets_done!=null?Number(ae.sets_done)||0:sdGet(ae.id));
+  const [ow,setOw] = React.useState(()=>Array.isArray(ae.set_weights)?ae.set_weights:owGet(ae.id));
+  // En directo: lo que marque el coach (o el atleta en otro dispositivo) aparece aquí.
+  React.useEffect(()=>{ if(ae.sets_done!=null) setSd(Number(ae.sets_done)||0); },[ae.sets_done]);
+  React.useEffect(()=>{ if(Array.isArray(ae.set_weights)) setOw(ae.set_weights); },[JSON.stringify(ae.set_weights||null)]);
+  React.useEffect(()=>{ if(ae.actual_weight!=null&&!touched.current.w) setActualWeight(ae.actual_weight); },[ae.actual_weight]);
   const [howTo,setHowTo] = React.useState(false);
   useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length+(exPhotoOf(ae.exercise_name)?1:0);
   const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); openExPhoto(ae.exercise_name,ae); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
@@ -13534,7 +13596,7 @@ function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
   const complete=(noRest)=>{ if(!noRest) startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:kgNum(actualWeight),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); };
   const exNow={...ae,prescribed_weight:goma?null:(kgNum(actualWeight)||ae.prescribed_weight)};
   const tapSet=(i)=>{ const N=setsPlan(exNow,{ss}).list.length, cur=Math.min(sd,N), nsd=i<cur?i:i+1;
-    setSd(nsd); sdSave(ae.id,nsd<N?nsd:0);
+    setSd(nsd); sdSave(ae.id,nsd<N?nsd:0); saveSetsDone(ae.id,nsd);
     if(nsd>=N) return complete(!restAfter(ss));
     if(nsd>cur&&restAfter(ss)) startRest(ae.rest_seconds,ae.exercise_name); };
 
@@ -13575,7 +13637,7 @@ function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
 
       <div style={{marginTop:8}}><SetTapper ex={exNow} ss={ss} sd={sd} band={goma?band:null} onTap={tapSet} ow={ow} keyVal={actualWeight==null?"":actualWeight}
         onKg={(i,v,k)=>{ if(k){ touched.current.w=true; setActualWeight(v); } else setOw(a=>{ const b=[...a]; b[i]=v; return b; }); }}
-        onKgBlur={(i,v,k)=>{ if(!k){ const b=[...ow]; b[i]=v; owSave(ae.id,b); } }}/></div>
+        onKgBlur={(i,v,k)=>{ if(!k){ const b=[...ow]; b[i]=v; owSave(ae.id,b); saveSetWeights(ae.id,b); } }}/></div>
       {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
 
       {expanded&&(

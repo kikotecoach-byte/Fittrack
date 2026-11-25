@@ -1,4 +1,5 @@
 -- ─────────────────────────────────────────────────────────────────────────
+-- (Sustituido por docs/tiempo-real-2.sql, que lo incluye: ejecuta ese.)
 -- Kikote Gym — Cambios del coach al momento en la app del cliente
 -- Ejecuta una vez en Supabase → SQL Editor (proyecto Fittrack). Se puede repetir.
 --   · Activa «Realtime» en las tablas de entrenos, clases, opens, horario y
