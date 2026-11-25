@@ -5383,6 +5383,8 @@ function Fold({id,icon,title,sub,open:o0,children}){
   </div>);
 }
 function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,records,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
+  const [privAg,setPrivAg]=React.useState(!!client.agenda_private); // privado en la agenda (los demás lo ven como «Atleta»)
+  React.useEffect(()=>{ setPrivAg(!!client.agenda_private); },[client.id,client.agenda_private]);
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
   const exs=sess?(assignedExercises||[]).filter(e=>e.session_id===sess.id).sort((a,b)=>(a.order_index||0)-(b.order_index||0)):[];
@@ -5499,6 +5501,11 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,r
           <span className="lbl" style={{marginBottom:0}}>NIVEL</span>
           <LevelPicker value={levelOf(client)} onChange={onSetLevel?(l)=>onSetLevel(client,l):null}/>
         </div>
+        <label data-privcoach style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,fontSize:12,color:"#334155",cursor:"pointer"}}>
+          <input type="checkbox" checked={privAg} onChange={async e=>{ const v=e.target.checked; setPrivAg(v); const r=await sb.from("clients").update({agenda_private:v}).eq("id",client.id);
+            if(r.error){ setPrivAg(!v); return notify("Ejecuta docs/privacidad-agenda.sql en Supabase","err"); } notify(v?"🙈 Aparece como «Atleta» para los demás":"👋 Los demás ven su nombre"); loadAll&&loadAll(); }}/>
+          🙈 <b>Privado en la agenda:</b> los demás atletas lo ven como «Atleta» (sin nombre ni foto)
+        </label>
 
         <ProfileSummary client={client} compact/>
         {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
@@ -6862,6 +6869,28 @@ function RirHelp({notify,highlight,label="¿Qué es el RIR?"}){
 // Un único crono flotante para toda la app (coach y atleta). Se lanza con
 // startRest(segundos, ejercicio): al marcar un ejercicio como hecho o con ⏱.
 // Cuenta contra una hora de fin, así no se desfasa si el móvil se bloquea.
+// ── PRIVACIDAD EN LA AGENDA ────────────────────────────────────────────────
+// Por defecto los demás atletas ven quién va a cada clase (nombre y foto). Quien
+// quiera, aparece como «Atleta» (sin nombre, foto ni color): docs/privacidad-agenda.sql.
+function AgendaPrivacy({client,loadAll,notify}){
+  const [on,setOn]=React.useState(!!client.agenda_private), [busy,setBusy]=React.useState(false);
+  React.useEffect(()=>{ setOn(!!client.agenda_private); },[client.agenda_private]);
+  const flip=async()=>{ const v=!on; setOn(v); setBusy(true);
+    const r=await sb.rpc("set_agenda_private",{p_private:v}); setBusy(false);
+    if(r&&r.error){ setOn(!v); return notify("Falta un paso del coach en Supabase (privacidad de la agenda)","err"); }
+    notify(v?"🙈 En la agenda apareces como «Atleta»":"👋 En la agenda se ve tu nombre"); loadAll&&loadAll(); };
+  return <div data-privacy style={{display:"flex",alignItems:"center",gap:12,marginTop:14,background:DK.card,border:`1px solid ${DK.line}`,borderRadius:16,padding:"12px 14px"}}>
+    <span style={{fontSize:22}} aria-hidden="true">{on?"🙈":"👋"}</span>
+    <div style={{flex:1,minWidth:0}}>
+      <div style={{fontSize:14,fontWeight:800,color:DK.tx}}>{on?"Apareces como «Atleta»":"Los demás ven tu nombre"}</div>
+      <div style={{fontSize:12,color:DK.mu,lineHeight:1.35}}>{on?"En las clases nadie ve tu nombre ni tu foto. Tu coach sí.":"En las clases los demás ven tu nombre y tu foto. Actívalo para aparecer sin nombre."}</div>
+    </div>
+    <button type="button" role="switch" aria-checked={on} aria-label="Aparecer sin nombre en la agenda" disabled={busy} onClick={flip}
+      style={{flexShrink:0,width:50,height:30,borderRadius:20,border:"none",cursor:"pointer",position:"relative",background:on?DK.ac2:"rgba(255,255,255,.18)",transition:"background .2s"}}>
+      <span style={{position:"absolute",top:3,left:on?23:3,width:24,height:24,borderRadius:"50%",background:"#fff",transition:"left .2s"}}/>
+    </button>
+  </div>;
+}
 // ── EN DIRECTO: tablas que se escuchan y qué se recarga con cada una ─────────
 const LIVE_TABLES = ["clients","sessions","history","payments","blocked_slots","forum_posts","forum_comments","exercises","training_plans","client_plans",
   "progress","personal_records","achievements","annual_blocks","session_templates","template_exercises","client_weights","assigned_sessions",
@@ -9023,6 +9052,7 @@ function ClientPortal({openSessions,openRoster,client,allSessions,allHistory,all
       </>}
 
       {tab==="reservar"&&<MultiSessionRequest streak={streak} client={client} allClients={allClients} allSessions={allSessions} blocked={blocked} waitlist={waitlist} config={config} opens={myOpens} allOpens={openRoster||openSessions} hybrid={hyb} loadAll={loadAll} notify={notify} saving={saving} setSaving={setSaving}/>}
+      {tab==="reservar"&&!preview&&<AgendaPrivacy client={client} loadAll={loadAll} notify={notify}/>}
 
       {tab==="entreno"&&<div>
         {client.welcome_msg&&<div className="dk-note" style={{borderColor:"rgba(96,165,250,.3)"}}>💬 {client.welcome_msg}</div>}
