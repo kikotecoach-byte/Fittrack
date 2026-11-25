@@ -5256,7 +5256,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                     {Object.entries(PROTO_PICK).map(([k,l])=><option key={k} value={k}>{l}</option>)}
                   </select>
                 </div>}
-                <ProtoPlan ex={ex} ss={supersetTag(exs,exs.indexOf(ex),e=>({name:e.exercise_name,protocol:e.protocol}))} compact/>
+                <SetChips ex={ex} ss={supersetTag(exs,exs.indexOf(ex),e=>({name:e.exercise_name,protocol:e.protocol}))}/>
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota solo de esta sesión (p. ej. hoy rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
                 <GestureNotes clientId={client.id} exercise={ex.exercise_name} notify={notify}/>
               </div>
@@ -6257,6 +6257,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                     <RestButton secs={row.rest} label={row.name} style={{padding:"3px 9px",fontSize:11,borderRadius:20}}/>
                   </div>
                 </div>
+                <div style={{marginTop:-4,marginBottom:8}}><SetChips ex={{...(baseExs.find(e=>e.id===row.id)||{}),protocol:row.protocol,sets:row.sets,reps:row.reps,prescribed_weight:row.mode==="goma"?null:row.prescribed,rest_seconds:row.rest}} ss={supersetTag(rows,rows.indexOf(row))} big/></div>
                 <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
                   <div style={{flex:1.4,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
@@ -6273,7 +6274,6 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                   </div>
                   <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
                 </div>
-                <ProtoPlan ex={{...(baseExs.find(e=>e.id===row.id)||{}),protocol:row.protocol,sets:row.sets,reps:row.reps,prescribed_weight:row.mode==="goma"?null:row.prescribed,rest_seconds:row.rest}} ss={supersetTag(rows,rows.indexOf(row))}/>
                 {row.mode!=="goma"&&barKgOf(row.name)!=null&&parseFloat(row.w)>0&&<div style={{marginTop:6}}><PlatesRow name={row.name} kg={row.w}/></div>}
                 {row.mode!=="goma"&&isRmRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})&&<RirBar ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,reps:row.reps}} kg={row.w} reps={row.r} rm={rmFor(rmHist,row.name)} notify={notify}/>}
                 <GestureNotes clientId={client.id} exercise={row.name} notify={notify} sessionNote={(baseExs.find(e=>e.id===row.id)||{}).notes}/>
@@ -7001,7 +7001,6 @@ function exProtocolItems(ex){
   if(ex.rir!=null&&ex.rir!=="") out.push(["🎯","RIR",`${ex.rir} · deja ${ex.rir} rep${Number(ex.rir)===1?"":"s"} en reserva`]);
   if(ex.rest_seconds) out.push(["⏱","Descanso",ex.rest_seconds>=60?`${(Math.round(ex.rest_seconds/6)/10).toLocaleString("es-ES")} min`:`${ex.rest_seconds} s`]);
   if(ex.protocol&&PROTO_SHORT[ex.protocol]) out.push(["📋","Método",PROTO_SHORT[ex.protocol]]);
-  const sch=protoScheme(ex); if(sch&&!sch.plain) out.push(["🧩","Cómo",protoSummary(sch)]);
   const tempo=String(ex.exercise_name||"").match(/tempo\s*(\d-\d-\d(?:-\d)?)/i); if(tempo) out.push(["🐢","Tempo",`${tempo[1]} (bajar-pausa-subir)`]);
   if(/pausa/i.test(ex.exercise_name||"")) out.push(["⏸","Pausa","1-2 s abajo, sin rebote"]);
   return out;
@@ -7133,6 +7132,7 @@ function ExPhotoViewer({name,ex,coach,notify,onClose}){
                 <div style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{ico} {l}</div>
                 <div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.25,marginTop:1}}>{v}</div></div>)}
             </div>
+            <SetChips ex={ex} big/>
             {notes&&<div style={{marginTop:6,fontSize:14,color:"#334155",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:11,padding:"8px 10px",lineHeight:1.45}}>📝 {notes}</div>}
           </div>}
           <ExEquipEditor name={name} coach={coach} notify={notify}/>
@@ -9702,7 +9702,7 @@ function PlanExRows({client,exs}){
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/>{exMediaOf(e.exercise_name).length>0&&<span title="Tiene vídeo o foto: toca el nombre" style={{marginLeft:5,fontSize:11}}>🎬</span>}</div>
           <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&e.reps?`${e.sets} × ${e.reps}${isIsoRow(e)?"":" reps"}`:""}{PROTO_SHORT[e.protocol]?` · ${PROTO_SHORT[e.protocol]}`:""}{e.rest_seconds?` · descanso ${e.rest_seconds>=60?(Math.round(e.rest_seconds/6)/10).toLocaleString("es-ES")+" min":e.rest_seconds+" s"}`:""}</div>
-          <ProtoPlan ex={e} ss={supersetTag(exs,i,x=>({name:x.exercise_name,protocol:x.protocol}))} compact/>
+          <SetChips ex={e} ss={supersetTag(exs,i,x=>({name:x.exercise_name,protocol:x.protocol}))}/>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
           {kg&&<div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{kg}</div>}
@@ -12565,71 +12565,54 @@ function supersetTag(list, i, get=(x)=>x){
   if(!isS(mate)) return {tag:letter+"1",partner:null};
   return {tag:letter+(pos%2===0?"1":"2"),partner:{name:get(list[mate]).name,tag:letter+(pos%2===0?"2":"1")}};
 }
-function protoScheme(ex, {ss}={}){
+// Series del protocolo, una a una: [{r: reps, kg, k: tipo, tag}] (k: top · back · ramp ·
+// work · tech · cl). Devuelve null en series planas (ya se ven en «series × reps»).
+function protoSets(ex, {ss}={}){
   if(!ex) return null;
   const p=ex.protocol||"series_planas", N=Math.max(1,parseInt(ex.sets)||1);
   const W=ex.prescribed_weight!=null&&ex.prescribed_weight!==""&&Number(ex.prescribed_weight)>0?Number(ex.prescribed_weight):null;
   // Cargas derivadas: de 2,5 en 2,5 kg con barra pesada (saltos reales), si no de 1,25.
-  const rl=(x)=>W>=40?Math.round(x/2.5)*2.5:roundLoad(x);
-  const r=rirNum(ex.rir), rt=(v)=>v!=null?` · RIR ${v}`:"", kg=(f)=>W?rl(W*f):null;
-  if(p==="superset"){
-    const t=ss||{tag:"A1",partner:null};
-    if(ss&&!ss.partner) return {title:"Series planas",plain:true,steps:[{tag:"TODAS",txt:`${N} × ${ex.reps||"—"}${rt(r)} · sin pareja de superserie`,kg:W}]};
-    return {title:"Superserie",steps:[
-      {tag:t.tag,txt:!t.partner?"Encadénalo con el siguiente ejercicio sin descanso":/1$/.test(t.tag)?`Y sin descanso pasas a ${t.partner.name} (${t.partner.tag})`:`Justo después de ${t.partner.name} (${t.partner.tag}), sin descanso`},
-      {tag:"DESCANSO",txt:`${ex.rest_seconds?restTxt(ex.rest_seconds):"El descanso"} al terminar los dos · ${N} vuelta${N>1?"s":""} de ${ex.reps||"—"}${rt(r)}`}],
-      tip:"Mejor con antagonistas (empuje + tracción): uno descansa mientras trabaja el otro."};
-  }
+  const rl=(x)=>W>=40?Math.round(x/2.5)*2.5:roundLoad(x), kg=(f)=>W?rl(W*f):null;
+  const r=rirNum(ex.rir), rep=(n,o)=>Array.from({length:Math.max(0,n)},()=>({...o}));
+  if(p==="superset") return ss&&ss.partner?{name:"Superserie",pair:ss,sets:[]}:null; // la pareja A1 ⇄ A2
   const rg=repsRange(ex.reps); if(!rg||META_PROTOS.includes(p)||p==="test_amrap"||p==="isometrico") return null;
   const [lo,hi]=rg;
   if(p==="top_set_backoff"){
     const t=protoTarget(p,ex.reps,r), bR=Math.min(hi,lo+2), br=r!=null?r:t.rir+1;
     const f=Math.max(0.85,Math.min(0.90,pctRM(bR+br)/pctRM(t.reps+t.rir)));
-    const steps=[{tag:"TOP",txt:`1 × ${t.reps}${rt(r!=null?t.rir:null)} · la más pesada`,kg:W}];
-    if(N>1) steps.push({tag:"BACK-OFF",txt:`${N-1} × ${bR}${rt(r!=null?br:null)} · −${Math.round((1-f)*100)} %`,kg:kg(f)});
-    return {title:"Top set + back-off",steps,tip:"Calienta subiendo hasta el top. Si el top sale con más reps en reserva de las marcadas, sube la carga la próxima vez."};
+    return {name:"Top set + back-off",sets:[{r:t.reps,kg:W,k:"top",tag:"TOP"},...rep(N-1,{r:bR,kg:kg(f),k:"back",pct:W?null:`−${Math.round((1-f)*100)}%`})],rir:r!=null?[t.rir,br]:null};
   }
   if(p==="ramp_up"){
-    const t=protoTarget(p,ex.reps,r), n=Math.max(1,N-1);
-    const reps=[], ks=[];
-    for(let k=0;k<n&&N>1;k++){ const extra=n-k, rp=Math.min(hi>t.reps?hi:t.reps+2,t.reps+Math.min(2,extra)); reps.push(rp);
-      ks.push(W?rl(W*Math.min(0.97,pctRM(rp+t.rir+extra)/pctRM(t.reps+t.rir))):null); }
-    const steps=[];
-    if(reps.length) steps.push({tag:"SUBIDA",txt:`${reps.join(" → ")} reps · cada serie más pesada`,kg:ks.every(x=>x!=null)?ks:null});
-    steps.push({tag:"TOP",txt:`1 × ${t.reps}${rt(r!=null?t.rir:null)}`,kg:W});
-    return {title:"Subiendo peso (rampa)",steps,tip:"Antes, 2-3 series ligeras de calentamiento (no cuentan). La técnica manda: si se rompe, ese es tu top de hoy."};
+    const t=protoTarget(p,ex.reps,r), n=N-1, sets=[];
+    for(let k=0;k<n;k++){ const extra=n-k, rp=Math.min(hi>t.reps?hi:t.reps+2,t.reps+Math.min(2,extra));
+      sets.push({r:rp,kg:W?rl(W*Math.min(0.97,pctRM(rp+t.rir+extra)/pctRM(t.reps+t.rir))):null,k:"ramp"}); }
+    sets.push({r:t.reps,kg:W,k:"top",tag:"TOP"});
+    return {name:"Subiendo peso",sets,rir:r!=null?[t.rir]:null};
   }
-  if(p==="rest_pause"){
-    const mini=Math.max(2,Math.round(lo/3)), steps=[];
-    if(N>1) steps.push({tag:"SERIES",txt:`${N-1} × ${ex.reps}${rt(r)}`,kg:W});
-    steps.push({tag:"REST-PAUSE",txt:`Última: ${lo} reps al RIR 0-1 → 15 s → ~${mini} → 15 s → ~${mini}`,kg:W});
-    return {title:"Rest-pause",steps,tip:"Mismo peso en las mini-series. Solo en la última serie, para no acumular fatiga de más."};
-  }
-  if(p==="drop_set"){
-    const steps=[];
-    if(N>1) steps.push({tag:"SERIES",txt:`${N-1} × ${ex.reps}${rt(r)}`,kg:W});
-    steps.push({tag:"DROP",txt:`Última: ${ex.reps} al fallo técnico → −20 % → al fallo → −20 % → al fallo, sin descanso`,kg:W?[W,kg(0.8),kg(0.64)]:null});
-    return {title:"Drop set",steps,tip:"Prepara los pesos antes de empezar la última serie para cambiar rápido."};
-  }
-  if(p==="cluster"){
-    const c=clusterOf(lo);
-    return {title:"Cluster",steps:[{tag:"CLUSTER",txt:`${N} × (${c.txt}) · 15-20 s entre mini-bloques${rt(r)}`,kg:W},{tag:"DESCANSO",txt:`${ex.rest_seconds?restTxt(ex.rest_seconds):"Completo"} entre series`}],
-      tip:"Suelta la barra (o el agarre) entre mini-bloques: cada rep, rápida y con técnica limpia."};
-  }
-  return {title:"Series planas",plain:true,steps:[{tag:"TODAS",txt:`${N} × ${ex.reps}${rt(r)} · mismo peso`,kg:W}]};
+  if(p==="rest_pause"){ const mini=Math.max(2,Math.round(lo/3));
+    return {name:"Rest-pause",sets:[...rep(N-1,{r:ex.reps,kg:W,k:"work"}),{r:`${lo}+${mini}+${mini}`,kg:W,k:"tech",tag:"RP 15s"}]}; }
+  if(p==="drop_set")
+    return {name:"Drop set",sets:[...rep(N-1,{r:ex.reps,kg:W,k:"work"}),{r:"fallo",kg:W?[W,kg(0.8),kg(0.64)]:null,k:"tech",tag:"DROP −20%"}]};
+  if(p==="cluster"){ const c=clusterOf(lo); return {name:"Cluster",sets:rep(N,{r:c.txt.replace(/\+/g,"·"),kg:W,k:"cl",tag:"15s"})}; }
+  return null;
 }
-const protoSummary = (s) => s?s.steps.map(x=>`${x.tag==="TODAS"?"":x.tag+" "}${x.txt}${x.kg!=null?` (${(Array.isArray(x.kg)?x.kg:[x.kg]).map(fmtKgN).join(" → ")} kg)`:""}`).join(" · "):"";
-// Esquema del protocolo para entrenar (no se muestra en series planas: es lo de siempre).
-function ProtoPlan({ex,ss,compact}){
-  const s=protoScheme(ex,{ss}); if(!s||s.plain) return null;
-  return <div data-proto={ex.protocol} style={{marginTop:6,border:"1px solid #cfe0f4",background:"#f3f8fe",borderRadius:10,padding:"7px 9px"}}>
-    <div style={{fontSize:10,fontWeight:800,color:"#0369a1",letterSpacing:.4,textTransform:"uppercase",marginBottom:4}}>🧩 {s.title} · cómo se hace</div>
-    {s.steps.map((st,i)=><div key={i} style={{display:"flex",alignItems:"baseline",gap:7,fontSize:12,color:"#0f172a",padding:"2px 0"}}>
-      <span style={{flexShrink:0,minWidth:70,fontSize:9.5,fontWeight:800,color:"#fff",background:st.tag==="DESCANSO"?"#64748b":"#0284c7",borderRadius:6,padding:"2px 6px",textAlign:"center"}}>{st.tag}</span>
-      <span style={{flex:1,minWidth:0,lineHeight:1.35}}>{st.txt}</span>
-      {st.kg!=null&&<b style={{whiteSpace:"nowrap",fontSize:12}}>{(Array.isArray(st.kg)?st.kg:[st.kg]).map(fmtKgN).join(" → ")} kg</b>}
-    </div>)}
-    {s.tip&&!compact&&<div style={{fontSize:11,color:"#64748b",marginTop:3,lineHeight:1.35}}>💡 {s.tip}</div>}
+// Colores fijos (sirven en tema claro y oscuro): top naranja, back-off azul, rampa gris,
+// técnicas violeta, cluster verde azulado.
+const SET_COL={top:"#ea580c",back:"#0284c7",ramp:"#64748b",work:"#334155",tech:"#7c3aed",cl:"#0f766e"};
+// Protocolo de un vistazo: una ficha por serie con reps y kg.
+function SetChips({ex,ss,big}){
+  const s=protoSets(ex,{ss}); if(!s) return null;
+  const fs=big?1.25:1;
+  return <div data-proto={ex.protocol} title={s.name} style={{display:"flex",alignItems:"stretch",gap:4,flexWrap:"wrap",marginTop:6}}>
+    {s.pair&&<span data-pair style={{display:"flex",alignItems:"center",gap:4,background:"#db2777",color:"#fff",borderRadius:8,padding:"3px 8px",fontSize:11*fs,fontWeight:800}}>
+      {s.pair.tag}{s.pair.partner&&<span style={{fontWeight:600,opacity:.95}}>⇄ {s.pair.partner.name}</span>}</span>}
+    {!s.pair&&s.sets.map((x,i)=>{ const kgs=x.kg==null?null:(Array.isArray(x.kg)?x.kg:[x.kg]);
+      return <span key={i} data-set={x.k} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minWidth:38*fs,background:SET_COL[x.k],color:"#fff",borderRadius:8,padding:`${3*fs}px ${6*fs}px`,lineHeight:1.15}}>
+        {x.tag&&<span style={{fontSize:8*fs,fontWeight:800,letterSpacing:.3,opacity:.9}}>{x.tag}</span>}
+        <b style={{fontSize:12*fs}}>{x.r}</b>
+        {kgs?<span style={{fontSize:10*fs,fontWeight:600}}>{kgs.map(fmtKgN).join("↓")}</span>:x.pct?<span style={{fontSize:10*fs,fontWeight:600}}>{x.pct}</span>:null}
+      </span>; })}
+    {s.rir&&<span style={{alignSelf:"center",fontSize:10*fs,fontWeight:700,color:"#94a3b8"}}>RIR {s.rir.join("/")}</span>}
   </div>;
 }
 // RIR objetivo por defecto según la fase, el nivel y si es un básico.
@@ -13542,7 +13525,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 }
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
-ClientPortal=noTheme(ClientPortal); PlatesRow=noTheme(PlatesRow); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
+ClientPortal=noTheme(ClientPortal); PlatesRow=noTheme(PlatesRow); SetChips=noTheme(SetChips); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
