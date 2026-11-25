@@ -1184,6 +1184,14 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
   const [cliTab,setCliTab] = React.useState("act"); // act | baja
   const [bajaFor,setBajaFor] = React.useState(null);
   const [view,setView] = React.useState("dashboard");
+  // Inicio a pantalla completa: ocupa todo el alto hasta la barra de abajo (móvil e iPad).
+  const dashRef=React.useRef(null); const [dashH,setDashH]=React.useState(0);
+  React.useLayoutEffect(()=>{ if(view!=="dashboard") return;
+    const fit=()=>{ const el=dashRef.current; if(!el) return; const top=el.getBoundingClientRect().top+window.scrollY;
+      const nav=document.querySelector(".bottom-nav"), navH=nav&&getComputedStyle(nav).display!=="none"?nav.getBoundingClientRect().height:0;
+      setDashH(Math.max(0,Math.floor(window.innerHeight-top-navH-16))); };
+    fit(); window.addEventListener("resize",fit); const t=setTimeout(fit,400);
+    return ()=>{ window.removeEventListener("resize",fit); clearTimeout(t); }; },[view]);
   const [schedView,setSchedView] = React.useState("day");
   const [weekBig,setWeekBig] = React.useState(false); // vista de semana ampliada (más espacio para arrastrar)
   const [fitMode,setFitMode] = React.useState(()=>{ try{ return localStorage.getItem("kg_agenda_fit")==="1"; }catch(e){ return false; } }); // día/semana a pantalla completa sin scroll
@@ -2178,10 +2186,10 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
 
         {/* DASHBOARD */}
         {view==="dashboard"&&(
-          <div>
-            <div style={{marginBottom:24}}>
-              <h1 className="mono" style={{fontSize:20,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="home" size={32}/>{GYM_NAME} — Dashboard</h1>
-              <p style={{color:"#94a3b8",fontSize:12,marginTop:4}}>{fmtLong(TODAY)}</p>
+          <div ref={dashRef} data-dashfill style={{display:"flex",flexDirection:"column",minHeight:dashH||undefined}}>
+            <div style={{marginBottom:16}}>
+              <h1 className="mono" style={{fontSize:24,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="home" size={38}/>{GYM_NAME} — Dashboard</h1>
+              <p style={{color:"#94a3b8",fontSize:14,marginTop:4}}>{capFirst(fmtLong(TODAY))}</p>
             </div>
             <BookingRequests compact sessions={sessions} clients={clients} loadAll={loadAll} notify={notify}/>
             <PushSetup compact notify={notify}/>
@@ -2208,19 +2216,19 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               const goHour=(t)=>{ setActiveDay(TODAY); setSchedView("day"); setView("schedule"); setFocusSlot({date:TODAY,time:t}); };
               const mins=(t)=>{ const [h,m]=t.split(":").map(Number), [nh,nm]=nowHM.split(":").map(Number); return (h*60+m)-(nh*60+nm); };
               return(
-                <div className="card" style={{marginBottom:14,padding:"16px 16px 12px",background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.28)"}}>
+                <div className="card" data-hoy style={{flex:"1 0 auto",display:"flex",flexDirection:"column",marginBottom:14,padding:"20px 20px 16px",background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.28)"}}>
                   <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:10}}>
                     <div>
-                      <div style={{fontSize:12,fontWeight:800,opacity:.85,letterSpacing:.4}}>HOY · {capFirst(new Date(TODAY+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}))}</div>
+                      <div style={{fontSize:14,fontWeight:800,opacity:.85,letterSpacing:.4,whiteSpace:"nowrap"}}>HOY · {capFirst(new Date(TODAY+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}))}</div>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2}}>
-                        <span style={{fontSize:52,fontWeight:800,lineHeight:1}}>{groups.length}</span>
-                        <span style={{fontSize:18,fontWeight:800}}>{groups.length===1?"clase":"clases"}</span>
+                        <span style={{fontSize:"clamp(54px,8.5vh,88px)",fontWeight:800,lineHeight:1}}>{groups.length}</span>
+                        <span style={{fontSize:24,fontWeight:800}}>{groups.length===1?"clase":"clases"}</span>
                       </div>
-                      <div style={{fontSize:13,fontWeight:700,opacity:.9,marginTop:2}}>{people} {people===1?"persona":"personas"}{vals.length?` · ${vals.length} valoraci${vals.length===1?"ón":"ones"}`:""}{doneN?` · ${doneN} ya vinieron ✓`:""}</div>
+                      <div style={{fontSize:16,fontWeight:700,opacity:.92,marginTop:4}}>{people} {people===1?"persona":"personas"}{vals.length?` · ${vals.length} valoraci${vals.length===1?"ón":"ones"}`:""}{doneN?` · ${doneN} ya vinieron ✓`:""}</div>
                     </div>
-                    <button className="btn" style={{background:"rgba(255,255,255,.16)",color:"#fff",border:"1px solid rgba(255,255,255,.35)",fontSize:12,padding:"8px 12px",flexShrink:0}} onClick={()=>{ setActiveDay(TODAY); setSchedView("day"); setView("schedule"); }}>Agenda ›</button>
+                    <button className="btn" style={{background:"rgba(255,255,255,.16)",color:"#fff",border:"1px solid rgba(255,255,255,.35)",fontSize:15,padding:"11px 16px",flexShrink:0}} onClick={()=>{ setActiveDay(TODAY); setSchedView("day"); setView("schedule"); }}>Agenda ›</button>
                   </div>
-                  {(nowG||nextG)&&<div style={{marginTop:12,background:"rgba(255,255,255,.14)",borderRadius:12,padding:"9px 11px",fontSize:13,fontWeight:700}}>
+                  {(nowG||nextG)&&<div style={{marginTop:14,background:"rgba(255,255,255,.14)",borderRadius:14,padding:"12px 14px",fontSize:16,fontWeight:700}}>
                     {nowG?<>🔴 <b>Ahora · {nowG.t}</b> con {[...nowG.ss.map(x=>x.c.name.split(" ")[0]),...nowG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")||"nadie"}</>
                       :<>⏭️ <b>Siguiente · {nextG.t}</b>{mins(nextG.t)<=120?` (en ${mins(nextG.t)<60?`${mins(nextG.t)} min`:`${Math.floor(mins(nextG.t)/60)} h ${mins(nextG.t)%60?`${mins(nextG.t)%60} min`:""}`})`:""} con {[...nextG.ss.map(x=>x.c.name.split(" ")[0]),...nextG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")}</>}
                   </div>}
@@ -2230,20 +2238,22 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                       {ops.map(({o,c})=><button key={o.id} type="button" onClick={()=>setQuickView(c)} style={{border:"none",borderRadius:20,padding:"3px 9px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:"rgba(255,255,255,.92)",color:"#0f766e"}}>{c.name.split(" ")[0]}{o.time?` ${o.time}`:""}{o.status==="done"?" ✓":""}</button>)}
                     </div>); })()}
                   {groups.length===0
-                    ?<div style={{marginTop:10,fontSize:13,opacity:.9}}>Hoy no hay clases. ¡Día libre o de planificar! 🌴</div>
-                    :<div style={{marginTop:10,display:"flex",flexDirection:"column",gap:6}}>
+                    ?<div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,textAlign:"center",marginTop:10}}>
+                      <span style={{fontSize:"clamp(30px,6vh,64px)",lineHeight:1}} aria-hidden="true">🌴</span>
+                      <span style={{fontSize:"clamp(15px,2.2vh,19px)",fontWeight:700,opacity:.95}}>Hoy no hay clases. ¡Día libre o de planificar!</span></div>
+                    :<div style={{marginTop:14,display:"flex",flexDirection:"column",gap:8,flex:1}}>
                       {groups.map(g=>{ const past=endOf(g.t)<=nowHM, live=nowG&&nowG.t===g.t; return(
-                        <div key={g.t} style={{display:"flex",alignItems:"center",gap:10,background:live?"#fff":"rgba(255,255,255,.1)",color:live?"#0f172a":"#fff",borderRadius:12,padding:"8px 10px",opacity:past&&!live?.7:1}}>
-                          <button type="button" onClick={()=>goHour(g.t)} className="mono" style={{border:"none",background:"none",color:"inherit",fontSize:17,fontWeight:800,padding:0,minWidth:52,textAlign:"left",cursor:"pointer"}}>{g.t}</button>
-                          <div style={{flex:1,minWidth:0,display:"flex",flexWrap:"wrap",gap:5}}>
+                        <div key={g.t} style={{display:"flex",alignItems:"center",gap:12,background:live?"#fff":"rgba(255,255,255,.1)",color:live?"#0f172a":"#fff",borderRadius:14,padding:"11px 13px",opacity:past&&!live?.7:1}}>
+                          <button type="button" onClick={()=>goHour(g.t)} className="mono" style={{border:"none",background:"none",color:"inherit",fontSize:21,fontWeight:800,padding:0,minWidth:64,textAlign:"left",cursor:"pointer"}}>{g.t}</button>
+                          <div style={{flex:1,minWidth:0,display:"flex",flexWrap:"wrap",gap:6}}>
                             {g.ss.map(({s,c})=>{ const ok=s.status==="completed"; return(
-                              <button key={s.id} type="button" onClick={()=>goToPerson(s,c)} style={{display:"inline-flex",alignItems:"center",gap:5,border:"none",borderRadius:20,padding:"3px 9px 3px 3px",cursor:"pointer",fontFamily:"inherit",fontSize:13,fontWeight:800,
+                              <button key={s.id} type="button" onClick={()=>goToPerson(s,c)} style={{display:"inline-flex",alignItems:"center",gap:6,border:"none",borderRadius:22,padding:"4px 12px 4px 4px",cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:800,
                                 background:live?c.color+"1f":"rgba(255,255,255,.92)",color:"#0f172a"}}>
-                                {c.avatar_url?<img src={c.avatar_url} style={{width:22,height:22,borderRadius:"50%",objectFit:"cover"}}/>:<span style={{width:22,height:22,borderRadius:"50%",background:c.color,color:"#fff",fontSize:9,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>}
+                                {c.avatar_url?<img src={c.avatar_url} style={{width:28,height:28,borderRadius:"50%",objectFit:"cover"}}/>:<span style={{width:28,height:28,borderRadius:"50%",background:c.color,color:"#fff",fontSize:11,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>}
                                 {c.name.split(" ")[0]}{ok?" ✓":""}</button>); })}
                             {g.vs.map(l=><button key={l.id} type="button" onClick={()=>setShowValoracion(l)} style={{border:"none",borderRadius:20,padding:"4px 9px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:"#f3ecfb",color:"#7c3aed"}}>📋 {(l.name||"Valoración").split(" ")[0]}</button>)}
                           </div>
-                          <span style={{fontSize:11,fontWeight:800,opacity:.85,flexShrink:0}}>{g.ss.length}/{capOf(g.t)}</span>
+                          <span style={{fontSize:14,fontWeight:800,opacity:.85,flexShrink:0}}>{g.ss.length}/{capOf(g.t)}</span>
                         </div>); })}
                     </div>}
                 </div>);
@@ -2257,12 +2267,12 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 ["gear","Horario",()=>{ setView("schedule"); setShowSched(true); }],
               ];
               return(
-                <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fill,minmax(78px,1fr))",gap:8,marginBottom:14}}>
+                <div data-atajos style={{display:"grid",gridTemplateColumns:`repeat(${items.length},minmax(0,1fr))`,gap:10,marginBottom:14,flexShrink:0}}>
                   {items.map(([ic,l,fn,n])=>(
-                    <button key={l} type="button" onClick={fn} className="card tilt" style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:5,padding:"11px 4px 9px",cursor:"pointer",fontFamily:"inherit",border:"1px solid #e6ebf3",minHeight:76}}>
-                      {ICO3D[ic]?<Ico k={ic} size={30}/>:<span style={{fontSize:26,lineHeight:1}}>{ic}</span>}
-                      <span style={{fontSize:11,fontWeight:800,color:"#334155",textAlign:"center",lineHeight:1.15}}>{l}</span>
-                      {n>0&&<span style={{position:"absolute",top:5,right:6,minWidth:18,height:18,borderRadius:9,background:"#dc2626",color:"#fff",fontSize:10,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{n}</span>}
+                    <button key={l} type="button" onClick={fn} className="card tilt" style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:7,padding:"12px 4px 10px",cursor:"pointer",fontFamily:"inherit",border:"1px solid #e6ebf3",minHeight:"clamp(84px,11vh,112px)"}}>
+                      {ICO3D[ic]?<Ico k={ic} size={42}/>:<span style={{fontSize:36,lineHeight:1}}>{ic}</span>}
+                      <span style={{fontSize:13.5,fontWeight:800,color:"#334155",textAlign:"center",lineHeight:1.15}}>{l}</span>
+                      {n>0&&<span style={{position:"absolute",top:6,right:7,minWidth:20,height:20,borderRadius:10,background:"#dc2626",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{n}</span>}
                     </button>))}
                 </div>); })()}
             <div>
@@ -2277,14 +2287,22 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               const porHora=horas?gen/horas:0;
               const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
               return(
-                <div className="card dash-fin tilt" onClick={()=>setView("income")} style={{marginBottom:14,cursor:"pointer",display:"flex",alignItems:"center",gap:12,padding:"13px 16px",border:"1px solid #c9e6d1",background:"#f4faf6"}}>
-                  <Ico k="money" size={38}/>
-                  <div style={{flex:1,minWidth:0}}>
-                    <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
-                    <div style={{fontSize:12,color:"#475569",marginTop:2}}>{lbl} <b style={{color:"#0f172a"}}>{eur(porHora)}/hora</b> · {eur(gen)} generados · {horas} h de clase</div>
-                    <div style={{fontSize:12,color:"#475569"}}>Cobrado este mes <b style={{color:"#0f172a"}}>{eur(monthIncome)}</b></div>
+                <div className="card dash-fin tilt" data-fin onClick={()=>setView("income")} style={{marginBottom:0,cursor:"pointer",padding:"16px 18px",border:"1px solid #c9e6d1",background:"#f4faf6",flexShrink:0}}>
+                  <div style={{display:"flex",alignItems:"center",gap:12}}>
+                    <Ico k="money" size={48}/>
+                    <div style={{flex:1,minWidth:0}}>
+                      <div style={{fontSize:19,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
+                      <div style={{fontSize:13,color:"#475569",marginTop:1}}>{lbl}: {horas} h de clase</div>
+                    </div>
+                    <span style={{fontSize:15,fontWeight:800,color:"#16a34a",flexShrink:0,whiteSpace:"nowrap"}}>Ver ›</span>
                   </div>
-                  <span style={{fontSize:13,fontWeight:800,color:"#16a34a",flexShrink:0,whiteSpace:"nowrap"}}>Ver ›</span>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginTop:12}}>
+                    {[["Por hora",eur(porHora)],["Generados",eur(gen)],["Cobrado mes",eur(monthIncome)]].map(([k,v])=>(
+                      <div key={k} style={{background:"#ffffff",border:"1px solid #d8ede0",borderRadius:12,padding:"9px 6px",textAlign:"center"}}>
+                        <div style={{fontSize:21,fontWeight:800,color:"#0f172a",lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</div>
+                        <div style={{fontSize:11.5,fontWeight:700,color:"#64748b",marginTop:3}}>{k}</div>
+                      </div>))}
+                  </div>
                 </div>
               );
             })()}
