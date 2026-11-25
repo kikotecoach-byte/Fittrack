@@ -4589,8 +4589,9 @@ const eqName = (k) => String(EQUIP_LABEL[k]||k).split(" ").slice(1).join(" ")||k
 // ── Distribución real de la sala ──
 // · Rack de power: básicos con barra y peso muerto.
 // · ATLETICA: jaula (rack) + multipower en el MISMO espacio, con jalón, fondera y barra
-//   de dominadas integrados. Si se usa la multipower, la jaula ATLETICA no se puede usar
-//   (y al revés) → racks + multipower comparten puestos.
+//   de dominadas integrados. Si se usa la multipower o el jalón, la jaula ATLETICA no se
+//   puede usar para barra ni pines (y al revés) → racks + multipower/jalón comparten puestos.
+//   Multipower y jalón SÍ pueden usarse a la vez (no se estorban).
 // · Dobles poleas (independientes del jalón): un ejercicio usa una polea o las dos.
 // · Barra de dominadas de pared (+ la de la ATLETICA = 2 puestos de dominadas).
 // Ejercicios con barra que se hacen DENTRO de un rack (sacan la barra de los soportes).
@@ -4619,12 +4620,16 @@ function roomStations(people, units){
     if(st.k==="poleas"){ const w=Object.keys(st.ex).map(pulleySlots).sort((a,b)=>b-a); used=w.slice(0,Math.min(ppl.length,setups)).reduce((a,b)=>a+b,0); }
     return {...st,cap,setups,people:ppl,used,setupBased,unl};
   });
-  // Multipower ↔ jaula ATLETICA: comparten espacio, así que racks + multipower suman
-  // contra los racks (power + ATLETICA). Una persona solo está en un sitio a la vez.
-  const rk=res.find(x=>x.k==="rackpines"), mp=res.find(x=>x.k==="multipower");
-  if(ROOM_SHARE&&rk&&mp){ const union=new Set([...rk.people,...mp.people].map(c=>c.id)).size, tot=Math.min(union,rk.used+mp.used);
-    [rk,mp].forEach(x=>{ x.share=true; x.shareTot=tot; x.shareCap=rk.cap; });
-    if(tot>rk.cap){ rk.clash=true; mp.clash=true; } else if(tot===rk.cap&&union>1){ rk.tight=true; mp.tight=true; } }
+  // Jaula ATLETICA ↔ multipower y jalón: si se usa cualquiera de los dos, esa jaula no
+  // sirve para barra/pines, así que suman UN puesto contra los racks (power + ATLETICA).
+  // Multipower y jalón juntos siguen siendo un solo puesto (pueden usarse a la vez).
+  // Una persona solo está en un sitio a la vez.
+  const rk=res.find(x=>x.k==="rackpines"), mp=res.find(x=>x.k==="multipower"), jl=res.find(x=>x.k==="jalon");
+  const atl=[ROOM_SHARE?mp:null,jl].filter(Boolean);
+  if(rk&&atl.length){ const pa=new Set(atl.flatMap(x=>x.people.map(c=>c.id)));
+    const union=new Set([...rk.people.map(c=>c.id),...pa]).size, tot=Math.min(union,rk.used+1);
+    [rk,...atl].forEach(x=>{ x.share=true; x.shareTot=tot; x.shareCap=rk.cap; x.shareWith=atl.map(a=>a.k); });
+    if(tot>rk.cap){ [rk,...atl].forEach(x=>{ x.clash=true; }); } else if(tot===rk.cap&&union>1){ [rk,...atl].forEach(x=>{ x.tight=true; }); } }
   return res.map(x=>{
     const status=x.unl?"ok":(x.used>x.cap||x.clash)?"red":(x.tight||(x.people.length>1&&(x.used===x.cap||(x.setupBased&&x.setups>x.cap))))?"amber":"ok";
     return {...x,status};
@@ -4673,7 +4678,7 @@ function RoomMap({people,units}){
               {Array.from({length:boxes},(_,i)=><span key={i} style={{flex:1,height:8,borderRadius:3,background:i<Math.min(x.used,x.cap)?C.fg:i<x.cap?"#e2e8f0":"#dc2626",opacity:i>=x.cap?.55:1}}/>)}
             </div>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} ${x.k==="poleas"?"poleas":"a la vez"}${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}${x.share?` · 🔩 rack+multi ${x.shareTot}/${x.shareCap}`:""}`}</span>
+              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} ${x.k==="poleas"?"poleas":"a la vez"}${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}${x.share?` · 🔩 racks ${x.shareTot}/${x.shareCap}`:""}`}</span>
               <span style={{display:"inline-flex",paddingLeft:5}}>{x.people.slice(0,4).map(av)}{x.people.length>4&&<span style={{fontSize:9,fontWeight:800,color:"#64748b",marginLeft:3}}>+{x.people.length-4}</span>}</span>
             </div>
           </button>); })}
@@ -4687,10 +4692,10 @@ function RoomMap({people,units}){
           <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#334155"}}>{n}</span>
           <span style={{display:"inline-flex",paddingLeft:5}}>{cs.map(av)}</span>
         </div>)}
-        {sel.share&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🔩 La multipower y la jaula ATLETICA comparten espacio: {sel.clash?"ahora mismo se pisan (no caben a la vez). Escalona el orden o cambia la multipower por otra variante (mancuernas, máquina…).":"mientras se use una, la otra queda bloqueada."}</div>}
+{sel.share&&(()=>{ const w=(sel.shareWith||[]).map(k=>k==="jalon"?"el jalón":"la multipower").join(" y ")||"la multipower"; return <div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🔩 La jaula ATLETICA comparte espacio con {w}: {sel.clash?`ahora mismo se pisan (no caben a la vez). Escalona el orden o cambia ${w} por otra variante (mancuernas, máquina, dominadas…).`:"mientras se usen, esa jaula queda bloqueada para barra y pines (y al revés)."} El jalón y la multipower sí pueden usarse a la vez.</div>; })()}
         {sel.k==="poleas"&&Object.keys(sel.ex).some(n=>pulleySlots(n)===2)&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🪢 Cruces y aperturas ocupan las dos poleas; el resto, una.</div>}
         <div style={{fontSize:11,color:ROOM_COL[sel.status].fg,fontWeight:700,marginTop:6,lineHeight:1.4}}>
-          {sel.status==="red"&&sel.clash&&sel.used<=sel.cap?`Entre racks y multipower hacen falta ${sel.shareTot} puestos a la vez y hay ${sel.shareCap} (la multipower ocupa la jaula ATLETICA): escalona el orden para que no coincidan.`
+          {sel.status==="red"&&sel.clash&&sel.used<=sel.cap?`Entre racks y ${(sel.shareWith||[]).map(k=>k==="jalon"?"jalón":"multipower").join("/")||"multipower"} hacen falta ${sel.shareTot} puestos a la vez y hay ${sel.shareCap} (ocupan la jaula ATLETICA): escalona el orden para que no coincidan.`
             :sel.status==="red"?`Lo necesitan ${sel.used} a la vez y hay ${sel.cap} ${sel.cap>1?"puestos":"puesto"}: escalona el orden (que alguien empiece por otro bloque), junta a dos en el mismo ejercicio o cambia el tipo de sesión de alguien.`
             :sel.status==="amber"?(sel.used===sel.cap?"Al límite: si alguien se retrasa, habrá espera. Escalonar un poco ayuda.":`Cabe, pero hay ${sel.setups} ejercicios distintos: muchos cambios de discos en el mismo puesto.`)
             :sel.setupBased&&sel.setups<sel.people.length?"Comparten el mismo ejercicio: rotan en el mismo montaje sin problema.":"Sin esperas previstas."}
@@ -7947,6 +7952,7 @@ function ScheduleModal({config,onSave,onClose}) {
           <div style={{background:"#f1f4fa",borderRadius:12,padding:"9px 11px",fontSize:11,color:"#475569",lineHeight:1.5}}>
             <div>🏗️ <b>Rack de power</b>: básicos con barra y peso muerto.</div>
             <div>🔩 <b>ATLETICA</b>: jaula + multipower, con 🎚️ jalón, 🔻 fondera y 🧗 dominadas integrados.</div>
+            <div>🎚️ <b>Jalón</b>: cualquier jalón bloquea la jaula ATLETICA para barra y pines, pero no estorba a la multipower.</div>
             <div>🪢 <b>Dobles poleas</b> aparte del jalón: cada ejercicio usa una polea o las dos (cruces y aperturas).</div>
             <div>🧗 <b>Barra de dominadas de pared</b> aparte.</div>
           </div>
@@ -12528,7 +12534,8 @@ const EQUIP = [
   [/barra z|barra ez|\bez bar/i,"barraz"],
   [/safety bar|\bssb\b/i,"safetybar"],
   // Estación de jalón (integrada en la ATLETICA), independiente de las dobles poleas.
-  [/jal[óo]n(?!.*polea)|pulldown/i,"jalon"],
+  // Cualquier jalón (también «en polea» o unilateral) se hace en ella.
+  [/jal[óo]n|pulldown/i,"jalon"],
   [/dominada|chin-?up|pull-?up|toes to bar|elevaci[óo]n de piernas colgad|colgado pasivo|dead hang|muscle ?up/i,"dominadas"],
   [/fondos(?!.*banco)|\bdips\b/i,"fondos"],
   [/wall sit|en pared|contra pared|squeeze|zancada isom|split squat hold|puente de (glúteo|gluteo|isquios) isom|bird-dog isom|dead bug isom|copenhagen isom|colgado pasivo|dead hang|gemelos? isom/i,"pesocorporal"],
