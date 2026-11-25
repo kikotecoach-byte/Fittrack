@@ -6099,7 +6099,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
     r:(e.actual_reps!=null?e.actual_reps:(e.protocol==="test_amrap"?"":(e.reps!=null?e.reps:""))),
     band:e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)||{}).band||"",
     mode:((e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)))?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
-    done:!!e.done, sd:e.done?0:sdGet(e.id), adj:false,
+    done:!!e.done, sd:e.done?0:sdGet(e.id), ow:owGet(e.id), adj:false,
     rest:e.rest_seconds,
   })));
   const [saving,setSaving]=React.useState(false);
@@ -6146,6 +6146,11 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
     if(nsd<N&&row.done) return toggleDone(row);
     if(nsd>cur&&restAfter(ss)) startRest(row.rest,row.name);
   };
+  // Peso de una serie: la clave cambia el peso del ejercicio (y con él las derivadas);
+  // las demás guardan su peso propio.
+  const setKg=(row,i,v,isKey)=>{ if(isKey) return setField(row.id,"w",v); const a=[...(row.ow||[])]; a[i]=v; setField(row.id,"ow",a); };
+  const blurKg=(row,i,v,isKey)=>{ if(isKey){ sb.from("assigned_exercises").update({actual_weight:kgNum(v)}).eq("id",row.id).then(()=>{}); return; }
+    const a=[...(row.ow||[])]; a[i]=v; owSave(row.id,a); };
   const toggleDone=async(row,noRest)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
@@ -6266,7 +6271,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                     <RestButton secs={row.rest} label={row.name} style={{padding:"3px 9px",fontSize:11,borderRadius:20}}/>
                   </div>
                 </div>
-                <SetTapper ex={exOfRow(row)} ss={supersetTag(rows,rows.indexOf(row))} done={row.done} sd={row.sd} band={row.mode==="goma"?row.band:null} onTap={(i)=>tapSet(row,i)}/>
+                <SetTapper ex={exOfRow(row)} ss={supersetTag(rows,rows.indexOf(row))} done={row.done} sd={row.sd} band={row.mode==="goma"?row.band:null} onTap={(i)=>tapSet(row,i)} ow={row.ow} onKg={(i,v,k)=>setKg(row,i,v,k)} onKgBlur={(i,v,k)=>blurKg(row,i,v,k)} keyVal={row.w==null?"":row.w}/>
                 {(baseExs.find(e=>e.id===row.id)||{}).notes&&!row.adj&&<div style={{fontSize:11,color:"#94a3b8",fontStyle:"italic",marginTop:5}}>📝 {(baseExs.find(e=>e.id===row.id)||{}).notes}</div>}
                 <button type="button" data-adjust onClick={()=>setField(row.id,"adj",!row.adj)} aria-expanded={row.adj} style={{display:"block",margin:"6px 0 0 auto",border:"none",background:"none",color:"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:"2px 0"}}>{row.adj?"▲ Cerrar":"✎ Ajustar"}</button>
                 {row.adj&&<div data-adjpanel style={{marginTop:4}}>
@@ -6278,7 +6283,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                     </div>
                     {row.mode==="goma"
                       ?<><BandPicker value={row.band} onChange={v=>setBand(row,v)} recent={bandHistoryOf(client.id,row.name,assignedSessions,assignedExercises,date)}/><LastBandHint lb={lastBandOf(client.id,row.name,assignedSessions,assignedExercises,date)} current={row.band}/></>
-                      :<input type="number" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id).then(()=>{});}}/>}
+                      :<input type="text" inputMode="decimal" className="inp" style={{padding:"8px 10px"}} value={row.w} onChange={e=>setField(row.id,"w",e.target.value)} onBlur={()=>{const w=row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",","."));sb.from("assigned_exercises").update({actual_weight:w}).eq("id",row.id).then(()=>{});}}/>}
                   </div>
                   <div style={{flex:1}}>
                     <span className="lbl" style={{marginBottom:3}}>REPS</span>
@@ -12642,28 +12647,45 @@ function setsPlan(ex,{ss}={}){
 }
 // ¿Descansar tras esta serie? En la 1ª de una superserie se pasa directo a la pareja.
 const restAfter=(ss)=>!(ss&&ss.partner&&/1$/.test(ss.tag));
-function SetTapper({ex,ss,done,sd,band,onTap}){
+function SetTapper({ex,ss,done,sd,band,onTap,ow,onKg,onKgBlur,keyVal}){
   const {list,pair}=setsPlan(ex,{ss});
-  const n=done?list.length:Math.min(sd||0,list.length);
+  const n=done?list.length:Math.min(sd||0,list.length), key=setKeyIdx(list);
   return <div data-sets style={{marginTop:2}}>
     {pair&&<div data-pair style={{display:"inline-flex",gap:4,alignItems:"center",background:"#db2777",color:"#fff",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:800,marginBottom:5}}>
       {pair.tag}{pair.partner&&<span style={{fontWeight:600}}>⇄ {pair.partner.name}</span>}</div>}
     <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(list.length,5)},minmax(0,1fr))`,gap:6}}>
       {list.map((x,i)=>{ const on=i<n, next=i===n;
         const kgs=x.kg==null?null:(Array.isArray(x.kg)?x.kg:[x.kg]);
-        const big=band?bandLabel(band):kgs?`${kgs.map(fmtKgN).join("↓")}`:`${x.r}`;
-        const small=band||kgs?`× ${x.r}`:/\d$/.test(String(x.r))?"reps":"";
-        return <button key={i} type="button" data-set={x.k} aria-pressed={on} onClick={e=>{ e.stopPropagation(); onTap(i); }}
-          aria-label={`Serie ${i+1}${x.tag?` (${x.tag})`:""}: ${big}${kgs&&!band?" kg":""} ${small}${on?", hecha":""}`}
-          style={{border:`2px solid ${on?"#16a34a":next?"#fff":"transparent"}`,boxShadow:next?`0 0 0 2px ${SET_COL[x.k]}`:"none",background:on?"#16a34a":SET_COL[x.k],opacity:on||next?1:.72,color:"#fff",
-            borderRadius:12,padding:"6px 3px",minHeight:60,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",lineHeight:1.15,minWidth:0}}>
-          <span style={{fontSize:9,fontWeight:800,letterSpacing:.3,opacity:.92,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{on?"✓ HECHA":(x.tag||({back:"BACK-OFF",ramp:"SUBIDA"})[x.k]||`SERIE ${i+1}`)}</span>
-          <b style={{fontSize:big.length>9?12:16,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{big}{kgs&&!band&&kgs.length===1?<span style={{fontSize:10,fontWeight:700}}> kg</span>:null}</b>
-          {small&&<span style={{fontSize:12,fontWeight:700}}>{small}</span>}
-        </button>; })}
+        const own=ow&&ow[i]!=null&&ow[i]!=="", val=i===key&&keyVal!=null?String(keyVal).replace(".",","):own?ow[i]:(kgs?kgStr(kgs[0]):"");
+        const lbl=on?"✓ HECHA":(x.tag||({back:"BACK-OFF",ramp:"SUBIDA"})[x.k]||`SERIE ${i+1}`);
+        return <div key={i} role="button" tabIndex={0} data-set={x.k} aria-pressed={on} onClick={()=>onTap(i)} onKeyDown={e=>{ if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){ e.preventDefault(); onTap(i); } }}
+          aria-label={`Serie ${i+1} (${lbl}): ${band?bandLabel(band):(val?val+" kg":"")} × ${x.r}${on?", hecha":""}`}
+          style={{border:`2px solid ${on?"#16a34a":next?"#fff":"transparent"}`,boxShadow:next?`0 0 0 2px ${SET_COL[x.k]}`:"none",background:on?"#16a34a":SET_COL[x.k],opacity:on||next?1:.78,color:"#fff",
+            borderRadius:12,padding:"5px 3px 6px",minHeight:64,cursor:"pointer",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",lineHeight:1.15,minWidth:0}}>
+          <span style={{fontSize:9,fontWeight:800,letterSpacing:.3,opacity:.92,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{lbl}</span>
+          {band?<b style={{fontSize:12,margin:"3px 0",whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{bandLabel(band)}</b>
+            :<span style={{display:"flex",alignItems:"baseline",justifyContent:"center",gap:2,margin:"2px 0",maxWidth:"100%"}}>
+              <input data-kg={i} type="text" inputMode="decimal" value={val} placeholder="kg" aria-label={`Kg de la serie ${i+1}`}
+                onClick={e=>e.stopPropagation()} onKeyDown={e=>{ e.stopPropagation(); if(e.key==="Enter") e.currentTarget.blur(); }}
+                onChange={e=>onKg&&onKg(i,e.target.value.replace(/[^\d.,]/g,""),i===key)} onBlur={e=>onKgBlur&&onKgBlur(i,e.target.value,i===key)}
+                style={{width:"100%",maxWidth:62,minWidth:0,textAlign:"center",fontSize:16,fontWeight:800,color:"#fff",background:"rgba(255,255,255,.16)",border:"1px solid rgba(255,255,255,.45)",borderRadius:8,padding:"3px 2px",fontFamily:"inherit",outline:"none"}}/>
+              <span style={{fontSize:10,fontWeight:700}}>kg</span>
+            </span>}
+          <span data-tap style={{display:"flex",alignItems:"center",justifyContent:"center",gap:4,alignSelf:"stretch",margin:"3px 2px 0",padding:"4px 2px",borderRadius:8,background:"rgba(0,0,0,.18)",fontSize:12,fontWeight:800,whiteSpace:"nowrap"}}>
+            <span aria-hidden="true" style={{width:15,height:15,borderRadius:"50%",border:"2px solid #fff",display:"inline-flex",alignItems:"center",justifyContent:"center",fontSize:9,background:on?"#fff":"transparent",color:"#16a34a"}}>{on?"✓":""}</span>
+            × {x.r}{kgs&&kgs.length>1?<span style={{fontSize:10,fontWeight:600}}> ↓{kgs.slice(1).map(fmtKgN).join("↓")}</span>:null}</span>
+        </div>; })}
     </div>
   </div>;
 }
+// Serie «clave» (su peso es el que se guarda y del que salen las demás): el TOP o la 1ª.
+const setKeyIdx=(list)=>{ const k=list.findIndex(x=>x.tag==="TOP"); return k>=0?k:0; };
+const kgStr=(v)=>v==null||v===""?"":String(Math.round(Number(v)*100)/100).replace(".",",");
+const kgNum=(v)=>{ const n=parseFloat(String(v==null?"":v).replace(",",".")); return n>0?n:null; };
+// Pesos cambiados a mano en series que no son la clave (se recuerdan en el móvil).
+const owKey=(id)=>"kk_sw_"+id;
+const owGet=(id)=>{ try{ return JSON.parse(localStorage.getItem(owKey(id))||"null")||[]; }catch(e){ return []; } };
+const owSave=(id,a)=>{ try{ if(a&&a.some(x=>x!=null&&x!=="")) localStorage.setItem(owKey(id),JSON.stringify(a)); else localStorage.removeItem(owKey(id)); }catch(e){} };
 // RIR objetivo por defecto según la fase, el nivel y si es un básico.
 const defaultRir = (block,level,main) => {
   const bt=block?block.type:"fuerza";
@@ -13483,6 +13505,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
   const [expanded,setExpanded] = React.useState(false);
   const [sd,setSd] = React.useState(()=>sdGet(ae.id));
+  const [ow,setOw] = React.useState(()=>owGet(ae.id));
   const [howTo,setHowTo] = React.useState(false);
   useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length+(exPhotoOf(ae.exercise_name)?1:0);
   const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); openExPhoto(ae.exercise_name,ae); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
@@ -13504,8 +13527,8 @@ function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
   const setBand=(v)=>{ setBandS(v); sb.from("assigned_exercises").update({load_band:v||null}).eq("id",ae.id).then(()=>{}); };
   const switchMode=()=>{ const g=!goma; setGoma(g); if(!g&&band){ setBandS(""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ae.id).then(()=>{}); } };
   const hdrBand=ae.load_band||(goma?band:"");
-  const complete=(noRest)=>{ if(!noRest) startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:(parseFloat(actualWeight)||null),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); };
-  const exNow={...ae,prescribed_weight:goma?null:(parseFloat(actualWeight)||ae.prescribed_weight)};
+  const complete=(noRest)=>{ if(!noRest) startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:kgNum(actualWeight),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); };
+  const exNow={...ae,prescribed_weight:goma?null:(kgNum(actualWeight)||ae.prescribed_weight)};
   const tapSet=(i)=>{ const N=setsPlan(exNow,{ss}).list.length, cur=Math.min(sd,N), nsd=i<cur?i:i+1;
     setSd(nsd); sdSave(ae.id,nsd<N?nsd:0);
     if(nsd>=N) return complete(!restAfter(ss));
@@ -13546,7 +13569,9 @@ function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
         <span style={{color:"#94a3b8",fontSize:16}}>{expanded?"▲":"▼"}</span>
       </div>
 
-      <div style={{marginTop:8}}><SetTapper ex={exNow} ss={ss} sd={sd} band={goma?band:null} onTap={tapSet}/></div>
+      <div style={{marginTop:8}}><SetTapper ex={exNow} ss={ss} sd={sd} band={goma?band:null} onTap={tapSet} ow={ow} keyVal={actualWeight==null?"":actualWeight}
+        onKg={(i,v,k)=>{ if(k){ touched.current.w=true; setActualWeight(v); } else setOw(a=>{ const b=[...a]; b[i]=v; return b; }); }}
+        onKgBlur={(i,v,k)=>{ if(!k){ const b=[...ow]; b[i]=v; owSave(ae.id,b); } }}/></div>
       {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
 
       {expanded&&(
@@ -13559,7 +13584,7 @@ function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
           <div style={{display:"grid",gridTemplateColumns:goma?"1fr 1fr":"1fr 1fr 1fr",gap:8}}>
             {!goma&&<div>
               <span className="lbl" style={{fontSize:9}}>PESO REAL (kg)</span>
-              <input type="number" className="inp" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={actualWeight} onChange={e=>{ touched.current.w=true; setActualWeight(e.target.value); }} placeholder={ae.prescribed_weight||"0"}/>
+              <input type="text" inputMode="decimal" className="inp" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={actualWeight} onChange={e=>{ touched.current.w=true; setActualWeight(e.target.value); }} placeholder={ae.prescribed_weight||"0"}/>
             </div>}
             <div>
               <span className="lbl" style={{fontSize:9}}>REPS REALES</span>
