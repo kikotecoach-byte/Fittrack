@@ -1772,15 +1772,15 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
       const r=res[i], e=r[6]&&byId[r[6]];
       if(e){
         keep.add(e.id); const upd={};
-        const lr=()=>{ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises}); return x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date); };
+        const lr=()=>{ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises,proto:r[4]}); return x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date); };
         if(e.exercise_name!==r[0]){ upd.exercise_name=r[0]; upd.prescribed_weight=lr(); }
         if((parseInt(e.sets)||1)!==r[1]) upd.sets=r[1];
-        if(String(e.reps||"")!==String(r[2])){ upd.reps=r[2]; if(!e.done&&upd.prescribed_weight===undefined){ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises}); if(x) upd.prescribed_weight=x.kg; } }
+        if(String(e.reps||"")!==String(r[2])){ upd.reps=r[2]; if(!e.done&&upd.prescribed_weight===undefined){ const x=rmLoad(client,r[0],r[2],{rir:e.rir,main:r[5],blk,assignedSessions,assignedExercises,proto:r[4]}); if(x) upd.prescribed_weight=x.kg; } }
         if((e.protocol||"")!==r[4]) upd.protocol=r[4];
         if(e.order_index!==i) upd.order_index=i;
         if(Object.keys(upd).length){ await sb.from("assigned_exercises").update(upd).eq("id",e.id); if(Object.keys(upd).some(k=>k!=="order_index")) n++; }
       } else {
-        const x=rmLoad(client,r[0],r[2],{main:r[5],blk,assignedSessions,assignedExercises});
+        const x=rmLoad(client,r[0],r[2],{main:r[5],blk,assignedSessions,assignedExercises,proto:r[4]});
         await insertExRows([{session_id:asig.id,exercise_name:r[0],prescribed_weight:x?x.kg:suggestLoad(cwOf(r[0]),r[5],blk,asig.date),...(x?{rir:x.rir}:{}),sets:r[1],reps:r[2],protocol:r[4],rest_seconds:r[3],notes:"",order_index:i}],{client_id:client.id,date:asig.date}); n++;
       }
     }
@@ -1822,7 +1822,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     const hist=loads==="own"?rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]):null;
     const wts=clientWeights.filter(x=>x.client_id===client.id);
     const ownLoad=(e)=>{ const rm=rmFor(hist,e.exercise_name), r=repsLow(e.reps), rir=e.rir!=null?Number(e.rir):defaultRir(blk,levelOf(client),isMainRow(e));
-      if(rm&&r&&isRmRow(e)) return e.protocol==="test_amrap"?loadFor(rm,5,0):loadFor(rm,r,rir);
+      const pt=protoTarget(e.protocol,e.reps,rir); if(rm&&r&&pt&&isRmRow(e)) return loadFor(rm,pt.reps,pt.rir);
       const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e.exercise_name).toLowerCase()); return cw?suggestLoad(cw,isMainRow(e),blk,toDate):null; };
     const rows=srcEx.map((e,i)=>{ const used=e.actual_weight!=null?e.actual_weight:e.prescribed_weight;
       return {session_id:sess.id,exercise_name:e.exercise_name,prescribed_weight:loads==="own"?ownLoad(e):used,sets:e.sets,reps:e.reps,protocol:e.protocol,rest_seconds:e.rest_seconds,
@@ -4701,7 +4701,7 @@ function ClassViewModal({openSessions,units,date,time,sessions,history,clients,a
     <div className="ovl" onClick={onClose}>
       <div className="mdl fade" onClick={e=>e.stopPropagation()} style={{maxWidth:540,maxHeight:"90vh",overflowY:"auto"}}>
         <h2 className="mono" style={{fontSize:17,fontWeight:700,marginBottom:2}}>🏟️ Clase de las {time}</h2>
-        <p style={{fontSize:12,color:"#64748b",marginBottom:10,textTransform:"capitalize"}}>{fmtLong(date)} · {slot.length} persona{slot.length===1?"":"s"}{opn.length?` + ${opn.length} open`:""}{blk?` · ${blk.name}`:""}</p>
+        <p style={{fontSize:12,color:"#64748b",marginBottom:10}}>{capFirst(fmtLong(date))} · {slot.length} persona{slot.length===1?"":"s"}{opn.length?` + ${opn.length} open`:""}{blk?` · ${blk.name}`:""}</p>
 
         {/* Todo lo de la clase en un sitio: añadir, valoración, privada/bloquear */}
         {(onAdd||onValoracion||onSlotMenu)&&<div data-classacts="1" style={{display:"flex",gap:6,flexWrap:"wrap",marginBottom:12}}>
@@ -4712,6 +4712,20 @@ function ClassViewModal({openSessions,units,date,time,sessions,history,clients,a
         </div>}
         {slot.length===0&&opn.length===0&&<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"14px 0"}}>Aún no hay nadie en esta clase.</div>}
         {/* Mapa de la sala: material y cuellos de botella */}
+        {(()=>{ const rows=[...rutinas.map(({s,r})=>({c:s.client,exs:r.exs})),...opn.map(x=>({c:x.client,exs:x.r.exs}))]
+            .map(x=>({...x,exs:x.exs.filter(e=>barKgOf(e.name)!=null&&parseFloat(e.w)>0)})).filter(x=>x.exs.length);
+          if(!rows.length) return null; return(
+          <details data-discos="1" style={{border:"1px solid #e6ebf3",borderRadius:12,padding:"9px 11px",marginBottom:12,background:"#fbfcfe"}}>
+            <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#334155"}}>🏋️ Discos para preparar (por lado) · {rows.reduce((n,x)=>n+x.exs.length,0)} ejercicios con barra</summary>
+            {rows.map(({c,exs})=><div key={c.id} style={{marginTop:8}}>
+              <div style={{fontSize:12,fontWeight:800,color:c.color||"#0f172a",marginBottom:3}}>{c.name.split(" ")[0]}</div>
+              {exs.map((e,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"4px 0",borderTop:i?"1px solid #eef1f6":"none"}}>
+                <span style={{flex:"1 1 130px",minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{e.name} <span className="mono" style={{color:"#ca8a04"}}>{e.w} kg</span></span>
+                <PlatesRow name={e.name} kg={e.w} small/>
+              </div>)}
+            </div>)}
+            <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Discos de 25 (rojo), 20 (azul), 15 (amarillo), 10 (verde), 5, 2,5 y 1,25. Barra recta 20 kg · Z 10 · SSB 25 · multipower 15.</div>
+          </details>); })()}
         <RoomMap people={[...rutinas.map(({s,r})=>({client:s.client,exs:r.exs.map(e=>e.name)})),...opn.map(x=>({client:x.client,exs:x.r.exs.map(e=>e.name)}))]} units={units}/>
         {opn.length>0&&<div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN A ESTA HORA · {opn.length} · van por su cuenta (cuentan en el mapa)</div>
@@ -5011,6 +5025,26 @@ function useDragSort(keys, onDrop, opts){
 }
 // Menú de atajos para mover un ejercicio (o un WOD entero) dentro de la sesión.
 // extra = [{ico,label,sub,run}] acciones añadidas por cada vista (p. ej. pasar a otro día).
+// ── DISCOS: qué poner en la barra para cada carga (por lado), para preparar la sesión.
+const PLATE_SET=[25,20,15,10,5,2.5,1.25];
+const PLATE_COL={25:["#d8392f","#fff"],20:["#2f63d8","#fff"],15:["#e8c020","#1a1a1a"],10:["#2ca84f","#fff"],5:["#eef0f4","#1a1a1a"],2.5:["#1f2230","#fff"],1.25:["#9aa0b0","#1a1a1a"]};
+// Peso de la barra según el material del ejercicio (null = no lleva discos).
+const barKgOf=(name)=>{ if(/mancuern|kettlebell|goblet|polea|m[áa]quina|jal[óo]n/i.test(String(name||""))) return null;
+  const eq=equipmentOf(name); return eq==="barraz"?10:eq==="safetybar"?25:eq==="multipower"?15:(eq==="barra"||eq==="rackpines")?20:null; };
+const platesFor=(kg,bar)=>{ let side=Math.round(((Number(kg)||0)-bar)/2*100)/100; const out=[]; if(side<=0) return {out,rest:0};
+  for(const p of PLATE_SET){ while(side>=p-1e-9){ out.push(p); side=Math.round((side-p)*100)/100; } } return {out,rest:side}; };
+// Fila compacta: «barra 20 · por lado: [20][10][2.5]»
+function PlatesRow({name,kg,small}){
+  const bar=barKgOf(name), n=parseFloat(String(kg||"").replace(",","."));
+  if(bar==null||!isFinite(n)||n<=0) return null;
+  if(n<bar) return <span data-plates="1" style={{fontSize:small?10:11,color:"#94a3b8",fontWeight:700}}>🏋️ menos que la barra ({bar} kg)</span>;
+  const {out,rest}=platesFor(n,bar), fmt=(x)=>String(x).replace(".",",");
+  return <span data-plates="1" title={`Barra de ${bar} kg + ${out.length?out.map(fmt).join(" + ")+" kg":"nada"} por lado`} style={{display:"inline-flex",alignItems:"center",gap:3,flexWrap:"wrap",fontSize:small?10:11,color:"#64748b",fontWeight:700}}>
+    🏋️ barra {bar}{out.length?" · lado:":" sola"}
+    {out.map((p,i)=><span key={i} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:small?20:23,height:small?15:17,padding:"0 3px",borderRadius:4,background:PLATE_COL[p][0],color:PLATE_COL[p][1],fontSize:small?8.5:9.5,fontWeight:900,border:"1px solid rgba(0,0,0,.18)"}}>{fmt(p)}</span>)}
+    {rest>0&&<span style={{color:"#b45309"}}>+{fmt(rest)} ≈</span>}
+  </span>;
+}
 // Menú de acciones compacto: un botón (⋯ o ＋) que despliega las opciones.
 function ActMenu({items,label,children,btnStyle,title}){
   const [pos,setPos]=React.useState(null);
@@ -5103,17 +5137,20 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
   const libItems = Object.entries(EXERCISE_LIBRARY).map(([cat,list])=>[cat,list.filter(x=>equipOk(x[0]))]).filter(([c,l])=>l.length);
   const inLib = (name)=>Object.values(EXERCISE_LIBRARY).some(list=>list.some(x=>x[0]===name));
   const sBlk=blockForDate(annualBlocks,date,client);
-  const wOf = (name,reps,rir,main)=>{ const r=rmLoad(client,name,reps,{rir,main,blk:sBlk,assignedSessions,assignedExercises}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const wOf = (name,reps,rir,main,proto)=>{ const r=rmLoad(client,name,reps,{rir,main,blk:sBlk,assignedSessions,assignedExercises,proto}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
   const w = async(fn)=>{ setSaving(true); await fn(); await loadAll(); setSaving(false); };
-  const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name,ex.reps,ex.rir,isMainRow(ex))}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
+  const swap = (ex,name)=>{ if(!name||name===ex.exercise_name) return; w(async()=>{ await sb.from("assigned_exercises").update({exercise_name:name,prescribed_weight:wOf(name,ex.reps,ex.rir,isMainRow(ex),ex.protocol)}).eq("id",ex.id); notify("Ejercicio cambiado ✓"); }); };
   const setField = (ex,field,val)=>w(async()=>{ await sb.from("assigned_exercises").update({[field]:val}).eq("id",ex.id); });
   const remove = (ex)=>w(async()=>{ await sb.from("assigned_exercises").delete().eq("id",ex.id); notify("Ejercicio quitado"); });
   // RIR objetivo y RM estimado (series hechas + tests) para calcular la carga.
   const rmTests=useRmTests(client.id).list;
   const rmHist=React.useMemo(()=>rmHistory(client.id,assignedSessions,assignedExercises,rmTests),[client.id,assignedSessions,assignedExercises,rmTests]);
-  const reload=(ex,reps,rir)=>{ if(ex.done) return {}; const x=rmLoad(client,ex.exercise_name,reps,{rir,main:isMainRow(ex),blk:sBlk,hist:rmHist}); return x&&Number(ex.prescribed_weight)!==x.kg?{prescribed_weight:x.kg}:{}; };
+  const reload=(ex,reps,rir)=>{ if(ex.done) return {}; const x=rmLoad(client,ex.exercise_name,reps,{rir,main:isMainRow(ex),blk:sBlk,hist:rmHist,proto:ex.protocol}); return x&&Number(ex.prescribed_weight)!==x.kg?{prescribed_weight:x.kg}:{}; };
   const setReps=(ex,v)=>{ if(String(v)===String(ex.reps||"")) return; const extra=reload(ex,v,ex.rir); w(async()=>{ await sb.from("assigned_exercises").update({reps:v,...extra}).eq("id",ex.id); if(extra.prescribed_weight!=null) notify(`Carga ajustada a ${fmtKgN(extra.prescribed_weight)} kg según su eRM ✓`); }); };
   const recalcAll=()=>w(async()=>{ let n=0; for(const ex of exs){ if(!isRmRow(ex)) continue; const extra=reload(ex,ex.reps,ex.rir); if(extra.prescribed_weight!=null){ await sb.from("assigned_exercises").update(extra).eq("id",ex.id); n++; } } notify(n?`${n} carga${n>1?"s":""} ajustada${n>1?"s":""} a su eRM ✓`:"Las cargas ya coinciden con su eRM"); });
+  // Método (protocolo) de un ejercicio: al cambiarlo se recalcula la carga de su serie clave.
+  const setProto=(ex,v)=>{ if(v===(ex.protocol||"series_planas")) return; const nx={...ex,protocol:v}; const x=ex.done?null:rmLoad(client,ex.exercise_name,ex.reps,{rir:ex.rir,main:isMainRow(nx),blk:sBlk,hist:rmHist,proto:v});
+    w(async()=>{ await sb.from("assigned_exercises").update({protocol:v,...(x&&Number(ex.prescribed_weight)!==x.kg?{prescribed_weight:x.kg}:{})}).eq("id",ex.id); notify(`Método: ${PROTO_PICK[v]} ✓`); }); };
   const setRir=(ex,v)=>w(async()=>{ const extra=reload(ex,ex.reps,v); const {error}=await sb.from("assigned_exercises").update({rir:v,...extra}).eq("id",ex.id); if(error) notify("Para guardar el RIR ejecuta docs/rir-rm.sql en Supabase","err"); });
   // Isométrico: se prescribe por segundos (y se registra tiempo, carga y dolor al ejecutarlo).
   const toggleIso = (ex)=>w(async()=>{ const on=ex.protocol==="isometrico"; const upd=on?{protocol:""}:{protocol:"isometrico",...(secsOf(ex.reps)!=null&&/s|seg/i.test(String(ex.reps))?{}:{reps:"30s"})};
@@ -5203,7 +5240,7 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                   <div><span className="lbl" style={{fontSize:9}}>{isIsoRow(ex)?"CARGA / LASTRE (kg)":"PESO (kg)"}</span><input type="number" inputMode="decimal" className="inp" style={{padding:"6px 8px",fontSize:12}} key={ex.id+"|"+(ex.prescribed_weight??"")} defaultValue={ex.prescribed_weight??""} placeholder={ex.load_band?"goma":isIsoRow(ex)?"PC":"—"} onBlur={e=>{ const v=e.target.value; setField(ex,"prescribed_weight",v===""?null:parseFloat(String(v).replace(",","."))); }}/></div>
                   <div><span className="lbl" style={{fontSize:9}}>DESC. (s)</span><input type="number" className="inp" style={{padding:"6px 8px",fontSize:12}} defaultValue={ex.rest_seconds??""} onBlur={e=>setField(ex,"rest_seconds",parseInt(e.target.value)||null)}/></div>
                 </div>
-                {isRmRow(ex)&&(()=>{ const rm=rmFor(rmHist,ex.exercise_name), r=repsLow(ex.reps), t=ex.rir!=null?Number(ex.rir):null, x=rmLoad(client,ex.exercise_name,ex.reps,{rir:t,main:isMainRow(ex),blk:sBlk,hist:rmHist}), kgS=x?x.kg:null, tt=x?x.rir:t, pct=r&&tt!=null?Math.round(pctRM(r+tt)*100):null;
+                {isRmRow(ex)&&(()=>{ const rm=rmFor(rmHist,ex.exercise_name), r=repsLow(ex.reps), t=ex.rir!=null?Number(ex.rir):null, x=rmLoad(client,ex.exercise_name,ex.reps,{rir:t,main:isMainRow(ex),blk:sBlk,hist:rmHist,proto:ex.protocol}), kgS=x?x.kg:null, tt=x?x.rir:t, ptt=tt!=null?protoTarget(ex.protocol,ex.reps,tt):null, pct=r&&ptt?Math.round(pctRM(ptt.reps+ptt.rir)*100):null;
                   return <div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,flexWrap:"wrap"}}>
                     <span className="lbl" style={{fontSize:9,marginBottom:0}}>RIR OBJETIVO</span><RirHelp notify={notify} highlight={t} label="Guía"/>
                     <select value={t==null?"":t} disabled={saving} onChange={e=>setRir(ex,e.target.value===""?null:parseInt(e.target.value,10))} style={{fontSize:12,fontWeight:700,border:"1px solid #cfd8e6",borderRadius:8,padding:"5px 8px",background:"#fff",color:"#0f172a"}}>
@@ -5213,6 +5250,13 @@ function SessionEditModal({client,date,assignedSessions,assignedExercises,client
                     <span style={{fontSize:11,color:rm?"#475569":"#94a3b8"}}>· {rm?<>e1RM <b>{fmtKgN(rm)} kg</b></>:"sin RM estimado aún"}</span>
                     {kgS!=null&&Number(ex.prescribed_weight)!==kgS&&<button className="btn ghost" style={{fontSize:11,padding:"4px 9px",color:"#0284c7",border:"1px solid #bcd3ee"}} disabled={saving} onClick={()=>setField(ex,"prescribed_weight",kgS)}>⚡ Usar {fmtKgN(kgS)} kg</button>}
                   </div>; })()}
+                {isRmRow(ex)&&<div style={{display:"flex",alignItems:"center",gap:6,marginTop:6,flexWrap:"wrap"}}>
+                  <span className="lbl" style={{fontSize:9,marginBottom:0}}>MÉTODO</span>
+                  <select data-protosel value={PROTO_PICK[ex.protocol]?ex.protocol:"series_planas"} disabled={saving} onChange={e=>setProto(ex,e.target.value)} title={PROTOCOL_INFO[ex.protocol||"series_planas"]||""} style={{fontSize:12,fontWeight:700,border:"1px solid #cfd8e6",borderRadius:8,padding:"5px 8px",background:"#fff",color:"#0f172a"}}>
+                    {Object.entries(PROTO_PICK).map(([k,l])=><option key={k} value={k}>{l}</option>)}
+                  </select>
+                </div>}
+                <SetChips ex={ex} ss={supersetTag(exs,exs.indexOf(ex),e=>({name:e.exercise_name,protocol:e.protocol}))}/>
                 <input className="inp" style={{padding:"6px 8px",fontSize:12,marginTop:6}} placeholder="Nota solo de esta sesión (p. ej. hoy rango parcial)" defaultValue={ex.notes||""} onBlur={e=>setField(ex,"notes",e.target.value)}/>
                 <GestureNotes clientId={client.id} exercise={ex.exercise_name} notify={notify}/>
               </div>
@@ -5303,6 +5347,18 @@ function HybridBox({client,date,loadAll,notify,athlete}){
       <div style={{fontSize:10,color:"#64748b",marginTop:6}}>Sus días open aparecen en la planificación semanal para que le prepares el entreno.</div>
     </div>);
 }
+// Sección desplegable (ficha rápida del cliente).
+function Fold({id,icon,title,sub,open:o0,children}){
+  const [o,setO]=React.useState(!!o0);
+  return(<div data-fold={id} style={{border:"1px solid #e6ebf3",borderRadius:12,marginBottom:10,overflow:"hidden"}}>
+    <button type="button" aria-expanded={o} onClick={()=>setO(v=>!v)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 13px",background:o?"#f1f4fa":"#f8fafc",border:"none",cursor:"pointer",fontFamily:"inherit",textAlign:"left"}}>
+      <span style={{fontSize:18}}>{icon}</span>
+      <span style={{flex:1,minWidth:0}}><span style={{display:"block",fontSize:14,fontWeight:800,color:"#0f172a"}}>{title}</span>{sub&&<span style={{display:"block",fontSize:11,color:"#64748b",fontWeight:600,overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{sub}</span>}</span>
+      <span style={{fontSize:14,color:"#64748b",transform:o?"rotate(90deg)":"none",transition:"transform .15s"}}>▸</span>
+    </button>
+    {o&&<div style={{padding:"11px 12px 12px"}}>{children}</div>}
+  </div>);
+}
 function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,records,payments,clientWeights,assignedSessions,assignedExercises,sessionTemplates,annualBlocks,docked,onSummary,onMeasures,onPhotos,onViewAs,onProfile,onEditData,onValoracion,onUseAuto,onSetType,onPlanWeek,onCopyWeek,onAdjust,onSetLevel,onOpenHistory,onExec,onAssign,onProgress,onEditSession,onMove,onClose}) {
   const sess=(assignedSessions||[]).find(s=>s.client_id===client.id&&s.date===date);
   const tmpl=sess&&(sessionTemplates||[]).find(t=>t.id===sess.template_id);
@@ -5335,58 +5391,11 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,r
             </div>
           </div>
         </div>
-        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
-          <span className="lbl" style={{marginBottom:0}}>NIVEL</span>
-          <LevelPicker value={levelOf(client)} onChange={onSetLevel?(l)=>onSetLevel(client,l):null}/>
-        </div>
-
-        <ProfileSummary client={client} compact/>
-        {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
-        <DietCoachBox client={client} onEdit={onEditData}/>
-        <div style={{marginBottom:14}}>
-          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-            <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
-            <span style={{display:"flex",gap:5}}>
-              {onValoracion&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={onValoracion}>📋 Valoración</button>}
-              {onEditData&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onEditData}>✏️ Editar datos</button>}
-            </span>
-          </div>
-          <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#64748b":"#94a3b8",whiteSpace:"pre-wrap",lineHeight:1.45}}>
-            {client.notes||"Sin notas. Toca «✏️ Editar datos» para añadirlas."}
-          </div>
-        </div>
-
-        {blk&&(
-          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"9px 12px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
-            <div style={{minWidth:0}}>
-              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO DEL MACROCICLO · SEMANA {macroWeek(date)}{(()=>{const wv=waveOf(blk,macroWeek(date)); return isTestBlock(blk)?" · TEST":` · SEMANA ${wv.ab} · CICLO ${wv.step+1}/${wv.cycles||1}`;})()}</div>
-              <div style={{fontSize:13,fontWeight:700,color:"#0284c7",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{blk.name}</div>
-            </div>
-            <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",whiteSpace:"nowrap"}}>{blk.rep_range} reps</div>
-          </div>
-        )}
-
-        {/* Semana: vista previa por sesión, desplegable con ejercicios y pesos, y organización rápida */}
-        <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
-          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
-
-        {onProfile&&<button className="btn sky" style={{width:"100%",fontSize:13,padding:"9px 6px",marginBottom:8,justifyContent:"center",fontWeight:700}} onClick={onProfile}>👤 Ver perfil completo</button>}
-        {(onSummary||onMeasures||onPhotos)&&<div style={{display:"flex",gap:6,marginBottom:14}}>
-          {onSummary&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onSummary}>⭐ Resumen</button>}
-          {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
-          {onPhotos&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onPhotos}>📸 Fotos</button>}
-        </div>}
-        {onViewAs&&<button className="btn ghost" style={{width:"100%",fontSize:12,padding:"8px 6px",marginTop:-8,marginBottom:14,color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onViewAs}>👁 Ver su app como la ve {client.name.split(" ")[0]}</button>}
-        {/* Notas de gestos (técnica, molestias, ajustes por ejercicio) */}
-        <ClientGestureNotes client={client}/>
-        {/* Historial: sesiones por día/fecha y pagos */}
-        <div style={{marginBottom:14}}>
-          <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
-        </div>
-
+        {/* Todo en desplegables; lo primero, el entrenamiento que le toca */}
+        <Fold id="hoy" icon="🏋️" title={date===TODAY?"Entrenamiento de hoy":"Entrenamiento del día"} sub={sess?(asigName(sess,sessionTemplates)||"Asignado")+(exs.length?` · ${exs.length} ejercicios`:""):auto?`${auto.label} · previsto`:"Sin asignar"} open>
         <div>
           <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
-            <span className="lbl" style={{marginBottom:0}}>🏋️ ENTRENAMIENTO DE HOY</span>
+            <span style={{fontSize:12,color:"#64748b",fontWeight:700}}>{fmtLong(date)}</span>
             {onAssign&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onAssign}>{sess?"Cambiar":"➕ Asignar"}</button>}
           </div>
           {sess
@@ -5445,6 +5454,60 @@ function ClientQuickView({loadAll,notify,client,date,sessions,history,progress,r
           </div>
         )}
 
+        </Fold>
+        <Fold id="semana" icon="📅" title="Su semana" sub={blk?`${blk.name} · semana ${macroWeek(date)}`:"Sesiones de la semana y organización"}>
+        {blk&&(
+          <div style={{background:"#eef4fc",border:"1px solid #bcd3ee",borderRadius:10,padding:"9px 12px",marginBottom:14,display:"flex",alignItems:"center",justifyContent:"space-between",gap:10}}>
+            <div style={{minWidth:0}}>
+              <div style={{fontSize:9,color:"#94a3b8",fontWeight:700}}>MOMENTO DEL MACROCICLO · SEMANA {macroWeek(date)}{(()=>{const wv=waveOf(blk,macroWeek(date)); return isTestBlock(blk)?" · TEST":` · SEMANA ${wv.ab} · CICLO ${wv.step+1}/${wv.cycles||1}`;})()}</div>
+              <div style={{fontSize:13,fontWeight:700,color:"#0284c7",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{blk.name}</div>
+            </div>
+            <div className="mono" style={{fontSize:11,fontWeight:700,color:"#64748b",whiteSpace:"nowrap"}}>{blk.rep_range} reps</div>
+          </div>
+        )}
+
+        {/* Semana: vista previa por sesión, desplegable con ejercicios y pesos, y organización rápida */}
+        <ClientWeekPlanner client={client} date={date} sessions={sessions} history={history} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} annualBlocks={annualBlocks}
+          onSetType={onSetType} onPlanWeek={onPlanWeek} onCopyWeek={onCopyWeek} onAdjust={onAdjust} onOpenHistory={onOpenHistory} onEditSession={onEditSession}/>
+
+        </Fold>
+        <Fold id="perfil" icon="👤" title="Perfil, objetivos y notas" sub={`Nivel ${LEVEL_LABEL[levelOf(client)]||levelOf(client)} · ${client.goal==="estetica"?"Estética/Masa":"Salud"}`}>
+        <div style={{display:"flex",alignItems:"center",gap:8,marginBottom:14,flexWrap:"wrap"}}>
+          <span className="lbl" style={{marginBottom:0}}>NIVEL</span>
+          <LevelPicker value={levelOf(client)} onChange={onSetLevel?(l)=>onSetLevel(client,l):null}/>
+        </div>
+
+        <ProfileSummary client={client} compact/>
+        {isHybrid(client)&&<HybridBox client={client} date={date} loadAll={loadAll} notify={notify}/>}
+        <DietCoachBox client={client} onEdit={onEditData}/>
+        <div style={{marginBottom:14}}>
+          <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:5}}>
+            <span className="lbl" style={{marginBottom:0}}>🎯 OBJETIVOS · LESIONES · NOTAS</span>
+            <span style={{display:"flex",gap:5}}>
+              {onValoracion&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px",color:"#7c3aed",border:"1px solid #e0d2f5"}} onClick={onValoracion}>📋 Valoración</button>}
+              {onEditData&&<button className="btn ghost" style={{fontSize:10,padding:"4px 9px"}} onClick={onEditData}>✏️ Editar datos</button>}
+            </span>
+          </div>
+          <div style={{background:"#f1f4fa",border:"1px solid #dbe2ec",borderRadius:10,padding:"11px 13px",fontSize:13,color:client.notes?"#64748b":"#94a3b8",whiteSpace:"pre-wrap",lineHeight:1.45}}>
+            {client.notes||"Sin notas. Toca «✏️ Editar datos» para añadirlas."}
+          </div>
+        </div>
+
+        {onProfile&&<button className="btn sky" style={{width:"100%",fontSize:13,padding:"9px 6px",marginBottom:8,justifyContent:"center",fontWeight:700}} onClick={onProfile}>👤 Ver perfil completo</button>}
+        {(onSummary||onMeasures||onPhotos)&&<div style={{display:"flex",gap:6,marginBottom:14}}>
+          {onSummary&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onSummary}>⭐ Resumen</button>}
+          {onMeasures&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onMeasures}>📏 Medidas</button>}
+          {onPhotos&&<button className="btn ghost" style={{flex:1,fontSize:12,padding:"8px 6px",justifyContent:"center"}} onClick={onPhotos}>📸 Fotos</button>}
+        </div>}
+        {onViewAs&&<button className="btn ghost" style={{width:"100%",fontSize:12,padding:"8px 6px",marginTop:-8,marginBottom:14,color:"#7c3aed",border:"1px solid #e0d2f5",fontWeight:700,justifyContent:"center"}} onClick={onViewAs}>👁 Ver su app como la ve {client.name.split(" ")[0]}</button>}
+        </Fold>
+        <Fold id="historial" icon="📜" title="Historial y pagos">
+        {/* Historial: sesiones por día/fecha y pagos */}
+        <div style={{marginBottom:14}}>
+          <ClientHistoryPanel client={client} history={history} payments={payments} assignedSessions={assignedSessions} assignedExercises={assignedExercises} sessionTemplates={sessionTemplates} compact onOpenSession={onOpenHistory}/>
+        </div>
+
+        </Fold>
         <div style={{display:"flex",gap:8,marginTop:12}}>
           {sess&&onExec&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onExec}>▶ Ejecutar entreno</button>}
           {!sess&&auto&&onUseAuto&&<button className="btn grn" style={{flex:1,padding:11,justifyContent:"center"}} onClick={onUseAuto}>✓ Usar este entreno</button>}
@@ -6036,7 +6099,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
     r:(e.actual_reps!=null?e.actual_reps:(e.protocol==="test_amrap"?"":(e.reps!=null?e.reps:""))),
     band:e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)||{}).band||"",
     mode:((e.load_band||(!e.done&&e.prescribed_weight==null&&lastBandOf(client.id,e.exercise_name,assignedSessions,assignedExercises,date)))?"goma":(isBodyweight(e.exercise_name)&&e.prescribed_weight==null?"goma":"kg")),
-    done:!!e.done,
+    done:!!e.done, sd:e.done?0:sdGet(e.id), adj:false,
     rest:e.rest_seconds,
   })));
   const [saving,setSaving]=React.useState(false);
@@ -6072,10 +6135,21 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   const setBand=(row,v)=>{ setField(row.id,"band",v); sb.from("assigned_exercises").update({load_band:v||null,actual_weight:null}).eq("id",row.id).then(()=>{}); };
   const setMode=(row,mode)=>{ setField(row.id,"mode",mode); if(mode==="kg"){ setField(row.id,"band",""); sb.from("assigned_exercises").update({load_band:null}).eq("id",row.id).then(()=>{}); } };
 
-  const toggleDone=async(row)=>{
+  // Serie tocada: hecha (o desmarcada) y crono de descanso; la última completa el ejercicio.
+  const exOfRow=(row)=>({...(baseExs.find(e=>e.id===row.id)||{}),protocol:row.protocol,sets:row.sets,reps:row.reps,
+    prescribed_weight:row.mode==="goma"?null:(parseFloat(String(row.w).replace(",","."))||row.prescribed),rest_seconds:row.rest});
+  const tapSet=(row,i)=>{
+    const ss=supersetTag(rows,rows.indexOf(row)), N=setsPlan(exOfRow(row),{ss}).list.length;
+    const cur=row.done?N:Math.min(row.sd||0,N), nsd=i<cur?i:i+1;
+    setField(row.id,"sd",nsd); sdSave(row.id,nsd<N?nsd:0);
+    if(nsd>=N&&!row.done) return toggleDone(row,!restAfter(ss));
+    if(nsd<N&&row.done) return toggleDone(row);
+    if(nsd>cur&&restAfter(ss)) startRest(row.rest,row.name);
+  };
+  const toggleDone=async(row,noRest)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
-    if(nowDone) startRest(row.rest,row.name);
+    if(nowDone&&!noRest) startRest(row.rest,row.name);
     const goma=row.mode==="goma";
     const w=goma?null:(row.w===""||row.w==null?null:parseFloat(String(row.w).replace(",",".")));
     const {error}=await sb.from("assigned_exercises").update({
@@ -6093,8 +6167,8 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   };
 
   const [picker,setPicker]=React.useState(null); // {mode:"swap",row} | {mode:"add"}
-  const cwOf=(name,reps,rir)=>{ const r=rmLoad(client,name,reps,{rir,hist:rmHist}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
-  const swapRow=async(row,it)=>{ const upd=bandSwap({exercise_name:it.name,prescribed_weight:cwOf(it.name,row.reps,(baseExs.find(e=>e.id===row.id)||{}).rir),actual_weight:null,load_band:null},client.id,date), pw=upd.prescribed_weight; const {error}=await sb.from("assigned_exercises").update(upd).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
+  const cwOf=(name,reps,rir,proto)=>{ const r=rmLoad(client,name,reps,{rir,hist:rmHist,proto}); if(r) return r.kg; const x=(clientWeights||[]).find(w=>w.client_id===client.id&&(w.exercise_name||"").toLowerCase()===String(name).toLowerCase()); return x?x.weight:null; };
+  const swapRow=async(row,it)=>{ const upd=bandSwap({exercise_name:it.name,prescribed_weight:cwOf(it.name,row.reps,(baseExs.find(e=>e.id===row.id)||{}).rir,row.protocol),actual_weight:null,load_band:null},client.id,date), pw=upd.prescribed_weight; const {error}=await sb.from("assigned_exercises").update(upd).eq("id",row.id); if(error) return notify("No se pudo cambiar","err");
     setRows(rs=>rs.map(x=>x.id===row.id?{...x,name:it.name,prescribed:pw,w:pw!=null?pw:"",band:upd.load_band||"",mode:(upd.load_band||(isBodyweight(it.name)&&pw==null))?"goma":"kg"}:x)); notify(upd.load_band?`Ejercicio cambiado ✓ · ${bandLabel(upd.load_band)} (la de la última vez)`:"Ejercicio cambiado ✓"); };
   const addRow=async(it)=>{ if(!sess) return; const pw=cwOf(it.name,it.reps||"10-12"); const {data,error}=await sb.from("assigned_exercises").insert(bandRow({session_id:sess.id,exercise_name:it.name,sets:parseInt(it.sets)||3,reps:it.reps||"10-12",rest_seconds:parseInt(it.rest)||90,protocol:isIsoRow({exercise_name:it.name,reps:it.reps})?"isometrico":"",notes:it.notes||"",prescribed_weight:pw,order_index:baseExs.length+rows.length})).select().single();
     if(error||!data) return notify("No se pudo añadir","err");
@@ -6109,7 +6183,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   const hechos=rows.filter(r=>r.done).length;
   // Cargas que no coinciden con lo que marca su eRM para las reps y el RIR de hoy.
   const rmDiff=rows.filter(r=>!r.done&&r.mode!=="goma").map(r=>{ const b=baseExs.find(e=>e.id===r.id)||{}; if(!isRmRow(b)) return null;
-    const x=rmLoad(client,r.name,r.reps,{rir:b.rir,main:isMainRow(b),hist:rmHist}); return x&&Number(r.w)!==x.kg?{row:r,kg:x.kg}:null; }).filter(Boolean);
+    const x=rmLoad(client,r.name,r.reps,{rir:b.rir,main:isMainRow(b),hist:rmHist,proto:b.protocol}); return x&&Number(r.w)!==x.kg?{row:r,kg:x.kg}:null; }).filter(Boolean);
   const applyRm=async()=>{ setRows(rs=>rs.map(x=>{ const d=rmDiff.find(y=>y.row.id===x.id); return d?{...x,w:d.kg,prescribed:d.kg}:x; }));
     for(const d of rmDiff) await sb.from("assigned_exercises").update({prescribed_weight:d.kg}).eq("id",d.row.id);
     notify(`${rmDiff.length} carga${rmDiff.length>1?"s":""} ajustada${rmDiff.length>1?"s":""} a su eRM ✓`); };
@@ -6187,13 +6261,15 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                   <ExPhoto name={row.name} size={96} onClick={()=>openExPhoto(row.name,{...(baseExs.find(e=>e.id===row.id)||{}),sets:row.sets,reps:row.reps,protocol:row.protocol,prescribed_weight:row.mode==="goma"?null:row.prescribed,load_band:row.mode==="goma"?row.band:null,rest_seconds:row.rest})}/>
                   <div style={{minWidth:0,flex:1}}>
                     <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}><ExName client={client} name={row.name}/> <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
-                    <MuscleTags name={row.name}/>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
-                    <div style={{fontSize:10,color:"#94a3b8",whiteSpace:"nowrap"}}>plan: {row.sets&&row.reps?`${row.sets}×${row.reps}`:"—"}{row.prescribed!=null?` · ${row.prescribed}kg`:""}{(baseExs.find(e=>e.id===row.id)||{}).rir!=null?` · RIR ${(baseExs.find(e=>e.id===row.id)||{}).rir}`:""}</div>
                     <RestButton secs={row.rest} label={row.name} style={{padding:"3px 9px",fontSize:11,borderRadius:20}}/>
                   </div>
                 </div>
+                <SetTapper ex={exOfRow(row)} ss={supersetTag(rows,rows.indexOf(row))} done={row.done} sd={row.sd} band={row.mode==="goma"?row.band:null} onTap={(i)=>tapSet(row,i)}/>
+                {(baseExs.find(e=>e.id===row.id)||{}).notes&&!row.adj&&<div style={{fontSize:11,color:"#94a3b8",fontStyle:"italic",marginTop:5}}>📝 {(baseExs.find(e=>e.id===row.id)||{}).notes}</div>}
+                <button type="button" data-adjust onClick={()=>setField(row.id,"adj",!row.adj)} aria-expanded={row.adj} style={{display:"block",margin:"6px 0 0 auto",border:"none",background:"none",color:"#94a3b8",fontSize:11,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:"2px 0"}}>{row.adj?"▲ Cerrar":"✎ Ajustar"}</button>
+                {row.adj&&<div data-adjpanel style={{marginTop:4}}>
                 <div style={{display:"flex",alignItems:"flex-end",gap:8}}>
                   <div style={{flex:1.4,minWidth:0}}>
                     <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",marginBottom:3}}>
@@ -6208,10 +6284,11 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                     <span className="lbl" style={{marginBottom:3}}>REPS</span>
                     <input type="text" className="inp" style={{padding:"8px 10px"}} value={row.r} onChange={e=>setField(row.id,"r",e.target.value)} onBlur={()=>{sb.from("assigned_exercises").update({actual_reps:row.r||null}).eq("id",row.id).then(()=>{});}}/>
                   </div>
-                  <button className={row.done?"btn grn":"btn ghost"} style={{padding:"9px 12px",fontSize:16}} disabled={saving} onClick={()=>toggleDone(row)}>{row.done?"✓":"○"}</button>
                 </div>
+                {row.mode!=="goma"&&barKgOf(row.name)!=null&&parseFloat(row.w)>0&&<div style={{marginTop:6}}><PlatesRow name={row.name} kg={row.w}/></div>}
                 {row.mode!=="goma"&&isRmRow({exercise_name:row.name,reps:row.reps,protocol:row.protocol})&&<RirBar ex={{...(baseExs.find(e=>e.id===row.id)||{}),id:row.id,reps:row.reps}} kg={row.w} reps={row.r} rm={rmFor(rmHist,row.name)} notify={notify}/>}
                 <GestureNotes clientId={client.id} exercise={row.name} notify={notify} sessionNote={(baseExs.find(e=>e.id===row.id)||{}).notes}/>
+                </div>}
               </div>
             ))}
           </div>
@@ -6270,7 +6347,7 @@ function AssignTrainingModal({client,date,sessionTemplates,templateExercises,cli
     const blkA=blockForDate(annualBlocks,date,client), histA=rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]);
     const rows=tex.map(ex=>{
       const cw=wts.find(w=>(w.exercise_name||"").toLowerCase()===(ex.exercise_name||"").toLowerCase());
-      const x=isRmRow(ex)?rmLoad(client,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkA,hist:histA}):null;
+      const x=isRmRow(ex)?rmLoad(client,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkA,hist:histA,proto:ex.protocol}):null;
       return {session_id:sess.id,exercise_name:ex.exercise_name,prescribed_weight:x?x.kg:(cw?cw.weight:null),...(x?{rir:x.rir}:{}),
         sets:ex.sets,reps:ex.reps,protocol:ex.protocol,rest_seconds:ex.rest_seconds,notes:ex.notes,order_index:ex.order_index};
     });
@@ -7067,6 +7144,7 @@ function ExPhotoViewer({name,ex,coach,notify,onClose}){
                 <div style={{fontSize:11,fontWeight:700,color:"#64748b"}}>{ico} {l}</div>
                 <div style={{fontSize:17,fontWeight:800,color:"#0f172a",lineHeight:1.25,marginTop:1}}>{v}</div></div>)}
             </div>
+            <SetChips ex={ex} big/>
             {notes&&<div style={{marginTop:6,fontSize:14,color:"#334155",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:11,padding:"8px 10px",lineHeight:1.45}}>📝 {notes}</div>}
           </div>}
           <ExEquipEditor name={name} coach={coach} notify={notify}/>
@@ -9613,6 +9691,8 @@ function VolumeView({client,assignedSessions,assignedExercises}){
 // ── PRÓXIMOS ENTRENOS DEL ATLETA ──────────────────────────────────────────
 // Lo que le toca en cada clase futura: lo que ha preparado el coach o, si aún no
 // está, lo previsto por su programación (puede cambiar).
+// Métodos que se pueden elegir por ejercicio (trabajo con carga).
+const PROTO_PICK = {series_planas:"Series planas",top_set_backoff:"Top set + back-off",ramp_up:"Subiendo peso (rampa)",cluster:"Cluster",rest_pause:"Rest-pause (última serie)",drop_set:"Drop set (última serie)",superset:"Superserie"};
 const PROTO_SHORT = {top_set_backoff:"Top set + back-off",ramp_up:"Subiendo peso",amrap:"Máx. reps",superset:"Superserie",drop_set:"Drop set",rest_pause:"Rest-pause",cluster:"Cluster",emom:"EMOM",isometrico:"Isométrico",test_amrap:"Test",circuito:"Circuito"};
 function planForDate(client,date,{sessions,assignedSessions,assignedExercises,annualBlocks,clientWeights}){
   const asig=(assignedSessions||[]).find(a=>a.client_id===client.id&&a.date===date);
@@ -9634,6 +9714,7 @@ function PlanExRows({client,exs}){
         <div style={{flex:1,minWidth:0}}>
           <div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={e.exercise_name}/>{exMediaOf(e.exercise_name).length>0&&<span title="Tiene vídeo o foto: toca el nombre" style={{marginLeft:5,fontSize:11}}>🎬</span>}</div>
           <div style={{fontSize:11,color:"#64748b"}}>{e.sets&&e.reps?`${e.sets} × ${e.reps}${isIsoRow(e)?"":" reps"}`:""}{PROTO_SHORT[e.protocol]?` · ${PROTO_SHORT[e.protocol]}`:""}{e.rest_seconds?` · descanso ${e.rest_seconds>=60?(Math.round(e.rest_seconds/6)/10).toLocaleString("es-ES")+" min":e.rest_seconds+" s"}`:""}</div>
+          <SetChips ex={e} ss={supersetTag(exs,i,x=>({name:x.exercise_name,protocol:x.protocol}))}/>
         </div>
         <div style={{textAlign:"right",flexShrink:0}}>
           {kg&&<div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>{kg}</div>}
@@ -11161,7 +11242,7 @@ function ProgrammingAdmin({initialTab,clients,sessions,history,onSetType,onPlanW
     const assigns = (customExercises || tmplExercises).map(ex => {
       const cw = clientWts.find(w => w.exercise_name.toLowerCase() === ex.exercise_name.toLowerCase());
       // Carga desde su eRM para estas reps; si aún no hay eRM, la última registrada.
-      const x = cli&&isRmRow(ex) ? rmLoad(cli,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkP,hist:histP}) : null;
+      const x = cli&&isRmRow(ex) ? rmLoad(cli,ex.exercise_name,ex.reps,{main:isMainRow(ex),blk:blkP,hist:histP,proto:ex.protocol}) : null;
       return {
         session_id: sess.id,
         exercise_name: ex.exercise_name,
@@ -12107,13 +12188,13 @@ const EXERCISE_LIBRARY = {
 // Cómo se ejecuta cada protocolo (guía rápida para preparar y ejecutar).
 const PROTOCOL_INFO = {
   series_planas:"Mismo peso y reps en todas las series. Base de fuerza/hipertrofia.",
-  top_set_backoff:"1 serie 'top' pesada al RPE objetivo y luego series 'back-off' con −10/15 % para acumular volumen.",
-  ramp_up:"Subes el peso serie a serie hasta un tope; ideal para fuerza y activar el sistema nervioso.",
+  top_set_backoff:"1 serie 'top' pesada (1 rep menos en reserva que el resto) y luego series 'back-off' con −10/15 % y +2 reps para acumular volumen.",
+  ramp_up:"Subes el peso serie a serie (y bajas reps) hasta un top; ideal para fuerza y singles/dobles pesados.",
   amrap:"Última (o única) serie al máximo de repeticiones posibles con buena técnica.",
   superset:"Dos ejercicios seguidos sin descanso (antagonistas o mismo grupo). Ahorra tiempo y sube densidad.",
-  drop_set:"Al llegar al fallo bajas el peso ~20 % y sigues sin descanso; 2-3 descensos.",
-  rest_pause:"Al fallo, descansas 10-15 s y sacas mini-series extra con el mismo peso.",
-  cluster:"Serie partida en mini-bloques con 10-20 s dentro de la serie: más calidad con peso alto.",
+  drop_set:"En la última serie: al llegar al fallo bajas el peso ~20 % y sigues sin descanso; 2 descensos.",
+  rest_pause:"En la última serie: al RIR 0-1 descansas 15 s y sacas 2 mini-series extra con el mismo peso.",
+  cluster:"Serie partida en mini-bloques de 2-3 reps con 15-20 s dentro de la serie: más calidad con peso alto.",
   emom:"Cada minuto en punto haces las reps marcadas; descansas lo que sobre del minuto.",
   leader:"Fase de acumulación: mucho volumen a intensidad submáxima (bloque 'leader').",
   tabata:"8 rondas de 20 s fuerte / 10 s descanso (4 min). Máxima intensidad.",
@@ -12462,12 +12543,134 @@ const loadFor = (e1rm,reps,rir) => { if(!(e1rm>0)||!(reps>=1)) return null; retu
 // Primeras reps de una prescripción ("8-10" → 8). Nada si es por tiempo/distancia.
 const repsLow = (t) => { const s=String(t||""); if(/\d\s*(s|seg|min|m|km|cal)\b|'|"/i.test(s)) return null; const m=s.match(/\d+/); return m?parseInt(m[0],10):null; };
 const fmtKgN = (v) => v==null?"—":(Math.round(v*10)/10).toLocaleString("es-ES");
+// ── CÓMO SE HACE CADA PROTOCOLO ────────────────────────────────────────────
+// Cada protocolo tiene su estructura real de series, no es solo una etiqueta.
+// De ella salen la carga prescrita (la de la serie «clave») y el esquema que ve
+// el atleta al entrenar. ex: {protocol, sets, reps, rir, prescribed_weight, rest_seconds}
+//  · Series planas: mismo peso y reps en todas, al RIR objetivo.
+//  · Top set + back-off: 1 serie top (1 rep menos en reserva) y el resto a −10/15 % con +2 reps.
+//  · Subiendo peso (rampa): cada serie más pesada y con menos reps hasta el top.
+//  · Rest-pause / Drop set: técnicas de intensidad SOLO en la última serie.
+//  · Cluster: cada serie partida en mini-bloques de 2-3 reps con 15-20 s.
+//  · Superserie: dos ejercicios seguidos (A1/A2) y el descanso al terminar ambos.
+const repsRange = (t) => { const lo=repsLow(t); if(lo==null) return null; const m=String(t).match(/(\d+)\s*-\s*(\d+)/); return m?[+m[1],Math.max(+m[1],+m[2])]:[lo,lo]; };
+const clusterOf = (reps) => { const n=Math.max(2,reps), size=n<=6?2:3, k=Math.ceil(n/size); return {size,k,txt:Array.from({length:k},(_,i)=>i<k-1?size:n-size*(k-1)).join("+")}; };
+const rirNum = (v,d=null) => v!=null&&v!==""&&!isNaN(v)?Number(v):d;
+// Reps y RIR de la serie que fija la carga prescrita de cada protocolo.
+function protoTarget(proto, reps, rir){
+  const rg=repsRange(reps); if(!rg) return null;
+  const r=rirNum(rir,2);
+  if(proto==="test_amrap") return {reps:5,rir:0};
+  if(proto==="top_set_backoff"||proto==="ramp_up") return {reps:rg[0],rir:Math.max(0,r-1)};
+  if(proto==="cluster") return {reps:Math.min(rg[0],clusterOf(rg[0]).size*2),rir:r}; // las pausas internas permiten la carga de ~4-6 reps
+  return {reps:rg[0],rir:r};
+}
+const restTxt = (s) => { s=parseInt(s)||0; const m=Math.floor(s/60), r=s%60; return !m?`${s} s`:r?`${m} min ${r} s`:`${m} min`; };
+// Pareja de superserie dentro de una lista ordenada: rachas seguidas de «superset»
+// se emparejan de dos en dos (A1/A2, B1/B2…). get(i) → {name, protocol}.
+function supersetTag(list, i, get=(x)=>x){
+  const isS=(k)=>k>=0&&k<list.length&&get(list[k]).protocol==="superset";
+  if(!isS(i)) return null;
+  let start=i; while(isS(start-1)) start--;
+  let pair=0; for(let k=0;k<start;k++) if(isS(k)&&!isS(k-1)){ let n=0; for(let j=k;isS(j);j++) n++; pair+=Math.ceil(n/2); }
+  const pos=i-start, mate=pos%2===0?i+1:i-1, letter=String.fromCharCode(65+pair+Math.floor(pos/2));
+  if(!isS(mate)) return {tag:letter+"1",partner:null};
+  return {tag:letter+(pos%2===0?"1":"2"),partner:{name:get(list[mate]).name,tag:letter+(pos%2===0?"2":"1")}};
+}
+// Series del protocolo, una a una: [{r: reps, kg, k: tipo, tag}] (k: top · back · ramp ·
+// work · tech · cl). Devuelve null en series planas (ya se ven en «series × reps»).
+function protoSets(ex, {ss}={}){
+  if(!ex) return null;
+  const p=ex.protocol||"series_planas", N=Math.max(1,parseInt(ex.sets)||1);
+  const W=ex.prescribed_weight!=null&&ex.prescribed_weight!==""&&Number(ex.prescribed_weight)>0?Number(ex.prescribed_weight):null;
+  // Cargas derivadas: de 2,5 en 2,5 kg con barra pesada (saltos reales), si no de 1,25.
+  const rl=(x)=>W>=40?Math.round(x/2.5)*2.5:roundLoad(x), kg=(f)=>W?rl(W*f):null;
+  const r=rirNum(ex.rir), rep=(n,o)=>Array.from({length:Math.max(0,n)},()=>({...o}));
+  if(p==="superset") return ss&&ss.partner?{name:"Superserie",pair:ss,sets:[]}:null; // la pareja A1 ⇄ A2
+  const rg=repsRange(ex.reps); if(!rg||META_PROTOS.includes(p)||p==="test_amrap"||p==="isometrico") return null;
+  const [lo,hi]=rg;
+  if(p==="top_set_backoff"){
+    const t=protoTarget(p,ex.reps,r), bR=Math.min(hi,lo+2), br=r!=null?r:t.rir+1;
+    const f=Math.max(0.85,Math.min(0.90,pctRM(bR+br)/pctRM(t.reps+t.rir)));
+    return {name:"Top set + back-off",sets:[{r:t.reps,kg:W,k:"top",tag:"TOP"},...rep(N-1,{r:bR,kg:kg(f),k:"back",pct:W?null:`−${Math.round((1-f)*100)}%`})],rir:r!=null?[t.rir,br]:null};
+  }
+  if(p==="ramp_up"){
+    const t=protoTarget(p,ex.reps,r), n=N-1, sets=[];
+    for(let k=0;k<n;k++){ const extra=n-k, rp=Math.min(hi>t.reps?hi:t.reps+2,t.reps+Math.min(2,extra));
+      sets.push({r:rp,kg:W?rl(W*Math.min(0.97,pctRM(rp+t.rir+extra)/pctRM(t.reps+t.rir))):null,k:"ramp"}); }
+    sets.push({r:t.reps,kg:W,k:"top",tag:"TOP"});
+    return {name:"Subiendo peso",sets,rir:r!=null?[t.rir]:null};
+  }
+  if(p==="rest_pause"){ const mini=Math.max(2,Math.round(lo/3));
+    return {name:"Rest-pause",sets:[...rep(N-1,{r:ex.reps,kg:W,k:"work"}),{r:`${lo}+${mini}+${mini}`,kg:W,k:"tech",tag:"RP 15s"}]}; }
+  if(p==="drop_set")
+    return {name:"Drop set",sets:[...rep(N-1,{r:ex.reps,kg:W,k:"work"}),{r:"fallo",kg:W?[W,kg(0.8),kg(0.64)]:null,k:"tech",tag:"DROP −20%"}]};
+  if(p==="cluster"){ const c=clusterOf(lo); return {name:"Cluster",sets:rep(N,{r:c.txt.replace(/\+/g,"·"),kg:W,k:"cl",tag:"15s"})}; }
+  return null;
+}
+// Colores fijos (sirven en tema claro y oscuro): top naranja, back-off azul, rampa gris,
+// técnicas violeta, cluster verde azulado.
+const SET_COL={top:"#ea580c",back:"#0284c7",ramp:"#64748b",work:"#334155",tech:"#7c3aed",cl:"#0f766e"};
+// Protocolo de un vistazo: una ficha por serie con reps y kg.
+function SetChips({ex,ss,big}){
+  const s=protoSets(ex,{ss}); if(!s) return null;
+  const fs=big?1.25:1;
+  return <div data-proto={ex.protocol} title={s.name} style={{display:"flex",alignItems:"stretch",gap:4,flexWrap:"wrap",marginTop:6}}>
+    {s.pair&&<span data-pair style={{display:"flex",alignItems:"center",gap:4,background:"#db2777",color:"#fff",borderRadius:8,padding:"3px 8px",fontSize:11*fs,fontWeight:800}}>
+      {s.pair.tag}{s.pair.partner&&<span style={{fontWeight:600,opacity:.95}}>⇄ {s.pair.partner.name}</span>}</span>}
+    {!s.pair&&s.sets.map((x,i)=>{ const kgs=x.kg==null?null:(Array.isArray(x.kg)?x.kg:[x.kg]);
+      return <span key={i} data-set={x.k} style={{display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",minWidth:38*fs,background:SET_COL[x.k],color:"#fff",borderRadius:8,padding:`${3*fs}px ${6*fs}px`,lineHeight:1.15}}>
+        {x.tag&&<span style={{fontSize:8*fs,fontWeight:800,letterSpacing:.3,opacity:.9}}>{x.tag}</span>}
+        <b style={{fontSize:12*fs}}>{x.r}</b>
+        {kgs?<span style={{fontSize:10*fs,fontWeight:600}}>{kgs.map(fmtKgN).join("↓")}</span>:x.pct?<span style={{fontSize:10*fs,fontWeight:600}}>{x.pct}</span>:null}
+      </span>; })}
+    {s.rir&&<span style={{alignSelf:"center",fontSize:10*fs,fontWeight:700,color:"#94a3b8"}}>RIR {s.rir.join("/")}</span>}
+  </div>;
+}
+// ── SERIES PARA MARCAR AL ENTRENAR ─────────────────────────────────────────
+// Cada botón dice lo que toca en esa serie (TOP · 100 kg × 6, back-off · 90 kg × 8…).
+// Al tocarlo queda hecha y arranca el descanso; al hacer la última, el ejercicio se
+// da por completado. Tocar una hecha la desmarca (y las siguientes).
+const sdKey=(id)=>"kk_sd_"+id;
+const sdGet=(id)=>{ try{ return parseInt(localStorage.getItem(sdKey(id)),10)||0; }catch(e){ return 0; } };
+const sdSave=(id,n)=>{ try{ if(n) localStorage.setItem(sdKey(id),String(n)); else localStorage.removeItem(sdKey(id)); }catch(e){} };
+function setsPlan(ex,{ss}={}){
+  const s=protoSets(ex,{ss}), N=Math.max(1,parseInt(ex.sets)||1);
+  const W=ex.prescribed_weight!=null&&ex.prescribed_weight!==""&&Number(ex.prescribed_weight)>0?Number(ex.prescribed_weight):null;
+  const list=s&&s.sets&&s.sets.length?s.sets:Array.from({length:N},()=>({r:ex.reps||"—",kg:W,k:"work"}));
+  return {list,pair:s&&s.pair};
+}
+// ¿Descansar tras esta serie? En la 1ª de una superserie se pasa directo a la pareja.
+const restAfter=(ss)=>!(ss&&ss.partner&&/1$/.test(ss.tag));
+function SetTapper({ex,ss,done,sd,band,onTap}){
+  const {list,pair}=setsPlan(ex,{ss});
+  const n=done?list.length:Math.min(sd||0,list.length);
+  return <div data-sets style={{marginTop:2}}>
+    {pair&&<div data-pair style={{display:"inline-flex",gap:4,alignItems:"center",background:"#db2777",color:"#fff",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:800,marginBottom:5}}>
+      {pair.tag}{pair.partner&&<span style={{fontWeight:600}}>⇄ {pair.partner.name}</span>}</div>}
+    <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(list.length,5)},minmax(0,1fr))`,gap:6}}>
+      {list.map((x,i)=>{ const on=i<n, next=i===n;
+        const kgs=x.kg==null?null:(Array.isArray(x.kg)?x.kg:[x.kg]);
+        const big=band?bandLabel(band):kgs?`${kgs.map(fmtKgN).join("↓")}`:`${x.r}`;
+        const small=band||kgs?`× ${x.r}`:/\d$/.test(String(x.r))?"reps":"";
+        return <button key={i} type="button" data-set={x.k} aria-pressed={on} onClick={e=>{ e.stopPropagation(); onTap(i); }}
+          aria-label={`Serie ${i+1}${x.tag?` (${x.tag})`:""}: ${big}${kgs&&!band?" kg":""} ${small}${on?", hecha":""}`}
+          style={{border:`2px solid ${on?"#16a34a":next?"#fff":"transparent"}`,boxShadow:next?`0 0 0 2px ${SET_COL[x.k]}`:"none",background:on?"#16a34a":SET_COL[x.k],opacity:on||next?1:.72,color:"#fff",
+            borderRadius:12,padding:"6px 3px",minHeight:60,cursor:"pointer",fontFamily:"inherit",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",lineHeight:1.15,minWidth:0}}>
+          <span style={{fontSize:9,fontWeight:800,letterSpacing:.3,opacity:.92,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{on?"✓ HECHA":(x.tag||({back:"BACK-OFF",ramp:"SUBIDA"})[x.k]||`SERIE ${i+1}`)}</span>
+          <b style={{fontSize:big.length>9?12:16,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis",maxWidth:"100%"}}>{big}{kgs&&!band&&kgs.length===1?<span style={{fontSize:10,fontWeight:700}}> kg</span>:null}</b>
+          {small&&<span style={{fontSize:12,fontWeight:700}}>{small}</span>}
+        </button>; })}
+    </div>
+  </div>;
+}
 // RIR objetivo por defecto según la fase, el nivel y si es un básico.
 const defaultRir = (block,level,main) => {
   const bt=block?block.type:"fuerza";
   if(block&&/test/i.test(block.name||"")) return main?(level==="principiante"?1:0):2;
   if(bt==="descarga") return 4;
-  let r = bt==="fuerza"?2 : bt==="hipertrofia"?(main?2:1) : 3;
+  // Acondicionamiento: RIR 3-4 en el de volumen y 2-3 en el de intensidad.
+  let r = bt==="fuerza"?2 : bt==="hipertrofia"?(main?2:1) : (bt==="acondicionamiento"&&/intensidad/i.test(block.name||""))?2 : 3;
   if(level==="principiante") r=Math.max(r,3);
   if(level==="avanzado"&&bt!=="acondicionamiento") r=Math.max(0,r-1);
   return r;
@@ -12475,13 +12678,14 @@ const defaultRir = (block,level,main) => {
 // Carga desde el eRM del ejercicio para el rango de reps pedido y el RIR objetivo
 // (si no hay RIR, el de la fase y el nivel). En descarga, un 15 % menos.
 // Devuelve {kg,rir,rm} o null si ese ejercicio aún no tiene eRM.
-function rmLoad(client, name, reps, {rir, main, blk, hist, assignedSessions, assignedExercises}={}){
+function rmLoad(client, name, reps, {rir, main, blk, hist, assignedSessions, assignedExercises, proto}={}){
   if(!client||!name||isIsoRow({exercise_name:name,reps})) return null;
   const r=repsLow(reps); if(!r) return null;
   const h=hist||rmHistory(client.id,assignedSessions,assignedExercises,(rmtStore(client.id).list)||[]);
   const rm=rmFor(h,name); if(!rm) return null;
   const t=rir!=null&&rir!==""?Number(rir):defaultRir(blk||null,levelOf(client),!!main);
-  let kg=loadFor(rm,r,t); if(kg&&blk&&blk.type==="descarga") kg=roundLoad(kg*0.85);
+  const pt=proto?protoTarget(proto,reps,t):null; // la carga de la serie clave del protocolo (top, cluster…)
+  let kg=pt?loadFor(rm,pt.reps,pt.rir):loadFor(rm,r,t); if(kg&&blk&&blk.type==="descarga") kg=roundLoad(kg*0.85);
   return kg?{kg,rir:t,rm}:null;
 }
 // ¿Se puede trabajar por RIR/RM? (fuerza con carga externa: ni WOD ni isométricos).
@@ -12528,8 +12732,9 @@ function prescribeRows(routine,{client,blk,date,clientWeights,assignedSessions,a
   const lvl=levelOf(client);
   return routine.map((e,i)=>{
     const cw=wts.find(x=>(x.exercise_name||"").toLowerCase()===String(e[0]).toLowerCase());
-    const row={session_id:sessionId,exercise_name:e[0],prescribed_weight:suggestLoad(cw,e[5],blk,date),sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:"",order_index:i};
-    if(isRmRow(row)){ row.rir=defaultRir(blk,lvl,e[5]); const rm=rmFor(hist,e[0]); const kg=rm?(row.protocol==="test_amrap"?loadFor(rm,5,0):loadFor(rm,repsLow(e[2]),row.rir)):null; if(kg) row.prescribed_weight=(blk&&blk.type==="descarga")?roundLoad(kg*0.85):kg; }
+    const x=e[7]||{}; // extras del generador: nota y RIR propio (p. ej. la activación)
+    const row={session_id:sessionId,exercise_name:e[0],prescribed_weight:suggestLoad(cw,e[5],blk,date),sets:e[1],reps:e[2],protocol:e[4],rest_seconds:e[3],notes:x.note||"",order_index:i};
+    if(isRmRow(row)){ row.rir=x.rir!=null?x.rir:defaultRir(blk,lvl,e[5]); const rm=rmFor(hist,e[0]), pt=protoTarget(row.protocol,e[2],row.rir); const kg=rm&&pt?loadFor(rm,pt.reps,pt.rir):null; if(kg) row.prescribed_weight=(blk&&blk.type==="descarga")?roundLoad(kg*0.85):kg; }
     return row;
   });
 }
@@ -12549,7 +12754,7 @@ function RirBar({ex,kg,reps,rm,notify,onRir}){
   React.useEffect(()=>{ setRir(ex.actual_rir!=null?Number(ex.actual_rir):null); },[ex.id]);
   const target=ex.rir!=null?Number(ex.rir):null, r=repsLow(reps), k=kg===""||kg==null?null:parseFloat(String(kg).replace(",","."));
   const est=e1rmOf(k,r,rir!=null?rir:(target!=null?target:RIR_DEFAULT_UNKNOWN));
-  const sug=rm&&target!=null&&repsLow(ex.reps)?loadFor(rm,repsLow(ex.reps),target):null;
+  const pt=target!=null?protoTarget(ex.protocol,ex.reps,target):null, sug=rm&&pt?loadFor(rm,pt.reps,pt.rir):null;
   const pick=async(v)=>{ const nv=rir===v?null:v; setRir(nv); onRir&&onRir(nv);
     const {error}=await sb.from("assigned_exercises").update({actual_rir:nv}).eq("id",ex.id);
     if(error&&!RIR_SQL_WARNED){ RIR_SQL_WARNED=true; notify&&notify("Para guardar el RIR ejecuta docs/rir-rm.sql en Supabase","err"); } };
@@ -12754,7 +12959,7 @@ function adaptToLevel(rows, level, ctx={}){
     }
     const accCap=soft?3:L.accMax;
     while(total()<min&&guard--){
-      const a=accs.filter(r=>r[1]<accCap).sort((x,y)=>x[1]-y[1])[0];
+      const a=accs.filter(r=>r[1]<accCap&&!(r[7]&&r[7].act)).sort((x,y)=>x[1]-y[1])[0];
       if(a){ a[1]++; continue; }
       const m=mains.filter(r=>r[1]<(soft?3:mainSets+1)).sort((x,y)=>x[1]-y[1])[0];
       if(m){ m[1]++; continue; } break;
@@ -12768,7 +12973,33 @@ const sameTypeBefore = (assignedSessions, clientId, date, dayType) => { const wd
 // variant: 2º día del mismo tipo en la misma semana → otras variantes de los mismos patrones.
 function buildDayRoutine(dayType, block, goal, weekNo, level, variant=0){
   const rows=baseDayRoutine(dayType, block, goal, weekNo, variant);
-  return level ? adaptToLevel(rows, level, {block, dayType, goal}) : rows;
+  if(!level) return rows;
+  const out=adaptToLevel(rows, level, {block, dayType, goal});
+  // Hipertrofia específico: las técnicas se recolocan en los últimos accesorios que quedan
+  // tras ajustar al nivel (el principiante no las usa).
+  if(level!=="principiante"&&block&&block.type==="hipertrofia"&&isEspecificoBlock(block)&&!isTestBlock(block)&&dayType!=="fullbodyF") hypTechniques(out);
+  return fixSupersets(out);
+}
+// Técnicas de intensidad de la hipertrofia específica: DROP SET en el último accesorio y
+// REST-PAUSE en el penúltimo. Solo en ejercicios sencillos y estables (máquina, polea,
+// mancuerna): nunca en básicos, zancadas, pesos muertos, core ni la activación.
+function hypTechniques(rows){
+  const bad=new Set([].concat(EX_POOLS.squat,EX_POOLS.hinge,EX_POOLS.lunge,EX_POOLS.core));
+  rows.forEach(e=>{ if(e[4]==="drop_set"||e[4]==="rest_pause") e[4]="series_planas"; });
+  const ok=rows.filter(e=>!e[5]&&!(e[7]&&e[7].act)&&repsLow(e[2])!=null&&!META_PROTOS.includes(e[4])&&!bad.has(e[0])&&complexityOf(e[0])<=2);
+  if(ok.length) ok[ok.length-1][4]="drop_set";
+  if(ok.length>1) ok[ok.length-2][4]="rest_pause";
+  return rows;
+}
+// Superseries de dos en dos (comparten descanso, el mayor de los dos); si una racha
+// queda impar, el último va en series planas.
+function fixSupersets(rows){
+  let i=0; while(i<rows.length){ if(rows[i][4]!=="superset"){ i++; continue; }
+    let j=i; while(j<rows.length&&rows[j][4]==="superset") j++;
+    if((j-i)%2) rows[j-1][4]="series_planas";
+    for(let k=i;k+1<j;k+=2){ const rr=Math.max(parseInt(rows[k][3])||0,parseInt(rows[k+1][3])||0); rows[k][3]=rows[k+1][3]=rr; }
+    i=j; }
+  return rows;
 }
 // Reps para principales según fase del bloque (usa el rango del bloque si existe).
 function baseDayRoutine(dayType, block, goal, weekNo, variant=0){
@@ -12787,13 +13018,30 @@ function baseDayRoutine(dayType, block, goal, weekNo, variant=0){
   const wk = (block?(block.start_week||0):Math.floor((weekNo||0)/8)) + (wv.ab==="B"?3:0) + (variant||0)*5;
   // Protocolo del ejercicio principal según fase.
   const isEspecifico = isEspecificoBlock(block);
+  const acondInt = bt==="acondicionamiento" && /intensidad/i.test(String((block&&block.name)||""));
+  const fEsp = bt==="fuerza" && isEspecifico && !test, hEsp = bt==="hipertrofia" && isEspecifico && !test;
+  // Protocolos según la fase, coherentes con la nota de cada bloque:
+  //  · Fuerza inespecífico: TOP SET + BACK-OFF en los multiarticulares; accesorios 8-12.
+  //  · Fuerza específico: el 1er básico sube en RAMPA hasta el top (singles/dobles), el 2º top set
+  //    + back-off; menos accesorios (6-8 reps) y descansos de 3'.
+  //  · Hipertrofia: el básico en series planas pesadas. En específico: activación monoarticular al
+  //    inicio y técnicas (REST-PAUSE, DROP SET) solo en los últimos accesorios.
+  //  · Híbrido: CLUSTER en los básicos y SUPERSERIES de antagonistas.
+  //  · Acondicionamiento y descarga: series planas (técnica, tempo y RIR alto).
   const mainProto = test ? "test_amrap" : bt==="fuerza" ? (isEspecifico?"ramp_up":"top_set_backoff")
-                  : bt==="hipertrofia" ? (isEspecifico?"rest_pause":"series_planas")
-                  : "series_planas";
-  const accProto = bt==="hipertrofia"&&isEspecifico ? "drop_set" : "series_planas";
-  const accReps = bt==="hipertrofia" ? "10-15" : "8-12";
-  // Progresión de volumen: +1 serie de accesorios desde el 2º ciclo (hipertrofia/acondicionamiento).
-  const volUp = ((bt==="hipertrofia"||bt==="acondicionamiento")&&wv.step>=1&&!test)?1:0;
+                  : bt==="hibrido" ? "cluster" : "series_planas";
+  const main2Proto = fEsp ? "top_set_backoff" : mainProto; // 2º básico del día
+  const accProto = bt==="hibrido"&&!test ? "superset" : "series_planas";
+  const accReps = bt==="hipertrofia" ? (isEspecifico?"8-12":"10-15") : bt==="fuerza" ? (isEspecifico?"6-8":"8-12")
+                : bt==="acondicionamiento" ? (acondInt?"10-12":"12-15") : "8-12";
+  const MR = (x) => fEsp ? 180 : x; // descanso de los básicos
+  // Notas de la fase: tempo controlado en acondicionamiento de volumen y en los básicos de hipertrofia.
+  const phaseTouches = (rows) => { rows.forEach(e=>{ if(e[7]||repsLow(e[2])==null||META_PROTOS.includes(e[4])) return;
+    if(bt==="acondicionamiento"&&!acondInt&&!test) e[7]={note:"Tempo 3-0-1: baja en 3 s, sube con control"};
+    else if(bt==="hipertrofia"&&!isEspecifico&&!test&&e[5]) e[7]={note:"Tempo controlado: 2-3 s bajando, rango completo"}; }); return rows; };
+  // Progresión de volumen: +1 serie de accesorios desde el 2º ciclo en hipertrofia y en la
+  // 2ª semana del acondicionamiento de volumen (subida gradual de series).
+  const volUp = !test && ((bt==="hipertrofia"&&wv.step>=1) || (bt==="acondicionamiento"&&!acondInt&&wv.weekInBlock>=2)) ? 1 : 0;
   const mS = bt==="descarga"?2:(test?1:4), aS = bt==="descarga"||test?2:3+volUp;
   const volBoost = estetica?1:0; // más volumen en estética
   const r=[]; const add=(name,sets,reps,rest,proto,main)=>{ if(name) r.push([name,sets,reps,rest,proto,!!main]); };
@@ -12803,46 +13051,46 @@ function baseDayRoutine(dayType, block, goal, weekNo, variant=0){
   const pick=(arr,base)=>{ const av=arr.filter(n=>equipOk(n)&&!r.some(x=>x[0]===n)); if(!av.length) return null; return av[(((wk+base)%av.length)+av.length)%av.length]; };
 
   if(dayType==="fuerzaA"){ // tren inferior fuerza
-    add(pick(EX_POOLS.squat,0),mS,rep,150,mainProto,true);
-    add(pick(EX_POOLS.hinge,1),mS,rep,150,mainProto,true);
+    add(pick(EX_POOLS.squat,0),mS,rep,MR(150),mainProto,true);
+    add(pick(EX_POOLS.hinge,1),mS,rep,MR(150),main2Proto,true);
     add(pick(EX_POOLS.lunge,2),aS,accReps,90,accProto,false);
     add(estetica?pick(EX_POOLS.quadiso,3):pick(EX_POOLS.core,3),aS,estetica?"12-15":"30-45s",estetica?60:45,accProto,false);
     if(estetica) add(pick(EX_POOLS.calf,4),aS,"12-20",45,accProto,false);
   } else if(dayType==="fuerzaB"){ // tren superior fuerza
-    add(pick(EX_POOLS.hpush,0),mS,rep,150,mainProto,true);
-    add(pick(EX_POOLS.hpull,1),mS,rep,120,mainProto,true);
+    add(pick(EX_POOLS.hpush,0),mS,rep,MR(150),mainProto,true);
+    add(pick(EX_POOLS.hpull,1),mS,rep,MR(120),main2Proto,true);
     add(pick(EX_POOLS.vpush,2),aS,accReps,90,accProto,false);
     add(pick(EX_POOLS.vpull,3),aS,accReps,90,accProto,false);
     if(estetica){ add(pick(EX_POOLS.biceps,4),aS,"10-12",60,accProto,false); add(pick(EX_POOLS.triceps,5),aS,"10-12",60,accProto,false); }
   } else if(dayType==="push"){
-    add(pick(EX_POOLS.hpush,0),mS,rep,120,mainProto,true);
+    add(pick(EX_POOLS.hpush,0),mS,rep,MR(120),mainProto,true);
     add(pick(EX_POOLS.vpush,1),aS,accReps,90,accProto,false);
     add(pick(EX_POOLS.chestiso,2),aS,"12-15",60,accProto,false);
     add(pick(EX_POOLS.lateral,3),aS+volBoost,"12-20",45,accProto,false);
     add(pick(EX_POOLS.triceps,4),aS+volBoost,"10-15",60,accProto,false);
   } else if(dayType==="pull"){
-    add(pick(EX_POOLS.vpull,0),mS,rep,120,mainProto,true);
+    add(pick(EX_POOLS.vpull,0),mS,rep,MR(120),mainProto,true);
     add(pick(EX_POOLS.hpull,1),aS,accReps,90,accProto,false);
     add(pick(EX_POOLS.backiso,2),aS,"12-15",60,accProto,false);
     add(pick(EX_POOLS.reardelt,3),aS,"15-20",45,accProto,false);
     add(pick(EX_POOLS.biceps,4),aS+volBoost,"10-15",60,accProto,false);
   } else if(dayType==="legs"){
-    add(pick(EX_POOLS.squat,0),mS,rep,150,mainProto,true);
+    add(pick(EX_POOLS.squat,0),mS,rep,MR(150),mainProto,true);
     add(pick(EX_POOLS.hinge,1),aS,accReps,120,accProto,false);
     add(pick(EX_POOLS.lunge,2),aS,"10-12",75,accProto,false);
     add(pick(EX_POOLS.hamiso,3),aS,"12-15",60,accProto,false);
     add(pick(EX_POOLS.quadiso,4),aS,"12-15",60,accProto,false);
     add(pick(EX_POOLS.calf,5),aS,"12-20",45,accProto,false);
   } else if(dayType==="upper"){ // torso completo
-    add(pick(EX_POOLS.hpush,0),mS,rep,120,mainProto,true);
-    add(pick(EX_POOLS.hpull,1),mS,rep,120,mainProto,true);
+    add(pick(EX_POOLS.hpush,0),mS,rep,MR(120),mainProto,true);
+    add(pick(EX_POOLS.hpull,1),mS,rep,MR(120),main2Proto,true);
     add(pick(EX_POOLS.vpush,2),aS,accReps,75,accProto,false);
     add(pick(EX_POOLS.vpull,3),aS,accReps,75,accProto,false);
     add(pick(EX_POOLS.lateral,4),aS,"12-20",45,accProto,false);
     if(estetica){ add(pick(EX_POOLS.biceps,5),aS,"10-12",60,accProto,false); add(pick(EX_POOLS.triceps,6),aS,"10-12",60,accProto,false); }
   } else if(dayType==="lower"){ // pierna completa
-    add(pick(EX_POOLS.squat,0),mS,rep,150,mainProto,true);
-    add(pick(EX_POOLS.hinge,1),mS,rep,150,mainProto,true);
+    add(pick(EX_POOLS.squat,0),mS,rep,MR(150),mainProto,true);
+    add(pick(EX_POOLS.hinge,1),mS,rep,MR(150),main2Proto,true);
     add(pick(EX_POOLS.hthrust,2),aS,"10-12",90,accProto,false);
     add(pick(EX_POOLS.quadiso,3),aS,"12-15",60,accProto,false);
     add(pick(EX_POOLS.hamiso,4),aS,"12-15",60,accProto,false);
@@ -12861,24 +13109,26 @@ function baseDayRoutine(dayType, block, goal, weekNo, variant=0){
     // la semana B sube reps (volumen) y la A trabaja más pesado.
     const B=wv.ab==="B"&&!test;
     const PH={
-      fuerza:{main:isEspecifico?"ramp_up":"top_set_backoff",mR:rep,acc:"series_planas",aR:B?"8-10":"6-8",mRest:150,aRest:120},
-      hipertrofia:{main:isEspecifico?"rest_pause":"series_planas",mR:rep,acc:"superset",aR:B?"12-15":"10-12",mRest:120,aRest:75},
-      acondicionamiento:{main:"series_planas",mR:B?"12-15":"10-12",acc:"superset",aR:"12-15",mRest:75,aRest:45},
-      hibrido:{main:"series_planas",mR:rep,acc:"superset",aR:"10-12",mRest:90,aRest:60},
+      fuerza:{main:isEspecifico?"ramp_up":"top_set_backoff",main2:"top_set_backoff",mR:rep,acc:"series_planas",aR:isEspecifico?"6-8":(B?"10-12":"8-10"),mRest:isEspecifico?180:150,aRest:isEspecifico?120:90},
+      hipertrofia:{main:"series_planas",mR:rep,acc:"superset",aR:B?"12-15":"10-12",mRest:120,aRest:75},
+      acondicionamiento:{main:"series_planas",mR:acondInt?(B?"10-12":"8-10"):(B?"12-15":"10-12"),acc:"superset",aR:acondInt?"10-12":"12-15",mRest:75,aRest:45},
+      hibrido:{main:"cluster",mR:rep,acc:"superset",aR:"10-12",mRest:120,aRest:60},
       descarga:{main:"series_planas",mR:"8-10",acc:"series_planas",aR:"10-12",mRest:90,aRest:60},
       test:{main:"test_amrap",mR:`AMRAP ${baseRep}`,acc:"series_planas",aR:"8-10",mRest:180,aRest:90},
     };
     const P=PH[test?"test":bt]||PH.fuerza;
     const ms=bt==="descarga"?2:(test?1:3), as=bt==="descarga"||test?2:3;
+    const SS=P.acc==="superset"; // superseries: empuje + tracción seguidos (antagonistas)
     add(pick(EX_POOLS.squat,0),ms,P.mR,P.mRest,P.main,true);      // rodilla dominante
-    add(pick(EX_POOLS.hinge,1),ms,P.mR,P.mRest,P.main,true);      // cadera dominante
+    add(pick(EX_POOLS.hinge,1),ms,P.mR,P.mRest,P.main2||P.main,true); // cadera dominante
     add(pick(EX_POOLS.hpush,2),as,P.aR,P.aRest,P.acc,false);      // empuje horizontal
     add(pick(EX_POOLS.hpull,3),as,P.aR,P.aRest,P.acc,false);      // tracción horizontal
+    if(SS) add(pick(EX_POOLS.vpush,7),as,P.aR,P.aRest,P.acc,false); // empuje vertical (pareja de la tracción vertical)
     add(pick(EX_POOLS.vpull,4),as,P.aR,P.aRest,P.acc,false);      // tracción vertical
     add(pick(EX_POOLS.lunge,5),as,`${P.aR}/lado`,P.aRest,P.acc,false); // unilateral
     const core=pick(EX_POOLS.core,6); add(core,as,ISO_RE.test(core||"")?"30-40s":"10-12",45,"series_planas",false); // core
-    add(pick(EX_POOLS.vpush,7),as,P.aR,P.aRest,P.acc,false);      // empuje vertical
-    return r; // orden por patrón (sin reordenar por material ni finisher)
+    if(!SS) add(pick(EX_POOLS.vpush,7),as,P.aR,P.aRest,P.acc,false); // empuje vertical
+    return phaseTouches(fixSupersets(r)); // orden por patrón (sin reordenar por material ni finisher)
   } else if(dayType==="hiit"){ // HIIT / cardio: EMOM aeróbico + Tabata
     return buildMetcon("hiit",block,goal,weekNo,variant);
   } else if(dayType==="crossfit"){ // fuerza/técnica + WOD según la fase
@@ -12895,11 +13145,23 @@ function baseDayRoutine(dayType, block, goal, weekNo, variant=0){
   }
   // Orden final: primero los principales, luego por prioridad de material
   // (barra/rack/multipower primero) para descongestionar los racks al inicio.
-  const out = r.map((e,i)=>({e,i})).sort((a,b)=>{
+  // (Con superseries se mantiene el orden de las parejas de antagonistas.)
+  let out = r.map((e,i)=>({e,i})).sort((a,b)=>{
     const ma=a.e[5]?0:1, mb=b.e[5]?0:1; if(ma!==mb) return ma-mb;
-    const ra=equipRank(a.e[0]), rb=equipRank(b.e[0]); if(ra!==rb) return ra-rb;
+    if(accProto!=="superset"&&!fEsp){ const ra=equipRank(a.e[0]), rb=equipRank(b.e[0]); if(ra!==rb) return ra-rb; }
     return a.i-b.i;
   }).map(x=>x.e);
+  // Fuerza específico: menos accesorios (se quedan los primeros, los más ligados al básico).
+  if(fEsp){ const cap=estetica?3:2; let n=0; out=out.filter(e=>e[5]||++n<=cap); }
+  // Hipertrofia específico: activación monoarticular al inicio y técnicas al final.
+  if(hEsp && dayType!=="small"){
+    // Monoarticular del músculo principal del día (pecho en empuje, espalda en tracción, cuádriceps en pierna).
+    const ACT={push:["chestiso","lateral"],pull:["backiso","reardelt"],legs:["quadiso","hamiso"],lower:["quadiso","hamiso"],upper:["chestiso","lateral"],fuerzaA:["quadiso","hamiso"],fuerzaB:["chestiso","lateral"]}[dayType]||[];
+    let k=-1; for(const pool of ACT){ k=out.findIndex(e=>!e[5]&&(EX_POOLS[pool]||[]).includes(e[0])); if(k>=0) break; }
+    if(k>=0){ const a=out.splice(k,1)[0]; a[1]=2; a[2]="15-20"; a[3]=45; a[4]="series_planas"; a[7]={note:"Activación: ligero y controlado, sin llegar al fallo",rir:3,act:true}; out.unshift(a); }
+  }
+  if(hEsp) hypTechniques(out);
+  out = phaseTouches(fixSupersets(out));
   // Salud (concurrente): finisher metabólico en las semanas B de los días de fuerza.
   if(salud && wv.ab==="B" && bt!=="descarga" && !test && ["fuerzaA","fuerzaB","push","pull","legs","upper","lower"].includes(dayType)){
     buildMetcon("finisher",block,goal,weekNo).forEach(x=>out.push(x));
@@ -13202,7 +13464,7 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
             </div>
 
             {sessExes.map((ae,i)=>(
-              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving} client={client}/>
+              <ExerciseCard key={ae.id} ae={ae} index={i} onComplete={markExerciseComplete} saving={saving} client={client} ss={supersetTag(sessExes,i,x=>({name:x.exercise_name,protocol:x.protocol}))}/>
             ))}
 
             {sess.notes&&(
@@ -13218,8 +13480,9 @@ function TodaySession({client, myAssignedSessions, myAssignedExercises, clientWe
 }
 
 // ── EXERCISE CARD (client registers completion) ────────────────────────────
-function ExerciseCard({ae, index, onComplete, saving, client}) {
+function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
   const [expanded,setExpanded] = React.useState(false);
+  const [sd,setSd] = React.useState(()=>sdGet(ae.id));
   const [howTo,setHowTo] = React.useState(false);
   useExMedia(); const nMedia=exMediaOf(ae.exercise_name).length+(exPhotoOf(ae.exercise_name)?1:0);
   const howBtn=nMedia>0&&<button type="button" onClick={e=>{ e.stopPropagation(); openExPhoto(ae.exercise_name,ae); }} style={{border:"1px solid #fed7aa",background:"#fff7ed",color:"#c2410c",borderRadius:20,padding:"1px 9px",fontSize:11,fontWeight:800,cursor:"pointer",fontFamily:"inherit",whiteSpace:"nowrap"}}>▶ Cómo se hace</button>;
@@ -13241,6 +13504,12 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
   const setBand=(v)=>{ setBandS(v); sb.from("assigned_exercises").update({load_band:v||null}).eq("id",ae.id).then(()=>{}); };
   const switchMode=()=>{ const g=!goma; setGoma(g); if(!g&&band){ setBandS(""); sb.from("assigned_exercises").update({load_band:null}).eq("id",ae.id).then(()=>{}); } };
   const hdrBand=ae.load_band||(goma?band:"");
+  const complete=(noRest)=>{ if(!noRest) startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:(parseFloat(actualWeight)||null),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); };
+  const exNow={...ae,prescribed_weight:goma?null:(parseFloat(actualWeight)||ae.prescribed_weight)};
+  const tapSet=(i)=>{ const N=setsPlan(exNow,{ss}).list.length, cur=Math.min(sd,N), nsd=i<cur?i:i+1;
+    setSd(nsd); sdSave(ae.id,nsd<N?nsd:0);
+    if(nsd>=N) return complete(!restAfter(ss));
+    if(nsd>cur&&restAfter(ss)) startRest(ae.rest_seconds,ae.exercise_name); };
 
   if(ae.completed||ae.done) return(
     <div style={{display:"flex",justifyContent:"space-between",alignItems:"center",padding:"10px 0",borderBottom:"1px solid #e6ebf3",opacity:0.6}}>
@@ -13267,8 +13536,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
           <div>
             <div style={{fontSize:13,fontWeight:600}}>{client?<ExName client={client} name={ae.exercise_name}/>:ae.exercise_name}</div>
             <div style={{display:"flex",gap:8,marginTop:2,flexWrap:"wrap",alignItems:"center"}}>
-              <span className="mono" style={{fontSize:12,color:"#0284c7",fontWeight:700}}>{ae.sets}×{ae.reps}</span>
-              {hdrBand?<span data-hdrband="1" style={{fontSize:12,color:"#0f172a",fontWeight:700}}>{bandLabel(hdrBand)}</span>:ae.prescribed_weight&&<span style={{fontSize:12,color:"#ca8a04",fontWeight:700}}>{ae.prescribed_weight}kg</span>}
+              {hdrBand&&<span data-hdrband="1" style={{fontSize:12,color:"#0f172a",fontWeight:700}}>{bandLabel(hdrBand)}</span>}
               {ae.rir!=null&&<span style={{fontSize:11,fontWeight:800,color:"#9a3412",background:"#fff7ed",border:"1px solid #fed7aa",borderRadius:20,padding:"0 7px"}}>RIR {ae.rir}</span>}
               {howBtn}
               {ae.rest_seconds?<span onClick={e=>e.stopPropagation()}><RestButton secs={ae.rest_seconds} label={ae.exercise_name} style={{padding:"1px 8px",fontSize:11,borderRadius:20}}/></span>:null}
@@ -13278,8 +13546,8 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
         <span style={{color:"#94a3b8",fontSize:16}}>{expanded?"▲":"▼"}</span>
       </div>
 
+      <div style={{marginTop:8}}><SetTapper ex={exNow} ss={ss} sd={sd} band={goma?band:null} onTap={tapSet}/></div>
       {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
-      {ae.rir!=null&&<div style={{marginTop:4,paddingLeft:32}} onClick={e=>e.stopPropagation()}><RirHelp highlight={Number(ae.rir)} label={`RIR ${ae.rir}: deja ${ae.rir===0?"0 (al fallo)":ae.rir} repetici${Number(ae.rir)===1?"ón":"ones"} en reserva`}/></div>}
 
       {expanded&&(
         <div style={{marginTop:10,paddingLeft:32,display:"flex",flexDirection:"column",gap:10}}>
@@ -13302,7 +13570,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
               <input type="number" className="inp" min="1" max="10" step="0.5" style={{padding:"8px",fontSize:14,textAlign:"center"}} value={rpe} onChange={e=>setRpe(e.target.value)} placeholder="8"/>
             </div>
           </div>
-          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>{ startRest(ae.rest_seconds,ae.exercise_name); onComplete(ae.id,goma?null:(parseFloat(actualWeight)||null),actualReps||null,parseFloat(rpe)||null,goma?(band||null):(ae.load_band?null:undefined)); }} disabled={saving}>
+          <button className="btn grn" style={{width:"100%",padding:10,fontSize:13}} onClick={()=>complete()} disabled={saving}>
             ✓ Marcar como completado
           </button>
         </div>
@@ -13312,7 +13580,7 @@ function ExerciseCard({ae, index, onComplete, saving, client}) {
 }
 
 // Pantallas ya diseñadas en oscuro: el tema no las retoca.
-ClientPortal=noTheme(ClientPortal); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
+ClientPortal=noTheme(ClientPortal); PlatesRow=noTheme(PlatesRow); SetChips=noTheme(SetChips); SetTapper=noTheme(SetTapper); ConstanciaCard=noTheme(ConstanciaCard); GameHero=noTheme(GameHero); GameCelebrate=noTheme(GameCelebrate); Seats=noTheme(Seats); DietCard=noTheme(DietCard); AthleteStats=noTheme(AthleteStats); BodyMap=noTheme(BodyMap);
 MultiSessionRequest=noTheme(MultiSessionRequest); OpenHourSheet=noTheme(OpenHourSheet); BookedCelebration=noTheme(BookedCelebration); Embers=noTheme(Embers);
 ClientSummary=noTheme(ClientSummary,(p)=>!!p.dark); AthleteTutorial=noTheme(AthleteTutorial);
 ReactDOM.render(<App/>, document.getElementById("root"));
