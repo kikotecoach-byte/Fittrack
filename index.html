@@ -6261,7 +6261,6 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
                   <ExPhoto name={row.name} size={96} onClick={()=>openExPhoto(row.name,{...(baseExs.find(e=>e.id===row.id)||{}),sets:row.sets,reps:row.reps,protocol:row.protocol,prescribed_weight:row.mode==="goma"?null:row.prescribed,load_band:row.mode==="goma"?row.band:null,rest_seconds:row.rest})}/>
                   <div style={{minWidth:0,flex:1}}>
                     <div style={{fontWeight:700,fontSize:13,color:"#0f172a"}}><ExName client={client} name={row.name}/> <button onClick={()=>setPicker({mode:"swap",row})} title="Cambiar ejercicio" style={{border:"none",background:"none",color:"#0284c7",cursor:"pointer",fontSize:12,fontWeight:700,padding:"0 2px"}}>🔄</button></div>
-                    <MuscleTags name={row.name}/>
                   </div>
                   <div style={{display:"flex",flexDirection:"column",alignItems:"flex-end",gap:4}}>
                     <RestButton secs={row.rest} label={row.name} style={{padding:"3px 9px",fontSize:11,borderRadius:20}}/>
