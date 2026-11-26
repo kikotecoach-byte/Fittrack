@@ -6238,7 +6238,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   // las demás guardan su peso propio.
   const setKg=(row,i,v,isKey)=>{ if(isKey) return setField(row.id,"w",v); const a=[...(row.ow||[])]; a[i]=v; setField(row.id,"ow",a); };
   const blurKg=(row,i,v,isKey)=>{ if(isKey){ sb.from("assigned_exercises").update({actual_weight:kgNum(v)}).eq("id",row.id).then(()=>{}); return; }
-    const a=[...(row.ow||[])]; a[i]=v; owSave(row.id,a); saveSetWeights(row.id,a); };
+    const a=[...(row.ow||[])]; a[i]=kgNum(v)!=null?v:null; setField(row.id,"ow",a); owSave(row.id,a); saveSetWeights(row.id,a); };
   const toggleDone=async(row,noRest)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
@@ -12779,13 +12779,19 @@ const restAfter=(ss)=>!(ss&&ss.partner&&/1$/.test(ss.tag));
 function SetTapper({ex,ss,done,sd,band,onTap,ow,onKg,onKgBlur,keyVal}){
   const {list,pair}=setsPlan(ex,{ss});
   const n=done?list.length:Math.min(sd||0,list.length), key=setKeyIdx(list);
+  // Peso escrito en una serie: vale para ella y lo heredan las siguientes del mismo tipo que
+  // no tengan uno propio (cambiar la 2ª a 65 pone la 3ª y la 4ª a 65; luego se tocan sueltas).
+  // Las de subida (ramp) no heredan: cada una lleva su escalón. "" = borrando, no salta al plan.
+  const has=(j)=>ow&&ow[j]!=null&&ow[j]!=="";
+  const owOf=(i)=>{ if(ow&&ow[i]!=null) return ow[i]; if(list[i].k==="ramp") return null;
+    for(let j=i-1;j>key;j--){ if(list[j].k!==list[i].k) break; if(has(j)) return ow[j]; } return null; };
   return <div data-sets style={{marginTop:2}}>
     {pair&&<div data-pair style={{display:"inline-flex",gap:4,alignItems:"center",background:"#db2777",color:"#fff",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:800,marginBottom:5}}>
       {pair.tag}{pair.partner&&<span style={{fontWeight:600}}>⇄ {pair.partner.name}</span>}</div>}
     <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(list.length,5)},minmax(0,1fr))`,gap:6}}>
       {list.map((x,i)=>{ const on=i<n, next=i===n;
         const kgs=x.kg==null?null:(Array.isArray(x.kg)?x.kg:[x.kg]);
-        const own=ow&&ow[i]!=null&&ow[i]!=="", val=i===key&&keyVal!=null?String(keyVal).replace(".",","):own?ow[i]:(kgs?kgStr(kgs[0]):"");
+        const mine=i===key?null:owOf(i), val=i===key&&keyVal!=null?String(keyVal).replace(".",","):mine!=null?String(mine):(kgs?kgStr(kgs[0]):"");
         const lbl=on?"✓ HECHA":(x.tag||({back:"BACK-OFF",ramp:"SUBIDA"})[x.k]||`SERIE ${i+1}`);
         return <div key={i} role="button" tabIndex={0} data-set={x.k} aria-pressed={on} onClick={()=>onTap(i)} onKeyDown={e=>{ if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){ e.preventDefault(); onTap(i); } }}
           aria-label={`Serie ${i+1} (${lbl}): ${band?bandLabel(band):(val?val+" kg":"")} × ${x.r}${on?", hecha":""}`}
@@ -13709,7 +13715,7 @@ function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
 
       <div style={{marginTop:8}}><SetTapper ex={exNow} ss={ss} sd={sd} band={goma?band:null} onTap={tapSet} ow={ow} keyVal={actualWeight==null?"":actualWeight}
         onKg={(i,v,k)=>{ if(k){ touched.current.w=true; setActualWeight(v); } else setOw(a=>{ const b=[...a]; b[i]=v; return b; }); }}
-        onKgBlur={(i,v,k)=>{ if(!k){ const b=[...ow]; b[i]=v; owSave(ae.id,b); saveSetWeights(ae.id,b); } }}/></div>
+        onKgBlur={(i,v,k)=>{ if(!k){ const b=[...ow]; b[i]=kgNum(v)!=null?v:null; setOw(b); owSave(ae.id,b); saveSetWeights(ae.id,b); } }}/></div>
       {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
 
       {expanded&&(
