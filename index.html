@@ -8796,11 +8796,19 @@ function BookingRequests({sessions,clients,loadAll,notify,compact}){
   const reqs=(sessions||[]).filter(s=>s.requested&&s.date>=TODAY).map(s=>({s,c:(clients||[]).find(c=>c.id===s.client_id)})).filter(x=>x.c)
     .sort((a,b)=>(a.s.date+a.s.time).localeCompare(b.s.date+b.s.time));
   const ask=async()=>{ try{ const r=await Notification.requestPermission(); setPerm(r); if(r==="granted"){ notify("🔔 Avisos activados en este dispositivo"); sysNotify("Avisos activados","Te avisaremos cada vez que un cliente reserve","kk-test"); } }catch(e){} };
-  const approve=async(list)=>{ setBusy(list.length>1?"all":list[0].s.id);
-    for(const {s} of list) await sb.from("sessions").update({requested:false,status:"confirmed"}).eq("id",s.id);
-    await loadAll(); setBusy(null); notify(list.length>1?`✅ ${list.length} reservas aprobadas`:`✅ Reserva de ${list[0].c.name.split(" ")[0]} aprobada`); };
+  // Si la base de datos no deja cambiarla (sesión caducada, permisos…) no da error: devuelve 0 filas.
+  // Se comprueba y se avisa, en vez de dar por aprobada una reserva que sigue pendiente.
+  const failMsg=(e)=>e?`No se pudo guardar: ${e.message||e}`:"No se pudo guardar: tu sesión ha caducado o no tiene permiso. Sal y vuelve a entrar como coach.";
+  const approve=async(list)=>{ setBusy(list.length>1?"all":list[0].s.id); let okN=0, err=null, miss=false;
+    for(const {s} of list){ const r=await sb.from("sessions").update({requested:false,status:"confirmed"}).eq("id",s.id).select("id");
+      if(r.error){ err=r.error; break; } if(Array.isArray(r.data)&&!r.data.length){ miss=true; continue; } okN++; }
+    await loadAll(); setBusy(null);
+    if(err||miss) return notify((okN?`Aprobadas ${okN} de ${list.length}. `:"")+failMsg(err),"err");
+    notify(list.length>1?`✅ ${list.length} reservas aprobadas`:`✅ Reserva de ${list[0].c.name.split(" ")[0]} aprobada`); };
   const reject=async({s,c})=>{ if(!window.confirm(`¿Rechazar la reserva de ${c.name} del ${fmtDate(s.date)} a las ${s.time}? Se libera la plaza y su sesión del bono.`)) return;
-    setBusy(s.id); await sb.from("sessions").delete().eq("id",s.id); await loadAll(); setBusy(null); notify("Reserva rechazada");
+    setBusy(s.id); const r=await sb.from("sessions").delete().eq("id",s.id).select("id"); await loadAll(); setBusy(null);
+    if(r.error||(Array.isArray(r.data)&&!r.data.length)) return notify(failMsg(r.error),"err");
+    notify("Reserva rechazada");
     if(c.phone&&window.confirm(`¿Avisar a ${c.name.split(" ")[0]} por WhatsApp?`)) window.open(waLink(c.phone,`Hola ${c.name.split(" ")[0]}! No puedo confirmarte la clase del ${fmtDate(s.date)} a las ${s.time}. ¿Te viene bien otra hora? 💪`),"_blank"); };
   if(!reqs.length&&compact) return perm==="default"?<button className="btn ghost" style={{width:"100%",marginBottom:12,fontSize:12,padding:"9px"}} onClick={ask}>🔔 Activar avisos de nuevas reservas en este dispositivo</button>:null;
   const byClient={}; reqs.forEach(x=>{ (byClient[x.c.id]=byClient[x.c.id]||{c:x.c,list:[]}).list.push(x); });
