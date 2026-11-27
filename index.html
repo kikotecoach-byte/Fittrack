@@ -463,6 +463,12 @@ function Ico({k,size=22,style,className}){
   if(bad||!ICO3D[k]) return <span className={className} style={{fontSize:Math.round(size*0.86),lineHeight:1,display:"inline-block",...(style||{})}}>{ICO3D[k]||""}</span>;
   return <img src={`/icons3d/${k}.png`} alt="" width={size} height={size} draggable={false} onError={()=>setBad(true)} className={"ico3d"+(className?" "+className:"")} style={style}/>;
 }
+// Enlace del email «¿Olvidaste tu contraseña?» (#access_token…&type=recovery, o #error… si caducó).
+// Se lee ANTES de crear el cliente, que limpia la dirección al recoger la sesión.
+const AUTH_HASH = (()=>{ try{ return new URLSearchParams(String(location.hash||"").replace(/^#/,"")); }catch(e){ return new URLSearchParams(); } })();
+const RECOVERY_LINK = AUTH_HASH.get("type")==="recovery";
+const RECOVERY_ERR = !RECOVERY_LINK&&!!(AUTH_HASH.get("error_code")||AUTH_HASH.get("error"));
+const cleanAuthHash = () => { try{ if(location.hash) history.replaceState(null,"",location.pathname+location.search); }catch(e){} };
 const sb = supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 // ── ACCESO SEGURO (Supabase Auth) ──────────────────────────────────────────
 // Coach: email + contraseña. Atleta: código + contraseña propia (la cuenta usa
@@ -904,13 +910,18 @@ function App() {
 
   React.useEffect(()=>{
     (async()=>{
+      // Viene del enlace para cambiar la contraseña: primero la contraseña nueva.
+      if(RECOVERY_LINK){ try{ const {data}=await sb.auth.getSession(); if(data&&data.session){ setMode("recovery"); setLoading(false); return; } }catch(e){}
+        cleanAuthHash(); setLoginTab("admin"); setLoginErr("El enlace no es válido o ha caducado. Pide otro con «¿Olvidaste tu contraseña?»."); setLoading(false); return; }
+      if(RECOVERY_ERR){ cleanAuthHash(); setLoginTab("admin"); setLoginErr("El enlace ha caducado o ya se usó. Pide otro con «¿Olvidaste tu contraseña?»."); }
       // Con sesión segura guardada: entra directo. Sin ella NO se descarga ningún dato.
       try{ const {data}=await sb.auth.getSession(); if(data&&data.session&&await enterWithAuth()) return; }catch(e){}
       const legacy = LEGACY_LOGIN ? loadSession() : null;
       if(legacy){ await loadAll(); setPendingSession(legacy); }
       else { clearSession(); setLoading(false); }
     })();
-    const {data:sub}=sb.auth.onAuthStateChange((ev)=>{ if(ev==="SIGNED_OUT"&&authKind.current){ authKind.current=null; clearData(); setLoggedClient(null); setMode("login"); } });
+    const {data:sub}=sb.auth.onAuthStateChange((ev)=>{ if(ev==="PASSWORD_RECOVERY"){ setMode("recovery"); setLoading(false); return; }
+      if(ev==="SIGNED_OUT"&&authKind.current){ authKind.current=null; clearData(); setLoggedClient(null); setMode("login"); } });
     return ()=>{ try{ sub&&sub.subscription&&sub.subscription.unsubscribe(); }catch(e){} };
   },[]);
 
@@ -977,6 +988,15 @@ function App() {
     if(!c.data){ const m=await sb.rpc("my_client_id"); if(!m.data){ await sb.auth.signOut(); return setLoginErr("El nombre o el código no coinciden. Escríbelos tal como te los dio tu coach."); } }
     setLoading(true); if(await enterWithAuth()) notify("¡Cuenta activada! A partir de ahora entra con tu código y tu contraseña 💪");
   };
+  // Contraseña nueva desde el enlace del email; después entra como siempre.
+  const saveNewPassword = async (pw) => {
+    const {error}=await sb.auth.updateUser({password:pw});
+    if(error) return /different/i.test(error.message)?"Es la misma contraseña que tenías: elige otra."
+      :/weak|least|short|characters/i.test(error.message)?"Contraseña demasiado débil: usa al menos 8 caracteres.":"No se pudo guardar: "+error.message;
+    cleanAuthHash(); notify("Contraseña cambiada ✓ Ya puedes entrar con ella");
+    setLoading(true); if(!await enterWithAuth()) setMode("login"); return null;
+  };
+  const cancelRecovery = async () => { cleanAuthHash(); try{ await sb.auth.signOut(); }catch(e){} authKind.current=null; setLoginTab("admin"); setMode("login"); };
   const handleCoachLogin = async (email, pass) => {
     setLoginErr("");
     if(!String(email||"").trim()||!pass) return setLoginErr("Escribe tu email y tu contraseña");
@@ -1050,11 +1070,39 @@ function App() {
   return (
     <div>
       {toast&&<div className="notif" style={{background:toast.type==="err"?"#fbe6e6":toast.type==="wa"?"#dff3e6":"#eaf1fb",color:toast.type==="err"?"#dc2626":toast.type==="wa"?"#16a34a":"#0284c7",border:`1px solid ${toast.type==="err"?"#f2cccc":toast.type==="wa"?"#14532d":"#bcd3ee"}`}}>{toast.msg}</div>}
+      {mode==="recovery"&&<NewPasswordScreen onSave={saveNewPassword} onCancel={cancelRecovery}/>}
       {mode==="login"&&<LoginScreen {...{loginTab,setLoginTab,loginName,setLoginName,loginCode,setLoginCode,adminPass,setAdminPass,loginErr,setLoginErr,handleClientLogin,handleAdminLogin,handleAthleteLogin,handleAthleteActivate,handleAthleteEnter,handleCoachLogin}}/>}
       {mode==="admin"&&<AdminPanel {...{clients,sessions,history,payments,blocked,waitlist,forum,forumComments,exercises,plans,clientPlans,progress,records,achievements,annualBlocks,sessionTemplates,templateExercises,clientWeights:clientWeightsEff,assignedSessions,assignedExercises,weightHistory,leads,openSessions,loadAll,notify}} secure={authKind.current==="admin"} onLogout={doLogout}/>}
       <RestTimerHost/>
       {mode==="client"&&loggedClient&&isBaja(loggedClient)&&<BajaScreen client={loggedClient} onLogout={doLogout}/>}
       {mode==="client"&&loggedClient&&!isBaja(loggedClient)&&<ClientPortal openSessions={openSessions} openRoster={openRoster} client={loggedClient} allSessions={portalSessions} allHistory={history} allClients={portalClients} blocked={blocked} waitlist={waitlist} forum={forum} forumComments={forumComments} exercises={exercises} plans={plans} clientPlans={clientPlans} myProgress={progress.filter(p=>p.client_id===loggedClient.id)} myRecords={records.filter(r=>r.client_id===loggedClient.id)} myAchievements={achievements.filter(a=>a.client_id===loggedClient.id)} myAssignedSessions={assignedSessions.filter(s=>s.client_id===loggedClient.id)} myAssignedExercises={assignedExercises} clientWeights={clientWeightsEff.filter(w=>w.client_id===loggedClient.id)} annualBlocks={annualBlocks} loadAll={loadAll} notify={notify} onLogout={doLogout}/>}
+    </div>
+  );
+}
+
+// ── CONTRASEÑA NUEVA (desde el enlace del email) ───────────────────────────
+function NewPasswordScreen({onSave,onCancel}){
+  const [a,setA]=React.useState(""), [b,setB]=React.useState(""), [show,setShow]=React.useState(false), [err,setErr]=React.useState(""), [busy,setBusy]=React.useState(false);
+  const save=async()=>{ if(busy) return; if(a.length<8) return setErr("Usa al menos 8 caracteres."); if(a!==b) return setErr("Las dos contraseñas no coinciden.");
+    setErr(""); setBusy(true); try{ const e=await onSave(a); if(e) setErr(e); } finally { setBusy(false); } };
+  const inp=(v,set,ph,auto)=><input className="inp" type={show?"text":"password"} autoComplete="new-password" placeholder={ph} value={v} onChange={e=>set(e.target.value)} onKeyDown={e=>e.key==="Enter"&&save()} autoFocus={auto}/>;
+  return (
+    <div data-newpass="1" style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(ellipse at 50% 0%,#dcebfb,#eef1f7 60%)"}}>
+      <div style={{width:"100%",maxWidth:380}} className="fade">
+        <div style={{textAlign:"center",marginBottom:22}}>
+          <div style={{marginBottom:8}}><Ico k="logo" size={52}/></div>
+          <div className="brand-title" style={{fontSize:26,fontWeight:800,color:"#f4f4f6",letterSpacing:2,textTransform:"uppercase"}}>{GYM_NAME}</div>
+        </div>
+        <form className="card" onSubmit={e=>{ e.preventDefault(); save(); }} style={{padding:24,display:"flex",flexDirection:"column",gap:14}}>
+          <div style={{fontSize:17,fontWeight:800,color:"#0f172a"}}>🔑 Pon tu contraseña nueva</div>
+          <div><span className="lbl">NUEVA CONTRASEÑA (mín. 8)</span>{inp(a,setA,"••••••••",true)}</div>
+          <div><span className="lbl">REPÍTELA</span>{inp(b,setB,"••••••••")}</div>
+          <label style={{display:"flex",alignItems:"center",gap:8,fontSize:13,color:"#64748b",cursor:"pointer"}}><input type="checkbox" checked={show} onChange={e=>setShow(e.target.checked)} style={{width:17,height:17,accentColor:"#0284c7"}}/> Mostrar</label>
+          {err&&<p style={{fontSize:12,color:"#dc2626",lineHeight:1.4}}>{err}</p>}
+          <button type="submit" className="btn grn" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Guardando…":"Guardar y entrar"}</button>
+          <button type="button" className="btn ghost" style={{width:"100%",padding:10,fontSize:12}} onClick={onCancel}>Cancelar</button>
+        </form>
+      </div>
     </div>
   );
 }
@@ -1089,6 +1137,13 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
   const athleteEnter=()=>run(()=>handleAthleteEnter(f.name,f.code));
   const activate=()=>run(()=>handleAthleteActivate(f.name,f.code,f.pass,f.pass2));
   const coachLogin=()=>run(()=>handleCoachLogin(f.email,f.pass));
+  // ¿Olvidaste tu contraseña? Supabase manda un email con un enlace que vuelve a la app.
+  const [sent,setSent]=React.useState("");
+  const forgot=()=>run(async()=>{ const em=String(f.email||"").trim();
+    if(!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(em)) return setLoginErr("Escribe el email con el que entras");
+    setLoginErr(""); const {error}=await sb.auth.resetPasswordForEmail(em,{redirectTo:location.origin+location.pathname});
+    if(error) return setLoginErr(/rate|security purposes|seconds/i.test(error.message)?"Ya te hemos mandado un enlace hace poco. Espera un minuto y vuelve a pedirlo.":"No se pudo enviar el email: "+error.message);
+    setSent(em); });
   return (
     <div style={{minHeight:"100vh",display:"flex",alignItems:"center",justifyContent:"center",padding:20,background:"radial-gradient(ellipse at 50% 0%,#dcebfb,#eef1f7 60%)"}}>
       <div style={{width:"100%",maxWidth:380}} className="fade">
@@ -1139,14 +1194,32 @@ function LoginScreen({loginTab,setLoginTab,loginName,setLoginName,loginCode,setL
               <button type="button" className="btn ghost" style={{width:"100%",padding:10,fontSize:12}} onClick={()=>{setSub("login");setLoginErr("");}}>← Ya tengo cuenta</button>
             </form>
           )}
-          {!legacy&&loginTab==="admin"&&(
+          {!legacy&&loginTab==="admin"&&sub!=="forgot"&&(
             <form onSubmit={e=>{e.preventDefault();coachLogin();}} style={{display:"flex",flexDirection:"column",gap:14}}>
               <div><span className="lbl">EMAIL</span><input className="inp" type="email" autoComplete="username" placeholder="tu@email.com" value={f.email} onChange={e=>set("email",e.target.value)}/></div>
               <div><span className="lbl">CONTRASEÑA</span>{passInput("pass",coachLogin)}</div>
               {err}
               <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Entrando…":"Entrar al panel"}</button>
+              <button type="button" data-forgot="1" onClick={()=>{ setSub("forgot"); setSent(""); setLoginErr(""); }} style={{border:"none",background:"none",color:"#0284c7",fontSize:13,fontWeight:700,cursor:"pointer",fontFamily:"inherit",padding:2}}>¿Olvidaste tu contraseña?</button>
             </form>
           )}
+          {!legacy&&loginTab==="admin"&&sub==="forgot"&&(sent?(
+            <div data-forgot-sent="1" style={{display:"flex",flexDirection:"column",gap:12,textAlign:"center"}}>
+              <div style={{fontSize:40,lineHeight:1}}>📧</div>
+              <div style={{fontSize:15,fontWeight:800,color:"#0f172a"}}>Revisa tu email</div>
+              <p style={{fontSize:13,color:"#475569",lineHeight:1.5}}>Si <b>{sent}</b> es un usuario de coach, te llegará un enlace para poner una contraseña nueva. Ábrelo en este móvil (mira también en spam).</p>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:10,fontSize:12}} disabled={busy} onClick={forgot}>Reenviar el enlace</button>
+              <button type="button" className="btn sky" style={{width:"100%",padding:12,fontSize:13}} onClick={()=>{ setSub("login"); setLoginErr(""); }}>← Volver a entrar</button>
+            </div>
+          ):(
+            <form data-forgot-form="1" noValidate onSubmit={e=>{e.preventDefault();forgot();}} style={{display:"flex",flexDirection:"column",gap:14}}>
+              <p style={{fontSize:13,color:"#475569",lineHeight:1.45}}>Escribe tu email de coach y te mandamos un enlace para poner una contraseña nueva.</p>
+              <div><span className="lbl">EMAIL</span><input className="inp" type="email" autoComplete="username" placeholder="tu@email.com" value={f.email} onChange={e=>set("email",e.target.value)}/></div>
+              {err}
+              <button type="submit" className="btn sky" style={{width:"100%",padding:13,fontSize:14}} disabled={busy}>{busy?"Enviando…":"Enviarme el enlace"}</button>
+              <button type="button" className="btn ghost" style={{width:"100%",padding:10,fontSize:12}} onClick={()=>{ setSub("login"); setLoginErr(""); }}>← Volver a entrar</button>
+            </form>
+          ))}
           {legacy&&(loginTab==="client"?(
             <div style={{display:"flex",flexDirection:"column",gap:14}}>
               <p style={{fontSize:12,color:"#b45309",background:"#fffbeb",border:"1px solid #fde68a",borderRadius:9,padding:"8px 10px"}}>Acceso antiguo (temporal). Activa tu cuenta nueva cuanto antes.</p>
