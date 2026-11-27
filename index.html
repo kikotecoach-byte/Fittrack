@@ -4693,6 +4693,13 @@ function roomStations(people, units){
     if(st.k==="poleas"){ const w=Object.keys(st.ex).map(pulleySlots).sort((a,b)=>b-a); used=w.slice(0,Math.min(ppl.length,setups)).reduce((a,b)=>a+b,0); }
     return {...st,cap,setups,people:ppl,used,setupBased,unl};
   });
+  // Bancos: el reclinable se pone plano, así que lo de banco plano (hip thrust, press banca…)
+  // puede usar cualquiera de los dos; lo inclinado solo cabe en el reclinable.
+  const bp=res.find(x=>x.k==="bancoplano"), bi=res.find(x=>x.k==="bancoinclinable");
+  if(bp){ const hasI=!GYM_EQUIP||GYM_EQUIP.bancoinclinable===undefined||!!GYM_EQUIP.bancoinclinable;
+    const ci=hasI?capOf("bancoinclinable"):0, iu=bi?bi.used:0, cp=bp.cap;
+    bp.flatCap=cp; bp.cap=cp+Math.max(0,ci-iu); bp.bench=ci>0; bp.borrow=bp.used>cp;
+    if(bi){ bi.bench=true; if(bp.used>cp){ const tot=bp.used+iu, cap=cp+ci; bi.borrow=true; if(tot>cap) bi.clash=true; else if(tot===cap) bi.tight=true; } } }
   // Jaula ATLETICA ↔ multipower y jalón: si se usa cualquiera de los dos, esa jaula no
   // sirve para barra/pines, así que suman UN puesto contra los racks (power + ATLETICA).
   // Multipower y jalón juntos siguen siendo un solo puesto (pueden usarse a la vez).
@@ -4751,7 +4758,7 @@ function RoomMap({people,units}){
               {Array.from({length:boxes},(_,i)=><span key={i} style={{flex:1,height:8,borderRadius:3,background:i<Math.min(x.used,x.cap)?C.fg:i<x.cap?"#e2e8f0":"#dc2626",opacity:i>=x.cap?.55:1}}/>)}
             </div>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} ${x.k==="poleas"?"poleas":"a la vez"}${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}${x.share?` · 🔩 racks ${x.shareTot}/${x.shareCap}`:""}`}</span>
+              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} ${x.k==="poleas"?"poleas":"a la vez"}${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}${x.share?` · 🔩 racks ${x.shareTot}/${x.shareCap}`:""}${x.borrow?(x.k==="bancoplano"?" · con el reclinable en plano":" · prestado en plano"):""}`}</span>
               <span style={{display:"inline-flex",paddingLeft:5}}>{x.people.slice(0,4).map(av)}{x.people.length>4&&<span style={{fontSize:9,fontWeight:800,color:"#64748b",marginLeft:3}}>+{x.people.length-4}</span>}</span>
             </div>
           </button>); })}
@@ -4766,6 +4773,7 @@ function RoomMap({people,units}){
           <span style={{display:"inline-flex",paddingLeft:5}}>{cs.map(av)}</span>
         </div>)}
 {sel.share&&(()=>{ const w=(sel.shareWith||[]).map(k=>k==="jalon"?"el jalón":"la multipower").join(" y ")||"la multipower"; return <div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🔩 La jaula ATLETICA comparte espacio con {w}: {sel.clash?`ahora mismo se pisan (no caben a la vez). Escalona el orden o cambia ${w} por otra variante (mancuernas, máquina, dominadas…).`:"mientras se usen, esa jaula queda bloqueada para barra y pines (y al revés)."} El jalón y la multipower sí pueden usarse a la vez.</div>; })()}
+        {sel.bench&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🛏️ El banco reclinable se pone plano: hip thrust, press banca y todo lo de banco plano puede usar cualquiera de los dos bancos. Lo inclinado solo cabe en el reclinable.{sel.borrow?(sel.k==="bancoplano"?" Ahora mismo hace falta también el reclinable en plano.":" Ahora mismo se usa también en plano."):""}</div>}
         {sel.k==="poleas"&&Object.keys(sel.ex).some(n=>pulleySlots(n)===2)&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🪢 Cruces y aperturas ocupan las dos poleas; el resto, una.</div>}
         <div style={{fontSize:11,color:ROOM_COL[sel.status].fg,fontWeight:700,marginTop:6,lineHeight:1.4}}>
           {sel.status==="red"&&sel.clash&&sel.used<=sel.cap?`Entre racks y ${(sel.shareWith||[]).map(k=>k==="jalon"?"jalón":"multipower").join("/")||"multipower"} hacen falta ${sel.shareTot} puestos a la vez y hay ${sel.shareCap} (ocupan la jaula ATLETICA): escalona el orden para que no coincidan.`
@@ -8028,6 +8036,7 @@ function ScheduleModal({config,onSave,onClose}) {
             <div>🎚️ <b>Jalón</b>: cualquier jalón bloquea la jaula ATLETICA para barra y pines, pero no estorba a la multipower.</div>
             <div>🪢 <b>Dobles poleas</b> aparte del jalón: cada ejercicio usa una polea o las dos (cruces y aperturas).</div>
             <div>🧗 <b>Barra de dominadas de pared</b> aparte.</div>
+            <div>🛏️ <b>Bancos</b>: el reclinable se pone plano, así que hip thrust, press banca y todo lo de banco plano puede ir en cualquiera de los dos. Lo inclinado, solo en el reclinable.</div>
           </div>
           <button type="button" onClick={()=>setCfg(c=>({...c,smithShare:c.smithShare===false}))} aria-pressed={cfg.smithShare!==false}
             style={{width:"100%",display:"flex",alignItems:"center",gap:10,textAlign:"left",fontFamily:"inherit",cursor:"pointer",background:cfg.smithShare!==false?"#fff7ed":"#f1f4fa",border:`1px solid ${cfg.smithShare!==false?"#fdba74":"#dbe2ec"}`,borderRadius:12,padding:"10px 12px",marginTop:8}}>
@@ -12726,7 +12735,8 @@ async function saveExEquip(name, list){
 }
 const useExEquip = () => { const [,f]=React.useReducer(x=>x+1,0); React.useEffect(()=>{ EX_EQUIP_L.add(f); return ()=>EX_EQUIP_L.delete(f); },[]); return EX_EQUIP; };
 const equipTxt = (name) => equipNeeds(name).map(k=>EQUIP_LABEL[k]||"").filter(Boolean).join(" + ");
-const equipOk = (name) => { if(!GYM_EQUIP) return true; return equipNeeds(name).every(k=>{ const v=GYM_EQUIP[k]; return v===undefined?true:!!v; }); };
+const equipOk = (name) => { if(!GYM_EQUIP) return true; const on=(k)=>{ const v=GYM_EQUIP[k]; return v===undefined?true:!!v; };
+  return equipNeeds(name).every(k=>on(k)||(k==="bancoplano"&&on("bancoinclinable"))); }; // el reclinable se pone plano
 
 const DAY_TYPES = [
   ["fuerzaA","💪 Fuerza · Tren inferior"],["fuerzaB","💪 Fuerza · Tren superior"],
