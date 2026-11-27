@@ -91,7 +91,7 @@ html{background:#1c1c23;}body{background:#1c1c23;color:var(--text);font-family:'
   display:flex;position:fixed;bottom:0;left:0;right:0;z-index:100;
   background:rgba(22,22,28,0.9);border-top:1px solid rgba(255,255,255,0.090);
   align-items:center;justify-content:space-around;
-  padding:9px 0 calc(16px + env(safe-area-inset-bottom));
+  padding:7px 0 max(10px, env(safe-area-inset-bottom));
   backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
   box-shadow:0 -2px 14px rgba(16,24,40,.06);
 }
@@ -107,6 +107,9 @@ html{background:#1c1c23;}body{background:#1c1c23;color:var(--text);font-family:'
 .bnav-badge{position:absolute;top:-3px;right:-6px;background:#dc2626;color:#fff;
   border-radius:10px;font-size:9px;font-weight:700;padding:1px 4px;min-width:15px;text-align:center;}
 .admin-content{padding-bottom:calc(88px + env(safe-area-inset-bottom)) !important;}
+/* Inicio del coach en móvil: alto fijo a la pantalla, sin hueco de scroll bajo la barra */
+.admin-content.dash-fit{padding-bottom:0 !important;}
+@media(max-width:767px){.dash-title{display:none !important;}}
 /* Navegación inferior del atleta (siempre visible, centrada en pantallas grandes) */
 /* Solo opacidad: un transform haría que los modales (position:fixed) quedasen bajo la barra. */
 .portal-root.fade{animation:fadeIn .25s ease backwards;}
@@ -152,7 +155,7 @@ html{background:#1c1c23;}body{background:#1c1c23;color:var(--text);font-family:'
 .dk-lg{display:inline-block;width:9px;height:9px;border-radius:3px;margin-right:5px;vertical-align:-1px;}
 .mobile-topbar{
   display:flex !important;align-items:center;justify-content:space-between;
-  padding:calc(12px + env(safe-area-inset-top)) calc(14px + env(safe-area-inset-right)) 12px calc(14px + env(safe-area-inset-left));border-bottom:1px solid rgba(255,255,255,0.090);
+  padding:max(10px, calc(4px + env(safe-area-inset-top))) calc(14px + env(safe-area-inset-right)) 9px calc(14px + env(safe-area-inset-left));border-bottom:1px solid rgba(255,255,255,0.090);
   background:var(--bg);position:sticky;top:0;z-index:50;
 }
 /* Móvil en horizontal (poca altura): barras más compactas para ganar espacio */
@@ -248,7 +251,7 @@ html{background:#1c1c23;}body{background:#1c1c23;color:var(--text);font-family:'
 .pfill{height:100%;border-radius:10px;transition:width .6s;}
 .rest-on .notif{top:calc(96px + env(safe-area-inset-top)) !important;}
 .rest-on .exec-fs-head{padding-top:calc(86px + env(safe-area-inset-top)) !important;}
-.notif{position:fixed;top:18px;left:50%;transform:translateX(-50%);z-index:400;
+.notif{position:fixed;top:calc(12px + env(safe-area-inset-top));left:50%;transform:translateX(-50%);z-index:400;
   padding:12px 20px;border-radius:24px;font-size:13px;font-weight:600;
   animation:slideIn .3s ease;white-space:nowrap;}
 @keyframes slideIn{from{opacity:0;transform:translateX(-50%) translateY(-8px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}
@@ -1185,13 +1188,18 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
   const [bajaFor,setBajaFor] = React.useState(null);
   const [view,setView] = React.useState("dashboard");
   // Inicio a pantalla completa: ocupa todo el alto hasta la barra de abajo (móvil e iPad).
-  const dashRef=React.useRef(null); const [dashH,setDashH]=React.useState(0);
+  // Alto fijo a la pantalla (móvil, iPad y escritorio): el Inicio se ve entero sin scroll; si no cabe,
+  // la tarjeta HOY se compacta por pasos (dashDense 0→3) y, como último recurso, su lista se desplaza dentro.
+  const dashRef=React.useRef(null); const [dashH,setDashH]=React.useState(0); const [dashFixed,setDashFixed]=React.useState(false);
+  const hoyListRef=React.useRef(null); const [dashDense,setDashDense]=React.useState(0); const [secOpen,setSecOpen]=React.useState(false);
   React.useLayoutEffect(()=>{ if(view!=="dashboard") return;
     const fit=()=>{ const el=dashRef.current; if(!el) return; const top=el.getBoundingClientRect().top+window.scrollY;
-      const nav=document.querySelector(".bottom-nav"), navH=nav&&getComputedStyle(nav).display!=="none"?nav.getBoundingClientRect().height:0;
-      setDashH(Math.max(0,Math.floor(window.innerHeight-top-navH-16))); };
+      const nav=document.querySelector(".bottom-nav"), navOn=!!nav&&getComputedStyle(nav).display!=="none", navH=navOn?nav.getBoundingClientRect().height:0;
+      setDashFixed(true); setDashDense(0); setDashH(Math.max(0,Math.floor(window.innerHeight-top-navH-(navOn?10:16)))); };
     fit(); window.addEventListener("resize",fit); const t=setTimeout(fit,400);
     return ()=>{ window.removeEventListener("resize",fit); clearTimeout(t); }; },[view]);
+  React.useLayoutEffect(()=>{ const el=hoyListRef.current; if(view!=="dashboard"||!dashFixed||!el) return;
+    if(el.scrollHeight>el.clientHeight+1&&dashDense<3) setDashDense(dashDense+1); });
   const [schedView,setSchedView] = React.useState("day");
   const [weekBig,setWeekBig] = React.useState(false); // vista de semana ampliada (más espacio para arrastrar)
   const [fitMode,setFitMode] = React.useState(()=>{ try{ return localStorage.getItem("kg_agenda_fit")==="1"; }catch(e){ return false; } }); // día/semana a pantalla completa sin scroll
@@ -1437,6 +1445,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
     .sort((a,b)=>a.days-b.days || String(a.time).localeCompare(String(b.time)));
   const sessionReminders = allSessionReminders.filter(r=>!dismissed[alertKey(r)]);
   const todaySessions = sessions.filter(s=>s.date===TODAY&&!s.requested);
+  React.useEffect(()=>{ setDashDense(0); },[todaySessions.length,todaySessions.filter(s=>s.status==="completed").length,secOpen]);
   // iPad en horizontal: la ficha / el entreno se acoplan a la derecha (sin tapar la agenda).
   const canDock = vw>=1100;
   const docked = canDock && !!quickView; // la ejecución va a pantalla completa
@@ -2182,12 +2191,12 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
 
 
       {/* Content */}
-      <div style={{padding:"14px 14px 80px",minHeight:"100vh",background:"#eef1f7"}} className="view3d admin-content" key={view}>
+      <div style={{padding:"14px 14px 80px",minHeight:view==="dashboard"&&dashFixed?undefined:"100vh",background:"#eef1f7"}} className={"view3d admin-content"+(view==="dashboard"&&dashFixed?" dash-fit":"")} key={view}>
 
         {/* DASHBOARD */}
         {view==="dashboard"&&(
-          <div ref={dashRef} data-dashfill style={{display:"flex",flexDirection:"column",minHeight:dashH||undefined}}>
-            <div style={{marginBottom:16}}>
+          <div ref={dashRef} data-dashfill style={{display:"flex",flexDirection:"column",minHeight:!dashFixed&&dashH||undefined,height:dashFixed&&dashH||undefined,overflow:dashFixed?"hidden":undefined}}>
+            <div className="dash-title" style={{marginBottom:16,flexShrink:0}}>
               <h1 className="mono" style={{fontSize:24,fontWeight:700,display:"flex",alignItems:"center",gap:10}}><Ico k="home" size={38}/>{GYM_NAME} — Dashboard</h1>
               <p style={{color:"#94a3b8",fontSize:14,marginTop:4}}>{capFirst(fmtLong(TODAY))}</p>
             </div>
@@ -2195,14 +2204,16 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
             <PushSetup compact notify={notify}/>
             {/* ── Aviso de seguridad pendiente ── */}
             {(!secure||dbOpenNow)&&(()=>{ const act=clients.filter(c=>c.auth_user_id).length; const hasCol=clients.some(c=>"auth_user_id" in c); return(
-              <div className="card" style={{marginBottom:14,padding:"12px 14px",border:"1px solid #fde68a",background:"#fffbeb"}}>
-                <div style={{fontSize:14,fontWeight:800,color:"#92400e"}}>{!secure?"🔐 Estás entrando con el acceso antiguo":"🔓 Falta el último paso de seguridad"}</div>
+              <div className="card" data-secwarn onClick={dashFixed?()=>setSecOpen(o=>!o):undefined} style={{marginBottom:dashFixed?10:14,padding:dashFixed&&!secOpen?"9px 14px":"12px 14px",border:"1px solid #fde68a",background:"#fffbeb",flexShrink:0,cursor:dashFixed?"pointer":undefined}}>
+                <div style={{fontSize:14,fontWeight:800,color:"#92400e",display:"flex",alignItems:"center",gap:8}}><span style={{flex:1,minWidth:0}}>{!secure?"🔐 Estás entrando con el acceso antiguo":"🔓 Falta el último paso de seguridad"}</span>{dashFixed&&<span style={{fontSize:12,fontWeight:800,flexShrink:0}}>{secOpen?"Ocultar ▴":"Ver ▾"}</span>}</div>
+                {(!dashFixed||secOpen)&&<>
                 <div style={{fontSize:12,color:"#78350f",marginTop:4,lineHeight:1.5}}>
                   {!secure
                     ?<>Para proteger los datos crea tu usuario de coach: en Supabase desactiva «Confirm email», ejecuta <b>docs/seguridad-1.sql</b>, crea tu usuario en Authentication → Users y hazte coach. Luego entra con tu email.</>
                     :<>Tu base de datos todavía se puede leer sin iniciar sesión. Ejecuta <b>docs/seguridad-2.sql</b> en Supabase para cerrarla: no hace falta esperar a que todos activen su app (podrán activarla después igual).</>}
                 </div>
                 {secure&&hasCol&&<div style={{fontSize:12,fontWeight:700,color:"#92400e",marginTop:6}}>📲 {act} de {clients.length} atletas han activado su app · envía el acceso desde Clientes → atleta → «📲 Enviar acceso».</div>}
+                </>}
               </div>); })()}
             {/* ── HOY: cuántas clases y con quién (lo primero que se ve) ── */}
             {(()=>{
@@ -2215,20 +2226,21 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               const people=new Set(todaySessions.map(s=>s.client_id)).size, doneN=todaySessions.filter(s=>s.status==="completed").length;
               const goHour=(t)=>{ setActiveDay(TODAY); setSchedView("day"); setView("schedule"); setFocusSlot({date:TODAY,time:t}); };
               const mins=(t)=>{ const [h,m]=t.split(":").map(Number), [nh,nm]=nowHM.split(":").map(Number); return (h*60+m)-(nh*60+nm); };
+              const d=dashFixed?dashDense:0, pick=(...a)=>a[d];
               return(
-                <div className="card" data-hoy style={{flex:"1 0 auto",display:"flex",flexDirection:"column",marginBottom:14,padding:"20px 20px 16px",background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.28)"}}>
+                <div className="card" data-hoy data-dense={d} style={{flex:dashFixed?"1 1 0":"1 0 auto",minHeight:dashFixed?0:undefined,overflow:dashFixed?"hidden":undefined,display:"flex",flexDirection:"column",marginBottom:dashFixed?10:14,padding:pick("20px 20px 16px","16px 18px 14px","14px 16px 12px","12px 14px 10px"),background:"linear-gradient(135deg,#0b4f86,#0284c7)",color:"#fff",border:"none",boxShadow:"0 10px 26px rgba(2,132,199,.28)"}}>
                   <div style={{display:"flex",alignItems:"flex-end",justifyContent:"space-between",gap:10}}>
                     <div>
                       <div style={{fontSize:14,fontWeight:800,opacity:.85,letterSpacing:.4,whiteSpace:"nowrap"}}>HOY · {capFirst(new Date(TODAY+"T12:00:00").toLocaleDateString("es-ES",{weekday:"long",day:"numeric",month:"long"}))}</div>
                       <div style={{display:"flex",alignItems:"baseline",gap:8,marginTop:2}}>
-                        <span style={{fontSize:"clamp(54px,8.5vh,88px)",fontWeight:800,lineHeight:1}}>{groups.length}</span>
-                        <span style={{fontSize:24,fontWeight:800}}>{groups.length===1?"clase":"clases"}</span>
+                        <span style={{fontSize:pick("clamp(54px,8.5vh,88px)","clamp(46px,6.5vh,72px)","clamp(40px,5.5vh,60px)","clamp(34px,4.5vh,50px)"),fontWeight:800,lineHeight:1}}>{groups.length}</span>
+                        <span style={{fontSize:pick(24,22,20,18),fontWeight:800}}>{groups.length===1?"clase":"clases"}</span>
                       </div>
-                      <div style={{fontSize:16,fontWeight:700,opacity:.92,marginTop:4}}>{people} {people===1?"persona":"personas"}{vals.length?` · ${vals.length} valoraci${vals.length===1?"ón":"ones"}`:""}{doneN?` · ${doneN} ya vinieron ✓`:""}</div>
+                      <div style={{fontSize:pick(16,15,14,13),fontWeight:700,opacity:.92,marginTop:4}}>{people} {people===1?"persona":"personas"}{vals.length?` · ${vals.length} valoraci${vals.length===1?"ón":"ones"}`:""}{doneN?` · ${doneN} ya vinieron ✓`:""}</div>
                     </div>
                     <button className="btn" style={{background:"rgba(255,255,255,.16)",color:"#fff",border:"1px solid rgba(255,255,255,.35)",fontSize:15,padding:"11px 16px",flexShrink:0}} onClick={()=>{ setActiveDay(TODAY); setSchedView("day"); setView("schedule"); }}>Agenda ›</button>
                   </div>
-                  {(nowG||nextG)&&<div style={{marginTop:14,background:"rgba(255,255,255,.14)",borderRadius:14,padding:"12px 14px",fontSize:16,fontWeight:700}}>
+                  {(nowG||nextG)&&<div style={{marginTop:pick(14,12,10,8),background:"rgba(255,255,255,.14)",borderRadius:14,padding:pick("12px 14px","10px 12px","8px 12px","6px 10px"),fontSize:pick(16,15,14,13),fontWeight:700,flexShrink:0}}>
                     {nowG?<>🔴 <b>Ahora · {nowG.t}</b> con {[...nowG.ss.map(x=>x.c.name.split(" ")[0]),...nowG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")||"nadie"}</>
                       :<>⏭️ <b>Siguiente · {nextG.t}</b>{mins(nextG.t)<=120?` (en ${mins(nextG.t)<60?`${mins(nextG.t)} min`:`${Math.floor(mins(nextG.t)/60)} h ${mins(nextG.t)%60?`${mins(nextG.t)%60} min`:""}`})`:""} con {[...nextG.ss.map(x=>x.c.name.split(" ")[0]),...nextG.vs.map(l=>`${(l.name||"valoración").split(" ")[0]} (valoración)`)].join(", ")}</>}
                   </div>}
@@ -2241,15 +2253,15 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                     ?<div style={{flex:1,display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:6,textAlign:"center",marginTop:10}}>
                       <span style={{fontSize:"clamp(30px,6vh,64px)",lineHeight:1}} aria-hidden="true">🌴</span>
                       <span style={{fontSize:"clamp(15px,2.2vh,19px)",fontWeight:700,opacity:.95}}>Hoy no hay clases. ¡Día libre o de planificar!</span></div>
-                    :<div style={{marginTop:14,display:"flex",flexDirection:"column",gap:8,flex:1}}>
+                    :<div ref={hoyListRef} data-hoylist style={{marginTop:pick(14,12,10,8),display:"flex",flexDirection:"column",gap:pick(8,7,6,5),flex:1,minHeight:dashFixed?0:undefined,overflowY:dashFixed?"auto":undefined,WebkitOverflowScrolling:"touch"}}>
                       {groups.map(g=>{ const past=endOf(g.t)<=nowHM, live=nowG&&nowG.t===g.t; return(
-                        <div key={g.t} style={{display:"flex",alignItems:"center",gap:12,background:live?"#fff":"rgba(255,255,255,.1)",color:live?"#0f172a":"#fff",borderRadius:14,padding:"11px 13px",opacity:past&&!live?.7:1}}>
-                          <button type="button" onClick={()=>goHour(g.t)} className="mono" style={{border:"none",background:"none",color:"inherit",fontSize:21,fontWeight:800,padding:0,minWidth:64,textAlign:"left",cursor:"pointer"}}>{g.t}</button>
-                          <div style={{flex:1,minWidth:0,display:"flex",flexWrap:"wrap",gap:6}}>
+                        <div key={g.t} style={{display:"flex",alignItems:"center",gap:12,background:live?"#fff":"rgba(255,255,255,.1)",color:live?"#0f172a":"#fff",borderRadius:14,padding:pick("11px 13px","9px 12px","7px 11px","5px 10px"),opacity:past&&!live?.7:1,flexShrink:0}}>
+                          <button type="button" onClick={()=>goHour(g.t)} className="mono" style={{border:"none",background:"none",color:"inherit",fontSize:pick(21,19,17,16),fontWeight:800,padding:0,minWidth:pick(64,58,54,50),textAlign:"left",cursor:"pointer"}}>{g.t}</button>
+                          <div style={{flex:1,minWidth:0,display:"flex",flexWrap:"wrap",gap:pick(6,6,5,4)}}>
                             {g.ss.map(({s,c})=>{ const ok=s.status==="completed"; return(
-                              <button key={s.id} type="button" onClick={()=>goToPerson(s,c)} style={{display:"inline-flex",alignItems:"center",gap:6,border:"none",borderRadius:22,padding:"4px 12px 4px 4px",cursor:"pointer",fontFamily:"inherit",fontSize:15,fontWeight:800,
+                              <button key={s.id} type="button" onClick={()=>goToPerson(s,c)} style={{display:"inline-flex",alignItems:"center",gap:6,border:"none",borderRadius:22,padding:pick("4px 12px 4px 4px","3px 11px 3px 3px","3px 10px 3px 3px","2px 9px 2px 2px"),cursor:"pointer",fontFamily:"inherit",fontSize:pick(15,14,13.5,13),fontWeight:800,
                                 background:live?c.color+"1f":"rgba(255,255,255,.92)",color:"#0f172a"}}>
-                                {c.avatar_url?<img src={c.avatar_url} style={{width:28,height:28,borderRadius:"50%",objectFit:"cover"}}/>:<span style={{width:28,height:28,borderRadius:"50%",background:c.color,color:"#fff",fontSize:11,display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>}
+                                {c.avatar_url?<img src={c.avatar_url} style={{width:pick(28,26,22,20),height:pick(28,26,22,20),borderRadius:"50%",objectFit:"cover"}}/>:<span style={{width:pick(28,26,22,20),height:pick(28,26,22,20),borderRadius:"50%",background:c.color,color:"#fff",fontSize:pick(11,10,9,9),display:"inline-flex",alignItems:"center",justifyContent:"center"}}>{ini(c.name)}</span>}
                                 {c.name.split(" ")[0]}{ok?" ✓":""}</button>); })}
                             {g.vs.map(l=><button key={l.id} type="button" onClick={()=>setShowValoracion(l)} style={{border:"none",borderRadius:20,padding:"4px 9px",cursor:"pointer",fontFamily:"inherit",fontSize:12,fontWeight:800,background:"#f3ecfb",color:"#7c3aed"}}>📋 {(l.name||"Valoración").split(" ")[0]}</button>)}
                           </div>
@@ -2259,7 +2271,7 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 </div>);
             })()}
             {/* ── ATAJOS: un toque y estás en cada sección ── */}
-            {(()=>{ const go=(v)=>()=>setView(v);
+            {(()=>{ const go=(v)=>()=>setView(v), dk=dashFixed?dashDense:0;
               const items=[
                 ["program","Programa",()=>{ setProgTab({t:null,k:Date.now()}); setView("programming"); }],
                 ["bell","Alertas",go("reminders"),reminders.length],
@@ -2267,10 +2279,10 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
                 ["gear","Horario",()=>{ setView("schedule"); setShowSched(true); }],
               ];
               return(
-                <div data-atajos style={{display:"grid",gridTemplateColumns:`repeat(${items.length},minmax(0,1fr))`,gap:10,marginBottom:14,flexShrink:0}}>
+                <div data-atajos style={{display:"grid",gridTemplateColumns:`repeat(${items.length},minmax(0,1fr))`,gap:10,marginBottom:dashFixed?10:14,flexShrink:0}}>
                   {items.map(([ic,l,fn,n])=>(
-                    <button key={l} type="button" onClick={fn} className="card tilt" style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:7,padding:"12px 4px 10px",cursor:"pointer",fontFamily:"inherit",border:"1px solid #e6ebf3",minHeight:"clamp(84px,11vh,112px)"}}>
-                      {ICO3D[ic]?<Ico k={ic} size={42}/>:<span style={{fontSize:36,lineHeight:1}}>{ic}</span>}
+                    <button key={l} type="button" onClick={fn} className="card tilt" style={{position:"relative",display:"flex",flexDirection:"column",alignItems:"center",justifyContent:"center",gap:dk>=2?5:7,padding:dk>=2?"8px 4px 7px":"12px 4px 10px",cursor:"pointer",fontFamily:"inherit",border:"1px solid #e6ebf3",minHeight:dk>=3?60:dk>=2?"clamp(70px,8vh,92px)":dk>=1?"clamp(78px,9.5vh,104px)":"clamp(84px,11vh,112px)"}}>
+                      {ICO3D[ic]?<Ico k={ic} size={dk>=3?30:dk>=2?34:42}/>:<span style={{fontSize:36,lineHeight:1}}>{ic}</span>}
                       <span style={{fontSize:13.5,fontWeight:800,color:"#334155",textAlign:"center",lineHeight:1.15}}>{l}</span>
                       {n>0&&<span style={{position:"absolute",top:6,right:7,minWidth:20,height:20,borderRadius:10,background:"#dc2626",color:"#fff",fontSize:11,fontWeight:800,display:"flex",alignItems:"center",justifyContent:"center",padding:"0 5px"}}>{n}</span>}
                     </button>))}
@@ -2286,20 +2298,21 @@ function AdminPanel({clients:allClients,sessions,history,payments,blocked,waitli
               const {gen,horas}=cur;
               const porHora=horas?gen/horas:0;
               const eur=(n)=>{ const v=Math.round((n||0)*100)/100; return (Number.isInteger(v)?v:v.toFixed(2).replace(".",","))+"€"; };
+              const fc=dashFixed&&dashDense>=2;
               return(
-                <div className="card dash-fin tilt" data-fin onClick={()=>setView("income")} style={{marginBottom:0,cursor:"pointer",padding:"16px 18px",border:"1px solid #c9e6d1",background:"#f4faf6",flexShrink:0}}>
+                <div className="card dash-fin tilt" data-fin onClick={()=>setView("income")} style={{marginBottom:0,cursor:"pointer",padding:fc?"11px 14px":"16px 18px",border:"1px solid #c9e6d1",background:"#f4faf6",flexShrink:0}}>
                   <div style={{display:"flex",alignItems:"center",gap:12}}>
-                    <Ico k="money" size={48}/>
+                    <Ico k="money" size={fc?36:48}/>
                     <div style={{flex:1,minWidth:0}}>
-                      <div style={{fontSize:19,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
+                      <div style={{fontSize:fc?17:19,fontWeight:800,color:"#0f172a"}}>Finanzas</div>
                       <div style={{fontSize:13,color:"#475569",marginTop:1}}>{lbl}: {horas} h de clase</div>
                     </div>
                     <span style={{fontSize:15,fontWeight:800,color:"#16a34a",flexShrink:0,whiteSpace:"nowrap"}}>Ver ›</span>
                   </div>
-                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginTop:12}}>
+                  <div style={{display:"grid",gridTemplateColumns:"repeat(3,minmax(0,1fr))",gap:8,marginTop:fc?8:12}}>
                     {[["Por hora",eur(porHora)],["Generados",eur(gen)],["Cobrado mes",eur(monthIncome)]].map(([k,v])=>(
-                      <div key={k} style={{background:"#ffffff",border:"1px solid #d8ede0",borderRadius:12,padding:"9px 6px",textAlign:"center"}}>
-                        <div style={{fontSize:21,fontWeight:800,color:"#0f172a",lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</div>
+                      <div key={k} style={{background:"#ffffff",border:"1px solid #d8ede0",borderRadius:12,padding:fc?"6px 6px":"9px 6px",textAlign:"center"}}>
+                        <div style={{fontSize:fc?19:21,fontWeight:800,color:"#0f172a",lineHeight:1.1,whiteSpace:"nowrap",overflow:"hidden",textOverflow:"ellipsis"}}>{v}</div>
                         <div style={{fontSize:11.5,fontWeight:700,color:"#64748b",marginTop:3}}>{k}</div>
                       </div>))}
                   </div>
@@ -4576,8 +4589,9 @@ const eqName = (k) => String(EQUIP_LABEL[k]||k).split(" ").slice(1).join(" ")||k
 // ── Distribución real de la sala ──
 // · Rack de power: básicos con barra y peso muerto.
 // · ATLETICA: jaula (rack) + multipower en el MISMO espacio, con jalón, fondera y barra
-//   de dominadas integrados. Si se usa la multipower, la jaula ATLETICA no se puede usar
-//   (y al revés) → racks + multipower comparten puestos.
+//   de dominadas integrados. Si se usa la multipower o el jalón, la jaula ATLETICA no se
+//   puede usar para barra ni pines (y al revés) → racks + multipower/jalón comparten puestos.
+//   Multipower y jalón SÍ pueden usarse a la vez (no se estorban).
 // · Dobles poleas (independientes del jalón): un ejercicio usa una polea o las dos.
 // · Barra de dominadas de pared (+ la de la ATLETICA = 2 puestos de dominadas).
 // Ejercicios con barra que se hacen DENTRO de un rack (sacan la barra de los soportes).
@@ -4606,12 +4620,16 @@ function roomStations(people, units){
     if(st.k==="poleas"){ const w=Object.keys(st.ex).map(pulleySlots).sort((a,b)=>b-a); used=w.slice(0,Math.min(ppl.length,setups)).reduce((a,b)=>a+b,0); }
     return {...st,cap,setups,people:ppl,used,setupBased,unl};
   });
-  // Multipower ↔ jaula ATLETICA: comparten espacio, así que racks + multipower suman
-  // contra los racks (power + ATLETICA). Una persona solo está en un sitio a la vez.
-  const rk=res.find(x=>x.k==="rackpines"), mp=res.find(x=>x.k==="multipower");
-  if(ROOM_SHARE&&rk&&mp){ const union=new Set([...rk.people,...mp.people].map(c=>c.id)).size, tot=Math.min(union,rk.used+mp.used);
-    [rk,mp].forEach(x=>{ x.share=true; x.shareTot=tot; x.shareCap=rk.cap; });
-    if(tot>rk.cap){ rk.clash=true; mp.clash=true; } else if(tot===rk.cap&&union>1){ rk.tight=true; mp.tight=true; } }
+  // Jaula ATLETICA ↔ multipower y jalón: si se usa cualquiera de los dos, esa jaula no
+  // sirve para barra/pines, así que suman UN puesto contra los racks (power + ATLETICA).
+  // Multipower y jalón juntos siguen siendo un solo puesto (pueden usarse a la vez).
+  // Una persona solo está en un sitio a la vez.
+  const rk=res.find(x=>x.k==="rackpines"), mp=res.find(x=>x.k==="multipower"), jl=res.find(x=>x.k==="jalon");
+  const atl=[ROOM_SHARE?mp:null,jl].filter(Boolean);
+  if(rk&&atl.length){ const pa=new Set(atl.flatMap(x=>x.people.map(c=>c.id)));
+    const union=new Set([...rk.people.map(c=>c.id),...pa]).size, tot=Math.min(union,rk.used+1);
+    [rk,...atl].forEach(x=>{ x.share=true; x.shareTot=tot; x.shareCap=rk.cap; x.shareWith=atl.map(a=>a.k); });
+    if(tot>rk.cap){ [rk,...atl].forEach(x=>{ x.clash=true; }); } else if(tot===rk.cap&&union>1){ [rk,...atl].forEach(x=>{ x.tight=true; }); } }
   return res.map(x=>{
     const status=x.unl?"ok":(x.used>x.cap||x.clash)?"red":(x.tight||(x.people.length>1&&(x.used===x.cap||(x.setupBased&&x.setups>x.cap))))?"amber":"ok";
     return {...x,status};
@@ -4660,7 +4678,7 @@ function RoomMap({people,units}){
               {Array.from({length:boxes},(_,i)=><span key={i} style={{flex:1,height:8,borderRadius:3,background:i<Math.min(x.used,x.cap)?C.fg:i<x.cap?"#e2e8f0":"#dc2626",opacity:i>=x.cap?.55:1}}/>)}
             </div>}
             <div style={{display:"flex",alignItems:"center",justifyContent:"space-between",gap:6}}>
-              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} ${x.k==="poleas"?"poleas":"a la vez"}${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}${x.share?` · 🔩 rack+multi ${x.shareTot}/${x.shareCap}`:""}`}</span>
+              <span style={{fontSize:10,fontWeight:700,color:"#475569"}}>{x.unl?`${x.people.length} pers.`:`${x.used}/${x.cap} ${x.k==="poleas"?"poleas":"a la vez"}${x.setupBased&&x.setups>1?` · ${x.setups} ej.`:""}${x.share?` · 🔩 racks ${x.shareTot}/${x.shareCap}`:""}`}</span>
               <span style={{display:"inline-flex",paddingLeft:5}}>{x.people.slice(0,4).map(av)}{x.people.length>4&&<span style={{fontSize:9,fontWeight:800,color:"#64748b",marginLeft:3}}>+{x.people.length-4}</span>}</span>
             </div>
           </button>); })}
@@ -4674,10 +4692,10 @@ function RoomMap({people,units}){
           <span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#334155"}}>{n}</span>
           <span style={{display:"inline-flex",paddingLeft:5}}>{cs.map(av)}</span>
         </div>)}
-        {sel.share&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🔩 La multipower y la jaula ATLETICA comparten espacio: {sel.clash?"ahora mismo se pisan (no caben a la vez). Escalona el orden o cambia la multipower por otra variante (mancuernas, máquina…).":"mientras se use una, la otra queda bloqueada."}</div>}
+{sel.share&&(()=>{ const w=(sel.shareWith||[]).map(k=>k==="jalon"?"el jalón":"la multipower").join(" y ")||"la multipower"; return <div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🔩 La jaula ATLETICA comparte espacio con {w}: {sel.clash?`ahora mismo se pisan (no caben a la vez). Escalona el orden o cambia ${w} por otra variante (mancuernas, máquina, dominadas…).`:"mientras se usen, esa jaula queda bloqueada para barra y pines (y al revés)."} El jalón y la multipower sí pueden usarse a la vez.</div>; })()}
         {sel.k==="poleas"&&Object.keys(sel.ex).some(n=>pulleySlots(n)===2)&&<div style={{fontSize:11,color:"#475569",fontWeight:700,marginTop:6,lineHeight:1.4}}>🪢 Cruces y aperturas ocupan las dos poleas; el resto, una.</div>}
         <div style={{fontSize:11,color:ROOM_COL[sel.status].fg,fontWeight:700,marginTop:6,lineHeight:1.4}}>
-          {sel.status==="red"&&sel.clash&&sel.used<=sel.cap?`Entre racks y multipower hacen falta ${sel.shareTot} puestos a la vez y hay ${sel.shareCap} (la multipower ocupa la jaula ATLETICA): escalona el orden para que no coincidan.`
+          {sel.status==="red"&&sel.clash&&sel.used<=sel.cap?`Entre racks y ${(sel.shareWith||[]).map(k=>k==="jalon"?"jalón":"multipower").join("/")||"multipower"} hacen falta ${sel.shareTot} puestos a la vez y hay ${sel.shareCap} (ocupan la jaula ATLETICA): escalona el orden para que no coincidan.`
             :sel.status==="red"?`Lo necesitan ${sel.used} a la vez y hay ${sel.cap} ${sel.cap>1?"puestos":"puesto"}: escalona el orden (que alguien empiece por otro bloque), junta a dos en el mismo ejercicio o cambia el tipo de sesión de alguien.`
             :sel.status==="amber"?(sel.used===sel.cap?"Al límite: si alguien se retrasa, habrá espera. Escalonar un poco ayuda.":`Cabe, pero hay ${sel.setups} ejercicios distintos: muchos cambios de discos en el mismo puesto.`)
             :sel.setupBased&&sel.setups<sel.people.length?"Comparten el mismo ejercicio: rotan en el mismo montaje sin problema.":"Sin esperas previstas."}
@@ -6220,7 +6238,7 @@ function SessionExecModal({client,date,sessions,assignedSessions,assignedExercis
   // las demás guardan su peso propio.
   const setKg=(row,i,v,isKey)=>{ if(isKey) return setField(row.id,"w",v); const a=[...(row.ow||[])]; a[i]=v; setField(row.id,"ow",a); };
   const blurKg=(row,i,v,isKey)=>{ if(isKey){ sb.from("assigned_exercises").update({actual_weight:kgNum(v)}).eq("id",row.id).then(()=>{}); return; }
-    const a=[...(row.ow||[])]; a[i]=v; owSave(row.id,a); saveSetWeights(row.id,a); };
+    const a=[...(row.ow||[])]; a[i]=kgNum(v)!=null?v:null; setField(row.id,"ow",a); owSave(row.id,a); saveSetWeights(row.id,a); };
   const toggleDone=async(row,noRest)=>{
     const nowDone=!row.done;
     setField(row.id,"done",nowDone); setSaving(true);
@@ -7934,6 +7952,7 @@ function ScheduleModal({config,onSave,onClose}) {
           <div style={{background:"#f1f4fa",borderRadius:12,padding:"9px 11px",fontSize:11,color:"#475569",lineHeight:1.5}}>
             <div>🏗️ <b>Rack de power</b>: básicos con barra y peso muerto.</div>
             <div>🔩 <b>ATLETICA</b>: jaula + multipower, con 🎚️ jalón, 🔻 fondera y 🧗 dominadas integrados.</div>
+            <div>🎚️ <b>Jalón</b>: cualquier jalón bloquea la jaula ATLETICA para barra y pines, pero no estorba a la multipower.</div>
             <div>🪢 <b>Dobles poleas</b> aparte del jalón: cada ejercicio usa una polea o las dos (cruces y aperturas).</div>
             <div>🧗 <b>Barra de dominadas de pared</b> aparte.</div>
           </div>
@@ -12515,7 +12534,8 @@ const EQUIP = [
   [/barra z|barra ez|\bez bar/i,"barraz"],
   [/safety bar|\bssb\b/i,"safetybar"],
   // Estación de jalón (integrada en la ATLETICA), independiente de las dobles poleas.
-  [/jal[óo]n(?!.*polea)|pulldown/i,"jalon"],
+  // Cualquier jalón (también «en polea» o unilateral) se hace en ella.
+  [/jal[óo]n|pulldown/i,"jalon"],
   [/dominada|chin-?up|pull-?up|toes to bar|elevaci[óo]n de piernas colgad|colgado pasivo|dead hang|muscle ?up/i,"dominadas"],
   [/fondos(?!.*banco)|\bdips\b/i,"fondos"],
   [/wall sit|en pared|contra pared|squeeze|zancada isom|split squat hold|puente de (glúteo|gluteo|isquios) isom|bird-dog isom|dead bug isom|copenhagen isom|colgado pasivo|dead hang|gemelos? isom/i,"pesocorporal"],
@@ -12759,13 +12779,19 @@ const restAfter=(ss)=>!(ss&&ss.partner&&/1$/.test(ss.tag));
 function SetTapper({ex,ss,done,sd,band,onTap,ow,onKg,onKgBlur,keyVal}){
   const {list,pair}=setsPlan(ex,{ss});
   const n=done?list.length:Math.min(sd||0,list.length), key=setKeyIdx(list);
+  // Peso escrito en una serie: vale para ella y lo heredan las siguientes del mismo tipo que
+  // no tengan uno propio (cambiar la 2ª a 65 pone la 3ª y la 4ª a 65; luego se tocan sueltas).
+  // Las de subida (ramp) no heredan: cada una lleva su escalón. "" = borrando, no salta al plan.
+  const has=(j)=>ow&&ow[j]!=null&&ow[j]!=="";
+  const owOf=(i)=>{ if(ow&&ow[i]!=null) return ow[i]; if(list[i].k==="ramp") return null;
+    for(let j=i-1;j>key;j--){ if(list[j].k!==list[i].k) break; if(has(j)) return ow[j]; } return null; };
   return <div data-sets style={{marginTop:2}}>
     {pair&&<div data-pair style={{display:"inline-flex",gap:4,alignItems:"center",background:"#db2777",color:"#fff",borderRadius:8,padding:"2px 8px",fontSize:11,fontWeight:800,marginBottom:5}}>
       {pair.tag}{pair.partner&&<span style={{fontWeight:600}}>⇄ {pair.partner.name}</span>}</div>}
     <div style={{display:"grid",gridTemplateColumns:`repeat(${Math.min(list.length,5)},minmax(0,1fr))`,gap:6}}>
       {list.map((x,i)=>{ const on=i<n, next=i===n;
         const kgs=x.kg==null?null:(Array.isArray(x.kg)?x.kg:[x.kg]);
-        const own=ow&&ow[i]!=null&&ow[i]!=="", val=i===key&&keyVal!=null?String(keyVal).replace(".",","):own?ow[i]:(kgs?kgStr(kgs[0]):"");
+        const mine=i===key?null:owOf(i), val=i===key&&keyVal!=null?String(keyVal).replace(".",","):mine!=null?String(mine):(kgs?kgStr(kgs[0]):"");
         const lbl=on?"✓ HECHA":(x.tag||({back:"BACK-OFF",ramp:"SUBIDA"})[x.k]||`SERIE ${i+1}`);
         return <div key={i} role="button" tabIndex={0} data-set={x.k} aria-pressed={on} onClick={()=>onTap(i)} onKeyDown={e=>{ if(e.target===e.currentTarget&&(e.key==="Enter"||e.key===" ")){ e.preventDefault(); onTap(i); } }}
           aria-label={`Serie ${i+1} (${lbl}): ${band?bandLabel(band):(val?val+" kg":"")} × ${x.r}${on?", hecha":""}`}
@@ -13689,7 +13715,7 @@ function ExerciseCard({ae, index, onComplete, saving, client, ss}) {
 
       <div style={{marginTop:8}}><SetTapper ex={exNow} ss={ss} sd={sd} band={goma?band:null} onTap={tapSet} ow={ow} keyVal={actualWeight==null?"":actualWeight}
         onKg={(i,v,k)=>{ if(k){ touched.current.w=true; setActualWeight(v); } else setOw(a=>{ const b=[...a]; b[i]=v; return b; }); }}
-        onKgBlur={(i,v,k)=>{ if(!k){ const b=[...ow]; b[i]=v; owSave(ae.id,b); saveSetWeights(ae.id,b); } }}/></div>
+        onKgBlur={(i,v,k)=>{ if(!k){ const b=[...ow]; b[i]=kgNum(v)!=null?v:null; setOw(b); owSave(ae.id,b); saveSetWeights(ae.id,b); } }}/></div>
       {ae.notes&&<div style={{fontSize:11,color:"#94a3b8",marginTop:6,paddingLeft:32,fontStyle:"italic"}}>{ae.notes}</div>}
 
       {expanded&&(
