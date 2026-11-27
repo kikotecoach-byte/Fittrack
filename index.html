@@ -9613,6 +9613,14 @@ function Spark({vals,w=120,h=30,color="#0284c7"}){
     <circle cx={l[0]} cy={l[1]} r="3.5" fill={color} stroke="#fff" strokeWidth="2"/>
   </svg>;
 }
+// Etiqueta corta de cómo va un ejercicio: de la primera vez a su mejor marca.
+function exTrend(x){
+  const f=x.first, b=x.best, up=(t)=>({t:`▲ ${t}`,c:"#15803d",bg:"rgba(22,163,74,.12)"});
+  if(x.n===1) return {t:"✨ Nuevo",c:"#0284c7",bg:"rgba(2,132,199,.12)"};
+  if(x.iso&&b&&f&&(b.secs||0)>(f.secs||0)) return up(`+${b.secs-f.secs} s`);
+  if(!x.iso&&b&&f&&b.kg!=null&&f.kg!=null&&b.kg>f.kg) return up(`+${fmtKgN(b.kg-f.kg)} kg`);
+  return {t:"● Estable",c:"#64748b",bg:"rgba(148,163,184,.15)"};
+}
 // Frase coloquial de lo que lleva hecho en un ejercicio (sin hablar de 1RM).
 const FUN_OBJ=[[5000,"elefante","elefantes","🐘"],[1200,"coche","coches","🚗"],[300,"piano","pianos","🎹"],[70,"lavadora","lavadoras","🧺"]];
 const hashStr=(t)=>{ let h=0; for(const c of String(t)) h=(h*31+c.charCodeAt(0))>>>0; return h; };
@@ -9807,6 +9815,7 @@ function StrengthView({client,assignedSessions,assignedExercises}){
   const log=strengthLog(client,assignedSessions,assignedExercises);
   const exs=strengthByExercise(log);
   const [grp,setGrp]=React.useState("");
+  const [open,setOpen]=React.useState(null); // ejercicio desplegado
   if(!exs.length) return <div className="card" style={{textAlign:"center",padding:28}}><Ico k="chart" size={44}/><div style={{color:"#64748b",fontSize:13,marginTop:8}}>Cuando completes tus entrenos aquí verás tus pesos, récords y evolución por ejercicio.</div></div>;
   const prs=exs.flatMap(x=>x.prs).sort((a,b)=>b.date.localeCompare(a.date));
   const prs30=prs.filter(p=>p.date>=addDays(TODAY,-30)).length;
@@ -9818,35 +9827,46 @@ function StrengthView({client,assignedSessions,assignedExercises}){
     <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:8,marginBottom:14}}>
       <Big v={exs.length} l="ejercicios"/><Big v={prs.length} l={`récords${prs30?` · ${prs30} este mes`:""}`}/><Big v={fmtTon(exs.reduce((t,x)=>t+x.ton,0))} l="tonelaje total"/>
     </div>
-    {prs.length>0&&<div className="card" style={{marginBottom:14,padding:"12px 13px"}}>
-      <div style={{fontSize:14,fontWeight:800,color:"#0f172a",marginBottom:6}}>🏆 Tus últimos récords</div>
-      {prs.slice(0,5).map((p,i)=><div key={p.key+p.date} style={{display:"flex",alignItems:"center",gap:10,padding:"7px 0",borderTop:i?"1px solid #f1f4f8":"none"}}>
-        <div style={{flex:1,minWidth:0}}><div style={{fontSize:13,fontWeight:700,color:"#0f172a"}}><ExName client={client} name={p.name}/></div><div style={{fontSize:11,color:"#94a3b8"}}>{shortD(p.date)} · antes {p.iso?`${p.prev} s`:`${fmtKgN(p.prev)} kg`}</div></div>
-        <div style={{textAlign:"right"}}><div style={{fontSize:14,fontWeight:800,color:"#0f172a"}}>{ptTxt(p,p.iso)}</div><div style={{fontSize:11,fontWeight:800,color:"#15803d"}}>▲ +{p.iso?`${(p.secs||0)-p.prev} s`:`${fmtKgN(p.kg-p.prev)} kg`}</div></div>
-      </div>)}
+    {prs.length>0&&<div style={{marginBottom:14}}>
+      <div style={{fontSize:14,fontWeight:800,color:"#0f172a",margin:"0 2px 8px"}}>🏆 Tus últimos récords</div>
+      <div data-prs style={{display:"flex",gap:8,overflowX:"auto",paddingBottom:4,scrollSnapType:"x mandatory"}}>
+        {prs.slice(0,8).map(p=><button key={p.key+p.date} type="button" onClick={()=>openExHistory(client,p.name)} className="card" style={{flexShrink:0,width:132,margin:0,padding:"10px 11px",textAlign:"left",cursor:"pointer",fontFamily:"inherit",scrollSnapAlign:"start"}}>
+          <div style={{fontSize:12,fontWeight:700,color:"#64748b",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{p.name}</div>
+          <div style={{fontSize:19,fontWeight:800,color:"#0f172a",lineHeight:1.2,marginTop:3,whiteSpace:"nowrap"}}>{p.iso?`${p.secs||0} s`:`${fmtKgN(p.kg)} kg`}</div>
+          <div style={{display:"flex",justifyContent:"space-between",alignItems:"baseline",marginTop:2}}><span style={{fontSize:12,fontWeight:800,color:"#15803d"}}>▲ {p.iso?`${(p.secs||0)-p.prev} s`:`${fmtKgN(p.kg-p.prev)} kg`}</span><span style={{fontSize:10,color:"#94a3b8"}}>{shortD(p.date)}</span></div>
+        </button>)}
+      </div>
     </div>}
     <div style={{display:"flex",gap:6,overflowX:"auto",paddingBottom:4,marginBottom:10}}>
       {chip(!grp,"Todos",()=>setGrp(""))}
       {groups.map(x=>chip(grp===x.g,`${x.ico} ${x.g}`,()=>setGrp(grp===x.g?"":x.g)))}
     </div>
     {shown.map(G=>(<div key={G.g} style={{marginBottom:14}}>
-      <div style={{fontSize:12,fontWeight:800,color:"#64748b",margin:"0 2px 7px"}}>{G.ico} {G.g.toUpperCase()} · {G.list.length} ejercicio{G.list.length!==1?"s":""}</div>
+      <div style={{fontSize:12,fontWeight:800,color:"#64748b",margin:"0 2px 7px"}}>{G.ico} {G.g.toUpperCase()}</div>
       <div className="card" style={{padding:0,overflow:"hidden"}}>
-        {G.list.map((x,i)=>(
-          <button key={x.key} onClick={()=>openExHistory(client,x.name)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 13px",border:"none",borderTop:i?"1px solid #eef1f6":"none",background:"#fff",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
+        {G.list.map((x,i)=>{ const on=open===x.key, tr=exTrend(x);
+          return <div key={x.key} data-exrow={x.name} style={{borderTop:i?"1px solid #eef1f6":"none"}}>
+          <button type="button" aria-expanded={on} onClick={()=>setOpen(on?null:x.key)} style={{width:"100%",display:"flex",alignItems:"center",gap:10,padding:"11px 13px",border:"none",background:"none",cursor:"pointer",textAlign:"left",fontFamily:"inherit"}}>
             <div style={{flex:1,minWidth:0}}>
               <div style={{fontSize:14,fontWeight:800,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.name}</div>
-              <div style={{fontSize:13,color:"#334155",marginTop:3,lineHeight:1.4}}>{funLine(x,i)}</div>
-              <div style={{fontSize:10,color:"#94a3b8",marginTop:4}}>Última vez: <b style={{color:"#64748b"}}>{ptTxt(x.last,x.iso)}</b> · {shortD(x.last.date)} · {x.n} {x.n!==1?"sesiones":"sesión"} · {x.sets} series</div>
+              <span style={{display:"inline-block",marginTop:4,fontSize:11,fontWeight:800,borderRadius:999,padding:"2px 8px",color:tr.c,background:tr.bg}}>{tr.t}</span>
             </div>
-            <div style={{flexShrink:0,display:"flex",flexDirection:"column",alignItems:"flex-end",gap:3}}>
-              {x.best&&<div style={{fontSize:13,fontWeight:800,color:"#0f172a"}}>🏆 {x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)}</div>}
-              <Spark vals={x.pts.slice(-10).map(p=>x.iso?p.secs:p.kg)} w={84} h={24}/>
+            <Spark vals={x.pts.slice(-10).map(p=>x.iso?p.secs:p.kg)} w={64} h={24}/>
+            <div style={{flexShrink:0,minWidth:62,textAlign:"right",fontSize:15,fontWeight:800,color:"#0f172a",whiteSpace:"nowrap"}}>{x.best?(x.iso?`${x.best.secs||0} s`:x.best.kg!=null?`${fmtKgN(x.best.kg)} kg`:ptTxt(x.best,false)):ptTxt(x.last,x.iso)}</div>
+            <span aria-hidden="true" style={{fontSize:14,color:"#94a3b8",transition:"transform .2s",transform:on?"rotate(90deg)":"none"}}>›</span>
+          </button>
+          {on&&<div data-exmore className="fade" style={{padding:"0 13px 13px"}}>
+            <div style={{fontSize:13,color:"#334155",lineHeight:1.45,background:"rgba(2,132,199,.08)",borderRadius:12,padding:"9px 11px"}}>{funLine(x,i)}</div>
+            <div style={{display:"grid",gridTemplateColumns:"repeat(3,1fr)",gap:6,marginTop:8}}>
+              {[["Última vez",ptTxt(x.last,x.iso),shortD(x.last.date)],["Sesiones",x.n,""],["Series",x.sets,""]].map(([l,v,d])=><div key={l} style={{background:"rgba(148,163,184,.1)",borderRadius:10,padding:"7px 6px",textAlign:"center"}}>
+                <div style={{fontSize:10,fontWeight:700,color:"#94a3b8"}}>{l}</div><div style={{fontSize:13,fontWeight:800,color:"#0f172a",marginTop:1,whiteSpace:"nowrap"}}>{v}</div>{d&&<div style={{fontSize:10,color:"#94a3b8"}}>{d}</div>}</div>)}
             </div>
-          </button>))}
+            <button type="button" className="btn ghost" style={{width:"100%",padding:9,fontSize:12,marginTop:8}} onClick={()=>openExHistory(client,x.name)}>Ver todas tus sesiones ›</button>
+          </div>}
+        </div>; })}
       </div>
     </div>))}
-    <div style={{fontSize:10,color:"#94a3b8",lineHeight:1.45}}>🏆 = tu mejor marca. La línea azul es cómo ha ido tu peso en las últimas sesiones. Toca un ejercicio para ver todas tus sesiones con él.</div>
+    <div style={{fontSize:11,color:"#94a3b8",textAlign:"center"}}>El número es tu mejor marca · Toca un ejercicio para ver más</div>
   </div>);
 }
 function VolumeView({client,assignedSessions,assignedExercises}){
