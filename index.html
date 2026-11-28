@@ -4852,20 +4852,8 @@ function ClassViewModal({openSessions,units,date,time,sessions,history,clients,a
         </div>}
         {slot.length===0&&opn.length===0&&<div style={{fontSize:13,color:"#94a3b8",textAlign:"center",padding:"14px 0"}}>Aún no hay nadie en esta clase.</div>}
         {/* Mapa de la sala: material y cuellos de botella */}
-        {(()=>{ const rows=[...rutinas.map(({s,r})=>({c:s.client,exs:r.exs})),...opn.map(x=>({c:x.client,exs:x.r.exs}))]
-            .map(x=>({...x,exs:x.exs.filter(e=>barKgOf(e.name)!=null&&parseFloat(e.w)>0)})).filter(x=>x.exs.length);
-          if(!rows.length) return null; return(
-          <details data-discos="1" style={{border:"1px solid #e6ebf3",borderRadius:12,padding:"9px 11px",marginBottom:12,background:"#fbfcfe"}}>
-            <summary style={{cursor:"pointer",fontSize:12,fontWeight:800,color:"#334155"}}>🏋️ Discos para preparar (por lado) · {rows.reduce((n,x)=>n+x.exs.length,0)} ejercicios con barra</summary>
-            {rows.map(({c,exs})=><div key={c.id} style={{marginTop:8}}>
-              <div style={{fontSize:12,fontWeight:800,color:c.color||"#0f172a",marginBottom:3}}>{c.name.split(" ")[0]}</div>
-              {exs.map((e,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:8,flexWrap:"wrap",padding:"4px 0",borderTop:i?"1px solid #eef1f6":"none"}}>
-                <span style={{flex:"1 1 130px",minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{e.name} <span className="mono" style={{color:"#ca8a04"}}>{e.w} kg</span></span>
-                <PlatesRow name={e.name} kg={e.w} small/>
-              </div>)}
-            </div>)}
-            <div style={{fontSize:10,color:"#94a3b8",marginTop:8}}>Discos de 25 (rojo), 20 (azul), 15 (amarillo), 10 (verde), 5, 2,5 y 1,25. Barra recta 20 kg · Z 10 · SSB 25 · multipower 15.</div>
-          </details>); })()}
+        {/* Preparación: mancuernas, kettlebells, discos, gomas y máquinas con sus kilos */}
+        <ClassPrep rows={[...rutinas.map(({s,r})=>({c:s.client,exs:r.raw||[]})),...opn.map(x=>({c:x.client,exs:x.r.raw||[]}))]}/>
         <RoomMap people={[...rutinas.map(({s,r})=>({client:s.client,exs:r.exs.map(e=>e.name)})),...opn.map(x=>({client:x.client,exs:x.r.exs.map(e=>e.name)}))]} units={units}/>
         {opn.length>0&&<div style={{background:"#f0faf7",border:"1px solid #b5e3da",borderRadius:12,padding:"9px 11px",marginBottom:12}}>
           <div style={{fontSize:11,fontWeight:800,color:"#0f766e",marginBottom:6}}>🔓 OPEN A ESTA HORA · {opn.length} · van por su cuenta (cuentan en el mapa)</div>
@@ -5184,6 +5172,57 @@ function PlatesRow({name,kg,small}){
     {out.map((p,i)=><span key={i} style={{display:"inline-flex",alignItems:"center",justifyContent:"center",minWidth:small?20:23,height:small?15:17,padding:"0 3px",borderRadius:4,background:PLATE_COL[p][0],color:PLATE_COL[p][1],fontSize:small?8.5:9.5,fontWeight:900,border:"1px solid rgba(0,0,0,.18)"}}>{fmt(p)}</span>)}
     {rest>0&&<span style={{color:"#b45309"}}>+{fmt(rest)} ≈</span>}
   </span>;
+}
+// ── PREPARAR LA CLASE: qué material sacar y de cuántos kilos, según las cargas asignadas
+// (peso del plan, series de subida y pesos cambiados en cada serie).
+const prepKind=(name)=>{ const n=String(name||""), eq=equipmentOf(n);
+  if(/mancuern/i.test(n)||eq==="mancuernas") return "db";
+  if(/kettlebell|pesa rusa|\bkb\b/i.test(n)||eq==="kettlebell") return "kb";
+  if(barKgOf(n)!=null) return "bar";
+  return "other"; };
+const exKgs=(e)=>{ const num=(v)=>{ const x=parseFloat(String(v==null?"":v).replace(",",".")); return isFinite(x)&&x>0?Math.round(x*100)/100:null; };
+  let list=[]; try{ list=setsPlan(e).list||[]; }catch(x){}
+  const ow=Array.isArray(e.set_weights)?e.set_weights:null, out=[]; let inh=null, prevK=null;
+  list.forEach((x,i)=>{ if(x.k!==prevK){ inh=null; prevK=x.k; }
+    const own=ow?num(ow[i]):null, v=own!=null?own:(x.k!=="ramp"?inh:null); if(own!=null&&x.k!=="ramp") inh=own;
+    if(v!=null) out.push(v); else (x.kg==null?[]:Array.isArray(x.kg)?x.kg:[x.kg]).forEach(k=>{ const q=num(k); if(q!=null) out.push(q); }); });
+  if(!out.length){ const w=num(e.prescribed_weight); if(w!=null) out.push(w); }
+  return [...new Set(out)].sort((a,b)=>a-b); };
+function ClassPrep({rows}){
+  const items=[]; (rows||[]).forEach(({c,exs})=>(exs||[]).forEach(e=>{ const name=e&&e.exercise_name; if(!name) return;
+    if(e.load_band){ items.push({c,name,kind:"band",band:e.load_band}); return; }
+    const kgs=exKgs(e); if(kgs.length) items.push({c,name,kind:prepKind(name),kgs}); }));
+  if(!items.length) return null;
+  const fmt=(x)=>String(x).replace(".",",");
+  const agg=(kind,keyOf)=>{ const m=new Map(); items.filter(x=>x.kind===kind).forEach(x=>keyOf(x).forEach(k=>{ const a=m.get(k)||new Map(); a.set(x.c.id,x.c); m.set(k,a); }));
+    return [...m.entries()].map(([k,cs])=>({k,cs:[...cs.values()]})); };
+  const db=agg("db",x=>x.kgs).sort((a,b)=>a.k-b.k), kb=agg("kb",x=>x.kgs).sort((a,b)=>a.k-b.k), bands=agg("band",x=>[bandLabel(x.band)].filter(Boolean));
+  const bars=items.filter(x=>x.kind==="bar"), other=items.filter(x=>x.kind==="other");
+  const av=(c)=><span key={c.id} title={c.name} style={{width:18,height:18,borderRadius:"50%",background:c.color||"#64748b",color:"#fff",fontSize:7.5,fontWeight:800,display:"inline-flex",alignItems:"center",justifyContent:"center",border:"1.5px solid #fff",marginLeft:-4}}>{ini(c.name)}</span>;
+  const who=(c)=><span style={{fontSize:11,fontWeight:800,color:c.color||"#0f172a",flexShrink:0}}>{c.name.split(" ")[0]}</span>;
+  const Sec=({ico,t,sub,children,k})=><div data-prepsec={k} style={{marginTop:10}}>
+    <div style={{fontSize:11,fontWeight:800,color:"#475569",marginBottom:5}}>{ico} {t}{sub&&<span style={{fontWeight:600,color:"#94a3b8"}}> · {sub}</span>}</div>{children}</div>;
+  const Chip=({big,cs,bg,fg,bd})=><span style={{display:"inline-flex",alignItems:"center",gap:6,background:bg,border:`1px solid ${bd}`,borderRadius:10,padding:"5px 9px 5px 10px"}}>
+    <b style={{fontSize:15,color:fg,whiteSpace:"nowrap"}}>{big}</b>{cs.length>1&&<span style={{fontSize:11,fontWeight:800,color:fg}}>×{cs.length}</span>}<span style={{display:"inline-flex",paddingLeft:4}}>{cs.map(av)}</span></span>;
+  const parts=[db.length&&`${db.length} peso${db.length>1?"s":""} de mancuernas`,kb.length&&`${kb.length} kettlebell${kb.length>1?"s":""}`,bars.length&&`${bars.length} barra${bars.length>1?"s":""}`,bands.length&&"gomas",other.length&&"máquinas"].filter(Boolean);
+  return <details data-prep="1" open style={{border:"1px solid #e6ebf3",borderRadius:12,padding:"9px 11px 11px",marginBottom:12,background:"#fbfcfe"}}>
+    <summary style={{cursor:"pointer",fontSize:13,fontWeight:800,color:"#0f172a"}}>🧰 Preparar la clase <span style={{fontSize:11,fontWeight:700,color:"#64748b"}}>· {parts.join(" · ")}</span></summary>
+    {db.length>0&&<Sec k="db" ico="🏋️" t="Mancuernas" sub="pares; ×2 = dos personas">
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{db.map(({k,cs})=><Chip key={k} big={`${fmt(k)} kg`} cs={cs} bg="#eff6ff" fg="#1d4ed8" bd="#bfdbfe"/>)}</div></Sec>}
+    {kb.length>0&&<Sec k="kb" ico="🔔" t="Kettlebells">
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{kb.map(({k,cs})=><Chip key={k} big={`${fmt(k)} kg`} cs={cs} bg="#fff7ed" fg="#c2410c" bd="#fed7aa"/>)}</div></Sec>}
+    {bands.length>0&&<Sec k="band" ico="🎗️" t="Gomas">
+      <div style={{display:"flex",flexWrap:"wrap",gap:6}}>{bands.map(({k,cs})=><Chip key={k} big={k} cs={cs} bg="#fdf4ff" fg="#a21caf" bd="#f5d0fe"/>)}</div></Sec>}
+    {bars.length>0&&<Sec k="bar" ico="🟦" t="Barras y discos" sub="discos por lado">
+      {bars.map((x,i)=>{ const top=x.kgs[x.kgs.length-1]; return <div key={i} style={{display:"flex",alignItems:"center",gap:7,flexWrap:"wrap",padding:"5px 0",borderTop:i?"1px solid #eef1f6":"none"}}>
+        {who(x.c)}<span style={{flex:"1 1 120px",minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a"}}>{x.name} <span className="mono" style={{color:"#ca8a04"}}>{x.kgs.map(fmt).join(" → ")} kg</span></span>
+        <PlatesRow name={x.name} kg={top} small/></div>; })}</Sec>}
+    {other.length>0&&<Sec k="other" ico="⚙️" t="Máquinas, poleas y otros">
+      {other.map((x,i)=><div key={i} style={{display:"flex",alignItems:"center",gap:7,padding:"4px 0",borderTop:i?"1px solid #eef1f6":"none"}}>
+        {who(x.c)}<span style={{flex:1,minWidth:0,fontSize:12,fontWeight:700,color:"#0f172a",overflow:"hidden",textOverflow:"ellipsis",whiteSpace:"nowrap"}}>{x.name}</span>
+        <span className="mono" style={{fontSize:12,fontWeight:800,color:"#ca8a04",whiteSpace:"nowrap"}}>{x.kgs.map(fmt).join(" → ")} kg</span></div>)}</Sec>}
+    <div style={{fontSize:10,color:"#94a3b8",marginTop:9}}>Sale de las cargas asignadas (y los pesos cambiados por serie). Discos: 25 rojo · 20 azul · 15 amarillo · 10 verde · 5 · 2,5 · 1,25. Barra recta 20 kg · Z 10 · SSB 25 · multipower 15. Con subida, los discos son los de la carga más alta.</div>
+  </details>;
 }
 // Menú de acciones compacto: un botón (⋯ o ＋) que despliega las opciones.
 function ActMenu({items,label,children,btnStyle,title}){
